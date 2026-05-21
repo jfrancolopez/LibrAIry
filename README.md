@@ -144,7 +144,7 @@ Files are organized into two storage zones inside your library:
 ### 1. Clone and configure
 
 ```bash
-git clone https://github.com/solosoyfranco/LibrAIry.git
+git clone https://github.com/jfrancolopez/LibrAIry.git
 cd LibrAIry
 
 # Run the interactive setup wizard
@@ -435,7 +435,7 @@ Pull requests welcome. Focus areas:
 - Web dashboard (Phase 3 — see TODO below)
 - NAS platform integration guides (Synology, QNAP, Unraid)
 
-Open issues or PRs at [github.com/solosoyfranco/LibrAIry](https://github.com/solosoyfranco/LibrAIry)
+Open issues or PRs at [github.com/jfrancolopez/LibrAIry](https://github.com/jfrancolopez/LibrAIry)
 
 ---
 

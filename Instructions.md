@@ -56,7 +56,7 @@ No hardware requirements. Requires internet access and an API key from the provi
 ## 2. Getting the Code
 
 ```bash
-git clone https://github.com/solosoyfranco/LibrAIry.git
+git clone https://github.com/jfrancolopez/LibrAIry.git
 cd LibrAIry
 ```
 
@@ -1017,7 +1017,7 @@ curl -fsSL https://get.docker.com | sh
 sudo usermod -aG docker $USER
 
 # Clone and configure
-git clone https://github.com/solosoyfranco/LibrAIry.git
+git clone https://github.com/jfrancolopez/LibrAIry.git
 cd LibrAIry
 ./setup.sh
 

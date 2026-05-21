@@ -37,7 +37,7 @@ def _mb_get(url):
     if elapsed < MB_RATE_LIMIT:
         time.sleep(MB_RATE_LIMIT - elapsed)
     req = urllib.request.Request(url, headers={
-        'User-Agent': 'LibrAIry/2.0 (https://github.com/solosoyfranco/LibrAIry)',
+        'User-Agent': 'LibrAIry/2.0 (https://github.com/jfrancolopez/LibrAIry)',
         'Accept': 'application/json',
     })
     try:
