@@ -11,15 +11,17 @@ This document covers everything needed to install, configure, run, and maintain 
 3. [API Keys Setup](#3-api-keys-setup)
 4. [Configuration (.env)](#4-configuration-env)
 5. [Docker Setup](#5-docker-setup)
-6. [First Run](#6-first-run)
-7. [Running the Pipeline](#7-running-the-pipeline)
-8. [Step-by-Step Reference](#8-step-by-step-reference)
-9. [AI Provider Configuration](#9-ai-provider-configuration)
-10. [Directory Layout Reference](#10-directory-layout-reference)
-11. [Optional: Build czkawka from Source](#11-optional-build-czkawka-from-source)
-12. [NAS Deployment Notes](#12-nas-deployment-notes)
-13. [Troubleshooting](#13-troubleshooting)
-14. [Environment Variable Reference](#14-environment-variable-reference)
+6. [Mac M-Series Local AI Setup (Ollama)](#6-mac-m-series-local-ai-setup-ollama)
+7. [First Run](#7-first-run)
+8. [Running the Pipeline](#8-running-the-pipeline)
+9. [Step-by-Step Reference](#9-step-by-step-reference)
+10. [Classification Intelligence](#10-classification-intelligence)
+11. [AI Provider Configuration](#11-ai-provider-configuration)
+12. [Directory Layout Reference](#12-directory-layout-reference)
+13. [Optional: Build czkawka from Source](#13-optional-build-czkawka-from-source)
+14. [NAS Deployment Notes](#14-nas-deployment-notes)
+15. [Troubleshooting](#15-troubleshooting)
+16. [Environment Variable Reference](#16-environment-variable-reference)
 
 ---
 
@@ -43,7 +45,7 @@ This document covers everything needed to install, configure, run, and maintain 
 | VRAM (GPU) | None (CPU only) | 8 GB+ VRAM |
 | CPU | Any modern x86-64 or ARM | — |
 
-LibrAIry works without any GPU. Ollama runs on CPU — slower but fully functional. Catalog API lookups (TMDB, AcoustID) run entirely in the container and require no GPU.
+LibrAIry works without any GPU. Ollama runs on CPU — slower but fully functional. Catalog API lookups (TMDB, AcoustID, MusicBrainz) and the heuristics engine run entirely in the container and require no GPU at all.
 
 ### Cloud AI (optional)
 
@@ -69,8 +71,10 @@ LibrAIry/
 ├── README.md
 ├── Instructions.md               ← This file
 └── inbox-processor/
-    ├── catalog/                  ← Free catalog API lookup layer
+    ├── catalog/                  ← Classification intelligence layer
     │   ├── catalog_main.py       ← Entry point (called by step3)
+    │   ├── heuristics.py         ← Rule-based pre-classifier (no AI needed)
+    │   ├── library_index.py      ← Library consistency index
     │   ├── music_lookup.py       ← Tags + AcoustID + MusicBrainz
     │   ├── video_lookup.py       ← TMDB movie/TV search
     │   └── utils.py              ← Genre maps, shared helpers
@@ -78,7 +82,7 @@ LibrAIry/
         ├── main.sh               ← Orchestrator (runs all steps)
         ├── step1_scan.sh         ← rmlint duplicate detection
         ├── step2_hash_audio_video.sh  ← czkawka perceptual dups
-        ├── step3_classify.sh     ← Classification (catalog + AI)
+        ├── step3_classify.sh     ← Classification (heuristics + catalog + AI)
         ├── step4_dryrun.sh       ← Move preview (no changes)
         └── step5_commit.sh       ← Execute real moves
 ```
@@ -141,7 +145,7 @@ MB_RATE_LIMIT=1.1   # seconds between requests — do not set below 1.0
 ### 3.4 Google Gemini — AI Fallback (optional, free tier)
 
 **Cost:** Free tier: 15 req/min, 1,500 req/day  
-**Used for:** AI classification when catalog APIs don't match  
+**Used for:** AI classification when heuristics + catalog APIs don't match  
 
 Steps:
 1. Go to **[aistudio.google.com/apikey](https://aistudio.google.com/apikey)**
@@ -246,7 +250,7 @@ This builds a Debian Bookworm image with:
 - `fpcalc` (chromaprint-utils) — audio fingerprinting
 - `rmlint` — hash-based duplicate detection
 - `exiftool` — image EXIF metadata
-- `python3` — catalog scripts
+- `python3` — catalog and heuristics scripts
 - `jq`, `curl`, `bc`, `coreutils` — shell utilities
 
 Build takes ~2 minutes on first run (package downloads). Subsequent builds use the Docker cache.
@@ -300,37 +304,170 @@ The container always sees these internal paths:
 
 The scripts mount is read-only, so edits to `.sh` or `.py` files on the host are immediately reflected in the container without rebuilding.
 
-### 5.5 Ollama connectivity
+---
 
-If Ollama is running on the same machine as Docker:
+## 6. Mac M-Series Local AI Setup (Ollama)
+
+This section covers running Ollama natively on Apple Silicon (M1/M2/M3/M4) and connecting the LibrAIry container to it. Apple Silicon runs local AI faster than most x86 servers because the unified memory architecture lets the GPU and CPU share RAM — no VRAM ceiling.
+
+### 6.1 Install Ollama on macOS
+
+```bash
+# Option A — Homebrew (recommended)
+brew install ollama
+
+# Option B — Direct download
+# Download from https://ollama.com/download/mac
+# Drag Ollama.app to /Applications, then launch it
+```
+
+After installation, Ollama runs as a background service at `http://localhost:11434`.
+
+Verify it is running:
+
+```bash
+ollama list        # shows installed models
+curl http://localhost:11434/api/tags   # should return JSON
+```
+
+### 6.2 Best models for a 16 GB M-series Mac
+
+With 16 GB unified memory you can run 7–8 billion parameter models at full precision, or quantized 13B models. These are the recommended choices for LibrAIry's classification task (JSON output, structured reasoning):
+
+| Model | RAM usage | Quality | Speed | Command |
+|---|---|---|---|---|
+| `llama3.1:8b` | ~5 GB | Excellent | Fast | `ollama pull llama3.1:8b` |
+| `qwen2.5:7b` | ~5 GB | Excellent | Fast | `ollama pull qwen2.5:7b` |
+| `mistral:7b` | ~5 GB | Very good | Fast | `ollama pull mistral:7b` |
+| `gemma3:4b` | ~3 GB | Good | Very fast | `ollama pull gemma3:4b` |
+| `phi4-mini:3.8b` | ~2.5 GB | Good | Very fast | `ollama pull phi4-mini:3.8b` |
+| `llama3.1:70b-q4` | ~40 GB | Best | Slow (too large) | — |
+
+**Recommended configuration for 16 GB M-series:**
+
+```env
+OLLAMA_MODEL_PRIMARY=llama3.1:8b
+OLLAMA_MODEL_SECONDARY=qwen2.5:7b
+```
+
+> **Why two models?** The pipeline tries the primary first. If it gives a low-confidence result, it automatically tries the secondary. Both fit in 16 GB simultaneously.
+
+Pull both models before your first run:
+
+```bash
+ollama pull llama3.1:8b
+ollama pull qwen2.5:7b
+```
+
+### 6.3 Connect LibrAIry container to Ollama via IP
+
+The Docker container cannot reach `localhost` on your Mac — it needs the host machine's actual network address.
+
+**Option A — Automatic (recommended for most users):**
+
+Docker Desktop for Mac automatically provides `host.docker.internal`:
 
 ```env
 OLLAMA_HOST=http://host.docker.internal:11434
 ```
 
-`host.docker.internal` resolves to the Docker host's IP. This is configured in `docker-compose.yml` via `extra_hosts`.
+This resolves to your Mac's IP from inside the container. It is configured automatically in `docker-compose.yml` via `extra_hosts`.
 
-If Ollama runs on a different machine (e.g., a separate server or NAS):
+**Option B — Use your Mac's LAN IP:**
+
+If `host.docker.internal` doesn't work (older Docker versions, or running Docker Engine without Desktop):
+
+1. Find your Mac's LAN IP:
+   ```bash
+   ipconfig getifaddr en0       # WiFi
+   # or
+   ipconfig getifaddr en1       # Ethernet
+   # or
+   ifconfig | grep "inet " | grep -v 127.0.0.1
+   ```
+
+2. Set it in `.env`:
+   ```env
+   OLLAMA_HOST=http://192.168.1.XX:11434
+   ```
+
+**Option C — Ollama on a different machine (e.g., your NAS or a server):**
+
+If Ollama runs on a separate machine on your network:
 
 ```env
 OLLAMA_HOST=http://192.168.1.100:11434
 ```
 
+Replace `192.168.1.100` with that machine's IP. No other changes needed.
+
+### 6.4 Allow network access to Ollama
+
+By default Ollama only listens on `localhost`. To reach it from the container, allow it to bind to all interfaces:
+
+```bash
+# One-time: set environment variable before starting Ollama
+export OLLAMA_HOST=0.0.0.0
+
+# Or permanently: add to your shell profile (~/.zshrc or ~/.bash_profile)
+echo 'export OLLAMA_HOST=0.0.0.0' >> ~/.zshrc
+source ~/.zshrc
+
+# Then restart Ollama
+pkill ollama
+ollama serve &
+```
+
+Or if using the Ollama macOS app, set it in System Settings → Privacy → Ollama preferences.
+
+### 6.5 Verify connectivity from inside the container
+
+```bash
+docker compose run --rm librairy bash -c "
+  curl -s http://host.docker.internal:11434/api/tags | jq '.models[].name'
+"
+```
+
+You should see the names of your installed models. If the command hangs or returns an error, check the `OLLAMA_HOST` setting and that Ollama is listening on `0.0.0.0`.
+
+### 6.6 macOS-specific .env example
+
+```env
+# ── Mac M-series + Ollama setup ───────────────────────────────────
+HOST_INBOX_DIR=/Users/yourname/librairy/inbox
+HOST_LIBRARY_DIR=/Volumes/NAS/library       # or any local folder
+HOST_QUARANTINE_DIR=/Users/yourname/librairy/quarantine
+HOST_REPORTS_DIR=/Users/yourname/librairy/reports
+
+# Ollama — running natively on this Mac
+OLLAMA_HOST=http://host.docker.internal:11434
+OLLAMA_MODEL_PRIMARY=llama3.1:8b
+OLLAMA_MODEL_SECONDARY=qwen2.5:7b
+
+# AI order: local Ollama first, Gemini (free) as cloud fallback
+AI_PROVIDER_ORDER=ollama,gemini
+
+# Free catalog APIs (get keys — see Section 3)
+TMDB_KEY=your_tmdb_key_here
+ACOUSTID_KEY=your_acoustid_key_here
+```
+
 ---
 
-## 6. First Run
+## 7. First Run
 
-### 6.1 Prepare your inbox
+### 7.1 Prepare your inbox
 
 Copy or move files into `HOST_INBOX_DIR`. The pipeline supports:
 
 - Single files: `movie.mkv`, `song.mp3`, `photo.jpg`
 - Folders: `Album Name/` with multiple tracks inside
 - Deeply nested chaos: mixed folders with no naming convention
+- Hidden files: files starting with `.` are automatically un-hidden during moves
 - Archives: `.zip`, `.rar` (classified, not extracted)
 - Any combination of the above
 
-### 6.2 Run the pipeline
+### 7.2 Run the pipeline
 
 ```bash
 docker compose run --rm librairy ./main.sh
@@ -369,14 +506,26 @@ Starting pipeline at Thu May 21 00:00:00 2026
 ▶ Step 2 — Deep duplicate scan (czkawka)
   ✓ Done in 8s
 
-▶ Step 3 — Classify inbox (catalog + AI)
+▶ Step 3 — Classify inbox (heuristics + catalog + AI)
+  Processing: my-react-app/
+    [heuristic] ✓ SoftwareProject — Project markers found: .git, package.json
+  
+  Processing: Screenshots/
+    [heuristic] ✓ Screenshot — 100% of files match screenshot pattern
+  
+  Processing: Windows Backup 2023/
+    [heuristic] ✓ Archive — Folder name matches backup pattern
+
   Processing: Pink Floyd - Dark Side of the Moon/
-    📖 Catalog matched (confidence: 0.944) — skipping AI
-    → Pink_Floyd_Dark_Side_Of_The_Moon_1973 (MusicAlbum, confidence: 0.944)
+    [catalog] ✓ Matched: MusicAlbum → .../Music/Rock/Albums/Pink_Floyd_Dark_Side_Of_The_Moon_1973/
 
   Processing: The.Matrix.1999.BluRay.mkv
-    📖 Catalog matched (confidence: 0.912) — skipping AI
-    → The_Matrix_1999 (VideoBundle, confidence: 0.912)
+    [catalog] ✓ Matched: VideoBundle → .../Movies/Action/The_Matrix_1999/
+
+  Processing: Unknown_Album_2019/
+    🤖 Catalog miss — AI chain: [ollama_primary, ollama_secondary]
+    🤖 Trying Ollama (llama3.1:8b)
+    ✓ ollama_primary succeeded (confidence: 0.84)
   ...
 
 ▶ Step 4 — Dry-run preview
@@ -388,7 +537,7 @@ Review the output above, then run step 5 to commit moves:
   ./step5_commit.sh
 ```
 
-### 6.3 Review and commit
+### 7.3 Review and commit
 
 Read the dry-run output carefully. If the moves look correct:
 
@@ -400,7 +549,7 @@ Files are moved to their classified destinations. Low-confidence items (< 0.5) g
 
 ---
 
-## 7. Running the Pipeline
+## 8. Running the Pipeline
 
 ### Run all steps (recommended)
 
@@ -425,7 +574,7 @@ Each step can be run independently:
 
 ### Re-running after changes
 
-If you edit classification rules or fix an issue with the AI prompt, re-run from step 3:
+If you edit classification rules or fix an issue, re-run from step 3:
 
 ```bash
 ./step3_classify.sh && ./step4_dryrun.sh
@@ -435,17 +584,27 @@ If you edit classification rules or fix an issue with the AI prompt, re-run from
 
 Step 3 overwrites `step3_summary.json`. Steps 4 and 5 read from this file.
 
-### Processing a specific file only
-
-Run step 3 with `INBOX_DIR` pointing to a single directory:
+### Processing a specific folder only
 
 ```bash
 INBOX_DIR=/data/inbox/single_album ./step3_classify.sh
 ```
 
+### Running for days (large libraries)
+
+LibrAIry is designed for accuracy over speed. For very large inboxes (10,000+ files), the pipeline can run for days. It is safe to interrupt and resume:
+
+- Step 3 uses a checkpoint file. Processed items are skipped on restart.
+- The Docker container can be stopped and restarted without losing progress.
+- Use the watcher profile to run continuously:
+  ```bash
+  docker compose --profile watch up -d
+  docker compose logs -f watcher
+  ```
+
 ---
 
-## 8. Step-by-Step Reference
+## 9. Step-by-Step Reference
 
 ### Step 1 — rmlint Duplicate Scan
 
@@ -460,18 +619,7 @@ Scans both inbox and library for exact duplicates (SHA1 hash comparison).
 - If a file in inbox matches a file already in library → inbox copy → quarantine (library version kept)
 - If two identical files exist only in inbox → keep one, move others → quarantine
 - Reports duplicate groups within the library itself (for visibility, not auto-removed)
-
-**Output JSON:**
-```json
-{
-  "timestamp": "2026-05-21T...",
-  "duplicates_found": 12,
-  "files_quarantined": 10,
-  "library_duplicates": [],
-  "quarantine_dir": "/data/quarantine/2026-05-21",
-  "quarantine_size": "2.3G"
-}
-```
+- **The existing library is never modified.** It is read-only for comparison.
 
 ---
 
@@ -484,7 +632,7 @@ Scans both inbox and library for exact duplicates (SHA1 hash comparison).
 
 Finds perceptually similar files — images that look the same even if re-saved at different quality, near-duplicate videos.
 
-**Note:** czkawka_cli is NOT included in the Docker image due to its long build time (~10 min). See [Section 11](#11-optional-build-czkawka-from-source) for the optional build. Without it, Step 2 exits cleanly with a "not found" message and the pipeline continues.
+**Note:** czkawka_cli is NOT included in the Docker image due to its long build time (~10 min). See [Section 13](#13-optional-build-czkawka-from-source) for the optional build. Without it, Step 2 exits cleanly with a "not found" message and the pipeline continues.
 
 ---
 
@@ -495,15 +643,33 @@ Finds perceptually similar files — images that look the same even if re-saved 
 **Reads:** `/data/inbox`  
 **Writes:** `step3_summary.json`, `step3_ai.log`
 
-This is the core step. For each item in the inbox:
+This is the core step. For each item in the inbox it runs four phases in order, stopping as soon as a confident match is found.
 
-**Phase A — Analysis** (Python, no network):
-- Walks the file/folder structure
-- Collects: file types, extensions, sizes, dates, track numbers, subfolder names
-- Extracts embedded metadata (ffprobe for audio/video, exiftool for images)
-- Scores bundle coherence (what fraction of files share the dominant type)
+**Phase A — Heuristics** (local, instant, no network, no AI cost):
 
-**Phase B — Catalog lookup** (Python, free APIs):
+Analyzes folder names, file names, file-type distributions, and directory structure markers. Classifies obvious cases immediately:
+
+| Pattern | Classification |
+|---|---|
+| Folder named `Screenshots/` or files named `Screenshot_*.png` | Screenshots collection |
+| Folder contains `.git`, `package.json`, `Makefile` | Software project / Code |
+| Folder named `*Backup*` or `*Time Machine*` | Archive / Backup |
+| Files named `IMG_XXXX.jpg`, `DSC_XXXX.jpg` in `DCIM/` folder | Camera roll / Photos |
+| Mostly `.stl` + `.gcode` files | 3D model project |
+| Mostly `.epub`/`.mobi` files | Ebook collection |
+| Mostly `.ttf`/`.otf` files | Font collection |
+| Folder named `Season XX` or `S01` | TV show season |
+| Audio files with sequential numbering, no catalog match | Music album (untagged) |
+
+> **Key insight:** If a folder called "Windows Backup 2023" contains thousands of screenshots, LibrAIry understands it's a system backup — not a photo album. The heuristics layer uses the *combination* of folder name + file patterns to make this judgment without any AI.
+
+**Phase B — Library Index** (local, instant, no network):
+
+Before any network call, the library index is consulted. If this artist, movie, or TV show already exists in your library under a specific genre, that genre is enforced — even if the new item would be classified differently.
+
+This is the consistency guarantee: **the same artist always goes to the same genre folder, forever.**
+
+**Phase C — Catalog APIs** (free, fast network):
 
 *For audio files/folders:*
 1. Extract ID3/FLAC/AAC tags via ffprobe
@@ -518,44 +684,16 @@ This is the core step. For each item in the inbox:
 3. Otherwise → try TMDB movie search
 4. On ambiguous result → try TMDB TV search as fallback
 
-**Phase C — AI fallback** (only if catalog fails):
+**Phase D — AI fallback** (only if all above phases fail):
+
 - Builds a structured prompt with full analysis JSON
 - Tries providers in `AI_PROVIDER_ORDER` order
 - Accepts first response that validates and meets confidence threshold
 - Falls back to rule-based classification if all AI providers fail
 
-**Phase D — Path construction:**
-- Normalizes genre (e.g., "hip-hop" → "HipHop")
-- Builds destination path from bundle type + genre + name
-- Generates per-file rename suggestions (track numbers, sanitized names)
+**Hidden file handling:**
 
-**Output** — `step3_summary.json` is a JSON array:
-
-```json
-[
-  {
-    "bundle_type": "MusicAlbum",
-    "suggested_name": "Pink_Floyd_Dark_Side_Of_The_Moon_1973",
-    "recommended_path": "/data/library/RAM/Music/Rock/Albums/Pink_Floyd_Dark_Side_Of_The_Moon_1973/",
-    "confidence": 0.944,
-    "reasoning": "Folder scan: 10 audio files, artist='Pink Floyd' (100%), album='The Dark Side of the Moon'",
-    "genre": "Rock",
-    "category": "Music",
-    "storage_zone": "RAM",
-    "files": [
-      {
-        "original_name": "01 Speak To Me.flac",
-        "rename_to": "01_Speak_To_Me.flac",
-        "recommended_path": "/data/library/RAM/Music/Rock/Albums/Pink_Floyd_Dark_Side_Of_The_Moon_1973/",
-        "track_number": 1,
-        "category": "Audio"
-      }
-    ],
-    "source_path": "/data/inbox/Pink Floyd - Dark Side of the Moon",
-    "is_folder": true
-  }
-]
-```
+Files whose names begin with `.` (hidden files on Unix/macOS) are automatically un-hidden during classification. They are included in the analysis and the resulting file entries have `rename_to` set to the name without the leading dot. The actual rename happens in step 5.
 
 ---
 
@@ -594,27 +732,85 @@ Executes the moves planned in step 3/4.
 - `mv -n` (no-clobber) — never overwrites existing files
 - Collision handling — appends `_1`, `_2` if destination exists
 - Low-confidence items (< 0.5) → `_review_pending/` instead of classified path
+- **Hidden files are renamed** (leading `.` stripped) as they are moved
 - Empty source folders removed after all files are moved
 - Detailed `step5_summary.json` with every action taken
+- **The existing library is never touched.** Step 5 only adds new files.
 
 **After commit:** `step3_summary.json` still exists as an audit trail. Delete it or archive it before running the next batch.
 
 ---
 
-## 9. AI Provider Configuration
+## 10. Classification Intelligence
+
+### How LibrAIry avoids AI mistakes
+
+LibrAIry is designed so that **AI is a last resort, not the foundation.** Most files are classified without any AI call:
+
+```
+Priority chain:
+  1. Heuristics       — instant, local, rule-based (handles ~40% of files)
+  2. Embedded tags    — instant, local (handles ~30% of audio files)
+  3. Catalog APIs     — fast, free network calls (handles ~20% of files)
+  4. AI (Ollama)      — only for the remaining ~10%
+  5. Cloud AI         — only if Ollama also fails
+  6. Fallback rules   — extension-based default path as last resort
+```
+
+This means most files never touch AI at all. For a library of 10,000 files you might invoke AI for only ~1,000. This saves time, cost, and avoids the hallucination errors that AI makes on structured classification tasks.
+
+### Context-aware reasoning examples
+
+The heuristics engine uses human-like reasoning based on context:
+
+| Folder | Files inside | Classification |
+|---|---|---|
+| `Windows Backup 2023/` | Mixed: `.jpg`, `.xml`, `.log`, `.dll` | Archive → `ROM/Archives/Windows_Backup_2023/` |
+| `Screenshots/` | `Screenshot_2024-01-15.png` × 200 | Screenshots → `ROM/Images/Screenshots/` |
+| `my-website/` | `.git/`, `package.json`, `index.js` | Code → `ROM/Misc/Code/my-website/` |
+| `DCIM/` | `IMG_1234.jpg` × 500 | Camera roll → `ROM/Photos/Camera/DCIM/` |
+| `Season 3/` | `.mkv` files | TV show season → `RAM/Shows/General/.../Season_03/` |
+| `Cool_Prints/` | `part1.stl`, `base.stl`, `job.gcode` | 3D project → `RAM/3dModels/Projects/Cool_Prints/` |
+| `My Books/` | `.epub` × 30, `.mobi` × 5 | Ebooks → `ROM/Documents/Books/My_Books/` |
+
+### Library consistency guarantee
+
+The library index (`library_index.json`) tracks every artist, movie, and show that has been organized. On each run:
+
+1. The index is loaded from cache (rebuilt after 24h or if missing)
+2. Before classifying, the artist/title is looked up in the index
+3. If found → the existing genre folder is **enforced**, confidence is raised to 0.99
+4. If not found → normal classification proceeds, result written to index after commit
+
+Example: If Pink Floyd was organized into `Music/Rock/` last month, and a new Pink Floyd album arrives today — even if TMDB or Ollama would classify it as "Alternative" — the index overrides to `Rock`. The structure never drifts.
+
+The index is automatically invalidated and rebuilt from a full library scan if it is more than 24 hours old (configurable via `LIBRARY_INDEX_TTL`).
+
+### Hidden files
+
+Files starting with `.` (dotfiles) are hidden on Unix/macOS systems. LibrAIry automatically detects and un-hides them:
+
+- During step 3, any hidden file gets `unhide: true` in its classification entry
+- During step 5, hidden files are renamed (leading `.` removed) when moved
+- Example: `.hidden_song.mp3` → `hidden_song.mp3` in the library
+
+---
+
+## 11. AI Provider Configuration
 
 ### Priority chain
 
 Classification always tries in this order:
 
 ```
-1. Embedded metadata tags (no network, instant)
-2. Catalog APIs (TMDB, AcoustID, MusicBrainz — free, fast)
-3. AI providers (configured order in AI_PROVIDER_ORDER)
-4. Rule-based fallback (extension → default path)
+1. Heuristics (folder/filename patterns — no network, instant)
+2. Embedded metadata tags (no network, instant)
+3. Catalog APIs (TMDB, AcoustID, MusicBrainz — free, fast)
+4. AI providers (configured order in AI_PROVIDER_ORDER)
+5. Rule-based fallback (extension → default path)
 ```
 
-AI is only invoked when steps 1 and 2 return nothing useful.
+AI is only invoked when steps 1–3 return nothing useful.
 
 ### Configuring the AI order
 
@@ -633,6 +829,14 @@ Providers without a configured key are silently skipped. The pipeline never fail
 
 ### Recommended AI models by use case
 
+**Mac M-series 16 GB (recommended):**
+```env
+AI_PROVIDER_ORDER=ollama,gemini
+OLLAMA_MODEL_PRIMARY=llama3.1:8b
+OLLAMA_MODEL_SECONDARY=qwen2.5:7b
+GEMINI_MODEL=gemini-1.5-flash
+```
+
 **Maximum accuracy (don't care about cost):**
 ```env
 AI_PROVIDER_ORDER=anthropic,openai
@@ -640,24 +844,24 @@ ANTHROPIC_MODEL=claude-3-5-sonnet-20241022
 OPENAI_MODEL=gpt-4o
 ```
 
-**Best free setup:**
+**Best free setup (no paid keys):**
 ```env
 AI_PROVIDER_ORDER=ollama,gemini
 OLLAMA_MODEL_PRIMARY=llama3.1:8b
 GEMINI_MODEL=gemini-1.5-flash
 ```
 
-**Best balance of cost/accuracy:**
-```env
-AI_PROVIDER_ORDER=ollama,openai
-OLLAMA_MODEL_PRIMARY=llama3.1:8b
-OPENAI_MODEL=gpt-4o-mini
-```
-
 **Low-RAM NAS (4GB RAM, no GPU):**
 ```env
 AI_PROVIDER_ORDER=gemini,openai
-# Skip Ollama entirely — GPU-free CPU inference is too slow for batches
+# Skip Ollama entirely — CPU inference is too slow for batches on 4GB RAM
+```
+
+**NAS with 8–12 GB RAM:**
+```env
+AI_PROVIDER_ORDER=ollama,gemini
+OLLAMA_MODEL_PRIMARY=gemma3:4b     # Small, fast, 3GB
+OLLAMA_MODEL_SECONDARY=phi4-mini:3.8b
 ```
 
 ### Confidence threshold
@@ -670,7 +874,7 @@ Any AI result below this threshold is rejected and the next provider is tried. I
 
 ---
 
-## 10. Directory Layout Reference
+## 12. Directory Layout Reference
 
 ### Inside the container
 
@@ -678,7 +882,7 @@ Any AI result below this threshold is rejected and the next provider is tried. I
 /data/
 ├── inbox/                    ← SOURCE: files to process
 │   └── _review_pending/      ← Low-confidence items awaiting manual review
-├── library/                  ← DESTINATION: organized library
+├── library/                  ← DESTINATION: organized library (never modified)
 │   ├── RAM/                  ← Active media
 │   └── ROM/                  ← Archive storage
 ├── quarantine/
@@ -687,14 +891,15 @@ Any AI result below this threshold is rejected and the next provider is tried. I
     ├── step1_summary.json
     ├── step2_summary.json
     ├── step3_summary.json    ← Main classification output
-    ├── step3_ai.log          ← Per-file AI decision log
+    ├── step3_ai.log          ← Per-file decision log
     ├── step4_summary.json
     ├── step5_summary.json
+    ├── library_index.json    ← Consistency index (auto-generated)
     └── pipeline.log          ← Combined run log
 
 /workspace/
 └── inbox-processor/
-    ├── catalog/              ← Python catalog package
+    ├── catalog/              ← Python intelligence layer
     └── scripts/              ← Pipeline shell scripts
 ```
 
@@ -711,16 +916,19 @@ Any AI result below this threshold is rejected and the next provider is tried. I
 | 3D model | `/library/RAM/3dModels/Projects/{Name}/` |
 | Tutorial | `/library/RAM/Tutorials/{Genre}/{Name}/` |
 | Software (macOS) | `/library/RAM/Software/macos/{UseCase}/{Name}/` |
+| Software project / Code | `/library/ROM/Misc/Code/{Name}/` |
 | Photo album | `/library/ROM/Photos/{Subcategory}/{Name}/` |
-| Screenshot | `/library/ROM/Images/Screenshots/` (standalone) |
+| Camera roll | `/library/ROM/Photos/Camera/{Name}/` |
+| Screenshot | `/library/ROM/Images/Screenshots/` |
+| Ebook collection | `/library/ROM/Documents/Books/{Name}/` |
+| Font collection | `/library/ROM/Misc/Fonts/{Name}/` |
 | Document set | `/library/ROM/Documents/{Subcategory}/{Name}/` |
-| Archive | `/library/ROM/Archives/{Name}/` |
-| Tagged project | `/library/ROM/Tags/{#tag}/` |
+| Archive / Backup | `/library/ROM/Archives/{Name}/` |
 | Unsorted | `/library/RAM/Misc/Unsorted/{Name}` |
 
 ---
 
-## 11. Optional: Build czkawka from Source
+## 13. Optional: Build czkawka from Source
 
 czkawka provides perceptual duplicate detection (similar images, near-duplicate videos). It requires Rust and takes ~10 minutes to build.
 
@@ -764,7 +972,65 @@ docker commit librairy librairy:with-czkawka
 
 ---
 
-## 12. NAS Deployment Notes
+## 14. NAS Deployment Notes
+
+### Unraid (primary target)
+
+1. Open the **Apps** tab and install the **Docker Compose Manager** plugin
+2. Create a new compose stack, point it to the `LibrAIry` folder
+3. Create a share for your library (e.g., `Media`) with the path `/mnt/user/Media/`
+4. Edit `.env`:
+   ```env
+   HOST_INBOX_DIR=/mnt/user/Media/inbox
+   HOST_LIBRARY_DIR=/mnt/user/Media/library
+   HOST_QUARANTINE_DIR=/mnt/user/Media/quarantine
+   HOST_REPORTS_DIR=/mnt/user/appdata/librairy/reports
+   ```
+5. Schedule runs with the **User Scripts** plugin:
+   ```bash
+   # Run dry-run nightly
+   docker compose -f /mnt/user/appdata/librairy/docker-compose.yml \
+     run --rm librairy bash -c "./main.sh"
+   ```
+6. If Ollama is running on the same Unraid server, find its Docker bridge IP:
+   ```bash
+   ip route | grep docker
+   # Use that IP: OLLAMA_HOST=http://172.17.0.1:11434
+   ```
+
+### TrueNAS Scale
+
+1. Go to **Apps → Discover Apps → Custom App**
+2. Use the **docker-compose.yml** from this project
+3. Set volume paths to your TrueNAS datasets:
+   ```env
+   HOST_INBOX_DIR=/mnt/pool/media/inbox
+   HOST_LIBRARY_DIR=/mnt/pool/media/library
+   ```
+4. TrueNAS Scale uses K3s (Kubernetes), so Docker Compose runs through a compatibility layer. For best results, use the native **App** interface or run LibrAIry from a VM/jail with Docker installed.
+
+### Ubuntu Server / Generic Linux
+
+```bash
+# Install Docker
+curl -fsSL https://get.docker.com | sh
+sudo usermod -aG docker $USER
+
+# Clone and configure
+git clone https://github.com/solosoyfranco/LibrAIry.git
+cd LibrAIry
+./setup.sh
+
+# Run
+docker compose run --rm librairy ./main.sh
+```
+
+Set up a cron job for scheduled runs:
+```bash
+crontab -e
+# Run classification every night at 2am:
+0 2 * * * cd /opt/LibrAIry && docker compose run --rm librairy bash -c "./main.sh" >> /var/log/librairy.log 2>&1
+```
 
 ### Synology DSM
 
@@ -777,29 +1043,20 @@ docker commit librairy librairy:with-czkawka
      run --rm librairy bash -c "./main.sh && ./step5_commit.sh"
    ```
 
-### QNAP Container Station
+### Folder path examples by platform
 
-1. Install **Container Station** from App Center
-2. Import `docker-compose.yml`
-3. Edit the compose file to use absolute paths for volumes (QNAP requires this)
-
-### Unraid
-
-Add the `LibrAIry` project folder to a share. Use the **User Scripts** plugin to schedule pipeline runs. The `docker compose run` command works natively in Unraid's terminal.
-
-### Folder path examples by NAS
-
-| NAS | Typical library path |
+| Platform | Typical library path |
 |---|---|
+| Unraid | `/mnt/user/Media/library` |
+| TrueNAS Scale | `/mnt/pool/media/library` |
+| Ubuntu Server | `/mnt/data/library` |
 | Synology | `/volume1/Media/library` |
 | QNAP | `/share/Media/library` |
-| Unraid | `/mnt/user/Media/library` |
-| Generic Linux | `/mnt/data/library` |
-| macOS | `/Volumes/NAS/library` |
+| macOS | `/Volumes/NAS/library` or `~/librairy/library` |
 
 ---
 
-## 13. Troubleshooting
+## 15. Troubleshooting
 
 ### "fpcalc not found"
 
@@ -818,11 +1075,11 @@ Set `TMDB_KEY` in `.env`. Re-run `./setup.sh` to verify connectivity.
 
 ### Step 3 is very slow
 
-This usually means catalog lookups are failing and every item falls through to Ollama AI.
+This usually means heuristics + catalog lookups are failing and every item falls through to Ollama AI.
 
 Check the log:
 ```bash
-cat /data/reports/step3_ai.log | grep "📖\|🤖"
+cat /data/reports/step3_ai.log | grep "heuristic\|📖\|🤖"
 ```
 
 If you see many `🤖 Catalog miss`, verify your TMDB and AcoustID keys are set correctly.
@@ -832,15 +1089,22 @@ For audio files, ensure `fpcalc` is working:
 fpcalc /data/inbox/some_song.mp3
 ```
 
-### Ollama not reachable
+### Ollama not reachable from container
 
 ```bash
 # Test from inside the container
 curl http://host.docker.internal:11434/api/tags
+
+# If that fails, try the host IP directly
+curl http://192.168.1.XX:11434/api/tags
 ```
 
 If this fails:
 - Check Ollama is running: `ollama list` on the host
+- Check Ollama is listening on `0.0.0.0` (not just localhost):
+  ```bash
+  OLLAMA_HOST=0.0.0.0 ollama serve
+  ```
 - Verify the port: `OLLAMA_HOST=http://host.docker.internal:11434`
 - On Linux, `host.docker.internal` may not work — use the host's actual IP instead:
   ```env
@@ -849,10 +1113,23 @@ If this fails:
 
 ### Paths look wrong in dry run
 
-Check `step3_ai.log` for the `confidence` value and `reasoning` field of each item. If AI is returning garbage:
+Check `step3_ai.log` for the `confidence` value and `reasoning` field. If AI is returning garbage:
 - Try a different model: `OLLAMA_MODEL_PRIMARY=qwen2.5:7b`
 - Lower the confidence threshold temporarily: `CONFIDENCE_THRESHOLD=0.70`
 - Check if the item is ending up in fallback mode (confidence ~0.60)
+
+### Library index not updating after commit
+
+The library index cache (`library_index.json`) refreshes automatically after 24 hours. To force an immediate rebuild:
+
+```bash
+rm /data/reports/library_index.json
+# Re-run step 3 — the index will be rebuilt from scratch
+```
+
+### Artist/show ending up in wrong genre despite library index
+
+The index only overrides when an exact normalized name match is found. Check if the new item's artist name differs slightly (e.g., "The Beatles" vs "Beatles"). The index uses alphanumeric normalization, so "The Beatles" and "Beatles" map to different keys. In this case, add the artist manually to the index or check the existing library folder name.
 
 ### Files not moving in step 5
 
@@ -865,12 +1142,24 @@ If `step5_commit.sh` runs but nothing moves:
 
 These items had confidence below 0.5. Check why:
 ```bash
-cat /data/reports/step3_summary.json | jq '.[] | select(.confidence < 0.5) | {source: .source_path, confidence: .confidence, reasoning: .reasoning}'
+cat /data/reports/step3_summary.json | \
+  jq '.[] | select(.confidence < 0.5) | {source: .source_path, confidence: .confidence, reasoning: .reasoning}'
 ```
+
+### Hidden files not being un-hidden
+
+Hidden file detection runs in the catalog layer. If a hidden file is going through the AI path (not heuristics or catalog), the AI prompt does not explicitly flag it. To force un-hiding for all files starting with `.`, run:
+
+```bash
+# Preview hidden files in your inbox
+find /data/inbox -name '.*' -not -name '.DS_Store' -not -name '.git'
+```
+
+Hidden files classified by heuristics or catalog APIs are always un-hidden automatically.
 
 ---
 
-## 14. Environment Variable Reference
+## 16. Environment Variable Reference
 
 | Variable | Default | Description |
 |---|---|---|
@@ -902,6 +1191,7 @@ cat /data/reports/step3_summary.json | jq '.[] | select(.confidence < 0.5) | {so
 | `MAX_FILES_TO_ANALYZE` | `0` | Files analyzed per item (0 = unlimited) |
 | `BATCH_SIZE` | `50` | Processing batch size |
 | `CATALOG_DIR` | `/workspace/inbox-processor/catalog` | Catalog Python package path |
+| `LIBRARY_INDEX_TTL` | `86400` | Seconds before library index is rebuilt (24h) |
 | `DASHBOARD_PORT` | `8080` | Web dashboard port (Phase 3) |
 | `CZKAWKA_EXTENSIONS` | `jpg,png,...` | Extensions scanned by czkawka |
 | `IGNORE_PATTERNS` | `` | Extra patterns to skip (colon-separated) |

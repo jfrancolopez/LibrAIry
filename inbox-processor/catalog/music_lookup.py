@@ -248,6 +248,7 @@ def _build_result(artist, album, year, genre, track_title, source_path, confiden
         metadata_extra={'year': year},
     )
     result['subcategory'] = 'Albums' if album_c else 'Singles'
+    result['_artist'] = artist   # raw artist name — used by library_index consistency check
     return result
 
 

@@ -179,6 +179,7 @@ def _build_movie_result(tmdb, file_path, confidence, reasoning, parsed):
     )
     result['video_context'] = 'movie'
     result['subcategory'] = 'Movies'
+    result['_title'] = title   # raw title — used by library_index consistency check
     return result
 
 
@@ -214,6 +215,7 @@ def _build_tv_result(tmdb, file_path, confidence, reasoning, parsed):
     )
     result['video_context'] = 'tv_show'
     result['subcategory'] = 'Shows'
+    result['_title'] = title   # raw title — used by library_index consistency check
     result['subfolder_plan'] = {
         'enabled': bool(season),
         'map': {},
