@@ -3,8 +3,8 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 
 # ============================================================
-# STEP 3 — AI-Powered File Classification
-# Optimized for local Ollama models with robust error handling
+# STEP 3 — Classification: Catalog APIs first, AI as fallback
+# Priority: embedded tags → AcoustID/TMDB → Ollama → cloud AI
 # ============================================================
 
 # Configuration
@@ -14,12 +14,18 @@ REPORTS_DIR="/data/reports"
 REPORT_FILE="$REPORTS_DIR/step3_summary.json"
 QUARANTINE_DIR="/data/quarantine"
 
+# Catalog Configuration (free APIs — no subscription required)
+CATALOG_DIR="${CATALOG_DIR:-/workspace/inbox-processor/catalog}"
+ACOUSTID_KEY="${ACOUSTID_KEY:-}"   # free at acoustid.org
+TMDB_KEY="${TMDB_KEY:-}"           # free at themoviedb.org
+export ACOUSTID_KEY TMDB_KEY LIBRARY_DIR
+
 # Ollama Configuration
 OLLAMA_HOST="${OLLAMA_HOST:-http://192.168.1.94:11434}"
 OLLAMA_MODEL_PRIMARY="${OLLAMA_MODEL:-llama3.1:8b}"
 OLLAMA_MODEL_SECONDARY="${OLLAMA_MODEL_SECONDARY:-qwen2.5:7b}"
 
-# AI Provider Configuration
+# AI Provider Configuration (fallback only)
 USE_MULTI_AI="${USE_MULTI_AI:-true}"
 OPENAI_API_KEY="${OPENAI_API_KEY:-}"
 OPENAI_MODEL="${OPENAI_MODEL:-gpt-4o-mini}"
@@ -1329,14 +1335,17 @@ def main():
     
     if bundle_type == "VideoBundle":
         data['recommended_path'] = f"/data/library/{storage_zone}/Movies/{genre}/{suggested_name}/"
-    elif bundle_type == "MusicAlbum":
-        data['recommended_path'] = f"/data/library/{storage_zone}/Music/{genre}/Albums/{suggested_name}/"
+    elif bundle_type in ("MusicAlbum", "MusicSingle"):
+        sub = "Singles" if bundle_type == "MusicSingle" else "Albums"
+        data['recommended_path'] = f"/data/library/{storage_zone}/Music/{genre}/{sub}/{suggested_name}/"
     elif bundle_type == "MusicVideo":
         video_context = data.get('video_context', 'music_video')
         if video_context == "concert":
             data['recommended_path'] = f"/data/library/{storage_zone}/MusicVideos/{genre}/LivePerformances/{suggested_name}/"
         else:
             data['recommended_path'] = f"/data/library/{storage_zone}/MusicVideos/{genre}/Official/{suggested_name}/"
+    elif bundle_type == "TVShow":
+        data['recommended_path'] = f"/data/library/{storage_zone}/Shows/{genre}/{suggested_name}/"
     elif bundle_type == "PhotoAlbum":
         data['recommended_path'] = f"/data/library/{storage_zone}/Photos/{subcategory}/{suggested_name}/"
     elif bundle_type == "DocumentSet":
@@ -1478,16 +1487,32 @@ for item in "${CANDIDATES[@]}"; do
     AI_SUCCESS=false
     BUNDLE_JSON_FILE="$TEMP_DIR/bundle_$$_$(date +%s%N).json"
     FINAL_CONFIDENCE=0.0
-    
+
+    # ── Catalog lookup (free APIs, no AI cost) ──────────────
+    CATALOG_OUT="$TEMP_DIR/catalog_$$_$(date +%s%N).json"
+    if python3 "$CATALOG_DIR/catalog_main.py" "$item" "$CATALOG_OUT" 2>>"$LOG_FILE"; then
+        cp "$CATALOG_OUT" "$BUNDLE_JSON_FILE"
+        AI_SUCCESS=true
+        FINAL_CONFIDENCE=$(jq -r '.confidence // 0.0' "$BUNDLE_JSON_FILE" 2>/dev/null || echo "0.0")
+        log "  📖 Catalog matched (confidence: $FINAL_CONFIDENCE) — skipping AI"
+    fi
+    rm -f "$CATALOG_OUT" 2>/dev/null || true
+    # ────────────────────────────────────────────────────────
+
     declare -a AI_CHAIN=("ollama_primary")
-    
+
     if [[ "$USE_MULTI_AI" == "true" ]]; then
         AI_CHAIN+=("ollama_secondary")
         [[ -n "$OPENAI_API_KEY" ]] && AI_CHAIN+=("openai")
         [[ -n "$ANTHROPIC_API_KEY" ]] && AI_CHAIN+=("anthropic")
     fi
-    
+
+    if [[ "$AI_SUCCESS" == false ]]; then
+      log "  🤖 Catalog miss — trying AI chain"
+    fi
+
     for provider in "${AI_CHAIN[@]}"; do
+    [[ "$AI_SUCCESS" == true ]] && break
         PROMPT_FILE="$TEMP_DIR/prompt_$$_$(date +%s%N).txt"
         RAW_RESPONSE="$TEMP_DIR/raw_$$_$(date +%s%N).json"
         CLEAN_JSON="$TEMP_DIR/clean_$$_$(date +%s%N).json"
