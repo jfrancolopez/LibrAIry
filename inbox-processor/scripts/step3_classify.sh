@@ -1099,10 +1099,29 @@ call_anthropic_ai() {
 EOF
 }
 
+call_gemini_ai() {
+    local prompt_file="$1"
+    local output_file="$2"
+
+    if [[ -z "${GEMINI_API_KEY:-}" ]]; then
+        return 1
+    fi
+
+    curl -sS --max-time "$AI_TIMEOUT" \
+        "https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL:-gemini-1.5-flash}:generateContent?key=${GEMINI_API_KEY}" \
+        -H "Content-Type: application/json" \
+        -d @- <<EOF > "$output_file" 2>/dev/null
+{
+  "contents": [{"parts": [{"text": $(jq -Rs . < "$prompt_file")}]}],
+  "generationConfig": {"temperature": 0.0, "maxOutputTokens": 4096}
+}
+EOF
+}
+
 extract_json_from_response() {
     local response_file="$1"
     local output_file="$2"
-    
+
     jq -r '.response' "$response_file" 2>/dev/null | \
         sed -E '1s/^```(json)?[[:space:]]*//; $s/[[:space:]]*```$//' > "$output_file"
 }
@@ -1110,7 +1129,7 @@ extract_json_from_response() {
 extract_openai_response() {
     local response_file="$1"
     local output_file="$2"
-    
+
     jq -r '.choices[0].message.content' "$response_file" 2>/dev/null | \
         sed -E '1s/^```(json)?[[:space:]]*//; $s/[[:space:]]*```$//' > "$output_file"
 }
@@ -1118,8 +1137,16 @@ extract_openai_response() {
 extract_anthropic_response() {
     local response_file="$1"
     local output_file="$2"
-    
+
     jq -r '.content[0].text' "$response_file" 2>/dev/null | \
+        sed -E '1s/^```(json)?[[:space:]]*//; $s/[[:space:]]*```$//' > "$output_file"
+}
+
+extract_gemini_response() {
+    local response_file="$1"
+    local output_file="$2"
+
+    jq -r '.candidates[0].content.parts[0].text' "$response_file" 2>/dev/null | \
         sed -E '1s/^```(json)?[[:space:]]*//; $s/[[:space:]]*```$//' > "$output_file"
 }
 
@@ -1499,16 +1526,30 @@ for item in "${CANDIDATES[@]}"; do
     rm -f "$CATALOG_OUT" 2>/dev/null || true
     # ────────────────────────────────────────────────────────
 
-    declare -a AI_CHAIN=("ollama_primary")
-
-    if [[ "$USE_MULTI_AI" == "true" ]]; then
-        AI_CHAIN+=("ollama_secondary")
-        [[ -n "$OPENAI_API_KEY" ]] && AI_CHAIN+=("openai")
-        [[ -n "$ANTHROPIC_API_KEY" ]] && AI_CHAIN+=("anthropic")
-    fi
+    # Build AI chain from AI_PROVIDER_ORDER (comma-separated env var)
+    declare -a AI_CHAIN=()
+    IFS=',' read -ra _PROVIDER_ORDER <<< "${AI_PROVIDER_ORDER:-ollama,openai,anthropic,gemini}"
+    for _p in "${_PROVIDER_ORDER[@]}"; do
+        _p="${_p// /}"   # trim whitespace
+        case "$_p" in
+            ollama)
+                AI_CHAIN+=("ollama_primary")
+                [[ "${USE_MULTI_AI:-true}" == "true" ]] && AI_CHAIN+=("ollama_secondary")
+                ;;
+            openai)
+                [[ -n "${OPENAI_API_KEY:-}" ]] && AI_CHAIN+=("openai")
+                ;;
+            anthropic)
+                [[ -n "${ANTHROPIC_API_KEY:-}" ]] && AI_CHAIN+=("anthropic")
+                ;;
+            gemini)
+                [[ -n "${GEMINI_API_KEY:-}" ]] && AI_CHAIN+=("gemini")
+                ;;
+        esac
+    done
 
     if [[ "$AI_SUCCESS" == false ]]; then
-      log "  🤖 Catalog miss — trying AI chain"
+        log "  🤖 Catalog miss — AI chain: [${AI_CHAIN[*]}]"
     fi
 
     for provider in "${AI_CHAIN[@]}"; do
@@ -1539,6 +1580,11 @@ for item in "${CANDIDATES[@]}"; do
                 log "  🌐 Trying Anthropic ($ANTHROPIC_MODEL)"
                 call_anthropic_ai "$PROMPT_FILE" "$RAW_RESPONSE" && \
                     extract_anthropic_response "$RAW_RESPONSE" "$CLEAN_JSON"
+                ;;
+            gemini)
+                log "  🌐 Trying Gemini (${GEMINI_MODEL:-gemini-1.5-flash})"
+                call_gemini_ai "$PROMPT_FILE" "$RAW_RESPONSE" && \
+                    extract_gemini_response "$RAW_RESPONSE" "$CLEAN_JSON"
                 ;;
         esac
         

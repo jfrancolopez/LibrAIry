@@ -1,0 +1,121 @@
+# =============================================================================
+# LibrAIry — Docker Compose
+# =============================================================================
+# Usage:
+#   docker compose run --rm librairy          # interactive shell
+#   docker compose run --rm librairy ./main.sh  # run full pipeline
+#
+# First time? Run the setup wizard first:
+#   ./setup.sh
+# =============================================================================
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # librairy — main pipeline (interactive, run on demand)
+  # ---------------------------------------------------------------------------
+  librairy:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: librairy:latest
+    container_name: librairy
+    hostname: librairy
+
+    # All configuration comes from .env (copy .env.example → .env first)
+    env_file: .env
+
+    # ── Volume mounts ─────────────────────────────────────────────────────────
+    # HOST paths come from .env variables (change .env, not this file).
+    # Container always sees fixed /data/* paths internally.
+    volumes:
+      - ${HOST_INBOX_DIR:-./data/inbox}:/data/inbox
+      - ${HOST_LIBRARY_DIR:-./data/library}:/data/library
+      - ${HOST_QUARANTINE_DIR:-./data/quarantine}:/data/quarantine
+      - ${HOST_REPORTS_DIR:-./data/reports}:/data/reports
+      # Mount scripts as read-only so edits on host are reflected immediately
+      - ./inbox-processor:/workspace/inbox-processor:ro
+
+    working_dir: /workspace/inbox-processor/scripts
+
+    # Keep stdin open for interactive use
+    stdin_open: true
+    tty: true
+
+    # Extra hosts so Ollama on the Docker host is reachable
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    # Restart policy — "no" because this is a run-on-demand service
+    restart: "no"
+
+  # ---------------------------------------------------------------------------
+  # watcher — optional: auto-trigger pipeline when inbox receives files
+  # Enable with: docker compose --profile watch up -d
+  # ---------------------------------------------------------------------------
+  watcher:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: librairy:latest
+    container_name: librairy-watcher
+    hostname: librairy-watcher
+    profiles: ["watch"]
+
+    env_file: .env
+
+    volumes:
+      - ${HOST_INBOX_DIR:-./data/inbox}:/data/inbox
+      - ${HOST_LIBRARY_DIR:-./data/library}:/data/library
+      - ${HOST_QUARANTINE_DIR:-./data/quarantine}:/data/quarantine
+      - ${HOST_REPORTS_DIR:-./data/reports}:/data/reports
+      - ./inbox-processor:/workspace/inbox-processor:ro
+
+    working_dir: /workspace/inbox-processor/scripts
+
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    restart: unless-stopped
+
+    # Watch /data/inbox for new files, run pipeline when something arrives.
+    # Uses inotifywait if available, otherwise polls every 60s.
+    command: >
+      bash -c "
+        echo '[watcher] Starting LibrAIry file watcher...';
+        while true; do
+          new_files=\$$(find /data/inbox -mindepth 1 -not -name '.*' | wc -l);
+          if [[ \$$new_files -gt 0 ]]; then
+            echo '[watcher] Detected \$$new_files item(s) — running pipeline...';
+            bash /workspace/inbox-processor/scripts/main.sh 2>&1 || true;
+            echo '[watcher] Pipeline done. Sleeping 30s before next check.';
+            sleep 30;
+          else
+            sleep 60;
+          fi;
+        done
+      "
+
+  # ---------------------------------------------------------------------------
+  # dashboard — web UI (Phase 3, placeholder)
+  # Enable with: docker compose --profile dashboard up -d
+  # ---------------------------------------------------------------------------
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: librairy:latest
+    container_name: librairy-dashboard
+    profiles: ["dashboard"]
+    env_file: .env
+    volumes:
+      - ${HOST_LIBRARY_DIR:-./data/library}:/data/library:ro
+      - ${HOST_REPORTS_DIR:-./data/reports}:/data/reports:ro
+      - ./inbox-processor:/workspace/inbox-processor:ro
+    ports:
+      - "${DASHBOARD_PORT:-8080}:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    command: >
+      bash -c "echo '[dashboard] Web dashboard coming in Phase 3' && sleep infinity"
