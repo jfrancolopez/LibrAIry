@@ -6,6 +6,7 @@ from typing import Any
 from urllib import parse, request
 
 from librairy.ai.base import AIAnswer, HealthResult, ProviderConfig
+from librairy.ai.prompt import validate_ai_response
 
 OPENAI_ENDPOINT = "https://api.openai.com"
 ANTHROPIC_ENDPOINT = "https://api.anthropic.com"
@@ -105,10 +106,7 @@ def _post_json(
 def _answer_from_text(content: object) -> AIAnswer | None:
     if not isinstance(content, str):
         return None
-    try:
-        return AIAnswer.model_validate(json.loads(content))
-    except (json.JSONDecodeError, ValueError):
-        return None
+    return validate_ai_response(content).answer
 
 
 def _prompt_text(view: Any) -> str:

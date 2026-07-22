@@ -7,6 +7,7 @@ from typing import Any
 from urllib import error, request
 
 from librairy.ai.base import AIAnswer, HealthResult, ProviderConfig
+from librairy.ai.prompt import validate_ai_response
 
 
 @dataclass
@@ -66,14 +67,8 @@ def _json_request(
 def _answer_from_payload(payload: dict[str, Any]) -> AIAnswer | None:
     raw = payload.get("response", payload)
     if isinstance(raw, str):
-        try:
-            raw = json.loads(raw)
-        except json.JSONDecodeError:
-            return None
-    try:
-        return AIAnswer.model_validate(raw)
-    except ValueError:
-        return None
+        return validate_ai_response(raw).answer
+    return validate_ai_response(json.dumps(raw)).answer
 
 
 def _prompt_text(view: Any) -> str:

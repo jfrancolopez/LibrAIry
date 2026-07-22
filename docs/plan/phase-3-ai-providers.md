@@ -150,9 +150,9 @@ Add AI as one more evidence source in the classification cascade — behind the 
 **Depends on:** P3-04
 **Description:** One prompt template (system+user) describing the 8 categories and the JSON contract, taking only a `RedactedItemView`; response extraction (fence-tolerant) + strict Pydantic validation + name-field sanitization (reject path separators, length caps).
 **Acceptance criteria:**
-- [ ] Valid mocked answers become `AIAnswer`s; each malformation class (bad enum, missing key, path in a name field, confidence out of range) is discarded with a typed reason.
-- [ ] Prompt snapshot test: rendering the prompt for the hostile fixture contains no redacted material.
-- [ ] Property test: no validated `AIAnswer` field can render a template output that fails containment.
+- [x] Valid mocked answers become `AIAnswer`s; each malformation class (bad enum, missing key, path in a name field, confidence out of range) is discarded with a typed reason.
+- [x] Prompt snapshot test: rendering the prompt for the hostile fixture contains no redacted material.
+- [x] Property test: no validated `AIAnswer` field can render a template output that fails containment.
 **Size:** M
 
 ### P3-06 Orchestrator + cascade integration
