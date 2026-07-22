@@ -133,10 +133,10 @@ Make the library *findable* and the system *tunable*: instant search with facets
 **Depends on:** P7-01
 **Description:** Per Design Constraints: category cards with counts, index-derived folder drill-down, item detail composing the Phase-6 preview partial + metadata + evidence + group siblings + history links.
 **Acceptance criteria:**
-- [ ] All 8 categories navigable on the sandbox; counts correct; folder listing paginated.
-- [ ] Detail shows preview, metadata, evidence with source markers, siblings.
-- [ ] Zero mutating affordances (template grep test: no forms/buttons that write, beyond navigation).
-- [ ] No per-request filesystem walking (call test on a browse request — DB only, except preview streaming).
+- [x] All 8 categories navigable on the sandbox; counts correct; folder listing paginated.
+- [x] Detail shows preview, metadata, evidence with source markers, siblings.
+- [x] Zero mutating affordances (template grep test: no forms/buttons that write, beyond navigation).
+- [x] No per-request filesystem walking (call test on a browse request — DB only, except preview streaming).
 **Size:** M
 
 ### P7-04 Settings screen

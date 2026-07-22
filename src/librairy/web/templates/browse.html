@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block content %}
+  <p class="status">[OK] READ-ONLY BROWSE</p>
+  <h1>Browse</h1>
+  <div class="dashboard-grid">
+    {% for category, count in categories %}
+      <a class="metric" href="/browse/{{ category }}"><strong>{{ count }}</strong><span>{{ category }}</span></a>
+    {% endfor %}
+  </div>
+{% endblock %}

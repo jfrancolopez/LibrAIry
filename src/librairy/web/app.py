@@ -22,6 +22,7 @@ from librairy.web.auth import (
     set_admin_password,
     verify_admin_password,
 )
+from librairy.web.browse import browse_category, browse_home, item_detail
 from librairy.web.commit import (
     CommitState,
     commit_confirm_data,
@@ -462,6 +463,40 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             request,
             "partials/search_results.html",
             search_data(conn, settings, q, filters),
+        )
+
+    @app.get("/browse", response_class=HTMLResponse)
+    def browse(request: Request) -> HTMLResponse:
+        return TEMPLATES.TemplateResponse(
+            request,
+            "browse.html",
+            {"title": "Browse", **browse_home(conn)},
+        )
+
+    @app.get("/browse/{category}", response_class=HTMLResponse)
+    def browse_category_route(
+        request: Request, category: str, folder: str = "", page: int = 1
+    ) -> HTMLResponse:
+        try:
+            data = browse_category(conn, category, folder=folder, page=page)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return TEMPLATES.TemplateResponse(
+            request,
+            "browse_category.html",
+            {"title": "Browse", **data},
+        )
+
+    @app.get("/items/{item_id}", response_class=HTMLResponse)
+    def item_detail_route(request: Request, item_id: int) -> HTMLResponse:
+        try:
+            data = item_detail(conn, settings, item_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return TEMPLATES.TemplateResponse(
+            request,
+            "item_detail.html",
+            {"title": "Item Detail", **data},
         )
 
     @app.exception_handler(404)
