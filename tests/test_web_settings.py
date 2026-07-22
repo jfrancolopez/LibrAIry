@@ -174,6 +174,23 @@ def test_add_named_ollama_endpoint_and_test_health(tmp_path: Path, monkeypatch) 
     assert row["available_models"] == '["qwen3:8b"]'
 
 
+def test_add_ollama_endpoint_rejects_invalid_urls(tmp_path: Path) -> None:
+    client, conn, _ = client_for(tmp_path, OLLAMA_HOST="")
+
+    for url in ("ollama.test:11434", "file:///tmp/socket"):
+        response = client.post(
+            "/settings/providers/ollama",
+            data={"name": f"bad-{url[0]}", "url": url, "model": "qwen3:8b"},
+            headers={"x-csrf-token": client.cookies["csrf_token"]},
+        )
+
+        assert response.status_code == 422
+        assert "Ollama URL must be http(s) with a hostname" in response.text
+
+    chain = provider_chain(conn, client.app.state.settings)
+    assert not chain
+
+
 def test_provider_order_and_disable_change_next_chain(tmp_path: Path) -> None:
     client, conn, settings = client_for(tmp_path, OPENAI_API_KEY="key")
     client.post(

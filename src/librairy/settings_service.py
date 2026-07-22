@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from dataclasses import dataclass
+from urllib.parse import urlparse
 
 from librairy.ai.registry import (
     configured_providers,
@@ -72,12 +73,19 @@ def add_ollama_endpoint(
     model = model.strip()
     if not name or not url or not model:
         raise SettingsValidationError("name, URL, and model are required")
+    _validate_ollama_url(url)
     endpoints = ollama_endpoints(conn, settings)
     if any(str(endpoint.get("name")) == name for endpoint in endpoints):
         raise SettingsValidationError("provider name already exists")
     endpoints.append({"name": name, "url": url, "model": model, "enabled": True})
     set_ollama_endpoints(conn, endpoints)
     _journal(conn, "ai.ollama.endpoints", "add", name)
+
+
+def _validate_ollama_url(url: str) -> None:
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise SettingsValidationError("Ollama URL must be http(s) with a hostname")
 
 
 def remove_ollama_endpoint(conn: sqlite3.Connection, settings: Settings, name: str) -> None:
