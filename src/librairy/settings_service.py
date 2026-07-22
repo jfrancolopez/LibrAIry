@@ -40,6 +40,8 @@ class RuntimeSettingsView:
     templates: dict[str, str]
     dedup: dict[str, bool]
     keys: dict[str, str]
+    content_search_enabled: bool
+    backup: dict[str, object]
 
 
 def settings_page_data(conn: sqlite3.Connection, settings: Settings) -> dict[str, object]:
@@ -153,13 +155,42 @@ def runtime_settings(conn: sqlite3.Connection, settings: Settings) -> RuntimeSet
             "tmdb": _key_status(settings.tmdb_key.get_secret_value()),
             "acoustid": _key_status(settings.acoustid_key.get_secret_value()),
         },
+        content_search_enabled=_setting_bool(
+            conn,
+            "content_search.enabled",
+            settings.content_search_enabled,
+        ),
+        backup={
+            "enabled": _setting_bool(conn, "backup.enabled", settings.backup_enabled),
+            "remote": _setting_value(conn, "backup.remote", settings.backup_remote),
+            "bandwidth_limit": _setting_value(
+                conn,
+                "backup.bandwidth_limit",
+                settings.backup_bandwidth_limit,
+            ),
+            "schedule": _setting_value(conn, "backup.schedule", settings.backup_schedule),
+            "include_db_snapshot": _setting_bool(
+                conn,
+                "backup.include_db_snapshot",
+                settings.backup_include_db_snapshot,
+            ),
+        },
     )
 
 
 def effective_settings(conn: sqlite3.Connection, settings: Settings) -> Settings:
     view = runtime_settings(conn, settings)
     return settings.model_copy(
-        update={"confidence_threshold": view.confidence_threshold, "batch_size": view.batch_size}
+        update={
+            "confidence_threshold": view.confidence_threshold,
+            "batch_size": view.batch_size,
+            "content_search_enabled": view.content_search_enabled,
+            "backup_enabled": bool(view.backup["enabled"]),
+            "backup_remote": str(view.backup["remote"]),
+            "backup_bandwidth_limit": str(view.backup["bandwidth_limit"]),
+            "backup_schedule": str(view.backup["schedule"]),
+            "backup_include_db_snapshot": bool(view.backup["include_db_snapshot"]),
+        }
     )
 
 
@@ -172,6 +203,8 @@ def save_settings(
     confidence_threshold: float | None = None,
     batch_size: int | None = None,
     dedup_values: dict[str, bool] | None = None,
+    content_search_enabled: bool | None = None,
+    backup_values: dict[str, object] | None = None,
 ) -> None:
     if confidence_threshold is not None and not 0 <= confidence_threshold <= 1:
         raise SettingsValidationError("confidence threshold must be between 0 and 1")
@@ -196,6 +229,16 @@ def save_settings(
             old = getattr(dedup_options(conn), key)
             set_dedup_option(conn, key, value)
             _journal_if_changed(conn, f"dedup.{key}", old, value)
+    if content_search_enabled is not None:
+        old = _setting_bool(conn, "content_search.enabled", settings.content_search_enabled)
+        _set_json(conn, "content_search.enabled", content_search_enabled)
+        _journal_if_changed(conn, "content_search.enabled", old, content_search_enabled)
+    if backup_values:
+        for key, value in backup_values.items():
+            setting_key = f"backup.{key}"
+            old = _setting_value(conn, setting_key, getattr(settings, f"backup_{key}"))
+            _set_json(conn, setting_key, value)
+            _journal_if_changed(conn, setting_key, old, value)
 
 
 def example_path(conn: sqlite3.Connection, category: str, settings: Settings) -> str:
@@ -236,6 +279,16 @@ def _setting_float(conn: sqlite3.Connection, key: str, default: float) -> float:
 def _setting_int(conn: sqlite3.Connection, key: str, default: int) -> int:
     row = conn.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
     return int(json.loads(row["value"])) if row else default
+
+
+def _setting_bool(conn: sqlite3.Connection, key: str, default: bool) -> bool:
+    row = conn.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
+    return bool(json.loads(row["value"])) if row else default
+
+
+def _setting_value(conn: sqlite3.Connection, key: str, default):
+    row = conn.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
+    return json.loads(row["value"]) if row else default
 
 
 def _key_status(value: str) -> str:

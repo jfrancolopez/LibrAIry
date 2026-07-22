@@ -26,6 +26,14 @@
     {% endif %}
   </article>
   <article class="metric wide">
+    <span class="status">[OK] BACKUP</span>
+    {% if backup_counts %}
+      {% for state, count in backup_counts.items() %}<span>{{ state }}: {{ count }}</span>{% endfor %}
+    {% else %}
+      <span>No backup work queued.</span>
+    {% endif %}
+  </article>
+  <article class="metric wide">
     <span class="status">[OK] DISK</span>
     {% for disk in disks %}
       <span>{{ disk.root }}: {{ disk.free_gb }}GB free / {{ disk.total_gb }}GB [{{ disk.percent_free }}%]</span>

@@ -115,6 +115,34 @@ def test_settings_post_persists_and_journals_without_secrets(tmp_path: Path) -> 
     assert "sk-openai-secret" not in "\n".join(row["outcome"] for row in entries)
 
 
+def test_settings_toggle_content_search_and_backup_apply_next_cycle(tmp_path: Path) -> None:
+    client, conn, settings = client_for(tmp_path)
+
+    response = client.post(
+        "/settings",
+        data={
+            "confidence_threshold": "0.8",
+            "batch_size": "50",
+            "use_fingerprints": "on",
+            "content_search_enabled": "on",
+            "backup_enabled": "on",
+            "backup_remote": "local:librairy",
+            "backup_bandwidth_limit": "1M",
+            "backup_schedule": "after_commit",
+            "backup_include_db_snapshot": "on",
+        },
+        headers={"x-csrf-token": client.cookies["csrf_token"]},
+        follow_redirects=False,
+    )
+    effective = effective_settings(conn, settings)
+
+    assert response.status_code == 302
+    assert effective.content_search_enabled is True
+    assert effective.backup_enabled is True
+    assert effective.backup_remote == "local:librairy"
+    assert effective.backup_bandwidth_limit == "1M"
+
+
 def test_settings_apply_to_next_analysis_batch(tmp_path: Path) -> None:
     _, conn, settings = client_for(tmp_path, CONFIDENCE_THRESHOLD=0.8)
     save_settings(

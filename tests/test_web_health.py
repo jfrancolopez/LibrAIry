@@ -129,6 +129,15 @@ def test_health_summary_all_green_when_dependencies_ok(tmp_path: Path, monkeypat
     assert "[OK] SYSTEM HEALTH" in response.text
 
 
+def test_health_surfaces_backup_status(tmp_path: Path) -> None:
+    client, _, _ = client_for(tmp_path)
+
+    response = client.get("/health")
+
+    assert "[OK] BACKUP" in response.text
+    assert "disabled" in response.text
+
+
 def test_health_screen_rebuilds_search_index(tmp_path: Path) -> None:
     client, conn, _ = client_for(tmp_path)
     item_id = conn.execute(

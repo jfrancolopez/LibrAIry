@@ -24,6 +24,10 @@ def dashboard_data(conn: sqlite3.Connection, settings: Settings) -> dict[str, ob
     proposals = conn.execute(
         "SELECT COUNT(*) FROM proposals WHERE status='proposed'"
     ).fetchone()[0]
+    backup = {
+        row["state"]: row["count"]
+        for row in conn.execute("SELECT state, COUNT(*) AS count FROM backup_queue GROUP BY state")
+    }
     return {
         "worker_state": worker_state,
         "current_phase": worker_state.get("current_phase", "unknown"),
@@ -33,6 +37,7 @@ def dashboard_data(conn: sqlite3.Connection, settings: Settings) -> dict[str, ob
         "providers": _providers(conn),
         "disks": _disk_stats(settings),
         "host_inbox_dir": settings.host_inbox_dir,
+        "backup_counts": backup,
     }
 
 

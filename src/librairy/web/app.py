@@ -202,6 +202,14 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
                 confidence_threshold=float(str(form.get("confidence_threshold", "0.8"))),
                 batch_size=int(str(form.get("batch_size", "50"))),
                 dedup_values=dedup_values,
+                content_search_enabled="content_search_enabled" in form,
+                backup_values={
+                    "enabled": "backup_enabled" in form,
+                    "remote": str(form.get("backup_remote", "")).strip(),
+                    "bandwidth_limit": str(form.get("backup_bandwidth_limit", "")).strip(),
+                    "schedule": str(form.get("backup_schedule", "after_commit")).strip(),
+                    "include_db_snapshot": "backup_include_db_snapshot" in form,
+                },
             )
             for category in settings_page_data(conn, settings)["template_options"]:
                 save_settings(

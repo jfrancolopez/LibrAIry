@@ -12,6 +12,7 @@ from pathlib import Path
 from librairy.ai.orchestrator import provider_for_config
 from librairy.ai.registry import provider_chain
 from librairy.ai.status import upsert_provider_status
+from librairy.backup import backup_status
 from librairy.config import Settings
 from librairy.db import database_path
 from librairy.web.dashboard import _disk_stats, _worker_state
@@ -41,7 +42,9 @@ def health_data(conn: sqlite3.Connection, settings: Settings) -> dict[str, objec
     db = db_status(settings)
     disks = disk_statuses(settings)
     worker = worker_status(conn)
-    status = "OK" if all(row.status == "OK" for row in [*tools, db, *disks, worker]) else "WARN"
+    backup = backup_health(settings)
+    rows = [*tools, db, *disks, worker, backup]
+    status = "OK" if all(row.status == "OK" for row in rows) else "WARN"
     return {
         "summary_status": status,
         "tools": tools,
@@ -49,6 +52,7 @@ def health_data(conn: sqlite3.Connection, settings: Settings) -> dict[str, objec
         "db_status": db,
         "disk_statuses": disks,
         "worker_status": worker,
+        "backup_status": backup,
     }
 
 
@@ -119,6 +123,13 @@ def worker_status(conn: sqlite3.Connection) -> HealthRow:
         f"phase={phase}; heartbeat {age}s ago",
         "worker may be stopped" if status == "WARN" else "",
     )
+
+
+def backup_health(settings: Settings) -> HealthRow:
+    status = backup_status(settings)
+    if not settings.backup_enabled:
+        return HealthRow("Backup", "OK", "disabled")
+    return HealthRow("Backup", "OK" if status.available else "WARN", status.detail)
 
 
 def _tool_status(name: str, command: list[str]) -> HealthRow:

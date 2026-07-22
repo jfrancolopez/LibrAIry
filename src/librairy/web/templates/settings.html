@@ -38,6 +38,23 @@
   <label><input type="checkbox" name="use_czkawka" {% if settings_view.dedup.use_czkawka %}checked{% endif %}> czkawka near-media scan</label>
   <p class="muted">At least one exact duplicate method must remain enabled.</p>
 
+  <h2>Content Search</h2>
+  <label><input type="checkbox" name="content_search_enabled" {% if settings_view.content_search_enabled %}checked{% endif %}> Extract text from committed documents for local-only search</label>
+  <p class="muted">Applies on the next worker cycle. Extracted text stays in SQLite and is never sent to AI providers.</p>
+
+  <h2>One-Way Backup</h2>
+  <label><input type="checkbox" name="backup_enabled" {% if settings_view.backup.enabled %}checked{% endif %}> Enable rclone copy-out backup</label>
+  <label>Remote <input name="backup_remote" value="{{ settings_view.backup.remote }}" placeholder="b2:librairy-backup"></label>
+  <label>Bandwidth limit <input name="backup_bandwidth_limit" value="{{ settings_view.backup.bandwidth_limit }}" placeholder="optional, e.g. 2M"></label>
+  <label>Schedule
+    <select name="backup_schedule">
+      <option value="after_commit" {% if settings_view.backup.schedule == 'after_commit' %}selected{% endif %}>after_commit</option>
+      <option value="daily@02:00" {% if settings_view.backup.schedule == 'daily@02:00' %}selected{% endif %}>daily@02:00</option>
+    </select>
+  </label>
+  <label><input type="checkbox" name="backup_include_db_snapshot" {% if settings_view.backup.include_db_snapshot %}checked{% endif %}> Include SQLite snapshot</label>
+  <p class="muted">No credential fields exist here. Configure remotes in appdata/rclone/rclone.conf with rclone itself.</p>
+
   <h2>API Key Status</h2>
   <table>
     <tbody>
