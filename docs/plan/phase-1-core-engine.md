@@ -297,9 +297,9 @@ CREATE TABLE sessions (                     -- used from Phase 5; created now so
 **Depends on:** P1-04..P1-09
 **Description:** `cli.py` (stdlib `argparse`): `librairy scan` (scan inbox, print summary), `librairy plan create --from-file ops.json` (spec: list of `{op_type, src_relpath, dest_root, dest_relpath}`), `librairy plan show <id>`, `librairy plan approve <id>`, `librairy commit <plan-id>`, `librairy history [--plan <id>] [-n N]`, `librairy undo --op <id> | --plan <id>`, `librairy db path|migrate`. Human-readable output + `--json` flag for machine output. Exit codes: 0 success, 1 partial (skips), 2 error.
 **Acceptance criteria:**
-- [ ] Full lifecycle works end-to-end in a temp sandbox: scan → plan create → approve → commit → history → undo.
-- [ ] `--json` output is valid JSON for every command (test parses it).
-- [ ] Destructive-looking commands print what they will do and require `--yes` (or interactive confirm) before executing.
+- [x] Full lifecycle works end-to-end in a temp sandbox: scan → plan create → approve → commit → history → undo.
+- [x] `--json` output is valid JSON for every command (test parses it).
+- [x] Destructive-looking commands print what they will do and require `--yes` (or interactive confirm) before executing.
 **Test notes:** invoke via `subprocess` against a tmp sandbox to test the real entrypoint.
 **Size:** M
 
