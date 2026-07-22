@@ -3,7 +3,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-from fastapi import FastAPI, Form, Request
+from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -21,6 +21,7 @@ from librairy.web.auth import (
     verify_admin_password,
 )
 from librairy.web.dashboard import dashboard_data
+from librairy.web.health import health_data, test_provider
 
 PACKAGE_DIR = Path(__file__).parent
 TEMPLATES = Jinja2Templates(directory=PACKAGE_DIR / "templates")
@@ -100,6 +101,29 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             request,
             "partials/dashboard_stats.html",
             dashboard_data(conn, settings),
+        )
+
+    @app.get("/health", response_class=HTMLResponse)
+    def health(request: Request) -> HTMLResponse:
+        return TEMPLATES.TemplateResponse(
+            request,
+            "health.html",
+            {
+                "title": "Health",
+                "csrf_token": request.state.session["csrf_token"],
+                **health_data(conn, settings),
+            },
+        )
+
+    @app.post("/health/providers/{name}", response_class=HTMLResponse)
+    def provider_health(request: Request, name: str) -> HTMLResponse:
+        provider = test_provider(conn, settings, name)
+        if provider is None:
+            raise HTTPException(status_code=404, detail="unknown provider")
+        return TEMPLATES.TemplateResponse(
+            request,
+            "partials/provider_row.html",
+            {"provider": provider, "csrf_token": request.state.session["csrf_token"]},
         )
 
     @app.post("/csrf-check")

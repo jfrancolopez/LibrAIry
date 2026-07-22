@@ -155,10 +155,10 @@ Ship the portal shell: a login-protected, Pip-Boy-themed FastAPI web app served 
 **Depends on:** P5-02
 **Description:** Health route: external tool availability (ffprobe/exiftool/fpcalc/rmlint/czkawka version probes, cached), AI provider table from `provider_status` with per-row test buttons (HTMX post → live check), DB status (size, WAL, integrity_check quick), disk space with warn thresholds, worker heartbeat age. Each failing row gets a one-line remedy hint (e.g. "czkawka missing — image was built without it; see install docs").
 **Acceptance criteria:**
-- [ ] Tool probes report present/missing correctly (test with PATH manipulation).
-- [ ] Provider test button triggers a real health check and updates the row without page reload.
-- [ ] Warn states render as `[WARN]` with hint text; all-green shows `[OK]` summary.
-- [ ] Probes are cached (no exec storm on refresh; call-count test).
+- [x] Tool probes report present/missing correctly (test with PATH manipulation).
+- [x] Provider test button triggers a real health check and updates the row without page reload.
+- [x] Warn states render as `[WARN]` with hint text; all-green shows `[OK]` summary.
+- [x] Probes are cached (no exec storm on refresh; call-count test).
 **Size:** M
 
 ### P5-06 Web test suite

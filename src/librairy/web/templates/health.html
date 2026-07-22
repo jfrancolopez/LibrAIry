@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block content %}
+  <p class="status">[{{ summary_status }}] SYSTEM HEALTH</p>
+  <h1>Health</h1>
+  <div class="dashboard-grid">
+    <article class="metric wide">
+      <span class="status">[OK] TOOLS</span>
+      {% for row in tools %}
+        {% include "partials/health_row.html" %}
+      {% endfor %}
+    </article>
+    <article class="metric wide">
+      <span class="status">[OK] AI PROVIDERS</span>
+      {% if providers %}
+        <div class="health-table">
+          {% for provider in providers %}
+            {% include "partials/provider_row.html" %}
+          {% endfor %}
+        </div>
+      {% else %}
+        <span>[WARN] no provider status recorded - run analysis or test from CLI</span>
+      {% endif %}
+    </article>
+    <article class="metric wide">
+      <span class="status">[{{ db_status.status }}] DB</span>
+      <span>{{ db_status.detail }}</span>
+      {% if db_status.hint %}<span>{{ db_status.hint }}</span>{% endif %}
+    </article>
+    <article class="metric wide">
+      <span class="status">[{{ worker_status.status }}] WORKER</span>
+      <span>{{ worker_status.detail }}</span>
+      {% if worker_status.hint %}<span>{{ worker_status.hint }}</span>{% endif %}
+    </article>
+    <article class="metric wide">
+      <span class="status">[OK] DISK</span>
+      {% for row in disk_statuses %}
+        {% include "partials/health_row.html" %}
+      {% endfor %}
+    </article>
+  </div>
+{% endblock %}

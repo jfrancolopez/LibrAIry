@@ -1,0 +1,11 @@
+<div id="provider-{{ provider.name }}" class="provider-row">
+  <span>[{% if provider.last_error %}FAIL{% elif provider.last_ok_at %}OK{% elif provider.enabled %}WARN{% else %}WARN{% endif %}] {{ provider.name }} / {{ provider.kind }} / {{ provider.model }}</span>
+  <span>{% if provider.last_error %}{{ provider.last_error }}{% elif provider.last_ok_at %}last ok {{ provider.last_ok_at }}{% elif provider.enabled %}not tested yet{% else %}disabled{% endif %}</span>
+  <button
+    type="button"
+    hx-post="/health/providers/{{ provider.name }}"
+    hx-target="#provider-{{ provider.name }}"
+    hx-swap="outerHTML"
+    hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'
+  >Test</button>
+</div>
