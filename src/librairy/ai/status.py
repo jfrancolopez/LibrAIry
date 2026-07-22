@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 
 from librairy.ai.base import HealthResult, ProviderConfig
@@ -27,7 +28,8 @@ def upsert_provider_status(
           last_ok_at=COALESCE(excluded.last_ok_at, provider_status.last_ok_at),
           last_error=excluded.last_error,
           latency_ms=excluded.latency_ms,
-          last_used_at=COALESCE(excluded.last_used_at, provider_status.last_used_at)
+          last_used_at=COALESCE(excluded.last_used_at, provider_status.last_used_at),
+          available_models=excluded.available_models
         """,
         (
             config.name,
@@ -41,6 +43,11 @@ def upsert_provider_status(
             now if used else None,
         ),
     )
+    if health is not None:
+        conn.execute(
+            "UPDATE provider_status SET available_models=? WHERE name=?",
+            (json.dumps(list(health.models)), config.name),
+        )
 
 
 def list_provider_status(conn: sqlite3.Connection) -> list[sqlite3.Row]:

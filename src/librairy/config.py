@@ -46,10 +46,10 @@ class Settings(BaseSettings):
 
     ollama_host: str = Field("http://host.docker.internal:11434", alias="OLLAMA_HOST")
     ollama_model_primary: str = Field(
-        "llama3.1:8b",
+        "qwen3:4b",
         validation_alias=AliasChoices("OLLAMA_MODEL_PRIMARY", "OLLAMA_MODEL"),
     )
-    ollama_model_secondary: str = Field("qwen2.5:7b", alias="OLLAMA_MODEL_SECONDARY")
+    ollama_model_secondary: str = Field("qwen3:8b", alias="OLLAMA_MODEL_SECONDARY")
 
     openai_api_key: SecretStr = Field(SecretStr(""), alias="OPENAI_API_KEY")
     openai_model: str = Field("gpt-4o-mini", alias="OPENAI_MODEL")
@@ -153,8 +153,8 @@ class Settings(BaseSettings):
         "# =============================================================================",
         "",
         "OLLAMA_HOST=http://host.docker.internal:11434",
-        "OLLAMA_MODEL_PRIMARY=llama3.1:8b",
-        "OLLAMA_MODEL_SECONDARY=qwen2.5:7b",
+        "OLLAMA_MODEL_PRIMARY=qwen3:4b",
+        "OLLAMA_MODEL_SECONDARY=qwen3:8b",
         "",
         "",
         "# =============================================================================",

@@ -1,6 +1,6 @@
 # Phase 3 — AI Provider Layer + Privacy Redaction
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Depends on:** Phase 2 (classification engine) DONE
 **Size:** M (sharply bounded: providers plug into the existing cascade)
 
@@ -109,9 +109,9 @@ Add AI as one more evidence source in the classification cascade — behind the 
 **Depends on:** Phase 2
 **Description:** `ai/base.py` protocol + `AIAnswer`/`HealthResult` models; migration 003 (`provider_status`); settings seeding from env on first run; registry that builds the enabled provider list from settings + `AI_PROVIDER_ORDER`.
 **Acceptance criteria:**
-- [ ] Registry yields the configured chain; disabled/keyless providers excluded.
-- [ ] Cloud provider with key but `enabled=false` is NOT in the chain (opt-in test).
-- [ ] Status rows persist health/latency/last-use updates.
+- [x] Registry yields the configured chain; disabled/keyless providers excluded.
+- [x] Cloud provider with key but `enabled=false` is NOT in the chain (opt-in test).
+- [x] Status rows persist health/latency/last-use updates.
 **Size:** S
 
 ### P3-02 Ollama provider (multi-endpoint, qwen3 defaults)
@@ -119,9 +119,9 @@ Add AI as one more evidence source in the classification cascade — behind the 
 **Depends on:** P3-01
 **Description:** `ai/ollama.py`: `POST /api/generate` (or `/api/chat`) with `format: "json"`, per-endpoint model, timeout, retries; health via `GET /api/tags` including available-model capture; multi-endpoint iteration in configured order. Documentation strings recommend `qwen3:4b` (CPU) / `qwen3:8b` (GPU); seed default model = `qwen3:4b` when env gives none.
 **Acceptance criteria:**
-- [ ] Mocked-server tests: success, malformed JSON, timeout, connection refused → typed results; retries only on transport errors.
-- [ ] Two configured endpoints: first down → second used; status rows reflect both.
-- [ ] Model list captured on health check and persisted for the selector.
+- [x] Mocked-server tests: success, malformed JSON, timeout, connection refused → typed results; retries only on transport errors.
+- [x] Two configured endpoints: first down → second used; status rows reflect both.
+- [x] Model list captured on health check and persisted for the selector.
 **Size:** M
 
 ### P3-03 Cloud providers (OpenAI, Anthropic, Gemini) — opt-in
@@ -204,4 +204,4 @@ Add AI as one more evidence source in the classification cascade — behind the 
 
 ## Open questions log
 
-*(Executing agent: record ambiguities and the safest-default decision taken, then continue.)*
+2026-07-21: P3-02 needs model-list persistence, but P3-01's provider_status schema was already committed as migration 003 without a model-list column. Safest default: keep history append-only and add migration 004 with `available_models` rather than amending/reusing migration 003.

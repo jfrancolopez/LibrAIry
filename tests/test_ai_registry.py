@@ -22,10 +22,10 @@ def settings_for(tmp_path: Path, **overrides) -> Settings:
     return Settings(**values)
 
 
-def test_schema_v3_adds_provider_status(tmp_path: Path) -> None:
+def test_schema_adds_provider_status(tmp_path: Path) -> None:
     conn = connect(settings_for(tmp_path))
 
-    assert user_version(conn) == SCHEMA_VERSION == 3
+    assert user_version(conn) == SCHEMA_VERSION == 4
     conn.execute("SELECT * FROM provider_status")
 
 
@@ -36,7 +36,11 @@ def test_registry_yields_configured_enabled_chain(tmp_path: Path) -> None:
 
     chain = provider_chain(conn, settings)
 
-    assert [provider.kind for provider in chain] == ["openai", "ollama"]
+    assert [(provider.name, provider.kind) for provider in chain] == [
+        ("openai", "openai"),
+        ("ollama-primary", "ollama"),
+        ("ollama-secondary", "ollama"),
+    ]
     assert chain[0].enabled is True
 
 
@@ -61,3 +65,8 @@ def test_status_rows_persist_health_and_last_use(tmp_path: Path) -> None:
     assert row["last_ok_at"] is not None
     assert row["latency_ms"] == 42
     assert row["last_used_at"] is not None
+    assert row["available_models"] == "[]"
+
+    upsert_provider_status(conn, provider, HealthResult(True, models=("qwen3:4b", "qwen3:8b")))
+    row = next(row for row in list_provider_status(conn) if row["name"] == "ollama-primary")
+    assert row["available_models"] == '["qwen3:4b", "qwen3:8b"]'

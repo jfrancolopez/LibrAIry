@@ -28,14 +28,7 @@ def set_provider_enabled(conn: sqlite3.Connection, kind: str, enabled: bool) -> 
 
 
 def _configured_providers(conn: sqlite3.Connection, settings: Settings) -> list[ProviderConfig]:
-    ollama = ProviderConfig(
-        name="ollama-primary",
-        kind="ollama",
-        endpoint=settings.ollama_host,
-        model=settings.ollama_model_primary,
-        enabled=bool(settings.ollama_host),
-        is_local=True,
-    )
+    ollama = _ollama_configs(conn, settings)
     clouds = [
         _cloud(conn, "openai", settings.openai_api_key.get_secret_value(), settings.openai_model),
         _cloud(
@@ -46,7 +39,44 @@ def _configured_providers(conn: sqlite3.Connection, settings: Settings) -> list[
         ),
         _cloud(conn, "gemini", settings.gemini_api_key.get_secret_value(), settings.gemini_model),
     ]
-    return [ollama, *clouds]
+    return [*ollama, *clouds]
+
+
+def _ollama_configs(conn: sqlite3.Connection, settings: Settings) -> list[ProviderConfig]:
+    endpoints = _setting_json(conn, "ai.ollama.endpoints")
+    if endpoints is None:
+        endpoints = [
+            {
+                "name": "ollama-primary",
+                "url": settings.ollama_host,
+                "model": settings.ollama_model_primary,
+                "enabled": bool(settings.ollama_host),
+            }
+        ]
+        if settings.ollama_model_secondary:
+            endpoints.append(
+                {
+                    "name": "ollama-secondary",
+                    "url": settings.ollama_host,
+                    "model": settings.ollama_model_secondary,
+                    "enabled": bool(settings.ollama_host),
+                }
+            )
+        conn.execute(
+            "INSERT OR REPLACE INTO settings(key, value) VALUES (?, ?)",
+            ("ai.ollama.endpoints", json.dumps(endpoints)),
+        )
+    return [
+        ProviderConfig(
+            name=str(endpoint["name"]),
+            kind="ollama",
+            endpoint=str(endpoint["url"]),
+            model=str(endpoint["model"]),
+            enabled=bool(endpoint.get("enabled", True) and endpoint.get("url")),
+            is_local=True,
+        )
+        for endpoint in endpoints
+    ]
 
 
 def _cloud(conn: sqlite3.Connection, kind: str, key: str, model: str) -> ProviderConfig:
@@ -62,7 +92,14 @@ def _cloud(conn: sqlite3.Connection, kind: str, key: str, model: str) -> Provide
 
 
 def _setting_bool(conn: sqlite3.Connection, key: str, default: bool) -> bool:
+    value = _setting_json(conn, key)
+    if value is None:
+        return default
+    return bool(value)
+
+
+def _setting_json(conn: sqlite3.Connection, key: str):
     row = conn.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
     if row is None:
-        return default
-    return bool(json.loads(row["value"]))
+        return None
+    return json.loads(row["value"])

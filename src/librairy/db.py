@@ -5,7 +5,7 @@ from pathlib import Path
 
 from librairy.config import Settings
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 class DatabaseVersionError(RuntimeError):
@@ -128,7 +128,11 @@ CREATE INDEX idx_provider_status_kind ON provider_status(kind);
 CREATE INDEX idx_provider_status_enabled ON provider_status(enabled);
 """
 
-MIGRATIONS = {1: MIGRATION_001, 2: MIGRATION_002, 3: MIGRATION_003}
+MIGRATION_004 = """
+ALTER TABLE provider_status ADD COLUMN available_models TEXT NOT NULL DEFAULT '[]';
+"""
+
+MIGRATIONS = {1: MIGRATION_001, 2: MIGRATION_002, 3: MIGRATION_003, 4: MIGRATION_004}
 
 
 def database_path(settings: Settings) -> Path:

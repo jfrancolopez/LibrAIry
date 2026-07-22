@@ -64,8 +64,8 @@ def test_defaults_cover_documented_env_vars() -> None:
     assert settings.confidence_threshold == 0.80
     assert settings.use_multi_ai is True
     assert settings.ollama_host == "http://host.docker.internal:11434"
-    assert settings.ollama_model_primary == "llama3.1:8b"
-    assert settings.ollama_model_secondary == "qwen2.5:7b"
+    assert settings.ollama_model_primary == "qwen3:4b"
+    assert settings.ollama_model_secondary == "qwen3:8b"
     assert isinstance(settings.openai_api_key, SecretStr)
     assert settings.library_index_ttl == 86400
     assert settings.dashboard_port == 8080

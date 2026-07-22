@@ -55,6 +55,9 @@ def test_fresh_db_migrates_to_current_schema(tmp_path: Path) -> None:
         "idx_provider_status_enabled",
     }
 
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(provider_status)")}
+    assert "available_models" in columns
+
 
 def test_reopening_db_is_noop(tmp_path: Path) -> None:
     settings = settings_for(tmp_path)
