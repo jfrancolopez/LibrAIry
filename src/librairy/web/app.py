@@ -9,6 +9,7 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from librairy import __version__
 from librairy.config import Settings
 from librairy.db import connect
 from librairy.dedup import DedupConfigError
@@ -80,6 +81,7 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
     app.state.commit_state = commit_state
     app.mount("/static", StaticFiles(directory=PACKAGE_DIR / "static"), name="static")
     TEMPLATES.env.globals["provider_header"] = lambda: provider_header(conn, settings)
+    TEMPLATES.env.globals["app_version"] = __version__
     TEMPLATES.env.globals["welcome_banner_visible"] = lambda request: welcome_banner_visible(
         conn, request.state.session
     )

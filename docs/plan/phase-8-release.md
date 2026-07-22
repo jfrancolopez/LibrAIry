@@ -186,7 +186,7 @@ Turn a feature-complete system into something a stranger installs on their UNRAI
 **Acceptance criteria:**
 - [ ] Tagging a release-candidate tag on a branch runs the full workflow and publishes a pullable multi-arch image (dry-run tag acceptable).
 - [ ] `docker run ghcr.io/<owner>/librairy:<rc>` on a clean machine reaches a healthy portal.
-- [ ] Changelog honestly states capabilities AND the never-list (no delete, no overwrite, library read-only).
+- [x] Changelog honestly states capabilities AND the never-list (no delete, no overwrite, library read-only).
 - [ ] `v1.0.0` tagged only after every item in this phase's exit gate is checked.
 **Size:** S
 
@@ -225,3 +225,4 @@ Turn a feature-complete system into something a stranger installs on their UNRAI
 - 2026-07-22: P8-03 local packaging added the UNRAID template, icon, Docker install guide, UNRAID install guide, and XML/docs checks. Clean Docker/UNRAID drills remain blocked locally because Docker daemon and real UNRAID hardware are unavailable.
 - 2026-07-22: P8-05 docs rewrite added README, install/use/config/troubleshooting/security/FAQ/backup docs, legacy Instructions pointer, config sync tests, redaction sync tests, and stale-reference checks. README quickstart clean-machine verification remains blocked locally because Docker daemon is unavailable.
 - 2026-07-22: P8-06 added `scripts/perf_smoke.py`, reduced smoke coverage in tests, and `docs/performance.md`. The automated reduced run passes locally; full 50k/resource-bound acceptance remains pending until release hardware/Docker is available.
+- 2026-07-22: P8-08 release prep added tag-triggered GHCR multi-arch workflow, changelog, package-metadata version sourcing, and web footer version. Dry-run tag, image publish, clean Docker run, and final `v1.0.0` tag remain blocked until Docker/GitHub release acceptance is available.
