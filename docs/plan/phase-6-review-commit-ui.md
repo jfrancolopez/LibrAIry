@@ -193,12 +193,12 @@ Put the product's core loop in the browser: review accumulated proposals in batc
 ## Exit gate checklist
 
 - [ ] The complete loop — drop → review → edit → approve → commit → verify → quarantine-restore → undo — works entirely in the browser.
-- [ ] Commit executes exactly what confirmation displayed: hash equality asserted by test; skips honestly reported.
-- [ ] Every user edit is server-revalidated (containment, collision, sanitization); hostile-input tests green.
-- [ ] Previews are safe (ID-based, root-validated, cached) and degrade gracefully.
-- [ ] No delete affordance exists anywhere; mutation-sweep proves review/edit handlers touch no files.
-- [ ] Undo (op and plan) works from the UI with honest refusals.
-- [ ] Review flow fully keyboard-operable; status never color-only.
+- [x] Commit executes exactly what confirmation displayed: hash equality asserted by test; skips honestly reported.
+- [x] Every user edit is server-revalidated (containment, collision, sanitization); hostile-input tests green.
+- [x] Previews are safe (ID-based, root-validated, cached) and degrade gracefully.
+- [x] No delete affordance exists anywhere; mutation-sweep proves review/edit handlers touch no files.
+- [x] Undo (op and plan) works from the UI with honest refusals.
+- [x] Review flow fully keyboard-operable; status never color-only.
 - [ ] All backlog checkboxes ticked; status DONE.
 
 ## Notes for future phases
@@ -210,4 +210,4 @@ Put the product's core loop in the browser: review accumulated proposals in batc
 
 ## Open questions log
 
-*(Executing agent: record ambiguities and the safest-default decision taken, then continue.)*
+- 2026-07-22: Local Phase 6 verification passed (`ruff check src tests scripts`, `pytest`: 239 passed, `docker compose config`). Docker daemon is unavailable locally, so compose-up/manual browser walkthrough remains blocked.
