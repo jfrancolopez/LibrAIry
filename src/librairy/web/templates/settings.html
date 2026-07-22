@@ -44,7 +44,10 @@
 
   <h2>One-Way Backup</h2>
   <label><input type="checkbox" name="backup_enabled" {% if settings_view.backup.enabled %}checked{% endif %}> Enable rclone copy-out backup</label>
-  <label>Remote <input name="backup_remote" value="{{ settings_view.backup.remote }}" placeholder="b2:librairy-backup"></label>
+  <label>Remote <input name="backup_remote" value="{{ settings_view.backup.remote }}" placeholder="b2:librairy-backup" list="backup-remotes"></label>
+  <datalist id="backup-remotes">
+    {% for remote in backup_remotes %}<option value="{{ remote }}">{% endfor %}
+  </datalist>
   <label>Bandwidth limit <input name="backup_bandwidth_limit" value="{{ settings_view.backup.bandwidth_limit }}" placeholder="optional, e.g. 2M"></label>
   <label>Schedule
     <select name="backup_schedule">

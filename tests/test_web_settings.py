@@ -143,6 +143,18 @@ def test_settings_toggle_content_search_and_backup_apply_next_cycle(tmp_path: Pa
     assert effective.backup_bandwidth_limit == "1M"
 
 
+def test_settings_lists_rclone_remotes_without_credentials(tmp_path: Path) -> None:
+    client, _, settings = client_for(tmp_path)
+    config = settings.appdata_dir / "rclone" / "rclone.conf"
+    config.parent.mkdir(parents=True)
+    config.write_text("[scratch]\ntype = local\nsecret = do-not-render\n", encoding="utf-8")
+
+    response = client.get("/settings")
+
+    assert "scratch:" in response.text
+    assert "do-not-render" not in response.text
+
+
 def test_settings_apply_to_next_analysis_batch(tmp_path: Path) -> None:
     _, conn, settings = client_for(tmp_path, CONFIDENCE_THRESHOLD=0.8)
     save_settings(

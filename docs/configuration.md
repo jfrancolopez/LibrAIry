@@ -42,6 +42,13 @@ Configuration has two layers. Boot-time environment variables define paths, port
 | `LOG_LEVEL` | Structured log level. Use `DEBUG` only while diagnosing. |
 | `LOG_MAX_BYTES` | Rotating log file max size in bytes. |
 | `LOG_BACKUP_COUNT` | Number of rotated log files to keep. |
+| `CONTENT_SEARCH_ENABLED` | Default for local document text extraction, usually changed in Settings. |
+| `CONTENT_EXTRACT_MAX_CHARS` | Maximum extracted characters per document. |
+| `BACKUP_ENABLED` | Default one-way rclone backup toggle, usually changed in Settings. |
+| `BACKUP_REMOTE` | Default rclone remote destination, e.g. `b2:librairy-backup`. |
+| `BACKUP_BANDWIDTH_LIMIT` | Optional rclone bandwidth limit. |
+| `BACKUP_SCHEDULE` | Backup schedule setting; `after_commit` is the default. |
+| `BACKUP_INCLUDE_DB_SNAPSHOT` | Whether backup includes a SQLite appdata snapshot. |
 | `PUID` | Container file-owner UID, default `99`. |
 | `PGID` | Container file-owner GID, default `100`. |
 
@@ -62,5 +69,11 @@ These are stored in SQLite and apply without rebuilding the container:
 | `ai.openai.enabled` | Explicit cloud opt-in for OpenAI. Requires key and `CLOUD` confirmation. |
 | `ai.anthropic.enabled` | Explicit cloud opt-in for Anthropic. Requires key and `CLOUD` confirmation. |
 | `ai.gemini.enabled` | Explicit cloud opt-in for Gemini. Requires key and `CLOUD` confirmation. |
+| `content_search.enabled` | Toggle local-only document text extraction for next worker cycle. |
+| `backup.enabled` | Toggle one-way rclone copy-out backup. |
+| `backup.remote` | rclone remote destination consumed from mounted `rclone.conf`. |
+| `backup.bandwidth_limit` | Optional rclone bandwidth limit. |
+| `backup.schedule` | Backup schedule mode. |
+| `backup.include_db_snapshot` | Include a SQLite snapshot in backups. |
 
 API keys are environment-only in v1. The settings page shows only `set` or `not set`.

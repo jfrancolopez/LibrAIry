@@ -6,6 +6,7 @@ from subprocess import CompletedProcess
 from librairy.backup import backup_status, enqueue_backup_item, run_backup_once, snapshot_database
 from librairy.config import Settings
 from librairy.db import SCHEMA_VERSION, connect, user_version
+from librairy.locks import acquire_lock
 from librairy.tools.rclone import (
     RcloneError,
     check_command,
@@ -192,6 +193,35 @@ def test_backup_runner_retries_then_stops_after_failures(tmp_path: Path, monkeyp
     assert row["attempts"] == 3
     assert "network down" in row["last_error"]
     assert source.read_text(encoding="utf-8") == "a"
+    assert conn.execute("SELECT state FROM items WHERE id=1").fetchone()[0] == "discovered"
+
+
+def test_backup_runner_does_not_hold_executor_lock(tmp_path: Path, monkeypatch) -> None:
+    settings = settings_for(tmp_path, BACKUP_ENABLED=True, BACKUP_REMOTE="remote:library")
+    settings.library_dir.mkdir(parents=True)
+    source = settings.library_dir / "Documents/a.txt"
+    source.parent.mkdir(parents=True)
+    source.write_text("a", encoding="utf-8")
+    conn = connect(settings)
+    conn.execute(
+        """
+        INSERT INTO items(
+          id, root, relpath, size, mtime_ns, fingerprint, first_seen_at, last_seen_at
+        )
+        VALUES (1, 'library', 'Documents/a.txt', 1, 1, 'fp', 'now', 'now')
+        """
+    )
+    enqueue_backup_item(conn, settings, item_id=1, relpath="Documents/a.txt", fingerprint="fp")
+    monkeypatch.setattr("librairy.backup.rclone_status", lambda path: AvailableStatus())
+    monkeypatch.setattr(
+        "librairy.backup.run",
+        lambda command: CompletedProcess(command, 0, stdout="ok", stderr=""),
+    )
+
+    with acquire_lock(settings):
+        summary = run_backup_once(conn, settings)
+
+    assert summary.copied == 1
 
 
 def test_backup_runner_pauses_when_unavailable(tmp_path: Path) -> None:

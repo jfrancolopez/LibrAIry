@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+from configparser import ConfigParser
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -36,6 +37,15 @@ def backup_status(settings: Settings) -> RcloneStatus:
     if not settings.backup_remote:
         return RcloneStatus(False, "backup remote not configured")
     return rclone_status(rclone_config_path(settings))
+
+
+def configured_remotes(settings: Settings) -> list[str]:
+    config_path = rclone_config_path(settings)
+    if not config_path.exists():
+        return []
+    parser = ConfigParser()
+    parser.read(config_path)
+    return [f"{section}:" for section in parser.sections()]
 
 
 def enqueue_backup_item(

@@ -15,6 +15,8 @@ def test_dockerfile_is_multistage_runtime_with_healthcheck_and_entrypoint() -> N
     assert "HEALTHCHECK" in dockerfile
     assert "ENTRYPOINT [\"docker-entrypoint.sh\"]" in dockerfile
     assert "CMD [\"librairy\", \"run\"]" in dockerfile
+    assert "poppler-utils" in dockerfile
+    assert "rclone" in dockerfile
 
 
 def test_entrypoint_supports_puid_pgid_and_drops_privileges() -> None:

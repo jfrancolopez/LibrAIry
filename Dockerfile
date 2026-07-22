@@ -40,6 +40,8 @@ RUN apt-get update \
       ffmpeg \
       chromaprint-tools \
       libimage-exiftool-perl \
+      poppler-utils \
+      rclone \
       rmlint \
       gosu \
       passwd \
@@ -60,6 +62,8 @@ RUN pip install --no-cache-dir /tmp/wheels/*.whl \
     && rm -rf /tmp/wheels \
     && ffprobe -version >/dev/null \
     && fpcalc -version >/dev/null \
+    && pdftotext -v >/dev/null 2>&1 \
+    && rclone version >/dev/null \
     && rmlint --version >/dev/null \
     && command -v czkawka_cli >/dev/null \
     && librairy --help >/dev/null

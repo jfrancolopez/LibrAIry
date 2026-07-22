@@ -18,6 +18,12 @@ WEB_SETTINGS = {
     "ai.openai.enabled",
     "ai.anthropic.enabled",
     "ai.gemini.enabled",
+    "content_search.enabled",
+    "backup.enabled",
+    "backup.remote",
+    "backup.bandwidth_limit",
+    "backup.schedule",
+    "backup.include_db_snapshot",
 }
 
 
@@ -67,3 +73,15 @@ def test_readme_links_to_new_documentation_set() -> None:
         "faq.md",
     ):
         assert name in readme
+
+
+def test_content_search_privacy_assertions_match_code() -> None:
+    content_docs = (ROOT / "docs/content-search.md").read_text(encoding="utf-8")
+    ai_imports = "\n".join(
+        path.read_text(encoding="utf-8") for path in (ROOT / "src/librairy/ai").glob("*.py")
+    )
+
+    assert "never sent to local or cloud AI providers" in content_docs
+    assert "content.extract" not in ai_imports
+    assert "content_fts" not in ai_imports
+    assert "content" not in RedactedItemView.model_fields

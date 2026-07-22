@@ -1,6 +1,6 @@
 # Phase 9 — Post-1.0 Fast-Follows: Document Text Search, rclone One-Way Backup
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Depends on:** Phase 8 (v1.0 released) DONE
 **Size:** M (two independent features; may be executed as two separate runs, P9-01..02 then P9-03..05)
 
@@ -106,14 +106,14 @@ Two opt-in features that round out the v1 vision: (1) find documents by what's I
 ### P9-01 Content extraction pipeline
 **Story:** As a user, my PDFs, ebooks, and notes become searchable by their words — locally, without my documents going anywhere.
 **Depends on:** Phase 8
-**Description:** Per Design Constraints: migration 006, extractors, caps, incremental-by-fingerprint processing, failure bookkeeping, worker low-priority step, off-by-default setting, image gains poppler-utils.
+**Description:** Per Design Constraints: migration 009, extractors, caps, incremental-by-fingerprint processing, failure bookkeeping, worker low-priority step, off-by-default setting, image gains poppler-utils.
 **Acceptance criteria:**
-- [ ] Fixture PDF/EPUB/TXT/MD/DOCX extract correct text (golden snippets); corrupt fixtures record errors and stop retrying after 3 attempts.
-- [ ] Extraction is incremental: unchanged fingerprints skip; changed files re-extract (call-count test).
-- [ ] Cap + truncation flag honored on an oversized fixture.
-- [ ] Disabled setting = zero extraction work in a worker cycle (call test).
-- [ ] Extraction runs only on post-commit library items in the scoped categories.
-- [ ] Files' mtimes untouched by extraction (read-only proof, mtime snapshot).
+- [x] Fixture PDF/EPUB/TXT/MD/DOCX extract correct text (golden snippets); corrupt fixtures record errors and stop retrying after 3 attempts.
+- [x] Extraction is incremental: unchanged fingerprints skip; changed files re-extract (call-count test).
+- [x] Cap + truncation flag honored on an oversized fixture.
+- [x] Disabled setting = zero extraction work in a worker cycle (call test).
+- [x] Extraction runs only on post-commit library items in the scoped categories.
+- [x] Files' mtimes untouched by extraction (read-only proof, mtime snapshot).
 **Size:** M
 
 ### P9-02 Content search UI + rebuild
@@ -121,21 +121,21 @@ Two opt-in features that round out the v1 vision: (1) find documents by what's I
 **Depends on:** P9-01
 **Description:** Per Design Constraints: `content` facet, `[CONTENT]` marker + snippet rendering, combined ranking, `index rebuild --content`, perf bounds.
 **Acceptance criteria:**
-- [ ] The headline case passes as an integration test: a PDF whose *name* lacks the term but whose *text* contains it is found only when the content facet is on, with a snippet showing the term.
-- [ ] Name hits and content hits are visually distinct; combined query returns both.
-- [ ] `index rebuild --content` reproduces identical content-search results.
-- [ ] Content queries stay under the Phase-7 latency budget on the seeded corpus (perf-marked test).
+- [x] The headline case passes as an integration test: a PDF whose *name* lacks the term but whose *text* contains it is found only when the content facet is on, with a snippet showing the term.
+- [x] Name hits and content hits are visually distinct; combined query returns both.
+- [x] `index rebuild --content` reproduces identical content-search results.
+- [x] Content queries stay under the Phase-7 latency budget on the seeded corpus (perf-marked test).
 **Size:** S
 
 ### P9-03 rclone wrapper + backup queue
 **Story:** As a user, every successful commit quietly queues my newly organized files for off-NAS copies.
 **Depends on:** Phase 8
-**Description:** Per Design Constraints: migration 006b, `tools/rclone.py` (version probe, `listremotes`, `copy`, `check`, `--config`/`--bwlimit` handling), command-builder safety test (no destructive verbs), commit hook inserting queue rows, DB snapshot helper. Image gains rclone.
+**Description:** Per Design Constraints: migration 010, `tools/rclone.py` (version probe, `listremotes`, `copy`, `check`, `--config`/`--bwlimit` handling), command-builder safety test (no destructive verbs), commit hook inserting queue rows, DB snapshot helper. Image gains rclone.
 **Acceptance criteria:**
-- [ ] Successful commit inserts queue rows for exactly the committed files (test).
-- [ ] Command builder can produce only `copy`/`check`/`listremotes`/`version` invocations; destructive-verb assertion test passes.
-- [ ] Missing rclone binary/config → feature reports unavailable in health; nothing crashes; commits unaffected.
-- [ ] DB snapshot is consistent (taken via SQLite backup API, not file copy of a live WAL DB).
+- [x] Successful commit inserts queue rows for exactly the committed files (test).
+- [x] Command builder can produce only `copy`/`check`/`listremotes`/`version` invocations; destructive-verb assertion test passes.
+- [x] Missing rclone binary/config → feature reports unavailable in health; nothing crashes; commits unaffected.
+- [x] DB snapshot is consistent (taken via SQLite backup API, not file copy of a live WAL DB).
 **Size:** M
 
 ### P9-04 Backup runner: verified, retrying, never-blocking
@@ -143,11 +143,11 @@ Two opt-in features that round out the v1 vision: (1) find documents by what's I
 **Depends on:** P9-03
 **Description:** Per Design Constraints: runner as worker step/schedule, batch `rclone copy` + verification before `done`, exponential-backoff retries with give-up surfacing, bandwidth/schedule settings, pause-and-report on unreachable remote, `backup_run` history entries.
 **Acceptance criteria:**
-- [ ] Mock-remote (local-dir rclone remote) round-trip: queue → copy → verify → `done`; remote files match fingerprints.
-- [ ] Simulated copy failure → retries with backoff → give-up after N → `[WARN]` on dashboard/health (test at small N).
-- [ ] Remote deletion of an already-backed-up file NEVER causes any local action, and the next run re-copies it only per the re-queue rules (explicit test: local tree untouched).
-- [ ] A running backup never holds the executor lock; a commit during backup proceeds (concurrency test).
-- [ ] Backup failure does not alter commit results or item states (isolation test).
+- [x] Mock-remote (local-dir rclone remote) round-trip: queue → copy → verify → `done`; remote files match fingerprints.
+- [x] Simulated copy failure → retries with backoff → give-up after N → `[WARN]` on dashboard/health (test at small N).
+- [x] Remote deletion of an already-backed-up file NEVER causes any local action, and the next run re-copies it only per the re-queue rules (explicit test: local tree untouched).
+- [x] A running backup never holds the executor lock; a commit during backup proceeds (concurrency test).
+- [x] Backup failure does not alter commit results or item states (isolation test).
 **Size:** M
 
 ### P9-05 Backup + content-search UI, settings, docs
@@ -155,11 +155,11 @@ Two opt-in features that round out the v1 vision: (1) find documents by what's I
 **Depends on:** P9-02, P9-04
 **Description:** Settings sections (per Design Constraints), dashboard tile + health rows, `docs/backup.md` (rclone remote setup walkthrough incl. `rclone.conf` mount path, restore-is-manual note with example commands, "what leaves the machine" privacy note) and `docs/content-search.md` (what is extracted, local-only guarantee, OCR non-goal), release notes for v1.1.
 **Acceptance criteria:**
-- [ ] Enabling either feature from settings starts it on the next cycle without restart; disabling stops it.
-- [ ] Remote picker lists remotes from the mounted config; no credential fields exist anywhere in the UI.
-- [ ] Dashboard/health surfaces reflect a live mock-remote run.
-- [ ] Docs drills: configure a scratch rclone remote and enable backup following only `docs/backup.md`; enable content search following only `docs/content-search.md`.
-- [ ] Privacy assertions in docs match code (extracted text not in AI imports — sync/grep test).
+- [x] Enabling either feature from settings starts it on the next cycle without restart; disabling stops it.
+- [x] Remote picker lists remotes from the mounted config; no credential fields exist anywhere in the UI.
+- [x] Dashboard/health surfaces reflect a live mock-remote run.
+- [x] Docs drills: configure a scratch rclone remote and enable backup following only `docs/backup.md`; enable content search following only `docs/content-search.md`.
+- [x] Privacy assertions in docs match code (extracted text not in AI imports — sync/grep test).
 **Size:** S
 
 ## Verification steps
@@ -172,11 +172,11 @@ Two opt-in features that round out the v1 vision: (1) find documents by what's I
 
 ## Exit gate checklist
 
-- [ ] Content queries return document hits by inner text (headline integration test green); extraction is local-only, read-only, incremental, capped, and off by default.
-- [ ] `content_fts` rebuildable independently; search UI distinguishes content hits.
-- [ ] Backup provably never issues destructive remote verbs (builder test + runtime assertion) and never mutates local state from remote state (test).
-- [ ] Backups verify before `done`, retry with backoff, surface give-ups, and never block or alter commits.
-- [ ] Both features toggle at runtime without restart; docs drills pass as written.
+- [x] Content queries return document hits by inner text (headline integration test green); extraction is local-only, read-only, incremental, capped, and off by default.
+- [x] `content_fts` rebuildable independently; search UI distinguishes content hits.
+- [x] Backup provably never issues destructive remote verbs (builder test + runtime assertion) and never mutates local state from remote state (test).
+- [x] Backups verify before `done`, retry with backoff, surface give-ups, and never block or alter commits.
+- [x] Both features toggle at runtime without restart; docs drills pass as written.
 - [ ] v1.1 published via the release workflow.
 - [ ] All backlog checkboxes ticked; status DONE.
 
@@ -187,3 +187,5 @@ This is the last planned phase. Post-1.1 candidates the project owner may schedu
 ## Open questions log
 
 *(Executing agent: record ambiguities and the safest-default decision taken, then continue.)*
+
+- 2026-07-22: P9-01 through P9-05 implemented and locally verified from the source checkout. Migration numbers are 009 for content search and 010 for backup queue because the Phase 8 schema already reached version 008. Docker image dependencies (`poppler-utils`, `rclone`) are declared, but published-image verification and `v1.1` release remain blocked until Phase 8/v1.0 release gates and Docker/GHCR access are available.

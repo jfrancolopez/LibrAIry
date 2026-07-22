@@ -14,6 +14,7 @@ from librairy.ai.registry import (
     set_provider_enabled,
     set_provider_order,
 )
+from librairy.backup import configured_remotes
 from librairy.config import Settings
 from librairy.dedup import DedupConfigError, dedup_options, set_dedup_option
 from librairy.planner import utc_now
@@ -54,6 +55,7 @@ def settings_page_data(conn: sqlite3.Connection, settings: Settings) -> dict[str
         "providers": providers,
         "provider_order": provider_order(conn, settings),
         "cloud_providers": CLOUD_PROVIDERS,
+        "backup_remotes": configured_remotes(settings),
     }
 
 
