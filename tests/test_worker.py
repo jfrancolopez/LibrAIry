@@ -6,6 +6,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from librairy import worker as worker_module
 from librairy.config import Settings
 from librairy.db import connect
 from librairy.dedup import set_dedup_option
@@ -45,6 +46,28 @@ def test_worker_once_scans_analyzes_and_second_cycle_is_near_noop(tmp_path: Path
     assert conn.execute("SELECT COUNT(*) FROM proposals").fetchone()[0] == 1
     state = conn.execute("SELECT value FROM worker_state WHERE key='current_phase'").fetchone()[0]
     assert state == '"idle"'
+
+
+def test_worker_cycle_holds_global_lock(tmp_path: Path, monkeypatch) -> None:
+    settings = settings_for(tmp_path)
+    settings.inbox_dir.mkdir()
+    settings.library_dir.mkdir()
+    settings.quarantine_dir.mkdir()
+    conn = connect(settings)
+    events: list[str] = []
+
+    class FakeLock:
+        def __enter__(self):
+            events.append("enter")
+
+        def __exit__(self, exc_type, exc, traceback):  # noqa: ANN001
+            events.append("exit")
+
+    monkeypatch.setattr(worker_module, "acquire_lock", lambda settings: FakeLock())
+
+    run_once(conn, settings)
+
+    assert events == ["enter", "exit"]
 
 
 def test_worker_honors_batch_size(tmp_path: Path) -> None:

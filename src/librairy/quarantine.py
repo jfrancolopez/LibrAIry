@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from librairy.config import Settings
 from librairy.fingerprint import blake2b_file
 from librairy.lifecycle import assert_transition
+from librairy.locks import acquire_lock
 from librairy.paths import resolve_collision, validate_dest, validate_relpath
 from librairy.planner import OperationSpec, utc_now
 from librairy.search import sync_search_item
@@ -44,6 +45,15 @@ def list_quarantine_entries(conn: sqlite3.Connection) -> list[sqlite3.Row]:
 
 
 def restore_entry(conn: sqlite3.Connection, entry_id: int, settings: Settings) -> RestoreResult:
+    with acquire_lock(settings):
+        return _restore_entry_unlocked(conn, entry_id, settings)
+
+
+def _restore_entry_unlocked(
+    conn: sqlite3.Connection,
+    entry_id: int,
+    settings: Settings,
+) -> RestoreResult:
     from librairy.executor import _move_verified
 
     entry = conn.execute("SELECT * FROM quarantine_entries WHERE id=?", (entry_id,)).fetchone()
@@ -106,7 +116,8 @@ def restore_all(conn: sqlite3.Connection, settings: Settings) -> list[RestoreRes
     rows = conn.execute(
         "SELECT id FROM quarantine_entries WHERE restored_at IS NULL ORDER BY id"
     ).fetchall()
-    return [restore_entry(conn, row["id"], settings) for row in rows]
+    with acquire_lock(settings):
+        return [_restore_entry_unlocked(conn, row["id"], settings) for row in rows]
 
 
 def _root_path(settings: Settings, root: str):

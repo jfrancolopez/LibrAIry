@@ -108,6 +108,31 @@ def test_restore_quarantine_entry_is_journaled_and_collision_safe(tmp_path: Path
     )
 
 
+def test_restore_quarantine_entry_holds_global_lock(tmp_path: Path, monkeypatch) -> None:
+    from librairy import quarantine as quarantine_module
+
+    settings, conn, plan_id = setup_plan(
+        tmp_path,
+        [quarantine_operation("b.txt", date="2026-07-21")],
+    )
+    execute_plan(conn, plan_id, settings)
+    entry_id = conn.execute("SELECT id FROM quarantine_entries").fetchone()[0]
+    events: list[str] = []
+
+    class FakeLock:
+        def __enter__(self):
+            events.append("enter")
+
+        def __exit__(self, exc_type, exc, traceback):  # noqa: ANN001
+            events.append("exit")
+
+    monkeypatch.setattr(quarantine_module, "acquire_lock", lambda settings: FakeLock())
+
+    restore_entry(conn, entry_id, settings)
+
+    assert events == ["enter", "exit"]
+
+
 def test_quarantine_module_does_not_delete_files() -> None:
     source = Path("src/librairy/quarantine.py").read_text(encoding="utf-8")
 

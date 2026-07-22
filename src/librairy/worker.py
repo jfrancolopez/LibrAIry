@@ -16,6 +16,7 @@ from librairy.dedup import (
     hash_size_colliding_library_files,
 )
 from librairy.lifecycle import transition_item
+from librairy.locks import acquire_lock
 from librairy.models import EvidenceEntry
 from librairy.planner import utc_now
 from librairy.proposals import upsert_proposal
@@ -63,32 +64,33 @@ class Worker:
         self.stop_requested = True
 
     def run_once(self) -> WorkerSummary:
-        settings = effective_settings(self.conn, self.settings)
-        _set_worker_state(self.conn, "current_phase", "scan")
-        scan = scan_root(self.conn, "inbox", settings.inbox_dir, settings)
-        _set_worker_state(self.conn, "current_phase", "dedup")
-        library_hashed = hash_size_colliding_library_files(self.conn, settings)
-        duplicate_candidates = _stage_quarantine_proposals(
-            self.conn,
-            detect_exact_duplicates(self.conn, settings),
-        )
-        similar_flags = detect_similar_media(self.conn, settings)
-        _set_worker_state(self.conn, "current_phase", "analyze")
-        analysis = analyze_items(self.conn, settings, settings.batch_size)
-        summary = WorkerSummary(
-            scanned=scan.discovered,
-            hashed=scan.hashed,
-            library_hashed=library_hashed,
-            duplicate_candidates=duplicate_candidates,
-            similar_flags=similar_flags,
-            analyzed=analysis.analyzed,
-            proposed=analysis.proposed,
-            pending=analysis.pending,
-        )
-        _set_worker_state(self.conn, "last_cycle_at", utc_now())
-        _set_worker_state(self.conn, "current_phase", "idle")
-        _set_worker_state(self.conn, "last_summary", asdict(summary))
-        return summary
+        with acquire_lock(self.settings):
+            settings = effective_settings(self.conn, self.settings)
+            _set_worker_state(self.conn, "current_phase", "scan")
+            scan = scan_root(self.conn, "inbox", settings.inbox_dir, settings)
+            _set_worker_state(self.conn, "current_phase", "dedup")
+            library_hashed = hash_size_colliding_library_files(self.conn, settings)
+            duplicate_candidates = _stage_quarantine_proposals(
+                self.conn,
+                detect_exact_duplicates(self.conn, settings),
+            )
+            similar_flags = detect_similar_media(self.conn, settings)
+            _set_worker_state(self.conn, "current_phase", "analyze")
+            analysis = analyze_items(self.conn, settings, settings.batch_size)
+            summary = WorkerSummary(
+                scanned=scan.discovered,
+                hashed=scan.hashed,
+                library_hashed=library_hashed,
+                duplicate_candidates=duplicate_candidates,
+                similar_flags=similar_flags,
+                analyzed=analysis.analyzed,
+                proposed=analysis.proposed,
+                pending=analysis.pending,
+            )
+            _set_worker_state(self.conn, "last_cycle_at", utc_now())
+            _set_worker_state(self.conn, "current_phase", "idle")
+            _set_worker_state(self.conn, "last_summary", asdict(summary))
+            return summary
 
     def run_forever(self) -> None:
         sleep_seconds = BUSY_SLEEP_SECONDS
