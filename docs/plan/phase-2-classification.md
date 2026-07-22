@@ -185,10 +185,10 @@ CREATE TABLE groups (
 **Depends on:** P2-02, P2-04
 **Description:** Port `music_lookup.py`: strategy 1 embedded tags; strategy 2 fpcalc→AcoustID (score>0.65)→MusicBrainz recording lookup + genre enrichment; MB rate limiting; evidence entries per source; album grouping fields (artist/album/year/track). Network calls mocked in tests via recorded responses.
 **Acceptance criteria:**
-- [ ] Tagged file classifies from tags alone (no network) with confidence ≥0.85.
-- [ ] Untagged fixture with recorded AcoustID/MB responses resolves artist/title/genre; evidence lists both sources.
-- [ ] Missing `ACOUSTID_KEY` skips fingerprinting silently; MB limiter enforces spacing (timed test with mock clock).
-- [ ] All destinations render through the template registry (both styles tested).
+- [x] Tagged file classifies from tags alone (no network) with confidence ≥0.85.
+- [x] Untagged fixture with recorded AcoustID/MB responses resolves artist/title/genre; evidence lists both sources.
+- [x] Missing `ACOUSTID_KEY` skips fingerprinting silently; MB limiter enforces spacing (timed test with mock clock).
+- [x] All destinations render through the template registry (both styles tested).
 **Size:** M
 
 ### P2-06 Video classification (TMDB movies/TV)
