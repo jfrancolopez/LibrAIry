@@ -143,10 +143,10 @@ Put the product's core loop in the browser: review accumulated proposals in batc
 **Depends on:** P6-01
 **Description:** Per Design Constraints: thumbs.py generation + cache, preview routes by item ID, image/video/audio cards in queue rows and detail panes.
 **Acceptance criteria:**
-- [ ] Image and video fixtures render thumbnails; audio renders a tag card; unsupported types render a typed placeholder icon.
-- [ ] Cache hit on second request (no regeneration; call-count test); cache pruning removes only `<appdata>/thumbs/` files (path assertion in the pruner + test).
-- [ ] Preview route with a forged/unknown ID → 404; DB path escaping a data root (crafted row) → 403 and logged.
-- [ ] Thumbnail generation failures (corrupt file fixture) degrade to placeholder without breaking the row.
+- [x] Image and video fixtures render thumbnails; audio renders a tag card; unsupported types render a typed placeholder icon.
+- [x] Cache hit on second request (no regeneration; call-count test); cache pruning removes only `<appdata>/thumbs/` files (path assertion in the pruner + test).
+- [x] Preview route with a forged/unknown ID → 404; DB path escaping a data root (crafted row) → 403 and logged.
+- [x] Thumbnail generation failures (corrupt file fixture) degrade to placeholder without breaking the row.
 **Size:** M
 
 ### P6-05 Quarantine + duplicate review screen

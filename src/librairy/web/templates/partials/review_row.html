@@ -10,6 +10,13 @@
     {% for line in proposal.evidence_lines %}<span>{{ line }}</span>{% endfor %}
   </td>
   <td>
+    <button
+      type="button"
+      hx-get="/preview/items/{{ proposal.item_id }}"
+      hx-target="#preview-{{ proposal.id }}"
+      hx-swap="innerHTML"
+    >Preview</button>
+    <div id="preview-{{ proposal.id }}"></div>
     <form
       class="edit-form"
       hx-post="/review/proposals/{{ proposal.id }}/edit"

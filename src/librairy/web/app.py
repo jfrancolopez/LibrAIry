@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import FastAPI, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -24,6 +24,7 @@ from librairy.web.auth import (
 from librairy.web.dashboard import dashboard_data
 from librairy.web.health import health_data, test_provider
 from librairy.web.review import apply_review_action, edit_proposal, filters_from_query, review_data
+from librairy.web.thumbs import PreviewError, preview_for_item, thumbnail_for_item
 
 PACKAGE_DIR = Path(__file__).parent
 TEMPLATES = Jinja2Templates(directory=PACKAGE_DIR / "templates")
@@ -233,6 +234,30 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             request,
             "partials/review_row.html",
             {"proposal": proposal, "warning": warning},
+        )
+
+    @app.get("/preview/items/{item_id}", response_class=HTMLResponse)
+    def preview(request: Request, item_id: int) -> HTMLResponse:
+        try:
+            preview_data = preview_for_item(conn, settings, item_id)
+        except PreviewError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+        return TEMPLATES.TemplateResponse(
+            request,
+            "partials/preview_card.html",
+            {"preview": preview_data},
+        )
+
+    @app.get("/preview/items/{item_id}/thumb")
+    def preview_thumb(item_id: int) -> FileResponse:
+        try:
+            path = thumbnail_for_item(conn, settings, item_id)
+        except PreviewError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+        return FileResponse(
+            path,
+            media_type="image/svg+xml",
+            headers={"Cache-Control": "public, max-age=31536000, immutable"},
         )
 
     @app.post("/csrf-check")

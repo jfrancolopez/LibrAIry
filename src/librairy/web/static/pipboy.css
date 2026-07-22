@@ -187,6 +187,19 @@ td span { display: block; }
   min-width: 16rem;
 }
 
+.preview-card {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0.5rem 0;
+  padding: 0.5rem;
+  border: 1px dashed var(--panel-border);
+}
+
+.preview-card img {
+  max-width: 100%;
+  height: auto;
+}
+
 :focus-visible {
   outline: 3px solid var(--amber);
   outline-offset: 4px;
