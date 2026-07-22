@@ -229,9 +229,9 @@ CREATE TABLE groups (
 **Depends on:** P2-02
 **Description:** `classify/documents.py`: extension+name rules for documents (office/pdf/text), books (epub/mobi/azw + pdf-with-booklike-name), projects (delegates to the ported project heuristic), misc fallback. Clean-name normalization (strip release junk, normalize separators — port `sanitize_name` ideas from `utils.py`). Below-threshold results carry evidence but no destination.
 **Acceptance criteria:**
-- [ ] Fixture set covering each rule classifies correctly.
-- [ ] Ambiguous fixture (e.g. bare `scan001.pdf`) yields a pending proposal: evidence present, `dest_relpath` NULL.
-- [ ] Clean-name function has its own unit tests (unicode, dots, release tags).
+- [x] Fixture set covering each rule classifies correctly.
+- [x] Ambiguous fixture (e.g. bare `scan001.pdf`) yields a pending proposal: evidence present, `dest_relpath` NULL.
+- [x] Clean-name function has its own unit tests (unicode, dots, release tags).
 **Size:** M
 
 ### P2-10 Read-only library indexer + consistency source
