@@ -21,6 +21,7 @@ from librairy.planner import utc_now
 from librairy.proposals import upsert_proposal
 from librairy.quarantine import quarantine_operation
 from librairy.scanner import scan_root
+from librairy.settings_service import effective_settings
 
 IDLE_SLEEP_SECONDS = 5.0
 BUSY_SLEEP_SECONDS = 0.5
@@ -62,17 +63,18 @@ class Worker:
         self.stop_requested = True
 
     def run_once(self) -> WorkerSummary:
+        settings = effective_settings(self.conn, self.settings)
         _set_worker_state(self.conn, "current_phase", "scan")
-        scan = scan_root(self.conn, "inbox", self.settings.inbox_dir, self.settings)
+        scan = scan_root(self.conn, "inbox", settings.inbox_dir, settings)
         _set_worker_state(self.conn, "current_phase", "dedup")
-        library_hashed = hash_size_colliding_library_files(self.conn, self.settings)
+        library_hashed = hash_size_colliding_library_files(self.conn, settings)
         duplicate_candidates = _stage_quarantine_proposals(
             self.conn,
-            detect_exact_duplicates(self.conn, self.settings),
+            detect_exact_duplicates(self.conn, settings),
         )
-        similar_flags = detect_similar_media(self.conn, self.settings)
+        similar_flags = detect_similar_media(self.conn, settings)
         _set_worker_state(self.conn, "current_phase", "analyze")
-        analysis = analyze_items(self.conn, self.settings, self.settings.batch_size)
+        analysis = analyze_items(self.conn, settings, settings.batch_size)
         summary = WorkerSummary(
             scanned=scan.discovered,
             hashed=scan.hashed,

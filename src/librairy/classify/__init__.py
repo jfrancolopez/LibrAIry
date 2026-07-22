@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from librairy.ai.orchestrator import AIBatchState, apply_ai_if_needed
@@ -14,6 +14,8 @@ from librairy.lifecycle import transition_item
 from librairy.models import EvidenceEntry, Item
 from librairy.proposals import upsert_proposal
 from librairy.scanner import ready_items
+from librairy.settings_service import effective_settings
+from librairy.taxonomy import render_destination
 
 CASCADE_EVIDENCE_SOURCES = (
     "heuristic",
@@ -35,6 +37,7 @@ class AnalyzeSummary:
 def analyze_items(
     conn: sqlite3.Connection, settings: Settings, limit: int | None = None
 ) -> AnalyzeSummary:
+    settings = effective_settings(conn, settings)
     items = ready_items(conn, "inbox")
     if limit is not None:
         items = items[:limit]
@@ -50,6 +53,7 @@ def analyze_items(
             item=item_model,
             ai_state=ai_state,
         )
+        result = _with_runtime_destination(conn, settings, result)
         proposal_id = upsert_proposal(
             conn,
             item_id=item["id"],
@@ -103,6 +107,15 @@ def _with_ai(
     if conn is None or item is None or ai_state is None:
         return result
     return apply_ai_if_needed(conn, settings, item, result, ai_state)
+
+
+def _with_runtime_destination(conn: sqlite3.Connection, settings: Settings, result):
+    if result.confidence < settings.confidence_threshold:
+        return replace(result, dest_relpath=None, reason="below confidence threshold")
+    rendered = render_destination(
+        result.category, result.fields, library_root=settings.library_dir, conn=conn
+    )
+    return replace(result, dest_relpath=rendered.relpath, reason=rendered.reason)
 
 
 def _item_from_row(row: sqlite3.Row) -> Item:

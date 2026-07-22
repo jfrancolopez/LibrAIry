@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>[OK] SETTINGS</h1>
+<p class="muted">Runtime settings are stored in the LibrAIry database and apply to the next analysis batch. Paths and API keys stay in environment variables.</p>
+{% if saved %}<p class="status" id="settings-result">[OK] settings saved</p>{% endif %}
+{% if error %}<p class="status warn" id="settings-error">[WARN] {{ error }}</p>{% endif %}
+
+<form method="post" action="/settings" hx-post="/settings" hx-target="body" hx-swap="outerHTML" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>
+  <h2>Analysis</h2>
+  <label>Confidence threshold
+    <input type="range" min="0" max="1" step="0.01" name="confidence_threshold" value="{{ settings_view.confidence_threshold }}">
+    <span>{{ "%.2f"|format(settings_view.confidence_threshold) }}</span>
+  </label>
+  <label>Worker batch size
+    <input type="number" min="1" max="1000" name="batch_size" value="{{ settings_view.batch_size }}">
+  </label>
+
+  <h2>Destination Templates</h2>
+  <div class="grid">
+    {% for category, styles in template_options.items() %}
+      <section class="card">
+        <h3>{{ category|upper }}</h3>
+        <label>Style
+          <select name="template_{{ category }}">
+            {% for style in styles %}
+              <option value="{{ style }}" {% if settings_view.templates[category] == style %}selected{% endif %}>{{ style }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <p class="muted">Example: {{ examples[category] }}</p>
+      </section>
+    {% endfor %}
+  </div>
+
+  <h2>Duplicate Detection</h2>
+  <label><input type="checkbox" name="use_fingerprints" {% if settings_view.dedup.use_fingerprints %}checked{% endif %}> BLAKE2b fingerprints</label>
+  <label><input type="checkbox" name="use_rmlint" {% if settings_view.dedup.use_rmlint %}checked{% endif %}> rmlint exact cross-check</label>
+  <label><input type="checkbox" name="use_czkawka" {% if settings_view.dedup.use_czkawka %}checked{% endif %}> czkawka near-media scan</label>
+  <p class="muted">At least one exact duplicate method must remain enabled.</p>
+
+  <h2>API Key Status</h2>
+  <table>
+    <tbody>
+      {% for name, status in settings_view.keys.items() %}
+        <tr><th>{{ name }}</th><td>{{ status }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="muted">Secrets are read from environment variables only and are never rendered here.</p>
+
+  <button type="submit">[OK] SAVE SETTINGS</button>
+</form>
+{% endblock %}

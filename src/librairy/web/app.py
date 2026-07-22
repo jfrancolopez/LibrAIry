@@ -11,7 +11,9 @@ from fastapi.templating import Jinja2Templates
 
 from librairy.config import Settings
 from librairy.db import connect
+from librairy.dedup import DedupConfigError
 from librairy.search import SearchFilters, rebuild_search_index, search_data
+from librairy.settings_service import SettingsValidationError, save_settings, settings_page_data
 from librairy.web.auth import (
     SESSION_COOKIE,
     LoginRateLimiter,
@@ -140,6 +142,58 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
                 **health_data(conn, settings),
             },
         )
+
+    @app.get("/settings", response_class=HTMLResponse)
+    def settings_screen(request: Request) -> HTMLResponse:
+        return TEMPLATES.TemplateResponse(
+            request,
+            "settings.html",
+            {
+                "title": "Settings",
+                "csrf_token": request.state.session["csrf_token"],
+                "error": None,
+                "saved": request.query_params.get("saved") == "1",
+                **settings_page_data(conn, settings),
+            },
+        )
+
+    @app.post("/settings", response_class=HTMLResponse)
+    async def settings_submit(request: Request) -> HTMLResponse:
+        form = await request.form()
+        dedup_values = {
+            "use_fingerprints": "use_fingerprints" in form,
+            "use_rmlint": "use_rmlint" in form,
+            "use_czkawka": "use_czkawka" in form,
+        }
+        try:
+            save_settings(
+                conn,
+                settings,
+                confidence_threshold=float(str(form.get("confidence_threshold", "0.8"))),
+                batch_size=int(str(form.get("batch_size", "50"))),
+                dedup_values=dedup_values,
+            )
+            for category in settings_page_data(conn, settings)["template_options"]:
+                save_settings(
+                    conn,
+                    settings,
+                    template_category=str(category),
+                    template_style_value=str(form.get(f"template_{category}", "conventional")),
+                )
+        except (ValueError, DedupConfigError, SettingsValidationError) as exc:
+            return TEMPLATES.TemplateResponse(
+                request,
+                "settings.html",
+                {
+                    "title": "Settings",
+                    "csrf_token": request.state.session["csrf_token"],
+                    "error": str(exc),
+                    "saved": False,
+                    **settings_page_data(conn, settings),
+                },
+                status_code=422,
+            )
+        return RedirectResponse("/settings?saved=1", status_code=302)
 
     @app.post("/health/providers/{name}", response_class=HTMLResponse)
     def provider_health(request: Request, name: str) -> HTMLResponse:

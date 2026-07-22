@@ -144,11 +144,11 @@ Make the library *findable* and the system *tunable*: instant search with facets
 **Depends on:** —
 **Description:** Settings route/templates + `settings_service` per Design Constraints: per-category template style (conventional/genre-first with live example path preview), `CONFIDENCE_THRESHOLD` slider, worker pacing bounds, dedup tool toggles (fingerprint/rmlint/czkawka with the ≥1-exact-method rule), API-key presence indicators (masked, read-only), change journaling.
 **Acceptance criteria:**
-- [ ] Template style change immediately alters the example preview and the next analysis batch's rendered destinations (integration test).
-- [ ] Threshold change alters which proposals get destinations next batch (test).
-- [ ] Disabling both exact dedup methods is rejected inline.
-- [ ] Key fields show `set`/`not set` only; page source contains no key material (test greps rendered HTML against fixture keys).
-- [ ] Every change lands in history as `settings_change` without secret values.
+- [x] Template style change immediately alters the example preview and the next analysis batch's rendered destinations (integration test).
+- [x] Threshold change alters which proposals get destinations next batch (test).
+- [x] Disabling both exact dedup methods is rejected inline.
+- [x] Key fields show `set`/`not set` only; page source contains no key material (test greps rendered HTML against fixture keys).
+- [x] Every change lands in history as `settings_change` without secret values.
 **Size:** M
 
 ### P7-05 AI provider quick-selector
