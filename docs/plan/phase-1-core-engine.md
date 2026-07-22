@@ -260,12 +260,12 @@ CREATE TABLE sessions (                     -- used from Phase 5; created now so
 **Depends on:** P1-05, P1-06, P1-08, P1-09
 **Description:** `executor.py::execute(plan_id)` under the exclusive lock: verify plan status `approved` and stored `plan_hash` matches recomputation; iterate ops in `seq` order; per op re-fingerprint source (skip `skipped_changed`/`skipped_missing` on mismatch/absence), validate destination containment again (defense in depth), resolve collisions, move atomically (same-fs rename; cross-device copy→verify→rename→remove-source), journal to `history`, update `plan_ops.result`/`final_relpath`, and update the `items` row to its new root/relpath. Mark plan `done` (all ops terminal) or `failed` (unexpected error; already-done ops stay done). Re-running `execute` on a partially executed plan continues from the first non-terminal op.
 **Acceptance criteria:**
-- [ ] Executes a multi-op plan; filesystem end state matches the plan exactly; journal has one row per op.
-- [ ] Source changed between approval and execution → op `skipped_changed`, file untouched, execution continues.
-- [ ] Destination collision → deterministic rename, `renamed_collision` recorded with `final_relpath`.
+- [x] Executes a multi-op plan; filesystem end state matches the plan exactly; journal has one row per op.
+- [x] Source changed between approval and execution → op `skipped_changed`, file untouched, execution continues.
+- [x] Destination collision → deterministic rename, `renamed_collision` recorded with `final_relpath`.
 - [ ] Kill -9 mid-execution (test with subprocess) → re-run completes remaining ops; no file lost, none duplicated, no partial `.part-*` residue after completion.
 - [ ] Cross-device path exercised (bind/mock or forced-copy flag): destination fingerprint verified before source removal.
-- [ ] Executing a plan whose hash no longer matches its ops aborts before touching any file.
+- [x] Executing a plan whose hash no longer matches its ops aborts before touching any file.
 - [ ] Grep-test: no `os.remove/unlink/rmtree` on user data outside the verified-copy source removal; no move primitives outside `executor.py`.
 **Test notes:** the crash test spawns a real subprocess and kills it between ops (hook/env var to pause); assert invariants, then resume.
 **Size:** L
