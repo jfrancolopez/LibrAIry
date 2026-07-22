@@ -189,8 +189,8 @@ CREATE TABLE worker_state (
 **Description:** Per Design Constraints: remove `inbox-processor/`, rewrite `docker-compose.yml` (single `librairy` service, 4 data mounts incl. appdata, no reports, no watcher, dashboard stub gone — Phase 5 adds the web service command), Dockerfile per constraints (package install + czkawka in image), README/Instructions updated to the CLI flow, deprecation banner removed, `.env.example` regenerated (no orphan vars).
 **Acceptance criteria:**
 - [ ] `docker build` succeeds; `docker compose run librairy librairy --help` works; czkawka_cli present in image (`command -v` check in CI smoke build).
-- [ ] `git grep -l 'step3_classify\|RAM/\|_review_pending'` returns only docs/plan history references.
-- [ ] `.env.example` contains no variable the settings model doesn't define, and vice versa (existing sync test still green).
+- [x] `git grep -l 'step3_classify\|RAM/\|_review_pending'` returns only docs/plan history references.
+- [x] `.env.example` contains no variable the settings model doesn't define, and vice versa (existing sync test still green).
 - [ ] README quickstart (env → compose up → CLI) verified by following it in a container.
 **Size:** M
 
@@ -204,11 +204,11 @@ CREATE TABLE worker_state (
 
 ## Exit gate checklist
 
-- [ ] Headless E2E test green in CI.
-- [ ] No code path anywhere can delete a user file (invariant grep-test covers all new modules; quarantine/restore round-trip proven).
-- [ ] Worker survives SIGTERM and kill -9 with resume; never asks questions; never commits; no reprocessing loops (idle cycle is near-no-op).
-- [ ] Exact dupes: dual-method agreement staged for quarantine; disagreement and similar-media flagged for review only.
-- [ ] Dedup tool toggles work; `CZKAWKA_EXTENSIONS` and `BATCH_SIZE` honored.
+- [x] Headless E2E test green in CI.
+- [x] No code path anywhere can delete a user file (invariant grep-test covers all new modules; quarantine/restore round-trip proven).
+- [x] Worker survives SIGTERM and kill -9 with resume; never asks questions; never commits; no reprocessing loops (idle cycle is near-no-op).
+- [x] Exact dupes: dual-method agreement staged for quarantine; disagreement and similar-media flagged for review only.
+- [x] Dedup tool toggles work; `CZKAWKA_EXTENSIONS` and `BATCH_SIZE` honored.
 - [ ] `inbox-processor/` deleted; compose/Dockerfile/docs updated; czkawka in image; `.env.example` in sync.
 - [ ] All backlog checkboxes ticked; status DONE.
 
@@ -222,3 +222,5 @@ CREATE TABLE worker_state (
 ## Open questions log
 
 2026-07-21: Phase 4 design names its schema migration "004", but Phase 3 already used migration 004 for AI provider model-list persistence. Safest default: preserve append-only migration history and use migration 005 for the next Phase 4 schema change.
+
+2026-07-21: P4-07 code cleanup is complete locally, but Docker build/container quickstart verification is blocked because the local Docker daemon is not running (`Cannot connect to the Docker daemon`). Leave Phase 4 IN PROGRESS until Docker verification runs.

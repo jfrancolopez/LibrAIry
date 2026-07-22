@@ -11,14 +11,11 @@ ENV_KEYS = [
     "HOST_INBOX_DIR",
     "HOST_LIBRARY_DIR",
     "HOST_QUARANTINE_DIR",
-    "HOST_REPORTS_DIR",
     "HOST_APPDATA_DIR",
     "INBOX_DIR",
     "LIBRARY_DIR",
     "QUARANTINE_DIR",
-    "REPORTS_DIR",
     "APPDATA_DIR",
-    "CATALOG_DIR",
     "TMDB_KEY",
     "ACOUSTID_KEY",
     "MB_RATE_LIMIT",
@@ -59,7 +56,6 @@ def test_defaults_cover_documented_env_vars() -> None:
     assert settings.host_inbox_dir == Path("/mnt/nas/inbox")
     assert settings.host_appdata_dir == Path("/mnt/nas/appdata")
     assert settings.appdata_dir == Path("/data/appdata")
-    assert settings.catalog_dir == Path("/workspace/inbox-processor/catalog")
     assert settings.ai_provider_order == ["ollama", "openai", "anthropic", "gemini"]
     assert settings.confidence_threshold == 0.80
     assert settings.use_multi_ai is True

@@ -1,62 +1,34 @@
-# =============================================================================
-# LibrAIry — Container Image
-# =============================================================================
-# Lean Debian base with all required tools pre-installed.
-# czkawka_cli is NOT built here (takes 10+ min) — see Instructions.md for
-# optional manual build inside a running container.
-# =============================================================================
+FROM python:3.12-slim AS runtime
 
-FROM debian:bookworm-slim
+LABEL description="LibrAIry - privacy-first file organizer" \
+      version="0.1.0"
 
-LABEL maintainer="Franco <solosoyfranco>" \
-      description="LibrAIry — AI-powered file organizer" \
-      version="2.0"
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    DEBIAN_FRONTEND=noninteractive
 
-ENV DEBIAN_FRONTEND=noninteractive
-
-# Install all required system tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        # Core utilities
-        bash curl wget git jq bc coreutils \
-        # Media analysis
-        ffmpeg \
-        # Audio fingerprinting (fpcalc binary is in chromaprint-utils)
-        chromaprint-utils \
-        # Metadata extraction
-        libimage-exiftool-perl \
-        # Duplicate detection (hash-based)
-        rmlint \
-        # Python runtime
-        python3 python3-pip python3-venv \
-        # Misc
-        iputils-ping procps \
+      ca-certificates curl ffmpeg chromaprint-tools libimage-exiftool-perl rmlint \
+      cargo pkg-config build-essential \
+    && cargo install czkawka_cli --locked \
+    && cp /root/.cargo/bin/czkawka_cli /usr/local/bin/czkawka_cli \
+    && cargo uninstall czkawka_cli \
+    && apt-get purge -y --auto-remove cargo pkg-config build-essential \
     && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* /root/.cargo /root/.rustup
 
-# Verify key tools are available
-RUN ffprobe -version 2>&1 | head -1 \
-    && fpcalc -version \
-    && rmlint --version \
-    && python3 --version
+WORKDIR /app
 
-# Set up workspace
-WORKDIR /workspace
+COPY pyproject.toml README.md LICENSE ./
+COPY src ./src
 
-# Copy the inbox-processor package
-COPY inbox-processor/ /workspace/inbox-processor/
+RUN pip install --no-cache-dir .
 
-# Make scripts executable
-RUN find /workspace/inbox-processor/scripts -name "*.sh" -exec chmod +x {} \; \
-    && chmod +x /workspace/inbox-processor/catalog/catalog_main.py
+RUN mkdir -p /data/inbox /data/library /data/quarantine /data/appdata \
+    && ffprobe -version >/dev/null \
+    && fpcalc -version >/dev/null \
+    && rmlint --version >/dev/null \
+    && command -v czkawka_cli >/dev/null \
+    && librairy --help >/dev/null
 
-# Create data directory structure (actual data comes from volume mounts)
-RUN mkdir -p \
-        /data/inbox \
-        /data/library \
-        /data/quarantine \
-        /data/reports
-
-# Default working directory for running scripts
-WORKDIR /workspace/inbox-processor/scripts
-
-CMD ["/bin/bash"]
+CMD ["librairy", "worker"]

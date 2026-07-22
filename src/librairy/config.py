@@ -23,15 +23,12 @@ class Settings(BaseSettings):
     host_inbox_dir: Path = Field(Path("/mnt/nas/inbox"), alias="HOST_INBOX_DIR")
     host_library_dir: Path = Field(Path("/mnt/nas/library"), alias="HOST_LIBRARY_DIR")
     host_quarantine_dir: Path = Field(Path("/mnt/nas/quarantine"), alias="HOST_QUARANTINE_DIR")
-    host_reports_dir: Path = Field(Path("/mnt/nas/reports"), alias="HOST_REPORTS_DIR")
     host_appdata_dir: Path = Field(Path("/mnt/nas/appdata"), alias="HOST_APPDATA_DIR")
 
     inbox_dir: Path = Field(Path("/data/inbox"), alias="INBOX_DIR")
     library_dir: Path = Field(Path("/data/library"), alias="LIBRARY_DIR")
     quarantine_dir: Path = Field(Path("/data/quarantine"), alias="QUARANTINE_DIR")
-    reports_dir: Path = Field(Path("/data/reports"), alias="REPORTS_DIR")
     appdata_dir: Path = Field(Path("/data/appdata"), alias="APPDATA_DIR")
-    catalog_dir: Path = Field(Path("/workspace/inbox-processor/catalog"), alias="CATALOG_DIR")
 
     tmdb_key: SecretStr = Field(SecretStr(""), alias="TMDB_KEY")
     acoustid_key: SecretStr = Field(SecretStr(""), alias="ACOUSTID_KEY")
@@ -84,7 +81,7 @@ class Settings(BaseSettings):
         "# PORTABILITY NOTE:",
         "#   All folder paths point to locations on YOUR HOST (NAS, external drive, etc.)",
         "#   When you move to a new system, only update the HOST_*_DIR values below.",
-        "#   The container always sees /data/{inbox,library,quarantine,reports,appdata}",
+        "#   The container always sees /data/{inbox,library,quarantine,appdata}",
         "#   internally.",
         "# =============================================================================",
         "",
@@ -101,9 +98,6 @@ class Settings(BaseSettings):
         "",
         "# Files flagged as duplicates land here for review",
         "HOST_QUARANTINE_DIR=/mnt/nas/quarantine",
-        "",
-        "# JSON reports and logs produced by the legacy pipeline",
-        "HOST_REPORTS_DIR=/mnt/nas/reports",
         "",
         "# SQLite database, settings, thumbnails, and app logs",
         "HOST_APPDATA_DIR=/mnt/nas/appdata",
@@ -222,11 +216,7 @@ class Settings(BaseSettings):
         "INBOX_DIR=/data/inbox",
         "LIBRARY_DIR=/data/library",
         "QUARANTINE_DIR=/data/quarantine",
-        "REPORTS_DIR=/data/reports",
         "APPDATA_DIR=/data/appdata",
-        "",
-        "# Catalog scripts location inside the container",
-        "CATALOG_DIR=/workspace/inbox-processor/catalog",
         "",
         "# Seconds before the legacy library index cache is rebuilt",
         "LIBRARY_INDEX_TTL=86400",
