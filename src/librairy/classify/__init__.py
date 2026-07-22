@@ -10,6 +10,7 @@ from librairy.classify.heuristics import classify_path
 from librairy.classify.music import AUDIO_EXTS, classify_music
 from librairy.classify.video import VIDEO_EXTS, classify_video
 from librairy.config import Settings
+from librairy.lifecycle import transition_item
 from librairy.models import EvidenceEntry, Item
 from librairy.proposals import upsert_proposal
 from librairy.scanner import ready_items
@@ -60,8 +61,10 @@ def analyze_items(
         )
         if result.dest_relpath:
             proposed += 1
+            transition_item(conn, item["id"], "proposed")
         else:
             pending += 1
+            transition_item(conn, item["id"], "pending")
         conn.execute("UPDATE proposals SET updated_at=updated_at WHERE id=?", (proposal_id,))
     return AnalyzeSummary(len(items), proposed, pending)
 

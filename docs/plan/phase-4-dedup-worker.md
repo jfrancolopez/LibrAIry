@@ -156,9 +156,9 @@ CREATE TABLE worker_state (
 **Depends on:** —
 **Description:** `lifecycle.py` transition table + helpers; retrofit scanner/analyzer/planner/executor to route state changes through it; migration of any ad-hoc state writes.
 **Acceptance criteria:**
-- [ ] All legal transitions covered by tests; illegal ones raise.
-- [ ] Changed fingerprint on a `proposed` item returns it to `discovered` and supersedes its proposal.
-- [ ] State counts queryable in one cheap query (dashboard-ready).
+- [x] All legal transitions covered by tests; illegal ones raise.
+- [x] Changed fingerprint on a `proposed` item returns it to `discovered` and supersedes its proposal.
+- [x] State counts queryable in one cheap query (dashboard-ready).
 **Size:** S
 
 ### P4-05 Worker daemon

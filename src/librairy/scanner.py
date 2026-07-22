@@ -9,6 +9,8 @@ from pathlib import Path
 
 from librairy.config import Settings
 from librairy.fingerprint import blake2b_file
+from librairy.lifecycle import should_reset_for_fingerprint_change
+from librairy.proposals import supersede_proposal
 
 VALID_ROOTS = {"inbox", "library", "quarantine"}
 
@@ -67,7 +69,10 @@ def scan_root(
             seen.add(relpath)
             discovered += 1
             existing = conn.execute(
-                "SELECT size, mtime_ns, fingerprint FROM items WHERE root=? AND relpath=?",
+                """
+                SELECT id, size, mtime_ns, fingerprint, state
+                FROM items WHERE root=? AND relpath=?
+                """,
                 (root, relpath),
             ).fetchone()
             stability_ns = settings.file_stability_seconds * 1_000_000_000
@@ -83,11 +88,17 @@ def scan_root(
             ):
                 skipped_unchanged += 1
                 fingerprint = existing["fingerprint"]
-                state = "discovered"
+                state = existing["state"]
             else:
                 hashed += 1
                 fingerprint = blake2b_file(path)
                 state = "discovered"
+                changed_tracked_item = (
+                    existing
+                    and existing["fingerprint"]
+                    and existing["fingerprint"] != fingerprint
+                    and should_reset_for_fingerprint_change(existing["state"])
+                )
 
             conn.execute(
                 """
@@ -105,6 +116,13 @@ def scan_root(
                 """,
                 (root, relpath, stat.st_size, stat.st_mtime_ns, fingerprint, state, now, now),
             )
+            unchanged = (
+                existing
+                and existing["size"] == stat.st_size
+                and existing["mtime_ns"] == stat.st_mtime_ns
+            )
+            if not is_unstable and not unchanged and existing and changed_tracked_item:
+                supersede_proposal(conn, existing["id"])
 
     missing = _mark_missing(conn, root, seen, now)
     return ScanSummary(
@@ -125,7 +143,7 @@ def ready_items(conn: sqlite3.Connection, root: str = "inbox") -> list[sqlite3.R
             SELECT * FROM items
             WHERE root=?
               AND missing_since IS NULL
-              AND state != 'unstable'
+              AND state = 'discovered'
               AND fingerprint IS NOT NULL
             ORDER BY relpath
             """,
@@ -159,6 +177,5 @@ def _is_hidden(name: str) -> bool:
 def _ignored(relpath: str, patterns: list[str]) -> bool:
     name = Path(relpath).name
     return any(
-        fnmatch.fnmatch(relpath, pattern) or fnmatch.fnmatch(name, pattern)
-        for pattern in patterns
+        fnmatch.fnmatch(relpath, pattern) or fnmatch.fnmatch(name, pattern) for pattern in patterns
     )

@@ -11,6 +11,7 @@ from pathlib import Path
 
 from librairy.config import Settings
 from librairy.fingerprint import blake2b_file
+from librairy.lifecycle import assert_transition
 from librairy.locks import acquire_lock
 from librairy.paths import resolve_collision, validate_dest
 from librairy.planner import compute_plan_hash, utc_now
@@ -183,6 +184,9 @@ def _move_item_row(
 ) -> None:
     stat = final_dest.stat()
     state = "quarantined" if row["dest_root"] == "quarantine" else "discovered"
+    current = conn.execute("SELECT state FROM items WHERE id=?", (row["item_id"],)).fetchone()
+    if current is not None:
+        assert_transition(current["state"], state)
     conn.execute(
         """
         UPDATE items SET root=?, relpath=?, size=?, mtime_ns=?, state=?,

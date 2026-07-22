@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 
 from librairy.config import Settings
 from librairy.fingerprint import blake2b_file
+from librairy.lifecycle import assert_transition
 from librairy.paths import resolve_collision, validate_dest
 from librairy.planner import OperationSpec, utc_now
 
@@ -63,6 +64,7 @@ def restore_entry(conn: sqlite3.Connection, entry_id: int, settings: Settings) -
     root_path = _root_path(settings, entry["original_root"]).resolve()
     final_relpath = final_dest.relative_to(root_path).as_posix()
     stat = final_dest.stat()
+    assert_transition(item["state"], "discovered")
     conn.execute(
         """
         UPDATE items SET root=?, relpath=?, size=?, mtime_ns=?, state='discovered',
