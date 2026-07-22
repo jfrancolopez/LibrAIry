@@ -154,10 +154,10 @@ Put the product's core loop in the browser: review accumulated proposals in batc
 **Depends on:** P6-04
 **Description:** Per Design Constraints: staged/executed sections, side-by-side comparison, restore/un-stage/approve-stage actions, similar-media flag list feeding the same comparison panel.
 **Acceptance criteria:**
-- [ ] Executed quarantine rows show reason, keeper link, original path; restore round-trips the file (filesystem-verified test) and journals.
-- [ ] Side-by-side shows both files' size/dates/facts and thumbnails for an image pair fixture.
-- [ ] Similar-media flags listed separately, clearly marked "needs human judgment", with compare; no quarantine action is auto-applied to them.
-- [ ] No delete affordance anywhere on the screen (template test greps rendered HTML).
+- [x] Executed quarantine rows show reason, keeper link, original path; restore round-trips the file (filesystem-verified test) and journals.
+- [x] Side-by-side shows both files' size/dates/facts and thumbnails for an image pair fixture.
+- [x] Similar-media flags listed separately, clearly marked "needs human judgment", with compare; no quarantine action is auto-applied to them.
+- [x] No delete affordance anywhere on the screen (template test greps rendered HTML).
 **Size:** M
 
 ### P6-06 Commit flow with live progress

@@ -200,6 +200,18 @@ td span { display: block; }
   height: auto;
 }
 
+.compare-card {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0.75rem 0;
+  padding: 0.75rem;
+  border: 1px dashed var(--panel-border);
+}
+
+.compare-card.split {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
 :focus-visible {
   outline: 3px solid var(--amber);
   outline-offset: 4px;

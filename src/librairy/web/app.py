@@ -23,6 +23,12 @@ from librairy.web.auth import (
 )
 from librairy.web.dashboard import dashboard_data
 from librairy.web.health import health_data, test_provider
+from librairy.web.quarantine import (
+    approve_stage,
+    quarantine_data,
+    restore_quarantine,
+    unstage_proposal,
+)
 from librairy.web.review import apply_review_action, edit_proposal, filters_from_query, review_data
 from librairy.web.thumbs import PreviewError, preview_for_item, thumbnail_for_item
 
@@ -258,6 +264,45 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             path,
             media_type="image/svg+xml",
             headers={"Cache-Control": "public, max-age=31536000, immutable"},
+        )
+
+    @app.get("/quarantine", response_class=HTMLResponse)
+    def quarantine(request: Request) -> HTMLResponse:
+        return TEMPLATES.TemplateResponse(
+            request,
+            "quarantine.html",
+            {
+                "title": "Quarantine",
+                "csrf_token": request.state.session["csrf_token"],
+                **quarantine_data(conn),
+            },
+        )
+
+    @app.post("/quarantine/restore/{entry_id}", response_class=HTMLResponse)
+    def quarantine_restore(request: Request, entry_id: int) -> HTMLResponse:
+        result = restore_quarantine(conn, settings, entry_id)
+        return TEMPLATES.TemplateResponse(
+            request,
+            "partials/quarantine_result.html",
+            {"result": result},
+        )
+
+    @app.post("/quarantine/staged/{proposal_id}/unstage", response_class=HTMLResponse)
+    def quarantine_unstage(request: Request, proposal_id: int) -> HTMLResponse:
+        unstage_proposal(conn, proposal_id)
+        return TEMPLATES.TemplateResponse(
+            request,
+            "partials/quarantine_result.html",
+            {"result": {"outcome": "unstaged", "entry_id": proposal_id}},
+        )
+
+    @app.post("/quarantine/staged/{proposal_id}/approve", response_class=HTMLResponse)
+    def quarantine_approve(request: Request, proposal_id: int) -> HTMLResponse:
+        approve_stage(conn, proposal_id)
+        return TEMPLATES.TemplateResponse(
+            request,
+            "partials/quarantine_result.html",
+            {"result": {"outcome": "approved", "entry_id": proposal_id}},
         )
 
     @app.post("/csrf-check")
