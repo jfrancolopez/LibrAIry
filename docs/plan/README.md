@@ -24,8 +24,10 @@ This directory contains the complete, phased backlog to take LibrAIry from its c
 | 7 | [phase-7-search-settings.md](phase-7-search-settings.md) | Search/browse, settings, AI provider selector | 6 | NOT STARTED |
 | 8 | [phase-8-release.md](phase-8-release.md) | Release hardening, UNRAID packaging, v1.0 | 7 | NOT STARTED |
 | 9 | [phase-9-fast-follows.md](phase-9-fast-follows.md) | Post-1.0: document text search, rclone backup | 8 | NOT STARTED |
+| 10 | [phase-10-release-acceptance.md](phase-10-release-acceptance.md) | Release acceptance & v1.0.0 publish | 9 | NOT STARTED |
+| 11 | [phase-11-tui.md](phase-11-tui.md) | Pip-Boy terminal UI (`librairy tui`) → v1.1.0 | 10 | NOT STARTED |
 
-Dependency shape: strictly linear (1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9). Phases 1–4 are headless (CLI-testable, no browser needed). Phases 5–7 build the web experience on the proven engine. Phase 8 packages. Phase 9 is optional post-release work.
+Dependency shape: strictly linear (1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 → 11). Phases 1–4 are headless (CLI-testable, no browser needed). Phases 5–7 build the web experience on the proven engine. Phase 8 packages. Phase 9 is optional post-release work. Phase 10 performs the deferred release-acceptance gates and publishes v1.0.0; phase 11 adds the SSH terminal UI as v1.1.0.
 
 ---
 
