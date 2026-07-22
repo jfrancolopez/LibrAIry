@@ -239,9 +239,9 @@ CREATE TABLE groups (
 **Depends on:** P2-01
 **Description:** `indexer.py` per Design Constraints (walk library into `items`, build artist/show/movie pattern map in DB) and a cascade evidence source using it (port `_apply_consistency`: existing placement overrides genre guesses, +confidence bump, evidence `library-pattern`). Delete nothing legacy; the dead `register_*` code simply never gets ported. Incremental: consistency map updates when the indexer re-runs and when commits land (executor already updates `items`; the pattern map derives from DB, not a TTL JSON cache).
 **Acceptance criteria:**
-- [ ] Indexing a fixture library creates `root='library'` items and the pattern map; zero writes inside the library tree (mtime snapshot test).
-- [ ] New track by an already-indexed artist lands in that artist's existing path regardless of genre guess; evidence records the override.
-- [ ] After a commit, the pattern map reflects the new placement without a full rescan.
+- [x] Indexing a fixture library creates `root='library'` items and the pattern map; zero writes inside the library tree (mtime snapshot test).
+- [x] New track by an already-indexed artist lands in that artist's existing path regardless of genre guess; evidence records the override.
+- [x] After a commit, the pattern map reflects the new placement without a full rescan.
 **Size:** M
 
 ### P2-11 Golden fixture corpus + analyze/propose CLI
