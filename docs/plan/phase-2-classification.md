@@ -164,10 +164,10 @@ CREATE TABLE groups (
 **Depends on:** P2-01
 **Description:** Port `inbox-processor/catalog/heuristics.py` (454 lines) into `classify/heuristics.py`: keep its rules and "return None rather than guess" design; retarget outputs from RAM/ROM paths to categories + template fields; keep per-rule confidences; add unit tests per rule (the legacy code has none).
 **Acceptance criteria:**
-- [ ] Every legacy rule has ≥1 positive and ≥1 negative unit test.
-- [ ] Outputs are proposals (category+fields+evidence), never raw paths.
-- [ ] Hidden-file flagging behavior preserved and documented.
-- [ ] Legacy file untouched.
+- [x] Every legacy rule has ≥1 positive and ≥1 negative unit test.
+- [x] Outputs are proposals (category+fields+evidence), never raw paths.
+- [x] Hidden-file flagging behavior preserved and documented.
+- [x] Legacy file untouched.
 **Size:** M
 
 ### P2-04 Subprocess tool adapters
