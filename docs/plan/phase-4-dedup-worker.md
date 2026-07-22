@@ -1,6 +1,6 @@
 # Phase 4 — Dedup, Background Worker, Bash Retirement
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Depends on:** Phase 3 (AI providers) DONE
 **Size:** M/L
 
@@ -123,10 +123,10 @@ CREATE TABLE worker_state (
 **Depends on:** Phase 1 scanner/fingerprints
 **Description:** Per Design Constraints: fingerprint grouping, targeted library hashing for size-matches, rmlint cross-check subprocess (`tools/rmlint.py`), keeper selection rule, settings toggles with validation.
 **Acceptance criteria:**
-- [ ] Inbox pair + inbox↔library pair detected; keeper chosen per rule (library wins; deterministic tiebreak).
-- [ ] Fingerprint/rmlint disagreement (crafted fixture) → review flag, no quarantine proposal.
-- [ ] Toggling `dedup.use_rmlint=false` skips the subprocess (call test); disabling both exact methods is rejected.
-- [ ] Only size-colliding library files get hashed (call-count test on a fixture library).
+- [x] Inbox pair + inbox↔library pair detected; keeper chosen per rule (library wins; deterministic tiebreak).
+- [x] Fingerprint/rmlint disagreement (crafted fixture) → review flag, no quarantine proposal.
+- [x] Toggling `dedup.use_rmlint=false` skips the subprocess (call test); disabling both exact methods is rejected.
+- [x] Only size-colliding library files get hashed (call-count test on a fixture library).
 **Size:** M
 
 ### P4-02 czkawka similar-media detection
@@ -221,4 +221,4 @@ CREATE TABLE worker_state (
 
 ## Open questions log
 
-*(Executing agent: record ambiguities and the safest-default decision taken, then continue.)*
+2026-07-21: Phase 4 design names its schema migration "004", but Phase 3 already used migration 004 for AI provider model-list persistence. Safest default: preserve append-only migration history and use migration 005 for the next Phase 4 schema change.
