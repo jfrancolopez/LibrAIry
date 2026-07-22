@@ -197,11 +197,11 @@ CREATE TABLE sessions (                     -- used from Phase 5; created now so
 **Depends on:** P1-01
 **Description:** Implement `config.py` with a Pydantic settings class covering ALL documented env vars: the four `HOST_*_DIR` + `APPDATA_DIR`/`HOST_APPDATA_DIR`, internal `INBOX_DIR`/`LIBRARY_DIR`/`QUARANTINE_DIR`/`REPORTS_DIR`, `TMDB_KEY`, `ACOUSTID_KEY`, `MB_RATE_LIMIT`, `AI_PROVIDER_ORDER`, `CONFIDENCE_THRESHOLD`, `USE_MULTI_AI`, `OLLAMA_HOST`, `OLLAMA_MODEL_PRIMARY` (with `OLLAMA_MODEL` alias), `OLLAMA_MODEL_SECONDARY`, `OPENAI_API_KEY`/`OPENAI_MODEL`, `ANTHROPIC_API_KEY`/`ANTHROPIC_MODEL`, `GEMINI_API_KEY`/`GEMINI_MODEL`, `MAX_FILES_TO_ANALYZE`, `AI_TIMEOUT`, `MAX_AI_RETRIES`, `BATCH_SIZE`, `IGNORE_PATTERNS`, `CZKAWKA_EXTENSIONS`, `LIBRARY_INDEX_TTL`, `DASHBOARD_PORT`. Types, ranges, defaults; secrets typed as `SecretStr`; a `validate_or_die()` that prints friendly errors listing each bad variable. Regenerate `.env.example` from the model (script `scripts/gen_env_example.py` or equivalent) preserving grouping comments.
 **Acceptance criteria:**
-- [ ] Every variable above exists as a typed field with the documented default.
-- [ ] `OLLAMA_MODEL` (legacy name) populates the primary model field; `OLLAMA_MODEL_PRIMARY` wins if both set.
-- [ ] Invalid values (e.g. `CONFIDENCE_THRESHOLD=2.0`) produce a one-line-per-error friendly report, not a traceback.
-- [ ] Regenerated `.env.example` is committed and a test asserts it stays in sync with the model.
-- [ ] No default anywhere is a private LAN IP (the legacy `192.168.1.94` default must not reappear).
+- [x] Every variable above exists as a typed field with the documented default.
+- [x] `OLLAMA_MODEL` (legacy name) populates the primary model field; `OLLAMA_MODEL_PRIMARY` wins if both set.
+- [x] Invalid values (e.g. `CONFIDENCE_THRESHOLD=2.0`) produce a one-line-per-error friendly report, not a traceback.
+- [x] Regenerated `.env.example` is committed and a test asserts it stays in sync with the model.
+- [x] No default anywhere is a private LAN IP (the legacy `192.168.1.94` default must not reappear).
 **Test notes:** round-trip test env → settings; sync test model ↔ `.env.example`.
 **Size:** M
 
