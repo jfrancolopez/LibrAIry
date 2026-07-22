@@ -207,9 +207,9 @@ CREATE TABLE groups (
 **Depends on:** P2-01
 **Description:** `classify/hashtags.py` per Design Constraints; integration into the cascade (hints bias photo-event labels, project names, and the `Misc`→category nudge) and into naming (strip everywhere).
 **Acceptance criteria:**
-- [ ] Extraction from folder chains (nearest folder wins; multiple tags supported).
-- [ ] Tags appear in evidence, influence event/project labels, and are absent from every rendered path/name (regression test greps rendered output for `#`).
-- [ ] Hostile tags (`#../x`, `#a/b`) cannot affect path structure (sanitization test).
+- [x] Extraction from folder chains (nearest folder wins; multiple tags supported).
+- [x] Tags appear in evidence, influence event/project labels, and are absent from every rendered path/name (regression test greps rendered output for `#`).
+- [x] Hostile tags (`#../x`, `#a/b`) cannot affect path structure (sanitization test).
 **Size:** S
 
 ### P2-08 Relationship grouping
