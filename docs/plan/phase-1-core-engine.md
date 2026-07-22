@@ -210,10 +210,10 @@ CREATE TABLE sessions (                     -- used from Phase 5; created now so
 **Depends on:** P1-02
 **Description:** Implement `db.py` (connection factory applying pragmas, migration runner keyed on `PRAGMA user_version`) and migration 001 creating the schema in Design Constraints, plus indexes on `items(fingerprint)`, `items(state)`, `plan_ops(plan_id)`, `history(plan_id)`. Provide `models.py` dataclasses mirroring rows.
 **Acceptance criteria:**
-- [ ] Fresh DB reaches `user_version=1` with all tables/indexes; re-opening is a no-op.
-- [ ] WAL mode and foreign keys verified active by test.
-- [ ] Migration runner rejects a DB whose `user_version` is newer than the code (clear error, no writes).
-- [ ] Two processes can read/write concurrently without `database is locked` errors under `busy_timeout` (test with threads/processes).
+- [x] Fresh DB reaches `user_version=1` with all tables/indexes; re-opening is a no-op.
+- [x] WAL mode and foreign keys verified active by test.
+- [x] Migration runner rejects a DB whose `user_version` is newer than the code (clear error, no writes).
+- [x] Two processes can read/write concurrently without `database is locked` errors under `busy_timeout` (test with threads/processes).
 **Test notes:** migration idempotency; forward-version refusal; concurrent access smoke test.
 **Size:** M
 
