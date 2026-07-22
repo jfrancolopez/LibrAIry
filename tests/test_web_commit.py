@@ -12,6 +12,7 @@ from librairy.proposals import upsert_proposal
 from librairy.scanner import scan_root
 from librairy.web import commit as commit_module
 from librairy.web.app import create_app
+from librairy.web.commit import CommitState, start_execution
 
 
 def client_for(tmp_path: Path) -> tuple[TestClient, object, Settings]:
@@ -108,6 +109,31 @@ def test_second_commit_attempt_is_blocked_with_friendly_message(tmp_path: Path) 
     assert response.status_code == 200
     assert "execution started" not in response.text
     assert "pending: 1" in response.text
+
+
+def test_start_execution_sets_active_plan_atomically(tmp_path: Path, monkeypatch) -> None:
+    _, conn, settings = client_for(tmp_path)
+    state = CommitState()
+    started_threads = []
+
+    class FakeThread:
+        def __init__(self, *, target, args, daemon) -> None:  # noqa: ANN001
+            self.target = target
+            self.args = args
+            self.daemon = daemon
+
+        def start(self) -> None:
+            started_threads.append(self)
+
+    monkeypatch.setattr(commit_module.threading, "Thread", FakeThread)
+
+    first = start_execution(conn, settings, state, "plan-a")
+    second = start_execution(conn, settings, state, "plan-b")
+
+    assert first is True
+    assert second is False
+    assert state.active_plan_id == "plan-a"
+    assert len(started_threads) == 1
 
 
 def test_progress_endpoint_responds_while_background_commit_runs(

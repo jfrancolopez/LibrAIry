@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import sqlite3
 import threading
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import Any
 
 from librairy.config import Settings
+from librairy.db import connect
 from librairy.executor import execute_plan
 from librairy.locks import LockHeldError
 from librairy.planner import OperationSpec, approve_plan, create_plan
@@ -15,6 +16,7 @@ from librairy.planner import OperationSpec, approve_plan, create_plan
 class CommitState:
     active_plan_id: str | None = None
     error: str | None = None
+    lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
 
 def create_commit_plan(conn: sqlite3.Connection, settings: Settings) -> str:
@@ -65,13 +67,14 @@ def start_execution(
     state: CommitState,
     plan_id: str,
 ) -> bool:
-    if state.active_plan_id is not None:
-        return False
-    state.active_plan_id = plan_id
-    state.error = None
+    with state.lock:
+        if state.active_plan_id is not None:
+            return False
+        state.active_plan_id = plan_id
+        state.error = None
     thread = threading.Thread(
         target=_execute_background,
-        args=(conn, settings, state, plan_id),
+        args=(settings, state, plan_id),
         daemon=True,
     )
     thread.start()
@@ -116,21 +119,25 @@ def mark_committed_proposals(conn: sqlite3.Connection, plan_id: str) -> None:
 
 
 def _execute_background(
-    conn: sqlite3.Connection,
     settings: Settings,
     state: CommitState,
     plan_id: str,
 ) -> None:
+    conn = connect(settings)
     try:
         summary = execute_plan(conn, plan_id, settings)
         if not summary.partial:
             mark_committed_proposals(conn, plan_id)
     except LockHeldError:
-        state.error = "LibrAIry is busy; retry when the worker releases the lock"
+        with state.lock:
+            state.error = "LibrAIry is busy; retry when the worker releases the lock"
     except Exception as exc:  # pragma: no cover - defensive result surfaced in UI
-        state.error = str(exc)
+        with state.lock:
+            state.error = str(exc)
     finally:
-        state.active_plan_id = None
+        conn.close()
+        with state.lock:
+            state.active_plan_id = None
 
 
 def _plan(conn: sqlite3.Connection, plan_id: str) -> dict[str, Any]:
