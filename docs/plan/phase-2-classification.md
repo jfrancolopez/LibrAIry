@@ -217,11 +217,11 @@ CREATE TABLE groups (
 **Depends on:** P2-05, P2-06
 **Description:** `classify/grouping.py` building `groups` rows per Design Constraints; group-aware destination rendering (members share `dest_base`); the single-owner rule (a project folder is one proposal; members of other groups keep individual proposals sharing a base folder). This kills legacy defect #2 (file and parent folder both classified) by design: candidates are files, plus intact project folders — never both.
 **Acceptance criteria:**
-- [ ] Album fixture: N tracks → one group, one shared folder, per-track clean names.
-- [ ] Season fixture: episodes share the season folder.
-- [ ] Photo-event fixture: mixed photos+videos in `Trip #italy` group under one event label.
-- [ ] Project fixture: folder proposed intact; no child proposals exist (test asserts).
-- [ ] No item ever appears in two proposals (DB constraint + test).
+- [x] Album fixture: N tracks → one group, one shared folder, per-track clean names.
+- [x] Season fixture: episodes share the season folder.
+- [x] Photo-event fixture: mixed photos+videos in `Trip #italy` group under one event label.
+- [x] Project fixture: folder proposed intact; no child proposals exist (test asserts).
+- [x] No item ever appears in two proposals (DB constraint + test).
 **Size:** M
 
 ### P2-09 Documents, books, projects, misc rules
