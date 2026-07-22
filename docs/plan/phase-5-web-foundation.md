@@ -120,12 +120,12 @@ Ship the portal shell: a login-protected, Pip-Boy-themed FastAPI web app served 
 **Depends on:** P5-01
 **Description:** Per Design Constraints: setup screen (only when no hash exists; sets password, creates session), login/logout, session middleware/dependency, CSRF enforcement on non-GET, rate limiting, `/healthz`.
 **Acceptance criteria:**
-- [ ] Fresh DB → any route redirects to `/setup`; after setup, `/setup` is gone (404/redirect) forever.
-- [ ] Wrong password rejected; 6th failure within window → 429 with retry hint; correct login sets HttpOnly cookie.
-- [ ] Every non-GET without a valid CSRF token → 403 (tested on a sample route).
-- [ ] All protected routes 302→login without a session (route-table sweep test).
-- [ ] Session expiry honored; logout invalidates immediately; tokens stored hashed (DB row ≠ cookie value).
-- [ ] scrypt parameters stored; hash verifies after a simulated parameter upgrade.
+- [x] Fresh DB → any route redirects to `/setup`; after setup, `/setup` is gone (404/redirect) forever.
+- [x] Wrong password rejected; 6th failure within window → 429 with retry hint; correct login sets HttpOnly cookie.
+- [x] Every non-GET without a valid CSRF token → 403 (tested on a sample route).
+- [x] All protected routes 302→login without a session (route-table sweep test).
+- [x] Session expiry honored; logout invalidates immediately; tokens stored hashed (DB row ≠ cookie value).
+- [x] scrypt parameters stored; hash verifies after a simulated parameter upgrade.
 **Size:** M
 
 ### P5-03 Supervisor entrypoint + container wiring

@@ -2,5 +2,8 @@
 {% block content %}
   <p class="status">[OK] FIRST RUN</p>
   <h1>Create Admin Password</h1>
-  <p>The protected portal shell is online. Authentication wiring lands in P5-02.</p>
+  <form method="post" action="/setup">
+    <label>Password <input type="password" name="password" required minlength="8"></label>
+    <button type="submit">Initialize</button>
+  </form>
 {% endblock %}

@@ -75,6 +75,21 @@ h1 {
   text-transform: uppercase;
 }
 
+label, input, button { font: inherit; }
+
+input, button {
+  color: var(--phosphor);
+  background: #020703;
+  border: 1px solid var(--panel-border);
+  padding: 0.65rem 0.8rem;
+}
+
+button {
+  color: var(--amber);
+  cursor: pointer;
+  text-transform: uppercase;
+}
+
 :focus-visible {
   outline: 3px solid var(--amber);
   outline-offset: 4px;

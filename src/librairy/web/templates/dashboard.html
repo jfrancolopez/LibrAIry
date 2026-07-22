@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block content %}
+  <p class="status">[OK] SESSION</p>
+  <h1>Dashboard</h1>
+  <p>Portal shell authenticated. Live worker dashboard lands in P5-04.</p>
+  <form method="post" action="/logout">
+    <button type="submit">Logout</button>
+  </form>
+{% endblock %}

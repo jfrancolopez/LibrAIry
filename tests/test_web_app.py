@@ -2,11 +2,18 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
+from librairy.config import Settings
+from librairy.db import connect
 from librairy.web.app import create_app
 
 
-def test_root_redirects_and_static_assets_load() -> None:
-    client = TestClient(create_app())
+def client_for(tmp_path):
+    settings = Settings(APPDATA_DIR=tmp_path / "appdata", _env_file=None)
+    return TestClient(create_app(settings, connect(settings)))
+
+
+def test_root_redirects_and_static_assets_load(tmp_path) -> None:
+    client = client_for(tmp_path)
 
     response = client.get("/", follow_redirects=False)
     css = client.get("/static/pipboy.css")
@@ -19,8 +26,8 @@ def test_root_redirects_and_static_assets_load() -> None:
     assert htmx.status_code == 200
 
 
-def test_setup_shell_has_theme_no_external_assets_and_status_idiom() -> None:
-    client = TestClient(create_app())
+def test_setup_shell_has_theme_no_external_assets_and_status_idiom(tmp_path) -> None:
+    client = client_for(tmp_path)
 
     response = client.get("/setup")
 
@@ -31,8 +38,9 @@ def test_setup_shell_has_theme_no_external_assets_and_status_idiom() -> None:
     assert "https://" not in response.text
 
 
-def test_autoescape_and_security_headers() -> None:
-    client = TestClient(create_app())
+def test_autoescape_and_security_headers(tmp_path) -> None:
+    client = client_for(tmp_path)
+    client.post("/setup", data={"password": "correct horse battery"})
 
     response = client.get("/missing<script>")
 
@@ -43,7 +51,7 @@ def test_autoescape_and_security_headers() -> None:
     assert response.headers["content-security-policy"] == "default-src 'self'"
 
 
-def test_healthz_is_minimal_json() -> None:
-    client = TestClient(create_app())
+def test_healthz_is_minimal_json(tmp_path) -> None:
+    client = client_for(tmp_path)
 
     assert client.get("/healthz").json() == {"status": "ok"}

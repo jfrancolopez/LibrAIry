@@ -193,7 +193,7 @@ def connect(settings: Settings | None = None, path: Path | None = None) -> sqlit
         settings = Settings()
     db_path = path or database_path(settings)
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(db_path, timeout=5.0, isolation_level=None)
+    conn = sqlite3.connect(db_path, timeout=5.0, isolation_level=None, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     apply_pragmas(conn)
     migrate(conn)
