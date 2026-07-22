@@ -585,6 +585,19 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             {"title": "Browse", **browse_home(conn)},
         )
 
+    @app.get("/access", response_class=HTMLResponse)
+    def access_pointers(request: Request) -> HTMLResponse:
+        return TEMPLATES.TemplateResponse(
+            request,
+            "access.html",
+            {
+                "title": "Access Pointers",
+                "host_library_dir": settings.host_library_dir,
+                "host_inbox_dir": settings.host_inbox_dir,
+                "host_quarantine_dir": settings.host_quarantine_dir,
+            },
+        )
+
     @app.get("/browse/{category}", response_class=HTMLResponse)
     def browse_category_route(
         request: Request, category: str, folder: str = "", page: int = 1

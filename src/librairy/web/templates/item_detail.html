@@ -4,6 +4,7 @@
   <h1>{{ item.relpath }}</h1>
   <p>root: {{ item.root }} / state: {{ item.state }} / size: {{ item.size }}</p>
   <p>copy: {{ host_path }}</p>
+  <p class="muted"><a href="/access">Need SMB/FTP/WebDAV access help?</a></p>
   {% if preview %}{% include "partials/preview_card.html" %}{% endif %}
   <section class="metric wide">
     <h2>Metadata</h2>

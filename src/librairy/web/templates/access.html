@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block content %}
+  <p class="status">[OK] ACCESS POINTERS</p>
+  <h1>Open Your Library</h1>
+  <p class="muted">LibrAIry does not serve SMB, FTP, WebDAV, or any other file-sharing protocol. It only tells you where your files live so you can expose them with your NAS or operating system.</p>
+
+  <section class="metric wide">
+    <h2>Host Paths</h2>
+    <span>Library: {{ host_library_dir }}</span>
+    <span>Inbox: {{ host_inbox_dir }}</span>
+    <span>Quarantine: {{ host_quarantine_dir }}</span>
+  </section>
+
+  <section class="metric wide">
+    <h2>UNRAID SMB</h2>
+    <span>1. In UNRAID, open Shares and create or select the share that contains {{ host_library_dir }}.</span>
+    <span>2. Enable SMB export for that share.</span>
+    <span>3. From Windows, try \\TOWER\library or the share name you configured.</span>
+    <span>4. From macOS/Linux, try smb://TOWER/library or your server IP.</span>
+  </section>
+
+  <section class="metric wide">
+    <h2>FTP / WebDAV</h2>
+    <span>Use your normal UNRAID plugin, Docker app, NAS package, or OS service to expose {{ host_library_dir }}.</span>
+    <span>Point that service at the host path above, not at LibrAIry's internal /data/library path.</span>
+  </section>
+
+  <section class="metric wide">
+    <h2>Generic Systems</h2>
+    <span>Share {{ host_library_dir }} with the file-sharing service you already trust on this machine.</span>
+    <span>If you moved the host library path, update HOST_LIBRARY_DIR in the container environment and restart LibrAIry.</span>
+  </section>
+{% endblock %}

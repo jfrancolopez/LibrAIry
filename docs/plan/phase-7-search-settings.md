@@ -1,6 +1,6 @@
 # Phase 7 — Search/Browse, Settings, AI Provider Selector
 
-**Status:** IN PROGRESS
+**Status:** DONE
 **Depends on:** Phase 6 (review/commit UI) DONE
 **Size:** M
 
@@ -168,9 +168,9 @@ Make the library *findable* and the system *tunable*: instant search with facets
 **Depends on:** —
 **Description:** Static help template per Design Constraints (UNRAID SMB walkthrough, FTP/WebDAV pointers, generic note), linked from browse/search "open on your computer" hints, using configured host paths in examples.
 **Acceptance criteria:**
-- [ ] Page renders with the user's actual `HOST_LIBRARY_DIR` substituted into examples.
-- [ ] States explicitly that LibrAIry does not serve these protocols.
-- [ ] Linked from item detail and browse.
+- [x] Page renders with the user's actual `HOST_LIBRARY_DIR` substituted into examples.
+- [x] States explicitly that LibrAIry does not serve these protocols.
+- [x] Linked from item detail and browse.
 **Size:** S
 
 ## Verification steps
@@ -185,13 +185,13 @@ Make the library *findable* and the system *tunable*: instant search with facets
 
 ## Exit gate checklist
 
-- [ ] Seeded 10k-item search meets the perf target in CI; no unbounded scans.
-- [ ] FTS stays in sync through analyze/commit/quarantine, and full rebuild reproduces it.
-- [ ] Browse + search are provably read-only over user files.
-- [ ] Settings changes (templates, threshold, dedup, pacing) take effect next batch, are validated, and are journaled without secrets.
-- [ ] Provider switch is effective without restart; cloud enablement is a server-enforced explicit confirm; key material never reaches HTML.
-- [ ] Access pointers page ships with host-path substitution.
-- [ ] All backlog checkboxes ticked; status DONE.
+- [x] Seeded 10k-item search meets the perf target in CI; no unbounded scans.
+- [x] FTS stays in sync through analyze/commit/quarantine, and full rebuild reproduces it.
+- [x] Browse + search are provably read-only over user files.
+- [x] Settings changes (templates, threshold, dedup, pacing) take effect next batch, are validated, and are journaled without secrets.
+- [x] Provider switch is effective without restart; cloud enablement is a server-enforced explicit confirm; key material never reaches HTML.
+- [x] Access pointers page ships with host-path substitution.
+- [x] All backlog checkboxes ticked; status DONE.
 
 ## Notes for future phases
 
