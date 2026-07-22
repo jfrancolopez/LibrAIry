@@ -1,6 +1,6 @@
 # Phase 6 — Review Queue, Commit, Quarantine, History UI
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Depends on:** Phase 5 (web foundation) DONE
 **Size:** M/L (this is the product's core loop in the browser)
 
@@ -111,10 +111,10 @@ Put the product's core loop in the browser: review accumulated proposals in batc
 **Depends on:** Phase 5
 **Description:** Queue route/templates per Design Constraints: grouping, filters, pagination, evidence rendering with source markers (incl. `[CLOUD]`), confidence bars, pending-item visibility.
 **Acceptance criteria:**
-- [ ] Seeded sandbox renders groups (album/season/event/project) with member counts; filters and pagination work via HTMX (no full reloads).
-- [ ] Evidence lines show source labels; cloud-derived evidence shows `[CLOUD]` (fixture test).
-- [ ] Pending items visible with no destination and an edit affordance.
-- [ ] 5,000-proposal seed renders a page < 1s (pagination enforced; no unbounded queries — test).
+- [x] Seeded sandbox renders groups (album/season/event/project) with member counts; filters and pagination work via HTMX (no full reloads).
+- [x] Evidence lines show source labels; cloud-derived evidence shows `[CLOUD]` (fixture test).
+- [x] Pending items visible with no destination and an edit affordance.
+- [x] 5,000-proposal seed renders a page < 1s (pagination enforced; no unbounded queries — test).
 **Size:** M
 
 ### P6-02 Batch + per-item actions

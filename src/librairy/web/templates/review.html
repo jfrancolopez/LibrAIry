@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block content %}
+  <p class="status">[OK] REVIEW QUEUE</p>
+  <h1>Review</h1>
+  <form
+    class="filter-bar"
+    hx-get="/review/list"
+    hx-target="#review-list"
+    hx-swap="outerHTML"
+  >
+    <label>Category <input name="category" value="{{ filters.category or '' }}"></label>
+    <label>State <input name="state" value="{{ filters.state }}"></label>
+    <label>Min <input name="min_confidence" type="number" step="0.01" min="0" max="1"></label>
+    <label>Max <input name="max_confidence" type="number" step="0.01" min="0" max="1"></label>
+    <label>Destination
+      <select name="has_destination">
+        <option value="">any</option>
+        <option value="yes">yes</option>
+        <option value="no">no</option>
+      </select>
+    </label>
+    <button type="submit">Filter</button>
+  </form>
+  {% include "partials/review_list.html" %}
+{% endblock %}

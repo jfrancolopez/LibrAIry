@@ -1,0 +1,43 @@
+<div id="review-list" class="review-list">
+  <p class="status">[OK] {{ total }} ITEMS MATCH</p>
+  {% if groups %}
+    {% for group in groups %}
+      <section class="review-group">
+        <h2>{{ group.kind }} / {{ group.label }} / {{ group.rows|length }} shown</h2>
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Select</th>
+              <th scope="col">Source</th>
+              <th scope="col">Destination</th>
+              <th scope="col">Confidence</th>
+              <th scope="col">Evidence</th>
+              <th scope="col">Edit</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for proposal in group.rows %}
+              <tr>
+                <td><input type="checkbox" aria-label="select {{ proposal.item_relpath }}" value="{{ proposal.id }}"></td>
+                <td>{{ proposal.item_relpath }}</td>
+                <td>{% if proposal.dest_relpath %}{{ proposal.dest_root }}/{{ proposal.dest_relpath }}{% else %}<span class="status">[WARN] pending destination</span>{% endif %}</td>
+                <td><span class="confidence" style="--score: {{ (proposal.confidence * 100)|round|int }}%">{{ '%.2f'|format(proposal.confidence) }}</span></td>
+                <td>
+                  {% for line in proposal.evidence_lines %}<span>{{ line }}</span>{% endfor %}
+                </td>
+                <td><button type="button" disabled>Edit in P6-03</button></td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </section>
+    {% endfor %}
+  {% else %}
+    <p>[OK] queue clear - no matching proposals</p>
+  {% endif %}
+  <nav class="pager" aria-label="Review pages">
+    {% if has_prev %}<a hx-get="/review/list?page={{ filters.page - 1 }}&state={{ filters.state }}" hx-target="#review-list" hx-swap="outerHTML" href="/review?page={{ filters.page - 1 }}&state={{ filters.state }}">Prev</a>{% endif %}
+    <span>page {{ filters.page }}</span>
+    {% if has_next %}<a hx-get="/review/list?page={{ filters.page + 1 }}&state={{ filters.state }}" hx-target="#review-list" hx-swap="outerHTML" href="/review?page={{ filters.page + 1 }}&state={{ filters.state }}">Next</a>{% endif %}
+  </nav>
+</div>

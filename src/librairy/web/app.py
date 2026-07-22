@@ -22,6 +22,7 @@ from librairy.web.auth import (
 )
 from librairy.web.dashboard import dashboard_data
 from librairy.web.health import health_data, test_provider
+from librairy.web.review import filters_from_query, review_data
 
 PACKAGE_DIR = Path(__file__).parent
 TEMPLATES = Jinja2Templates(directory=PACKAGE_DIR / "templates")
@@ -124,6 +125,54 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             request,
             "partials/provider_row.html",
             {"provider": provider, "csrf_token": request.state.session["csrf_token"]},
+        )
+
+    @app.get("/review", response_class=HTMLResponse)
+    def review(
+        request: Request,
+        category: str | None = None,
+        state: str = "proposed",
+        min_confidence: float | None = None,
+        max_confidence: float | None = None,
+        has_destination: str | None = None,
+        page: int = 1,
+    ) -> HTMLResponse:
+        filters = filters_from_query(
+            category=category,
+            state=state,
+            min_confidence=min_confidence,
+            max_confidence=max_confidence,
+            has_destination=has_destination,
+            page=page,
+        )
+        return TEMPLATES.TemplateResponse(
+            request,
+            "review.html",
+            {"title": "Review", **review_data(conn, filters)},
+        )
+
+    @app.get("/review/list", response_class=HTMLResponse)
+    def review_list(
+        request: Request,
+        category: str | None = None,
+        state: str = "proposed",
+        min_confidence: float | None = None,
+        max_confidence: float | None = None,
+        has_destination: str | None = None,
+        page: int = 1,
+    ) -> HTMLResponse:
+        filters = filters_from_query(
+            category=category,
+            state=state,
+            min_confidence=min_confidence,
+            max_confidence=max_confidence,
+            has_destination=has_destination,
+            page=page,
+        )
+        return TEMPLATES.TemplateResponse(
+            request,
+            "partials/review_list.html",
+            review_data(conn, filters),
         )
 
     @app.post("/csrf-check")
