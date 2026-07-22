@@ -285,10 +285,10 @@ CREATE TABLE sessions (                     -- used from Phase 5; created now so
 **Depends on:** P1-03
 **Description:** `history.py`: append-only journal writer (used by executor) and undo: `undo_op(op_id)` / `undo_plan(plan_id)` move files back from their journaled destination (`final_relpath`) to their journaled source, using the same executor safety machinery (fingerprint re-check, containment, collision handling if the original path is now occupied, journaling the undo as its own action). Undo never deletes; if the file at the destination no longer matches the journaled fingerprint, refuse that op with a clear message and continue with the rest.
 **Acceptance criteria:**
-- [ ] `undo_plan` after a commit restores the exact prior tree (fixture comparison), journaled as `undo_move` rows.
-- [ ] Undo of an op whose file was modified post-commit is refused for that op (message includes both fingerprints) while others proceed.
-- [ ] Undo of an undo is possible (it is just another journaled move).
-- [ ] Undoing a quarantine op restores the file to its original path.
+- [x] `undo_plan` after a commit restores the exact prior tree (fixture comparison), journaled as `undo_move` rows.
+- [x] Undo of an op whose file was modified post-commit is refused for that op (message includes both fingerprints) while others proceed.
+- [x] Undo of an undo is possible (it is just another journaled move).
+- [x] Undoing a quarantine op restores the file to its original path.
 **Test notes:** round-trip commit→undo→commit tests; occupied-original-path collision case.
 **Size:** M
 
