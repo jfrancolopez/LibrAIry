@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import json
 import signal
 import sqlite3
@@ -8,6 +9,7 @@ from dataclasses import asdict, dataclass
 
 from librairy.classify import analyze_items
 from librairy.config import Settings
+from librairy.db import connect
 from librairy.dedup import (
     detect_exact_duplicates,
     detect_similar_media,
@@ -103,6 +105,19 @@ def run_forever(conn: sqlite3.Connection, settings: Settings) -> None:
     signal.signal(signal.SIGTERM, worker.request_stop)
     signal.signal(signal.SIGINT, worker.request_stop)
     worker.run_forever()
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(prog="librairy worker")
+    parser.add_argument("--once", action="store_true", help="Run one worker cycle and exit")
+    args = parser.parse_args(argv)
+    settings = Settings()
+    conn = connect(settings)
+    if args.once:
+        run_once(conn, settings)
+        return 0
+    run_forever(conn, settings)
+    return 0
 
 
 def next_sleep(previous: float, work_found: bool) -> float:
