@@ -27,6 +27,7 @@ from librairy.planner import (
 )
 from librairy.quarantine import list_quarantine_entries, restore_all, restore_entry
 from librairy.scanner import scan_root
+from librairy.supervisor import run_supervisor
 from librairy.worker import run_forever, run_once
 
 
@@ -103,6 +104,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     worker = subparsers.add_parser("worker", help="Run the background worker")
     worker.add_argument("--once", action="store_true", help="Run one worker cycle and exit")
+
+    subparsers.add_parser("run", help="Run web and worker under the supervisor")
     return parser
 
 
@@ -179,6 +182,8 @@ def _dispatch(args: argparse.Namespace, conn: sqlite3.Connection, settings: Sett
             return asdict(run_once(conn, settings))
         run_forever(conn, settings)
         return {"stopped": True}
+    if args.command == "run":
+        raise SystemExit(run_supervisor(settings))
     return None
 
 

@@ -15,5 +15,7 @@ services:
       - ${HOST_APPDATA_DIR:-./data/appdata}:/data/appdata
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    ports:
+      - "${DASHBOARD_PORT:-8080}:8080"
     restart: unless-stopped
-    command: ["librairy", "worker"]
+    command: ["librairy", "run"]

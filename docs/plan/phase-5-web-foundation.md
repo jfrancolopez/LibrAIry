@@ -133,10 +133,10 @@ Ship the portal shell: a login-protected, Pip-Boy-themed FastAPI web app served 
 **Depends on:** P5-01
 **Description:** `supervisor.py` per constraints; compose service uses it as command with `DASHBOARD_PORT` published; Dockerfile CMD updated; Docker `HEALTHCHECK` hitting `/healthz`.
 **Acceptance criteria:**
-- [ ] `python -m librairy run` starts both children; killing the worker child → auto-restart (logged, backoff); same for web.
-- [ ] SIGTERM to supervisor → both children exit cleanly ≤ 10s; supervisor exits 0.
+- [x] `python -m librairy run` starts both children; killing the worker child → auto-restart (logged, backoff); same for web.
+- [x] SIGTERM to supervisor → both children exit cleanly ≤ 10s; supervisor exits 0.
 - [ ] `docker compose up` → portal reachable on the mapped port; container healthcheck goes healthy.
-- [ ] Flapping child (forced crash loop) → supervisor gives up and exits non-zero (restart policy surfaces it).
+- [x] Flapping child (forced crash loop) → supervisor gives up and exits non-zero (restart policy surfaces it).
 **Size:** M
 
 ### P5-04 Dashboard screen
