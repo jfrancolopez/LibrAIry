@@ -82,17 +82,20 @@ def apply_ai_if_needed(
 def _providers(conn: sqlite3.Connection, settings: Settings) -> list[Provider]:
     providers: list[Provider] = []
     for config in provider_chain(conn, settings):
-        if config.kind == "ollama":
-            providers.append(OllamaProvider(config, retries=settings.max_ai_retries))
-        elif config.kind == "openai":
-            providers.append(OpenAIProvider(config, settings.openai_api_key.get_secret_value()))
-        elif config.kind == "anthropic":
-            providers.append(
-                AnthropicProvider(config, settings.anthropic_api_key.get_secret_value())
-            )
-        elif config.kind == "gemini":
-            providers.append(GeminiProvider(config, settings.gemini_api_key.get_secret_value()))
+        providers.append(provider_for_config(config, settings))
     return providers
+
+
+def provider_for_config(config: ProviderConfig, settings: Settings) -> Provider:
+    if config.kind == "ollama":
+        return OllamaProvider(config, retries=settings.max_ai_retries)
+    if config.kind == "openai":
+        return OpenAIProvider(config, settings.openai_api_key.get_secret_value())
+    if config.kind == "anthropic":
+        return AnthropicProvider(config, settings.anthropic_api_key.get_secret_value())
+    if config.kind == "gemini":
+        return GeminiProvider(config, settings.gemini_api_key.get_secret_value())
+    raise ValueError(f"unknown AI provider kind: {config.kind}")
 
 
 def _classification_from_answer(

@@ -8,11 +8,17 @@ from dataclasses import asdict
 from pathlib import Path
 
 from librairy import __version__
+from librairy.ai.base import ProviderConfig
+from librairy.ai.orchestrator import provider_for_config
+from librairy.ai.redact import build_view
+from librairy.ai.registry import provider_chain
+from librairy.ai.status import list_provider_status, upsert_provider_status
 from librairy.classify import analyze_items
 from librairy.config import Settings, validate_or_die
 from librairy.db import connect, database_path
 from librairy.executor import execute_plan
 from librairy.history import list_history, undo_op, undo_plan
+from librairy.models import Item
 from librairy.planner import (
     approve_plan,
     create_plan,
@@ -75,6 +81,14 @@ def build_parser() -> argparse.ArgumentParser:
     db_subparsers = db.add_subparsers(dest="db_command")
     db_subparsers.add_parser("path", help="Print database path")
     db_subparsers.add_parser("migrate", help="Apply migrations")
+
+    ai = subparsers.add_parser("ai", help="AI provider utilities")
+    ai_subparsers = ai.add_subparsers(dest="ai_command")
+    ai_status = ai_subparsers.add_parser("status", help="Show AI provider status")
+    ai_status.add_argument("--json", action="store_true", help="Emit JSON output")
+    ai_test = ai_subparsers.add_parser("test", help="Test an AI provider")
+    ai_test.add_argument("provider", nargs="?")
+    ai_test.add_argument("--json", action="store_true", help="Emit JSON output")
     return parser
 
 
@@ -142,6 +156,8 @@ def _dispatch(args: argparse.Namespace, conn: sqlite3.Connection, settings: Sett
             return {"path": str(database_path(settings))}
         if args.db_command == "migrate":
             return {"schema_version": conn.execute("PRAGMA user_version").fetchone()[0]}
+    if args.command == "ai":
+        return _ai_command(args, conn, settings)
     return None
 
 
@@ -173,6 +189,54 @@ def _proposal_command(args: argparse.Namespace, conn: sqlite3.Connection):
         row = conn.execute("SELECT * FROM proposals WHERE id=?", (args.proposal_id,)).fetchone()
         return {"proposal": _row_dict(row) if row else None}
     return None
+
+
+def _ai_command(args: argparse.Namespace, conn: sqlite3.Connection, settings: Settings):
+    if args.ai_command == "status":
+        provider_chain(conn, settings)
+        return {"providers": [_row_dict(row) for row in list_provider_status(conn)]}
+    if args.ai_command == "test":
+        configs = provider_chain(conn, settings)
+        config = _select_provider(configs, args.provider)
+        if config is None:
+            return {"ok": False, "error": "provider not found", "partial": True}
+        provider = provider_for_config(config, settings)
+        health = provider.health(settings.ai_timeout)
+        answer = None
+        if health.ok:
+            answer = provider.classify(_synthetic_view(), settings.ai_timeout)
+        ok = health.ok and answer is not None
+        upsert_provider_status(conn, config, health, used=ok)
+        return {
+            "ok": ok,
+            "provider": config.name,
+            "health": asdict(health),
+            "answer": answer.model_dump() if answer else None,
+            "partial": not ok,
+        }
+    return None
+
+
+def _select_provider(configs: list[ProviderConfig], name: str | None) -> ProviderConfig | None:
+    if name is None:
+        return configs[0] if configs else None
+    return next((config for config in configs if config.name == name or config.kind == name), None)
+
+
+def _synthetic_view():
+    item = Item(
+        id=0,
+        root="inbox",
+        relpath="synthetic-report.pdf",
+        size=1024,
+        mtime_ns=0,
+        fingerprint=None,
+        state="synthetic",
+        first_seen_at="1970-01-01T00:00:00Z",
+        last_seen_at="1970-01-01T00:00:00Z",
+        missing_since=None,
+    )
+    return build_view(item, {"tags": {"title": "Synthetic Report"}}, ())
 
 
 def _row_dict(row: sqlite3.Row | None) -> dict[str, object] | None:

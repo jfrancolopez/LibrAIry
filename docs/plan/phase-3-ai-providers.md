@@ -172,8 +172,8 @@ Add AI as one more evidence source in the classification cascade — behind the 
 **Depends on:** P3-06
 **Description:** `librairy ai status` (table: provider, kind, endpoint/model, enabled, last ok, latency), `librairy ai test [name]` (live health check + tiny classification round-trip against a synthetic redacted view), `--json` variants.
 **Acceptance criteria:**
-- [ ] Status reads persisted rows; test updates them.
-- [ ] `ai test` against a mocked endpoint round-trips; against a down endpoint reports failure cleanly (exit code 1).
+- [x] Status reads persisted rows; test updates them.
+- [x] `ai test` against a mocked endpoint round-trips; against a down endpoint reports failure cleanly (exit code 1).
 **Size:** S
 
 ## Verification steps
