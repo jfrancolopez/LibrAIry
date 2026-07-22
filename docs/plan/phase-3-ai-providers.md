@@ -129,9 +129,9 @@ Add AI as one more evidence source in the classification cascade — behind the 
 **Depends on:** P3-01
 **Description:** Three thin adapters using stdlib HTTP: OpenAI chat-completions (JSON mode), Anthropic messages, Gemini generateContent. Keys via SecretStr settings; models from settings with sane defaults; identical response-contract validation; per-provider enable flags enforced in the registry (double-checked in the adapter).
 **Acceptance criteria:**
-- [ ] Mocked-endpoint tests per provider: request shape correct, response parsed, contract enforced.
-- [ ] No adapter can be invoked when its enable flag is false (test).
-- [ ] Keys never appear in logs or exceptions (test captures logging).
+- [x] Mocked-endpoint tests per provider: request shape correct, response parsed, contract enforced.
+- [x] No adapter can be invoked when its enable flag is false (test).
+- [x] Keys never appear in logs or exceptions (test captures logging).
 **Size:** M
 
 ### P3-04 Redaction layer
