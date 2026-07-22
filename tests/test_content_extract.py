@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import shutil
 import zipfile
 from pathlib import Path
+
+import pytest
 
 from librairy.config import Settings
 from librairy.content import extract as extract_module
@@ -117,6 +120,10 @@ def test_docx_and_epub_extractors(tmp_path: Path) -> None:
     assert "epub coding" in extract_module.extract_epub(epub)
 
 
+@pytest.mark.skipif(
+    shutil.which("pdftotext") is None,
+    reason="poppler-utils (pdftotext) not installed",
+)
 def test_pdf_extractor_reads_text_with_pdftotext(tmp_path: Path) -> None:
     pdf = tmp_path / "sample.pdf"
     pdf.write_bytes(

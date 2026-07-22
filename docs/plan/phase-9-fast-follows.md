@@ -162,6 +162,17 @@ Two opt-in features that round out the v1 vision: (1) find documents by what's I
 - [x] Privacy assertions in docs match code (extracted text not in AI imports — sync/grep test).
 **Size:** S
 
+### P9-07 CI dependency fix: pdftotext on hosted runners
+**Story:** As a maintainer, CI stays green on a bare GitHub runner, and contributors without poppler installed see a skip instead of a failure.
+**Depends on:** P9-06 (out-of-backlog reconciliation commit that introduced the direct `extract_pdf` test)
+**Description:** P9-06 added `test_pdf_extractor_reads_text_with_pdftotext`, which invokes the real `pdftotext` binary. The Docker image gained `poppler-utils`, but GitHub's `ubuntu-latest` runner does not ship it, so both CI matrix legs failed with `FileNotFoundError: 'pdftotext'`. Fix: install `poppler-utils` in `ci.yml` and `release.yml` (so CI exercises the real extraction path) and add a `pytest.mark.skipif(shutil.which("pdftotext") is None)` guard (so dev machines without poppler skip gracefully). Production code needs no change: `extract_item` already records tool failures with a retry cap, and health reports missing tools.
+**Acceptance criteria:**
+- [x] Both workflows install `poppler-utils` before running tests.
+- [x] The pdf-extractor test is skipif-guarded on `pdftotext` availability.
+- [x] Full suite green locally; the guarded test skips (not fails) when `pdftotext` is absent from PATH.
+- [ ] CI green on GitHub for both matrix legs on the fix commit.
+**Size:** XS
+
 ## Verification steps
 
 1. `ruff check src tests && pytest` green (full suite incl. new perf marks).
@@ -189,3 +200,4 @@ This is the last planned phase. Post-1.1 candidates the project owner may schedu
 *(Executing agent: record ambiguities and the safest-default decision taken, then continue.)*
 
 - 2026-07-22: P9-01 through P9-05 implemented and locally verified from the source checkout. Migration numbers are 009 for content search and 010 for backup queue because the Phase 8 schema already reached version 008. Docker image dependencies (`poppler-utils`, `rclone`) are declared, but published-image verification and `v1.1` release remain blocked until Phase 8/v1.0 release gates and Docker/GHCR access are available.
+- 2026-07-22 (P9-07): the P9-06 commit broke CI — its new pdf-extractor test needs `pdftotext`, present in the Docker image but not on GitHub's `ubuntu-latest` runner (dev Macs had it via Homebrew, masking the failure locally). Fixed by installing `poppler-utils` in both workflows plus a skipif guard on the test. Release/acceptance work continues in `phase-10-release-acceptance.md`; the TUI feature is planned in `phase-11-tui.md`.
