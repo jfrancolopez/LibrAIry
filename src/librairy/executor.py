@@ -3,7 +3,9 @@ from __future__ import annotations
 import errno
 import os
 import shutil
+import signal
 import sqlite3
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -76,6 +78,7 @@ def _execute_plan_unlocked(
             _finish_op(conn, row["id"], result, None)
             _journal(conn, row, row["dest_relpath"], row["src_fingerprint"], str(exc))
         counts[result] += 1
+        _test_pause_after_op()
 
     final_status = "failed" if counts["failed"] else "done"
     conn.execute(
@@ -201,3 +204,14 @@ def _root_path(settings: Settings, root: str) -> Path:
     if root == "quarantine":
         return settings.quarantine_dir
     raise ExecutionError(f"unknown root: {root}")
+
+
+def _test_pause_after_op() -> None:
+    marker = os.environ.get("LIBRAIRY_TEST_PAUSE_AFTER_OP_MARKER")
+    if not marker:
+        return
+    Path(marker).write_text(str(os.getpid()), encoding="utf-8")
+    if hasattr(signal, "pause"):
+        signal.pause()
+    else:  # pragma: no cover - non-POSIX fallback
+        time.sleep(60)

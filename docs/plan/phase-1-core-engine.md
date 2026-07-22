@@ -263,10 +263,10 @@ CREATE TABLE sessions (                     -- used from Phase 5; created now so
 - [x] Executes a multi-op plan; filesystem end state matches the plan exactly; journal has one row per op.
 - [x] Source changed between approval and execution → op `skipped_changed`, file untouched, execution continues.
 - [x] Destination collision → deterministic rename, `renamed_collision` recorded with `final_relpath`.
-- [ ] Kill -9 mid-execution (test with subprocess) → re-run completes remaining ops; no file lost, none duplicated, no partial `.part-*` residue after completion.
-- [ ] Cross-device path exercised (bind/mock or forced-copy flag): destination fingerprint verified before source removal.
+- [x] Kill -9 mid-execution (test with subprocess) → re-run completes remaining ops; no file lost, none duplicated, no partial `.part-*` residue after completion.
+- [x] Cross-device path exercised (bind/mock or forced-copy flag): destination fingerprint verified before source removal.
 - [x] Executing a plan whose hash no longer matches its ops aborts before touching any file.
-- [ ] Grep-test: no `os.remove/unlink/rmtree` on user data outside the verified-copy source removal; no move primitives outside `executor.py`.
+- [x] Grep-test: no `os.remove/unlink/rmtree` on user data outside the verified-copy source removal; no move primitives outside `executor.py`.
 **Test notes:** the crash test spawns a real subprocess and kills it between ops (hook/env var to pause); assert invariants, then resume.
 **Size:** L
 
@@ -317,9 +317,9 @@ CREATE TABLE sessions (                     -- used from Phase 5; created now so
 **Depends on:** P1-06, P1-07
 **Description:** Consolidate the adversarial cases into a dedicated suite: containment fuzzing (P1-06), crash/kill matrix (before first op, between ops, mid-copy), double-execution race (two processes attempt `commit` concurrently → exactly one proceeds), stale plan (source tree replaced wholesale after approval → all ops skipped, nothing moved), unicode/emoji/255-byte filenames, read-only destination directory (clean failure, no partial state), disk-full simulation on cross-device copy (temp file cleaned up, source intact).
 **Acceptance criteria:**
-- [ ] All scenarios above have explicit tests and pass.
-- [ ] Suite runs in CI within reasonable time (mark the slowest as `slow` but still run them in CI).
-- [ ] A "safety invariants" test module greps the package for forbidden calls (deletion primitives on user data, move primitives outside executor) and fails on violation.
+- [x] All scenarios above have explicit tests and pass.
+- [x] Suite runs in CI within reasonable time (mark the slowest as `slow` but still run them in CI).
+- [x] A "safety invariants" test module greps the package for forbidden calls (deletion primitives on user data, move primitives outside executor) and fails on violation.
 **Size:** M
 
 ## Verification steps
