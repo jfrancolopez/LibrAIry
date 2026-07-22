@@ -14,7 +14,7 @@ def settings_for(tmp_path: Path) -> Settings:
     return Settings(APPDATA_DIR=tmp_path / "appdata", _env_file=None)
 
 
-def test_fresh_db_migrates_to_schema_v1(tmp_path: Path) -> None:
+def test_fresh_db_migrates_to_current_schema(tmp_path: Path) -> None:
     conn = connect(settings_for(tmp_path))
 
     assert user_version(conn) == SCHEMA_VERSION
@@ -24,7 +24,16 @@ def test_fresh_db_migrates_to_schema_v1(tmp_path: Path) -> None:
             "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
         )
     }
-    assert tables == {"items", "plans", "plan_ops", "history", "settings", "sessions"}
+    assert tables == {
+        "items",
+        "plans",
+        "plan_ops",
+        "history",
+        "settings",
+        "sessions",
+        "groups",
+        "proposals",
+    }
 
     indexes = {
         row[0]
@@ -37,6 +46,10 @@ def test_fresh_db_migrates_to_schema_v1(tmp_path: Path) -> None:
         "idx_items_state",
         "idx_plan_ops_plan_id",
         "idx_history_plan_id",
+        "idx_proposals_status",
+        "idx_proposals_category",
+        "idx_proposals_group_id",
+        "idx_groups_kind",
     }
 
 

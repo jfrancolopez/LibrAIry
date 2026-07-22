@@ -1,6 +1,19 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
+
+Category = Literal["music", "movies", "shows", "photos", "documents", "books", "projects", "misc"]
+EvidenceSource = Literal[
+    "heuristic",
+    "tags",
+    "acoustid",
+    "musicbrainz",
+    "tmdb",
+    "library-pattern",
+    "hashtag",
+    "ai",
+]
 
 
 @dataclass(frozen=True)
@@ -57,3 +70,35 @@ class HistoryEntry:
     dest_relpath: str
     fingerprint: str | None
     outcome: str
+
+
+@dataclass(frozen=True)
+class EvidenceEntry:
+    source: EvidenceSource
+    field: str
+    detail: str
+    weight: float
+
+
+@dataclass(frozen=True)
+class Group:
+    id: int
+    kind: str
+    label: str
+    dest_base: str | None
+    created_at: str
+
+
+@dataclass(frozen=True)
+class Proposal:
+    id: int
+    item_id: int
+    category: Category
+    clean_name: str
+    dest_relpath: str | None
+    confidence: float
+    group_id: int | None
+    status: str
+    evidence: tuple[EvidenceEntry, ...]
+    created_at: str
+    updated_at: str

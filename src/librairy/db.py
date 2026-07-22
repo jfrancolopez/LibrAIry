@@ -5,7 +5,7 @@ from pathlib import Path
 
 from librairy.config import Settings
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 class DatabaseVersionError(RuntimeError):
@@ -80,7 +80,39 @@ CREATE INDEX idx_plan_ops_plan_id ON plan_ops(plan_id);
 CREATE INDEX idx_history_plan_id ON history(plan_id);
 """
 
-MIGRATIONS = {1: MIGRATION_001}
+MIGRATION_002 = """
+CREATE TABLE groups (
+  id         INTEGER PRIMARY KEY,
+  kind       TEXT NOT NULL CHECK (kind IN ('album','season','photo_event','project','archive')),
+  label      TEXT NOT NULL,
+  dest_base  TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE proposals (
+  id            INTEGER PRIMARY KEY,
+  item_id       INTEGER NOT NULL REFERENCES items(id),
+  category      TEXT NOT NULL CHECK (category IN
+                  ('music','movies','shows','photos','documents','books','projects','misc')),
+  clean_name    TEXT NOT NULL,
+  dest_relpath  TEXT,
+  confidence    REAL NOT NULL,
+  group_id      INTEGER REFERENCES groups(id),
+  status        TEXT NOT NULL DEFAULT 'proposed'
+                CHECK (status IN (
+                  'proposed','approved','rejected','postponed','committed','superseded'
+                )),
+  evidence      TEXT NOT NULL,
+  created_at    TEXT NOT NULL,
+  updated_at    TEXT NOT NULL,
+  UNIQUE (item_id)
+);
+CREATE INDEX idx_proposals_status ON proposals(status);
+CREATE INDEX idx_proposals_category ON proposals(category);
+CREATE INDEX idx_proposals_group_id ON proposals(group_id);
+CREATE INDEX idx_groups_kind ON groups(kind);
+"""
+
+MIGRATIONS = {1: MIGRATION_001, 2: MIGRATION_002}
 
 
 def database_path(settings: Settings) -> Path:

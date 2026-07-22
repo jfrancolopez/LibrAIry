@@ -1,6 +1,6 @@
 # Phase 2 — Classification Engine (Catalog + Heuristics, no AI)
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Depends on:** Phase 1 (core safety engine) DONE
 **Size:** L (largest port: replaces the 1,676-line `step3_classify.sh` and adapts the `catalog/` Python modules)
 
@@ -143,9 +143,9 @@ CREATE TABLE groups (
 **Depends on:** Phase 1
 **Description:** Migration 002 (schema above), `models.py` additions (`Proposal`, `EvidenceEntry`, `Group`), persistence helpers, and supersede logic (re-analysis of a changed item replaces its proposal, old row marked `superseded` via status or archived copy — keep simple, document choice).
 **Acceptance criteria:**
-- [ ] Migration applies on a v1 DB; fresh DB reaches user_version 2 in one go.
-- [ ] One live proposal per item enforced; re-analysis supersedes cleanly.
-- [ ] Evidence round-trips as typed entries (source enum validated).
+- [x] Migration applies on a v1 DB; fresh DB reaches user_version 2 in one go.
+- [x] One live proposal per item enforced; re-analysis supersedes cleanly.
+- [x] Evidence round-trips as typed entries (source enum validated).
 **Size:** S
 
 ### P2-02 Taxonomy + destination template registry
