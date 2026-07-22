@@ -154,7 +154,7 @@ def create_plan_from_proposals(
         params.extend(proposal_ids)
     rows = conn.execute(sql, params).fetchall()
     specs = [
-        OperationSpec("move", row["src_relpath"], "library", row["dest_relpath"])
+        OperationSpec(row["action"], row["src_relpath"], row["dest_root"], row["dest_relpath"])
         for row in rows
     ]
     return create_plan(conn, specs, settings)

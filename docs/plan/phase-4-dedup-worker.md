@@ -179,8 +179,8 @@ CREATE TABLE worker_state (
 **Depends on:** P4-05
 **Description:** One integration test: seed corpus inbox (including an exact dup of a library file, a similar-media pair, hashtag folders, a project, pending-worthy junk) → run worker `--once` (AI mocked) → assert staged proposals + quarantine proposals + review flags → approve via `librairy propose-plan`/`plan approve` → `commit` → assert library tree, quarantine tree, history, states → `undo --plan` → assert full restoration.
 **Acceptance criteria:**
-- [ ] The E2E test exists, runs in CI, and passes.
-- [ ] Assertion coverage includes: pending junk untouched; project intact; dup quarantined with entry row; similar pair NOT quarantined; undo restores everything.
+- [x] The E2E test exists, runs in CI, and passes.
+- [x] Assertion coverage includes: pending junk untouched; project intact; dup quarantined with entry row; similar pair NOT quarantined; undo restores everything.
 **Size:** M
 
 ### P4-07 Bash retirement + Docker/compose update

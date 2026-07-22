@@ -8,6 +8,7 @@ from pathlib import Path
 
 from librairy.config import Settings
 from librairy.db import connect
+from librairy.dedup import set_dedup_option
 from librairy.worker import next_sleep, run_once
 
 
@@ -61,6 +62,28 @@ def test_worker_honors_batch_size(tmp_path: Path) -> None:
 
     assert summary.analyzed == 1
     assert conn.execute("SELECT COUNT(*) FROM items WHERE state='discovered'").fetchone()[0] == 1
+
+
+def test_worker_stages_exact_duplicate_quarantine_proposal(tmp_path: Path) -> None:
+    settings = settings_for(tmp_path)
+    settings.inbox_dir.mkdir()
+    settings.library_dir.mkdir()
+    settings.quarantine_dir.mkdir()
+    (settings.inbox_dir / "copy.txt").write_text("same", encoding="utf-8")
+    (settings.library_dir / "original.txt").write_text("same", encoding="utf-8")
+    conn = connect(settings)
+    from librairy.scanner import scan_root
+
+    set_dedup_option(conn, "use_rmlint", False)
+    scan_root(conn, "library", settings.library_dir, settings)
+
+    summary = run_once(conn, settings)
+
+    assert summary.duplicate_candidates == 1
+    proposal = conn.execute("SELECT action, dest_root, dest_relpath FROM proposals").fetchone()
+    assert proposal["action"] == "quarantine"
+    assert proposal["dest_root"] == "quarantine"
+    assert proposal["dest_relpath"].endswith("/copy.txt")
 
 
 def test_worker_never_imports_or_calls_executor() -> None:

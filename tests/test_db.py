@@ -64,6 +64,8 @@ def test_fresh_db_migrates_to_current_schema(tmp_path: Path) -> None:
 
     columns = {row[1] for row in conn.execute("PRAGMA table_info(provider_status)")}
     assert "available_models" in columns
+    proposal_columns = {row[1] for row in conn.execute("PRAGMA table_info(proposals)")}
+    assert {"action", "dest_root"} <= proposal_columns
 
 
 def test_reopening_db_is_noop(tmp_path: Path) -> None:

@@ -5,7 +5,7 @@ from pathlib import Path
 
 from librairy.config import Settings
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 
 class DatabaseVersionError(RuntimeError):
@@ -168,6 +168,11 @@ CREATE INDEX idx_quarantine_entries_item_id ON quarantine_entries(item_id);
 CREATE INDEX idx_quarantine_entries_restored_at ON quarantine_entries(restored_at);
 """
 
+MIGRATION_007 = """
+ALTER TABLE proposals ADD COLUMN action TEXT NOT NULL DEFAULT 'move';
+ALTER TABLE proposals ADD COLUMN dest_root TEXT NOT NULL DEFAULT 'library';
+"""
+
 MIGRATIONS = {
     1: MIGRATION_001,
     2: MIGRATION_002,
@@ -175,6 +180,7 @@ MIGRATIONS = {
     4: MIGRATION_004,
     5: MIGRATION_005,
     6: MIGRATION_006,
+    7: MIGRATION_007,
 }
 
 

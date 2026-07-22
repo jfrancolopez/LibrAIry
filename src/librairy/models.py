@@ -97,6 +97,8 @@ class Proposal:
     clean_name: str
     dest_relpath: str | None
     confidence: float
+    action: str
+    dest_root: str
     group_id: int | None
     status: str
     evidence: tuple[EvidenceEntry, ...]

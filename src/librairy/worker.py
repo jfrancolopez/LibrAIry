@@ -13,7 +13,11 @@ from librairy.dedup import (
     detect_similar_media,
     hash_size_colliding_library_files,
 )
+from librairy.lifecycle import transition_item
+from librairy.models import EvidenceEntry
 from librairy.planner import utc_now
+from librairy.proposals import upsert_proposal
+from librairy.quarantine import quarantine_operation
 from librairy.scanner import scan_root
 
 IDLE_SLEEP_SECONDS = 5.0
@@ -60,7 +64,10 @@ class Worker:
         scan = scan_root(self.conn, "inbox", self.settings.inbox_dir, self.settings)
         _set_worker_state(self.conn, "current_phase", "dedup")
         library_hashed = hash_size_colliding_library_files(self.conn, self.settings)
-        duplicate_candidates = len(detect_exact_duplicates(self.conn, self.settings))
+        duplicate_candidates = _stage_quarantine_proposals(
+            self.conn,
+            detect_exact_duplicates(self.conn, self.settings),
+        )
         similar_flags = detect_similar_media(self.conn, self.settings)
         _set_worker_state(self.conn, "current_phase", "analyze")
         analysis = analyze_items(self.conn, self.settings, self.settings.batch_size)
@@ -115,3 +122,32 @@ def _set_worker_state(conn: sqlite3.Connection, key: str, value) -> None:
         "INSERT OR REPLACE INTO worker_state(key, value) VALUES (?, ?)",
         (key, json.dumps(value, sort_keys=True)),
     )
+
+
+def _stage_quarantine_proposals(conn: sqlite3.Connection, candidates) -> int:
+    staged = 0
+    for candidate in candidates:
+        if candidate.status != "confirmed" or candidate.duplicate.state != "discovered":
+            continue
+        op = quarantine_operation(candidate.duplicate.relpath)
+        upsert_proposal(
+            conn,
+            item_id=candidate.duplicate.id,
+            category="misc",
+            clean_name=candidate.duplicate.relpath.rsplit("/", 1)[-1],
+            dest_relpath=op.dest_relpath,
+            confidence=1.0,
+            evidence=[
+                EvidenceEntry(
+                    "heuristic",
+                    "category",
+                    f"exact duplicate of {candidate.keeper.root}:{candidate.keeper.relpath}",
+                    1.0,
+                )
+            ],
+            action="quarantine",
+            dest_root="quarantine",
+        )
+        transition_item(conn, candidate.duplicate.id, "quarantine-proposed")
+        staged += 1
+    return staged

@@ -32,9 +32,12 @@ def upsert_proposal(
     dest_relpath: str | None,
     confidence: float,
     evidence: list[EvidenceEntry],
+    action: str = "move",
+    dest_root: str = "library",
     group_id: int | None = None,
 ) -> int:
     validate_evidence(evidence)
+    validate_action(action, dest_root)
     now = utc_now()
     encoded = encode_evidence(evidence)
     existing = conn.execute(
@@ -45,21 +48,44 @@ def upsert_proposal(
         cursor = conn.execute(
             """
             INSERT INTO proposals(
-              item_id, category, clean_name, dest_relpath, confidence, group_id,
+              item_id, category, clean_name, dest_relpath, confidence, action, dest_root, group_id,
               status, evidence, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, 'proposed', ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'proposed', ?, ?, ?)
             """,
-            (item_id, category, clean_name, dest_relpath, confidence, group_id, encoded, now, now),
+            (
+                item_id,
+                category,
+                clean_name,
+                dest_relpath,
+                confidence,
+                action,
+                dest_root,
+                group_id,
+                encoded,
+                now,
+                now,
+            ),
         )
         return int(cursor.lastrowid)
 
     conn.execute(
         """
         UPDATE proposals SET category=?, clean_name=?, dest_relpath=?, confidence=?,
-          group_id=?, status='proposed', evidence=?, updated_at=?
+          action=?, dest_root=?, group_id=?, status='proposed', evidence=?, updated_at=?
         WHERE id=?
         """,
-        (category, clean_name, dest_relpath, confidence, group_id, encoded, now, existing["id"]),
+        (
+            category,
+            clean_name,
+            dest_relpath,
+            confidence,
+            action,
+            dest_root,
+            group_id,
+            encoded,
+            now,
+            existing["id"],
+        ),
     )
     return int(existing["id"])
 
@@ -86,6 +112,8 @@ def proposal_from_row(row: sqlite3.Row) -> Proposal:
         clean_name=row["clean_name"],
         dest_relpath=row["dest_relpath"],
         confidence=row["confidence"],
+        action=row["action"],
+        dest_root=row["dest_root"],
         group_id=row["group_id"],
         status=row["status"],
         evidence=tuple(decode_evidence(row["evidence"])),
@@ -112,3 +140,11 @@ def validate_evidence(evidence: list[EvidenceEntry]) -> None:
             raise ProposalError(f"invalid evidence source: {entry.source}")
         if not 0.0 <= entry.weight <= 1.0:
             raise ProposalError("evidence weight must be between 0.0 and 1.0")
+
+
+def validate_action(action: str, dest_root: str) -> None:
+    if action not in {"move", "quarantine"}:
+        raise ProposalError(f"invalid proposal action: {action}")
+    expected_root = "quarantine" if action == "quarantine" else "library"
+    if dest_root != expected_root:
+        raise ProposalError(f"{action} proposals must target {expected_root}")
