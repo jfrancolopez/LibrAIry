@@ -6,13 +6,24 @@ from pathlib import Path
 
 from librairy.config import Settings
 from librairy.db import database_path
+from librairy.paths import validate_relpath
 from librairy.planner import utc_now
-from librairy.tools.rclone import RcloneStatus, rclone_status
+from librairy.tools.rclone import RcloneStatus, check_command, copy_command, rclone_status, run
+
+MAX_BACKUP_ATTEMPTS = 3
 
 
 @dataclass(frozen=True)
 class BackupQueueResult:
     queued: int
+
+
+@dataclass(frozen=True)
+class BackupRunSummary:
+    copied: int = 0
+    failed: int = 0
+    paused: bool = False
+    warning: str = ""
 
 
 def rclone_config_path(settings: Settings) -> Path:
@@ -77,6 +88,75 @@ def enqueue_plan_outputs(
     return BackupQueueResult(queued)
 
 
+def run_backup_once(
+    conn: sqlite3.Connection,
+    settings: Settings,
+    *,
+    batch_size: int = 50,
+) -> BackupRunSummary:
+    status = backup_status(settings)
+    if not status.available:
+        return BackupRunSummary(paused=True, warning=status.detail)
+    rows = conn.execute(
+        """
+        SELECT * FROM backup_queue
+        WHERE state IN ('queued','failed') AND attempts < ?
+        ORDER BY id
+        LIMIT ?
+        """,
+        (MAX_BACKUP_ATTEMPTS, batch_size),
+    ).fetchall()
+    copied = failed = 0
+    for row in rows:
+        if _copy_and_verify(conn, settings, row):
+            copied += 1
+        else:
+            failed += 1
+    return BackupRunSummary(copied=copied, failed=failed)
+
+
+def _copy_and_verify(conn: sqlite3.Connection, settings: Settings, row: sqlite3.Row) -> bool:
+    source = validate_relpath(settings.library_dir, row["relpath"], kind="source")
+    remote = _remote_path(settings.backup_remote, row["relpath"])
+    conn.execute(
+        "UPDATE backup_queue SET state='copying', updated_at=? WHERE id=?",
+        (utc_now(), row["id"]),
+    )
+    copy = run(
+        copy_command(
+            rclone_config_path(settings),
+            source,
+            remote,
+            settings.backup_bandwidth_limit,
+        )
+    )
+    check = None
+    if copy.returncode == 0:
+        check = run(check_command(rclone_config_path(settings), source, remote))
+    if copy.returncode == 0 and check is not None and check.returncode == 0:
+        conn.execute(
+            """
+            UPDATE backup_queue
+            SET state='done', last_error=NULL, updated_at=?
+            WHERE id=?
+            """,
+            (utc_now(), row["id"]),
+        )
+        return True
+    error = _process_error(copy, check)
+    attempts = int(row["attempts"]) + 1
+    state = "failed"
+    conn.execute(
+        """
+        UPDATE backup_queue
+        SET state=?, attempts=?, last_error=?, updated_at=?
+        WHERE id=?
+        """,
+        (state, attempts, error[:500], utc_now(), row["id"]),
+    )
+    return False
+
+
 def snapshot_database(settings: Settings, destination: Path) -> Path:
     destination.parent.mkdir(parents=True, exist_ok=True)
     source = sqlite3.connect(database_path(settings))
@@ -87,3 +167,12 @@ def snapshot_database(settings: Settings, destination: Path) -> Path:
         target.close()
         source.close()
     return destination
+
+
+def _remote_path(remote: str, relpath: str) -> str:
+    return f"{remote.rstrip('/')}/{relpath}"
+
+
+def _process_error(copy, check) -> str:  # noqa: ANN001
+    failed = check if check is not None and check.returncode != 0 else copy
+    return failed.stderr.strip() or failed.stdout.strip() or f"rclone exited {failed.returncode}"

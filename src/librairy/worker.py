@@ -7,6 +7,7 @@ import sqlite3
 import time
 from dataclasses import asdict, dataclass
 
+from librairy.backup import run_backup_once
 from librairy.classify import analyze_items
 from librairy.config import Settings
 from librairy.content.extract import process_content_extractions
@@ -42,6 +43,8 @@ class WorkerSummary:
     pending: int
     content_extracted: int = 0
     content_failed: int = 0
+    backup_copied: int = 0
+    backup_failed: int = 0
 
     @property
     def work_found(self) -> bool:
@@ -54,6 +57,7 @@ class WorkerSummary:
                 self.similar_flags,
                 self.analyzed,
                 self.content_extracted,
+                self.backup_copied,
             )
         )
 
@@ -83,6 +87,8 @@ class Worker:
             analysis = analyze_items(self.conn, settings, settings.batch_size)
             _set_worker_state(self.conn, "current_phase", "content")
             content = process_content_extractions(self.conn, settings, settings.batch_size)
+            _set_worker_state(self.conn, "current_phase", "backup")
+            backup = run_backup_once(self.conn, settings, batch_size=settings.batch_size)
             summary = WorkerSummary(
                 scanned=scan.discovered,
                 hashed=scan.hashed,
@@ -94,6 +100,8 @@ class Worker:
                 pending=analysis.pending,
                 content_extracted=content.extracted,
                 content_failed=content.failed,
+                backup_copied=backup.copied,
+                backup_failed=backup.failed,
             )
             _set_worker_state(self.conn, "last_cycle_at", utc_now())
             _set_worker_state(self.conn, "current_phase", "idle")
