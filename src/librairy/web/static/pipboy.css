@@ -136,7 +136,8 @@ button {
   .provider-row { grid-template-columns: 1fr; }
 }
 
-.filter-bar {
+.filter-bar,
+.action-bar {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 0.75rem;

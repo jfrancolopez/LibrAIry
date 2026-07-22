@@ -1,4 +1,5 @@
 <div id="review-list" class="review-list">
+  {% if toast %}<p class="status">[OK] {{ toast }}</p>{% endif %}
   <p class="status">[OK] {{ total }} ITEMS MATCH</p>
   {% if groups %}
     {% for group in groups %}
@@ -18,7 +19,7 @@
           <tbody>
             {% for proposal in group.rows %}
               <tr>
-                <td><input type="checkbox" aria-label="select {{ proposal.item_relpath }}" value="{{ proposal.id }}"></td>
+                <td><input form="review-actions" name="proposal_id" type="checkbox" aria-label="select {{ proposal.item_relpath }}" value="{{ proposal.id }}"></td>
                 <td>{{ proposal.item_relpath }}</td>
                 <td>{% if proposal.dest_relpath %}{{ proposal.dest_root }}/{{ proposal.dest_relpath }}{% else %}<span class="status">[WARN] pending destination</span>{% endif %}</td>
                 <td><span class="confidence" style="--score: {{ (proposal.confidence * 100)|round|int }}%">{{ '%.2f'|format(proposal.confidence) }}</span></td>

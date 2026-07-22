@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 from pathlib import Path
+from typing import Annotated
 
 from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -22,7 +23,7 @@ from librairy.web.auth import (
 )
 from librairy.web.dashboard import dashboard_data
 from librairy.web.health import health_data, test_provider
-from librairy.web.review import filters_from_query, review_data
+from librairy.web.review import apply_review_action, filters_from_query, review_data
 
 PACKAGE_DIR = Path(__file__).parent
 TEMPLATES = Jinja2Templates(directory=PACKAGE_DIR / "templates")
@@ -173,6 +174,40 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             request,
             "partials/review_list.html",
             review_data(conn, filters),
+        )
+
+    @app.post("/review/action", response_class=HTMLResponse)
+    def review_action(
+        request: Request,
+        action: Annotated[str, Form()],
+        proposal_id: Annotated[list[int] | None, Form()] = None,
+        all_matching: Annotated[bool, Form()] = False,
+        category: Annotated[str | None, Form()] = None,
+        state: Annotated[str, Form()] = "proposed",
+        min_confidence: Annotated[float | None, Form()] = None,
+        max_confidence: Annotated[float | None, Form()] = None,
+        has_destination: Annotated[str | None, Form()] = None,
+        page: Annotated[int, Form()] = 1,
+    ) -> HTMLResponse:
+        filters = filters_from_query(
+            category=category,
+            state=state,
+            min_confidence=min_confidence,
+            max_confidence=max_confidence,
+            has_destination=has_destination,
+            page=page,
+        )
+        changed = apply_review_action(
+            conn,
+            action,
+            filters,
+            proposal_ids=proposal_id or [],
+            all_matching=all_matching,
+        )
+        return TEMPLATES.TemplateResponse(
+            request,
+            "partials/review_list.html",
+            {"toast": f"{changed} proposal(s) updated", **review_data(conn, filters)},
         )
 
     @app.post("/csrf-check")

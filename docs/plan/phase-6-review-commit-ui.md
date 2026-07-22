@@ -122,9 +122,9 @@ Put the product's core loop in the browser: review accumulated proposals in batc
 **Depends on:** P6-01
 **Description:** Approve/reject/postpone endpoints (single + batch with select-all-matching-filter), state transitions via `lifecycle.py`, optimistic HTMX row updates, undo-last-action toast (state-level revert of the batch — not filesystem).
 **Acceptance criteria:**
-- [ ] Batch approve of a filtered set transitions exactly the matching proposals (boundary test: filter excludes one item → it is untouched).
-- [ ] Rejected items return to `pending` with proposal kept for reference (status `rejected`); postponed items leave the default queue view.
-- [ ] All actions CSRF-protected; keyboard-only operation verified (integration test drives the DOM sequence).
+- [x] Batch approve of a filtered set transitions exactly the matching proposals (boundary test: filter excludes one item → it is untouched).
+- [x] Rejected items return to `pending` with proposal kept for reference (status `rejected`); postponed items leave the default queue view.
+- [x] All actions CSRF-protected; keyboard-only operation verified (integration test drives the DOM sequence).
 **Size:** M
 
 ### P6-03 Safe edit pipeline

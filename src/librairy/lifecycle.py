@@ -26,7 +26,7 @@ LEGAL_TRANSITIONS = {
         "quarantined",
     },
     "unstable": {"discovered"},
-    "proposed": {"approved", "rejected", "postponed", "discovered", "committed"},
+    "proposed": {"approved", "pending", "postponed", "discovered", "committed"},
     "approved": {"committed", "quarantined", "discovered"},
     "pending": {"discovered", "postponed", "proposed"},
     "postponed": {"discovered", "proposed"},

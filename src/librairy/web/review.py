@@ -4,6 +4,8 @@ import sqlite3
 from dataclasses import dataclass
 from typing import Any
 
+from librairy.lifecycle import transition_item
+from librairy.planner import utc_now
 from librairy.proposals import decode_evidence
 
 PAGE_SIZE = 50
@@ -30,6 +32,39 @@ def review_data(conn: sqlite3.Connection, filters: ReviewFilters) -> dict[str, o
         "has_next": filters.page * PAGE_SIZE < total,
         "has_prev": filters.page > 1,
     }
+
+
+def apply_review_action(
+    conn: sqlite3.Connection,
+    action: str,
+    filters: ReviewFilters,
+    *,
+    proposal_ids: list[int] | None = None,
+    all_matching: bool = False,
+) -> int:
+    if action not in {"approve", "reject", "postpone"}:
+        raise ValueError(f"unknown review action: {action}")
+    targets = _matching_ids(conn, filters) if all_matching else proposal_ids or []
+    if not targets:
+        return 0
+    status = {"approve": "approved", "reject": "rejected", "postpone": "postponed"}[action]
+    item_state = {"approve": "approved", "reject": "pending", "postpone": "postponed"}[action]
+    sql = f"""
+        SELECT id, item_id
+        FROM proposals
+        WHERE status='proposed' AND id IN ({_placeholders(targets)})
+        """
+    rows = conn.execute(
+        sql,
+        targets,
+    ).fetchall()
+    for row in rows:
+        transition_item(conn, row["item_id"], item_state)
+        conn.execute(
+            "UPDATE proposals SET status=?, updated_at=? WHERE id=?",
+            (status, utc_now(), row["id"]),
+        )
+    return len(rows)
 
 
 def evidence_lines(payload: str) -> list[str]:
@@ -103,6 +138,22 @@ def _proposal_count(conn: sqlite3.Connection, filters: ReviewFilters) -> int:
     )
 
 
+def _matching_ids(conn: sqlite3.Connection, filters: ReviewFilters) -> list[int]:
+    where, params = _where(filters)
+    return [
+        int(row["id"])
+        for row in conn.execute(
+            f"""
+            SELECT p.id
+            FROM proposals p
+            JOIN items i ON i.id = p.item_id
+            WHERE {where}
+            """,
+            params,
+        )
+    ]
+
+
 def _group_rows(rows: list[dict[str, Any]]) -> list[dict[str, object]]:
     groups: list[dict[str, object]] = []
     by_key: dict[tuple[str, str], dict[str, object]] = {}
@@ -136,3 +187,7 @@ def _where(filters: ReviewFilters) -> tuple[str, list[object]]:
     elif filters.has_destination is False:
         clauses.append("p.dest_relpath IS NULL")
     return " AND ".join(clauses), params
+
+
+def _placeholders(values: list[int]) -> str:
+    return ",".join("?" for _ in values)

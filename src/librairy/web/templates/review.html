@@ -21,5 +21,24 @@
     </label>
     <button type="submit">Filter</button>
   </form>
+  <form
+    id="review-actions"
+    class="action-bar"
+    hx-post="/review/action"
+    hx-target="#review-list"
+    hx-swap="outerHTML"
+    hx-headers='{"x-csrf-token":"{{ request.state.session.csrf_token }}"}'
+  >
+    <input type="hidden" name="state" value="{{ filters.state }}">
+    <input type="hidden" name="category" value="{{ filters.category or '' }}">
+    <input type="hidden" name="min_confidence" value="{{ filters.min_confidence or '' }}">
+    <input type="hidden" name="max_confidence" value="{{ filters.max_confidence or '' }}">
+    <input type="hidden" name="has_destination" value="{% if filters.has_destination is sameas true %}yes{% elif filters.has_destination is sameas false %}no{% endif %}">
+    <input type="hidden" name="page" value="{{ filters.page }}">
+    <button type="submit" name="action" value="approve">Approve Selected</button>
+    <button type="submit" name="action" value="reject">Reject Selected</button>
+    <button type="submit" name="action" value="postpone">Postpone Selected</button>
+    <label><input type="checkbox" name="all_matching" value="true"> select all matching current filter</label>
+  </form>
   {% include "partials/review_list.html" %}
 {% endblock %}

@@ -94,6 +94,65 @@ def test_review_large_seed_is_paginated_and_fast(tmp_path: Path) -> None:
     assert elapsed < 1.0
 
 
+def test_batch_approve_filtered_set_only_updates_matches(tmp_path: Path) -> None:
+    client, conn = client_for(tmp_path)
+    music_id = seed_proposal(conn, "music/a.flac", "music", "Music/A.flac", 0.9, None)
+    doc_id = seed_proposal(conn, "docs/a.txt", "documents", "Documents/A.txt", 0.9, None)
+
+    response = client.post(
+        "/review/action",
+        data={"action": "approve", "all_matching": "true", "category": "music"},
+        headers={"x-csrf-token": client.cookies["csrf_token"]},
+    )
+
+    assert response.status_code == 200
+    assert proposal_status(conn, music_id) == "approved"
+    assert item_state(conn, music_id) == "approved"
+    assert proposal_status(conn, doc_id) == "proposed"
+
+
+def test_reject_and_postpone_transitions_leave_default_queue(tmp_path: Path) -> None:
+    client, conn = client_for(tmp_path)
+    rejected_id = seed_proposal(conn, "reject.txt", "documents", "Documents/reject.txt", 0.8, None)
+    postponed_id = seed_proposal(conn, "later.txt", "documents", "Documents/later.txt", 0.8, None)
+
+    reject = client.post(
+        "/review/action",
+        data={"action": "reject", "proposal_id": str(rejected_id)},
+        headers={"x-csrf-token": client.cookies["csrf_token"]},
+    )
+    postpone = client.post(
+        "/review/action",
+        data={"action": "postpone", "proposal_id": str(postponed_id)},
+        headers={"x-csrf-token": client.cookies["csrf_token"]},
+    )
+    queue = client.get("/review/list")
+
+    assert reject.status_code == 200
+    assert postpone.status_code == 200
+    assert proposal_status(conn, rejected_id) == "rejected"
+    assert item_state(conn, rejected_id) == "pending"
+    assert proposal_status(conn, postponed_id) == "postponed"
+    assert item_state(conn, postponed_id) == "postponed"
+    assert "reject.txt" not in queue.text
+    assert "later.txt" not in queue.text
+
+
+def test_review_actions_are_csrf_protected_and_keyboard_controls_render(tmp_path: Path) -> None:
+    client, conn = client_for(tmp_path)
+    proposal_id = seed_proposal(conn, "a.txt", "documents", "Documents/a.txt", 0.9, None)
+
+    blocked = client.post(
+        "/review/action", data={"action": "approve", "proposal_id": str(proposal_id)}
+    )
+    page = client.get("/review")
+
+    assert blocked.status_code == 403
+    assert proposal_status(conn, proposal_id) == "proposed"
+    assert "Approve Selected" in page.text
+    assert "aria-label=\"select a.txt\"" in page.text
+
+
 def seed_proposal(
     conn,
     relpath: str,
@@ -103,7 +162,7 @@ def seed_proposal(
     group_id: int | None,
 ) -> int:
     item = insert_item(conn, relpath)
-    return upsert_proposal(
+    proposal_id = upsert_proposal(
         conn,
         item_id=item,
         category=category,
@@ -113,6 +172,8 @@ def seed_proposal(
         group_id=group_id,
         evidence=[EvidenceEntry("heuristic", "category", category, confidence)],
     )
+    conn.execute("UPDATE items SET state='proposed' WHERE id=?", (item,))
+    return proposal_id
 
 
 def insert_item(conn, relpath: str) -> int:
@@ -132,3 +193,19 @@ def insert_group(conn, kind: str, label: str) -> int:
         (kind, label),
     )
     return int(cursor.lastrowid)
+
+
+def proposal_status(conn, proposal_id: int) -> str:
+    return conn.execute("SELECT status FROM proposals WHERE id=?", (proposal_id,)).fetchone()[0]
+
+
+def item_state(conn, proposal_id: int) -> str:
+    return conn.execute(
+        """
+        SELECT i.state
+        FROM proposals p
+        JOIN items i ON i.id = p.item_id
+        WHERE p.id=?
+        """,
+        (proposal_id,),
+    ).fetchone()[0]
