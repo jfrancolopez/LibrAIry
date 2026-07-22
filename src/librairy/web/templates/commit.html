@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block content %}
+  <p class="status">[WARN] COMMIT MOVES FILES</p>
+  <h1>Commit</h1>
+  <p>{{ approved_count }} approved proposal(s) ready.</p>
+  <form method="post" action="/commit/create">
+    <button type="submit">Create Commit Plan</button>
+  </form>
+{% endblock %}

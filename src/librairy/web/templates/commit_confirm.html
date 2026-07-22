@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block content %}
+  <p class="status">[WARN] CONFIRM EXACT PLAN</p>
+  <h1>Confirm Commit</h1>
+  <p>Plan {{ plan.id }}</p>
+  <p>Hash {{ plan.plan_hash }}</p>
+  <p>{{ ops|length }} operation(s), {{ quarantine_count }} quarantine operation(s)</p>
+  {% for category in categories %}<span>{{ category.category }}: {{ category.count }}</span>{% endfor %}
+  <form
+    hx-post="/commit/execute/{{ plan.id }}"
+    hx-target="#commit-progress"
+    hx-swap="outerHTML"
+    hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'
+  >
+    <button type="submit">Execute Commit</button>
+  </form>
+  <table>
+    <thead><tr><th scope="col">Seq</th><th scope="col">Source</th><th scope="col">Destination</th><th scope="col">Result</th></tr></thead>
+    <tbody>
+      {% for op in ops %}<tr><td>{{ op.seq }}</td><td>{{ op.src_root }}/{{ op.src_relpath }}</td><td>{{ op.dest_root }}/{{ op.dest_relpath }}</td><td>{{ op.result or 'pending' }}</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  {% include "partials/commit_progress.html" %}
+{% endblock %}

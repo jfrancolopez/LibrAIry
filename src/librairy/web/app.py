@@ -21,6 +21,13 @@ from librairy.web.auth import (
     set_admin_password,
     verify_admin_password,
 )
+from librairy.web.commit import (
+    CommitState,
+    commit_confirm_data,
+    create_commit_plan,
+    start_execution,
+)
+from librairy.web.commit import progress_data as commit_progress_data
 from librairy.web.dashboard import dashboard_data
 from librairy.web.health import health_data, test_provider
 from librairy.web.quarantine import (
@@ -41,9 +48,11 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
     settings = settings or Settings()
     conn = conn or connect(settings)
     limiter = LoginRateLimiter()
+    commit_state = CommitState()
     app = FastAPI(title="LibrAIry", docs_url=None, redoc_url=None)
     app.state.conn = conn
     app.state.settings = settings
+    app.state.commit_state = commit_state
     app.mount("/static", StaticFiles(directory=PACKAGE_DIR / "static"), name="static")
     app.middleware("http")(_auth_and_security(conn))
 
@@ -303,6 +312,56 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             request,
             "partials/quarantine_result.html",
             {"result": {"outcome": "approved", "entry_id": proposal_id}},
+        )
+
+    @app.get("/commit", response_class=HTMLResponse)
+    def commit_home(request: Request) -> HTMLResponse:
+        approved = conn.execute(
+            "SELECT COUNT(*) FROM proposals WHERE status='approved' AND dest_relpath IS NOT NULL"
+        ).fetchone()[0]
+        return TEMPLATES.TemplateResponse(
+            request,
+            "commit.html",
+            {
+                "title": "Commit",
+                "approved_count": approved,
+                "csrf_token": request.state.session["csrf_token"],
+            },
+        )
+
+    @app.post("/commit/create", response_class=HTMLResponse)
+    def commit_create(request: Request) -> HTMLResponse:
+        try:
+            plan_id = create_commit_plan(conn, settings)
+        except Exception as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return TEMPLATES.TemplateResponse(
+            request,
+            "commit_confirm.html",
+            {
+                "title": "Confirm Commit",
+                "csrf_token": request.state.session["csrf_token"],
+                **commit_confirm_data(conn, plan_id),
+            },
+        )
+
+    @app.post("/commit/execute/{plan_id}", response_class=HTMLResponse)
+    def commit_execute(request: Request, plan_id: str) -> HTMLResponse:
+        started = start_execution(conn, settings, commit_state, plan_id)
+        data = commit_progress_data(conn, plan_id)
+        return TEMPLATES.TemplateResponse(
+            request,
+            "partials/commit_progress.html",
+            {"started": started, "error": commit_state.error, **data},
+        )
+
+    @app.get("/commit/progress/{plan_id}", response_class=HTMLResponse)
+    def commit_progress(request: Request, plan_id: str) -> HTMLResponse:
+        data = commit_progress_data(conn, plan_id)
+        return TEMPLATES.TemplateResponse(
+            request,
+            "partials/commit_progress.html",
+            {"started": False, "error": commit_state.error, **data},
         )
 
     @app.post("/csrf-check")

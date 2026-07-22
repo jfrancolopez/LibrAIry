@@ -1,0 +1,14 @@
+<div id="commit-progress" hx-get="/commit/progress/{{ plan.id }}" hx-trigger="every 1s" hx-swap="outerHTML">
+  {% if error %}<p class="status">[WARN] {{ error }}</p>{% endif %}
+  {% if started %}<p class="status">[OK] execution started</p>{% endif %}
+  <p class="status">[{{ 'OK' if plan.status == 'done' else 'WARN' }}] {{ plan.status }}</p>
+  <p>pending: {{ counts.get('pending', 0) }} / done: {{ counts.get('done', 0) }} / renamed: {{ counts.get('renamed_collision', 0) }} / changed: {{ counts.get('skipped_changed', 0) }} / missing: {{ counts.get('skipped_missing', 0) }} / failed: {{ counts.get('failed', 0) }}</p>
+  {% if recent_ops %}
+    <table>
+      <thead><tr><th scope="col">Seq</th><th scope="col">Result</th><th scope="col">Final</th></tr></thead>
+      <tbody>
+        {% for op in recent_ops %}<tr><td>{{ op.seq }}</td><td>{{ op.result }}</td><td>{{ op.final_relpath or op.dest_relpath }}</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+</div>

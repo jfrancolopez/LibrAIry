@@ -165,11 +165,11 @@ Put the product's core loop in the browser: review accumulated proposals in batc
 **Depends on:** P6-02, P6-03
 **Description:** Per Design Constraints: create→confirm→execute-in-background→progress-poll→results; single-in-flight guard; lock-contention banner; plan hash surfaced at confirm and results.
 **Acceptance criteria:**
-- [ ] Full loop on the sandbox: approve batch → confirm screen op table matches approved proposals exactly (count + spot rows) → execute → progress advances → results table matches `plan_ops` terminal states.
-- [ ] Committed plan hash shown at confirmation == hash recorded at execution (test asserts equality end-to-end): the UI provably commits what it showed.
-- [ ] A source modified between confirm and execute → op reported `skipped_changed` in results with explanation.
-- [ ] Second concurrent commit attempt → blocked with friendly message (test).
-- [ ] Web process stays responsive during a large commit (progress endpoint answers while executor runs — threaded execution test).
+- [x] Full loop on the sandbox: approve batch → confirm screen op table matches approved proposals exactly (count + spot rows) → execute → progress advances → results table matches `plan_ops` terminal states.
+- [x] Committed plan hash shown at confirmation == hash recorded at execution (test asserts equality end-to-end): the UI provably commits what it showed.
+- [x] A source modified between confirm and execute → op reported `skipped_changed` in results with explanation.
+- [x] Second concurrent commit attempt → blocked with friendly message (test).
+- [x] Web process stays responsive during a large commit (progress endpoint answers while executor runs — threaded execution test).
 **Size:** L
 
 ### P6-07 History + undo screen
