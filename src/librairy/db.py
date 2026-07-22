@@ -5,7 +5,7 @@ from pathlib import Path
 
 from librairy.config import Settings
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 class DatabaseVersionError(RuntimeError):
@@ -112,7 +112,23 @@ CREATE INDEX idx_proposals_group_id ON proposals(group_id);
 CREATE INDEX idx_groups_kind ON groups(kind);
 """
 
-MIGRATIONS = {1: MIGRATION_001, 2: MIGRATION_002}
+MIGRATION_003 = """
+CREATE TABLE provider_status (
+  name         TEXT PRIMARY KEY,
+  kind         TEXT NOT NULL,
+  endpoint     TEXT,
+  model        TEXT,
+  enabled      INTEGER NOT NULL DEFAULT 0,
+  last_ok_at   TEXT,
+  last_error   TEXT,
+  latency_ms   INTEGER,
+  last_used_at TEXT
+);
+CREATE INDEX idx_provider_status_kind ON provider_status(kind);
+CREATE INDEX idx_provider_status_enabled ON provider_status(enabled);
+"""
+
+MIGRATIONS = {1: MIGRATION_001, 2: MIGRATION_002, 3: MIGRATION_003}
 
 
 def database_path(settings: Settings) -> Path:

@@ -33,6 +33,7 @@ def test_fresh_db_migrates_to_current_schema(tmp_path: Path) -> None:
         "sessions",
         "groups",
         "proposals",
+        "provider_status",
     }
 
     indexes = {
@@ -50,6 +51,8 @@ def test_fresh_db_migrates_to_current_schema(tmp_path: Path) -> None:
         "idx_proposals_category",
         "idx_proposals_group_id",
         "idx_groups_kind",
+        "idx_provider_status_kind",
+        "idx_provider_status_enabled",
     }
 
 

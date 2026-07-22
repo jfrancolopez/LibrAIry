@@ -31,10 +31,10 @@ def insert_item(conn) -> int:
     return int(cursor.lastrowid)
 
 
-def test_fresh_db_reaches_schema_v2(tmp_path: Path) -> None:
+def test_fresh_db_includes_proposal_schema(tmp_path: Path) -> None:
     conn = connect(settings_for(tmp_path))
 
-    assert user_version(conn) == SCHEMA_VERSION == 2
+    assert user_version(conn) == SCHEMA_VERSION >= 2
     tables = {
         row[0]
         for row in conn.execute(
@@ -44,7 +44,7 @@ def test_fresh_db_reaches_schema_v2(tmp_path: Path) -> None:
     assert tables == {"proposals", "groups"}
 
 
-def test_v1_database_migrates_to_v2(tmp_path: Path) -> None:
+def test_v1_database_migrates_through_proposal_schema(tmp_path: Path) -> None:
     settings = settings_for(tmp_path)
     db_path = settings.appdata_dir / "librairy.db"
     db_path.parent.mkdir(parents=True)
@@ -55,7 +55,7 @@ def test_v1_database_migrates_to_v2(tmp_path: Path) -> None:
 
     migrated = connect(settings)
 
-    assert user_version(migrated) == 2
+    assert user_version(migrated) == SCHEMA_VERSION
     migrated.execute("SELECT * FROM proposals")
 
 
