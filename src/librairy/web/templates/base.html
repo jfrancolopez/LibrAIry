@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ title }} - LibrAIry</title>
+    <link rel="stylesheet" href="/static/pipboy.css">
+    <script src="/static/htmx.min.js" defer></script>
+  </head>
+  <body>
+    <div class="scanlines" aria-hidden="true"></div>
+    <header class="terminal-header">
+      <a class="wordmark" href="/">LIBRAIRY</a>
+      <nav aria-label="Primary navigation">
+        <span>[OK] CORE</span>
+        <span>[WARN] WEB SHELL</span>
+      </nav>
+    </header>
+    <main class="shell">
+      <section class="panel">
+        {% block content %}{% endblock %}
+      </section>
+    </main>
+  </body>
+</html>

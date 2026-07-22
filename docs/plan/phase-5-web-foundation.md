@@ -1,6 +1,6 @@
 # Phase 5 — Web Foundation: Auth, Pip-Boy Theme, Dashboard, Health
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Depends on:** Phase 4 (worker + bash retirement) DONE
 **Size:** M
 
@@ -110,9 +110,9 @@ Ship the portal shell: a login-protected, Pip-Boy-themed FastAPI web app served 
 **Depends on:** Phase 4
 **Description:** App factory, base template (header with LibrAIry wordmark + nav slots, panel layout), `pipboy.css` per constraints, vendored `htmx.min.js`, 404/500 pages in-theme.
 **Acceptance criteria:**
-- [ ] `uvicorn` serves `/` (redirects to login/setup); static assets load from the package; zero external network requests (test asserts no non-self URLs in rendered HTML).
-- [ ] Theme: monospace, phosphor-on-dark, scanline overlay, `[OK]/[WARN]/[FAIL]` status idiom, reduced-motion respected.
-- [ ] Autoescape + security headers verified by test.
+- [x] `uvicorn` serves `/` (redirects to login/setup); static assets load from the package; zero external network requests (test asserts no non-self URLs in rendered HTML).
+- [x] Theme: monospace, phosphor-on-dark, scanline overlay, `[OK]/[WARN]/[FAIL]` status idiom, reduced-motion respected.
+- [x] Autoescape + security headers verified by test.
 **Size:** M
 
 ### P5-02 Auth: first-run setup, login, sessions, CSRF, rate limit

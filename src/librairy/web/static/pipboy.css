@@ -1,0 +1,88 @@
+:root {
+  --phosphor: #7cff6b;
+  --phosphor-dim: #2f8f43;
+  --amber: #ffbf4d;
+  --bg: #061109;
+  --panel-border: #56d364;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  color: var(--phosphor);
+  background: radial-gradient(circle at 30% 0%, #12361a, var(--bg) 55%);
+  font-family: "JetBrains Mono", "Fira Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  text-shadow: 0 0 0.35rem rgba(124, 255, 107, 0.45);
+}
+
+a { color: inherit; }
+
+.scanlines {
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.04),
+    rgba(255, 255, 255, 0.04) 1px,
+    transparent 1px,
+    transparent 4px
+  );
+}
+
+.terminal-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem clamp(1rem, 4vw, 3rem);
+  border-bottom: 2px solid var(--panel-border);
+}
+
+.wordmark {
+  color: var(--amber);
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  text-decoration: none;
+}
+
+nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  color: var(--phosphor-dim);
+}
+
+.shell {
+  width: min(960px, calc(100% - 2rem));
+  margin: clamp(2rem, 8vw, 6rem) auto;
+}
+
+.panel {
+  padding: clamp(1.25rem, 4vw, 2.5rem);
+  border: 2px solid var(--panel-border);
+  background: rgba(3, 16, 6, 0.78);
+  box-shadow: inset 0 0 2rem rgba(86, 211, 100, 0.12), 0 0 2rem rgba(86, 211, 100, 0.16);
+}
+
+.status { color: var(--amber); }
+
+h1 {
+  margin: 0 0 1rem;
+  font-size: clamp(2rem, 8vw, 4rem);
+  line-height: 0.95;
+  text-transform: uppercase;
+}
+
+:focus-visible {
+  outline: 3px solid var(--amber);
+  outline-offset: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
