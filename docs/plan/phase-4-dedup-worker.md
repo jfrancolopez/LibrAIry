@@ -166,12 +166,12 @@ CREATE TABLE worker_state (
 **Depends on:** P4-01..P4-04
 **Description:** `worker.py` per Design Constraints: cycle loop, bounded batches, backoff, graceful shutdown, crash-resume, `worker_state` heartbeat; `librairy worker` CLI entry (foreground; `--once` flag runs one cycle for tests/cron).
 **Acceptance criteria:**
-- [ ] `--once` on the corpus: scan→dedup→analyze→proposals staged; second `--once` with no changes does near-zero work (call counters).
-- [ ] Continuous mode: dropping new files mid-run gets them processed next cycle; unstable (growing) files wait.
-- [ ] SIGTERM mid-cycle → clean exit; restart resumes without duplicate work or lost items.
-- [ ] kill -9 mid-analysis → restart recovers (DB is the state; no corruption).
-- [ ] Worker never calls the executor (grep + runtime test): staging only.
-- [ ] Backoff verified: idle cycles sleep longer, capped.
+- [x] `--once` on the corpus: scan→dedup→analyze→proposals staged; second `--once` with no changes does near-zero work (call counters).
+- [x] Continuous mode: dropping new files mid-run gets them processed next cycle; unstable (growing) files wait.
+- [x] SIGTERM mid-cycle → clean exit; restart resumes without duplicate work or lost items.
+- [x] kill -9 mid-analysis → restart recovers (DB is the state; no corruption).
+- [x] Worker never calls the executor (grep + runtime test): staging only.
+- [x] Backoff verified: idle cycles sleep longer, capped.
 **Size:** M
 
 ### P4-06 Headless end-to-end test

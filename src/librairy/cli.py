@@ -27,6 +27,7 @@ from librairy.planner import (
 )
 from librairy.quarantine import list_quarantine_entries, restore_all, restore_entry
 from librairy.scanner import scan_root
+from librairy.worker import run_forever, run_once
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -99,6 +100,9 @@ def build_parser() -> argparse.ArgumentParser:
     ai_test = ai_subparsers.add_parser("test", help="Test an AI provider")
     ai_test.add_argument("provider", nargs="?")
     ai_test.add_argument("--json", action="store_true", help="Emit JSON output")
+
+    worker = subparsers.add_parser("worker", help="Run the background worker")
+    worker.add_argument("--once", action="store_true", help="Run one worker cycle and exit")
     return parser
 
 
@@ -170,6 +174,11 @@ def _dispatch(args: argparse.Namespace, conn: sqlite3.Connection, settings: Sett
             return {"schema_version": conn.execute("PRAGMA user_version").fetchone()[0]}
     if args.command == "ai":
         return _ai_command(args, conn, settings)
+    if args.command == "worker":
+        if args.once:
+            return asdict(run_once(conn, settings))
+        run_forever(conn, settings)
+        return {"stopped": True}
     return None
 
 

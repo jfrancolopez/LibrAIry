@@ -1,1 +1,117 @@
-"""Background worker is implemented in Phase 4."""
+from __future__ import annotations
+
+import json
+import signal
+import sqlite3
+import time
+from dataclasses import asdict, dataclass
+
+from librairy.classify import analyze_items
+from librairy.config import Settings
+from librairy.dedup import (
+    detect_exact_duplicates,
+    detect_similar_media,
+    hash_size_colliding_library_files,
+)
+from librairy.planner import utc_now
+from librairy.scanner import scan_root
+
+IDLE_SLEEP_SECONDS = 5.0
+BUSY_SLEEP_SECONDS = 0.5
+MAX_SLEEP_SECONDS = 60.0
+
+
+@dataclass(frozen=True)
+class WorkerSummary:
+    scanned: int
+    hashed: int
+    library_hashed: int
+    duplicate_candidates: int
+    similar_flags: int
+    analyzed: int
+    proposed: int
+    pending: int
+
+    @property
+    def work_found(self) -> bool:
+        return any(
+            (
+                self.scanned,
+                self.hashed,
+                self.library_hashed,
+                self.duplicate_candidates,
+                self.similar_flags,
+                self.analyzed,
+            )
+        )
+
+
+class Worker:
+    def __init__(self, conn: sqlite3.Connection, settings: Settings) -> None:
+        self.conn = conn
+        self.settings = settings
+        self.stop_requested = False
+
+    def request_stop(self, signum=None, frame=None) -> None:  # noqa: ARG002
+        self.stop_requested = True
+
+    def run_once(self) -> WorkerSummary:
+        _set_worker_state(self.conn, "current_phase", "scan")
+        scan = scan_root(self.conn, "inbox", self.settings.inbox_dir, self.settings)
+        _set_worker_state(self.conn, "current_phase", "dedup")
+        library_hashed = hash_size_colliding_library_files(self.conn, self.settings)
+        duplicate_candidates = len(detect_exact_duplicates(self.conn, self.settings))
+        similar_flags = detect_similar_media(self.conn, self.settings)
+        _set_worker_state(self.conn, "current_phase", "analyze")
+        analysis = analyze_items(self.conn, self.settings, self.settings.batch_size)
+        summary = WorkerSummary(
+            scanned=scan.discovered,
+            hashed=scan.hashed,
+            library_hashed=library_hashed,
+            duplicate_candidates=duplicate_candidates,
+            similar_flags=similar_flags,
+            analyzed=analysis.analyzed,
+            proposed=analysis.proposed,
+            pending=analysis.pending,
+        )
+        _set_worker_state(self.conn, "last_cycle_at", utc_now())
+        _set_worker_state(self.conn, "current_phase", "idle")
+        _set_worker_state(self.conn, "last_summary", asdict(summary))
+        return summary
+
+    def run_forever(self) -> None:
+        sleep_seconds = BUSY_SLEEP_SECONDS
+        while not self.stop_requested:
+            summary = self.run_once()
+            sleep_seconds = next_sleep(sleep_seconds, summary.work_found)
+            _sleep_interruptibly(sleep_seconds, self)
+
+
+def run_once(conn: sqlite3.Connection, settings: Settings) -> WorkerSummary:
+    return Worker(conn, settings).run_once()
+
+
+def run_forever(conn: sqlite3.Connection, settings: Settings) -> None:
+    worker = Worker(conn, settings)
+    signal.signal(signal.SIGTERM, worker.request_stop)
+    signal.signal(signal.SIGINT, worker.request_stop)
+    worker.run_forever()
+
+
+def next_sleep(previous: float, work_found: bool) -> float:
+    if work_found:
+        return BUSY_SLEEP_SECONDS
+    return min(max(previous * 2, IDLE_SLEEP_SECONDS), MAX_SLEEP_SECONDS)
+
+
+def _sleep_interruptibly(seconds: float, worker: Worker) -> None:
+    deadline = time.monotonic() + seconds
+    while not worker.stop_requested and time.monotonic() < deadline:
+        time.sleep(min(0.1, deadline - time.monotonic()))
+
+
+def _set_worker_state(conn: sqlite3.Connection, key: str, value) -> None:
+    conn.execute(
+        "INSERT OR REPLACE INTO worker_state(key, value) VALUES (?, ?)",
+        (key, json.dumps(value, sort_keys=True)),
+    )
