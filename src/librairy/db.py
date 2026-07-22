@@ -5,7 +5,7 @@ from pathlib import Path
 
 from librairy.config import Settings
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 
 class DatabaseVersionError(RuntimeError):
@@ -132,7 +132,33 @@ MIGRATION_004 = """
 ALTER TABLE provider_status ADD COLUMN available_models TEXT NOT NULL DEFAULT '[]';
 """
 
-MIGRATIONS = {1: MIGRATION_001, 2: MIGRATION_002, 3: MIGRATION_003, 4: MIGRATION_004}
+MIGRATION_005 = """
+CREATE TABLE worker_state (
+  key   TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+CREATE TABLE similar_media_flags (
+  id              INTEGER PRIMARY KEY,
+  item_id         INTEGER NOT NULL REFERENCES items(id),
+  similar_item_id INTEGER NOT NULL REFERENCES items(id),
+  kind            TEXT NOT NULL CHECK (kind IN ('image','video','audio','duplicate')),
+  score           REAL,
+  status          TEXT NOT NULL DEFAULT 'review'
+                  CHECK (status IN ('review','dismissed','resolved')),
+  created_at      TEXT NOT NULL,
+  UNIQUE (item_id, similar_item_id, kind)
+);
+CREATE INDEX idx_similar_media_flags_status ON similar_media_flags(status);
+CREATE INDEX idx_similar_media_flags_item_id ON similar_media_flags(item_id);
+"""
+
+MIGRATIONS = {
+    1: MIGRATION_001,
+    2: MIGRATION_002,
+    3: MIGRATION_003,
+    4: MIGRATION_004,
+    5: MIGRATION_005,
+}
 
 
 def database_path(settings: Settings) -> Path:

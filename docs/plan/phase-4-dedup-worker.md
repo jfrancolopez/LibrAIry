@@ -134,10 +134,10 @@ CREATE TABLE worker_state (
 **Depends on:** P4-01
 **Description:** `tools/czkawka.py` wrapper (dup/image/video modes, JSON parsing, `CZKAWKA_EXTENSIONS` honored, timeout, missing-binary tolerated with a health warning); results stored as `similar_media` flags linking item pairs/groups for Phase-6 review display.
 **Acceptance criteria:**
-- [ ] Recorded czkawka output fixtures parse into similarity groups.
-- [ ] Similar pairs produce review flags only — proposals remain `proposed` for normal organization, never auto-quarantine (test).
-- [ ] Missing binary → warning once + feature marked unavailable in `worker_state`; nothing crashes.
-- [ ] `CZKAWKA_EXTENSIONS` change alters the invocation (test).
+- [x] Recorded czkawka output fixtures parse into similarity groups.
+- [x] Similar pairs produce review flags only — proposals remain `proposed` for normal organization, never auto-quarantine (test).
+- [x] Missing binary → warning once + feature marked unavailable in `worker_state`; nothing crashes.
+- [x] `CZKAWKA_EXTENSIONS` change alters the invocation (test).
 **Size:** M
 
 ### P4-03 Quarantine engine + restore

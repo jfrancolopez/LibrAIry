@@ -34,6 +34,8 @@ def test_fresh_db_migrates_to_current_schema(tmp_path: Path) -> None:
         "groups",
         "proposals",
         "provider_status",
+        "worker_state",
+        "similar_media_flags",
     }
 
     indexes = {
@@ -53,6 +55,8 @@ def test_fresh_db_migrates_to_current_schema(tmp_path: Path) -> None:
         "idx_groups_kind",
         "idx_provider_status_kind",
         "idx_provider_status_enabled",
+        "idx_similar_media_flags_status",
+        "idx_similar_media_flags_item_id",
     }
 
     columns = {row[1] for row in conn.execute("PRAGMA table_info(provider_status)")}

@@ -9,10 +9,13 @@ from librairy.db import connect
 from librairy.dedup import (
     DedupConfigError,
     detect_exact_duplicates,
+    detect_similar_media,
     hash_size_colliding_library_files,
     set_dedup_option,
 )
 from librairy.models import Item
+from librairy.tools.common import ToolResult
+from librairy.tools.czkawka import SimilarMediaFile, SimilarMediaGroup
 
 
 def settings_for(tmp_path: Path) -> Settings:
@@ -122,3 +125,64 @@ def test_only_size_colliding_library_files_get_hashed(tmp_path: Path) -> None:
         conn.execute("SELECT fingerprint FROM items WHERE id=?", (match,)).fetchone()[0] == "hashed"
     )
     assert conn.execute("SELECT fingerprint FROM items WHERE id=?", (miss,)).fetchone()[0] is None
+
+
+def test_similar_media_flags_are_review_only(tmp_path: Path) -> None:
+    settings = settings_for(tmp_path)
+    conn = connect(settings)
+    first = insert_item(conn, "inbox", "a.jpg", "a")
+    second = insert_item(conn, "inbox", "b.jpg", "b")
+
+    def scan(roots, mode, settings):
+        return ToolResult(
+            True,
+            data=[
+                SimilarMediaGroup(
+                    (
+                        SimilarMediaFile((settings.inbox_dir / "a.jpg").as_posix(), 0.91),
+                        SimilarMediaFile((settings.inbox_dir / "b.jpg").as_posix(), 0.91),
+                    )
+                )
+            ],
+        )
+
+    assert detect_similar_media(conn, settings, scan=scan) == 1
+    flag = conn.execute("SELECT * FROM similar_media_flags").fetchone()
+    assert {flag["item_id"], flag["similar_item_id"]} == {first, second}
+    assert flag["status"] == "review"
+    assert flag["kind"] == "image"
+    assert conn.execute("SELECT COUNT(*) FROM proposals").fetchone()[0] == 0
+
+
+def test_missing_czkawka_records_worker_state_once(tmp_path: Path) -> None:
+    settings = settings_for(tmp_path)
+    conn = connect(settings)
+
+    def missing(roots, mode, settings):
+        return ToolResult(False, error="missing binary: czkawka_cli")
+
+    assert detect_similar_media(conn, settings, scan=missing) == 0
+    assert detect_similar_media(conn, settings, scan=missing) == 0
+    assert (
+        conn.execute(
+            "SELECT value FROM worker_state WHERE key=?", ("dedup.czkawka.available",)
+        ).fetchone()[0]
+        == "false"
+    )
+    assert (
+        conn.execute(
+            "SELECT COUNT(*) FROM worker_state WHERE key=?", ("dedup.czkawka.warning",)
+        ).fetchone()[0]
+        == 1
+    )
+
+
+def test_disabling_czkawka_skips_scan(tmp_path: Path) -> None:
+    settings = settings_for(tmp_path)
+    conn = connect(settings)
+    set_dedup_option(conn, "use_czkawka", False)
+
+    def fail_if_called(roots, mode, settings):
+        raise AssertionError("czkawka should be skipped")
+
+    assert detect_similar_media(conn, settings, scan=fail_if_called) == 0

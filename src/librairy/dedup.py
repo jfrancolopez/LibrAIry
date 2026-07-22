@@ -9,6 +9,9 @@ from pathlib import Path
 from librairy.config import Settings
 from librairy.fingerprint import blake2b_file
 from librairy.models import Item
+from librairy.planner import utc_now
+from librairy.tools.common import ToolResult
+from librairy.tools.czkawka import SimilarMediaGroup, similar_media
 from librairy.tools.rmlint import duplicate_path_pairs, duplicates
 
 
@@ -20,6 +23,7 @@ class DedupConfigError(RuntimeError):
 class DedupOptions:
     use_fingerprints: bool = True
     use_rmlint: bool = True
+    use_czkawka: bool = True
 
 
 @dataclass(frozen=True)
@@ -31,10 +35,11 @@ class DuplicateCandidate:
 
 
 RmlintCheck = Callable[[list[tuple[Item, Item]], Settings], set[tuple[int, int]]]
+CzkawkaScan = Callable[[list[Path], str, Settings], ToolResult]
 
 
 def set_dedup_option(conn: sqlite3.Connection, key: str, value: bool) -> None:
-    if key not in {"use_fingerprints", "use_rmlint"}:
+    if key not in {"use_fingerprints", "use_rmlint", "use_czkawka"}:
         raise DedupConfigError(f"unknown dedup option: {key}")
     conn.execute(
         "INSERT OR REPLACE INTO settings(key, value) VALUES (?, ?)",
@@ -46,6 +51,7 @@ def dedup_options(conn: sqlite3.Connection) -> DedupOptions:
     options = DedupOptions(
         use_fingerprints=_setting_bool(conn, "dedup.use_fingerprints", True),
         use_rmlint=_setting_bool(conn, "dedup.use_rmlint", True),
+        use_czkawka=_setting_bool(conn, "dedup.use_czkawka", True),
     )
     if not options.use_fingerprints and not options.use_rmlint:
         raise DedupConfigError("at least one exact duplicate method must be enabled")
@@ -80,6 +86,44 @@ def detect_exact_duplicates(
             )
         )
     return candidates
+
+
+def detect_similar_media(
+    conn: sqlite3.Connection,
+    settings: Settings,
+    *,
+    mode: str = "image",
+    scan: CzkawkaScan | None = None,
+) -> int:
+    if not dedup_options(conn).use_czkawka:
+        return 0
+    roots = [settings.inbox_dir, settings.library_dir]
+    result = (scan or similar_media)(roots, mode, settings)
+    if not result.ok:
+        if result.error and result.error.startswith("missing binary"):
+            _mark_czkawka_unavailable(conn, result.error)
+        return 0
+    if not isinstance(result.data, list):
+        return 0
+    path_to_item = _path_map(conn, settings)
+    inserted = 0
+    for group in result.data:
+        for left_path, right_path, score in _similar_pairs(group):
+            left = path_to_item.get(left_path)
+            right = path_to_item.get(right_path)
+            if left is None or right is None or left.id == right.id:
+                continue
+            first, second = sorted((left, right), key=lambda item: item.id)
+            cursor = conn.execute(
+                """
+                INSERT OR IGNORE INTO similar_media_flags(
+                  item_id, similar_item_id, kind, score, created_at
+                ) VALUES (?, ?, ?, ?, ?)
+                """,
+                (first.id, second.id, mode, score, utc_now()),
+            )
+            inserted += cursor.rowcount
+    return inserted
 
 
 def hash_size_colliding_library_files(
@@ -152,6 +196,41 @@ def _rmlint_check(pairs: list[tuple[Item, Item]], settings: Settings) -> set[tup
         ):
             agreed.add(_pair_key(keeper, duplicate))
     return agreed
+
+
+def _similar_pairs(group: SimilarMediaGroup) -> set[tuple[str, str, float | None]]:
+    pairs: set[tuple[str, str, float | None]] = set()
+    files = list(group.files)
+    for index, left in enumerate(files):
+        for right in files[index + 1 :]:
+            score = right.score if right.score is not None else left.score
+            paths = sorted((left.path, right.path))
+            pairs.add((paths[0], paths[1], score))
+    return pairs
+
+
+def _path_map(conn: sqlite3.Connection, settings: Settings) -> dict[str, Item]:
+    paths: dict[str, Item] = {}
+    for row in conn.execute("SELECT * FROM items WHERE missing_since IS NULL"):
+        item = _item_from_row(row)
+        root = settings.library_dir if item.root == "library" else settings.inbox_dir
+        paths[(root / item.relpath).as_posix()] = item
+    return paths
+
+
+def _mark_czkawka_unavailable(conn: sqlite3.Connection, error: str) -> None:
+    conn.execute(
+        "INSERT OR REPLACE INTO worker_state(key, value) VALUES (?, ?)",
+        ("dedup.czkawka.available", json.dumps(False)),
+    )
+    existing = conn.execute(
+        "SELECT value FROM worker_state WHERE key='dedup.czkawka.warning'"
+    ).fetchone()
+    if existing is None:
+        conn.execute(
+            "INSERT INTO worker_state(key, value) VALUES (?, ?)",
+            ("dedup.czkawka.warning", json.dumps(error)),
+        )
 
 
 def _path_for(settings: Settings, item: Item) -> Path:
