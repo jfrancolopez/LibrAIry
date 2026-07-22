@@ -1,6 +1,6 @@
 # Phase 3 — AI Provider Layer + Privacy Redaction
 
-**Status:** IN PROGRESS
+**Status:** DONE
 **Depends on:** Phase 2 (classification engine) DONE
 **Size:** M (sharply bounded: providers plug into the existing cascade)
 
@@ -187,14 +187,14 @@ Add AI as one more evidence source in the classification cascade — behind the 
 
 ## Exit gate checklist
 
-- [ ] System fully functional with AI disabled (diff-test proves deterministic parity).
-- [ ] Redaction proven: hostile-metadata serialization scan + schema-level impossibility of GPS/paths + prompt snapshot.
-- [ ] Cloud is strictly opt-in: key alone never activates a provider.
-- [ ] AI-influenced destinations pass containment; AI never emits paths.
-- [ ] `CONFIDENCE_THRESHOLD`, `AI_TIMEOUT`, `MAX_AI_RETRIES`, `AI_PROVIDER_ORDER` all demonstrably honored.
-- [ ] Multi-endpoint Ollama with failover works; provider status persisted for Phase 7.
-- [ ] All mocked-provider integration tests green; no new HTTP SDK dependencies.
-- [ ] All backlog checkboxes ticked; status DONE.
+- [x] System fully functional with AI disabled (diff-test proves deterministic parity).
+- [x] Redaction proven: hostile-metadata serialization scan + schema-level impossibility of GPS/paths + prompt snapshot.
+- [x] Cloud is strictly opt-in: key alone never activates a provider.
+- [x] AI-influenced destinations pass containment; AI never emits paths.
+- [x] `CONFIDENCE_THRESHOLD`, `AI_TIMEOUT`, `MAX_AI_RETRIES`, `AI_PROVIDER_ORDER` all demonstrably honored.
+- [x] Multi-endpoint Ollama with failover works; provider status persisted for Phase 7.
+- [x] All mocked-provider integration tests green; no new HTTP SDK dependencies.
+- [x] All backlog checkboxes ticked; status DONE.
 
 ## Notes for future phases
 
