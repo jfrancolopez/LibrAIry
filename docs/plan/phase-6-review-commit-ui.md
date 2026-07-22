@@ -177,10 +177,10 @@ Put the product's core loop in the browser: review accumulated proposals in batc
 **Depends on:** P6-06
 **Description:** Per Design Constraints: journal browser, plan detail, op/plan undo with confirm modal + background execution + progress, refused-undo explanations.
 **Acceptance criteria:**
-- [ ] History lists the sandbox commit; plan detail shows ops + hash; single-op undo restores that file (filesystem-verified).
-- [ ] Whole-plan undo after the P6-06 commit restores the pre-commit tree (fixture comparison) and appears in history as undo actions.
-- [ ] Fingerprint-mismatch refusal path rendered with both fingerprints and explanation (fixture: modify a committed file, attempt undo).
-- [ ] Journal rows are read-only in the UI (no edit affordances; append-only respected).
+- [x] History lists the sandbox commit; plan detail shows ops + hash; single-op undo restores that file (filesystem-verified).
+- [x] Whole-plan undo after the P6-06 commit restores the pre-commit tree (fixture comparison) and appears in history as undo actions.
+- [x] Fingerprint-mismatch refusal path rendered with both fingerprints and explanation (fixture: modify a committed file, attempt undo).
+- [x] Journal rows are read-only in the UI (no edit affordances; append-only respected).
 **Size:** M
 
 ## Verification steps

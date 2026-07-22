@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block content %}
+  <p class="status">[OK] PLAN DETAIL</p>
+  <h1>Plan {{ plan.id }}</h1>
+  <p>Status {{ plan.status }}</p>
+  <p>Hash {{ plan.plan_hash or 'no hash' }}</p>
+  <form hx-post="/history/plans/{{ plan.id }}/undo" hx-target="#history-result" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>
+    <button type="submit">Undo Whole Plan</button>
+  </form>
+  <section class="metric wide">
+    <h2>Operations</h2>
+    <table>
+      <thead><tr><th scope="col">Seq</th><th scope="col">Type</th><th scope="col">Source</th><th scope="col">Destination</th><th scope="col">Result</th><th scope="col">Hash</th></tr></thead>
+      <tbody>
+        {% for op in ops %}<tr><td>{{ op.seq }}</td><td>{{ op.op_type }}</td><td>{{ op.src_root }}/{{ op.src_relpath }}</td><td>{{ op.dest_root }}/{{ op.dest_relpath }}</td><td>{{ op.result or 'pending' }}</td><td>{{ op.src_fingerprint }}</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </section>
+  <section class="metric wide">
+    <h2>Journal</h2>
+    {% for entry in entries %}<span>{{ entry.action }} {{ entry.outcome }} {{ entry.src_root }}/{{ entry.src_relpath }} -> {{ entry.dest_root }}/{{ entry.dest_relpath }}</span>{% endfor %}
+  </section>
+  <div id="history-result"></div>
+{% endblock %}

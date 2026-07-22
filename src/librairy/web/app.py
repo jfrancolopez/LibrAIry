@@ -30,6 +30,12 @@ from librairy.web.commit import (
 from librairy.web.commit import progress_data as commit_progress_data
 from librairy.web.dashboard import dashboard_data
 from librairy.web.health import health_data, test_provider
+from librairy.web.history import (
+    history_data,
+    plan_detail_data,
+    undo_history_entry,
+    undo_history_plan,
+)
 from librairy.web.quarantine import (
     approve_stage,
     quarantine_data,
@@ -362,6 +368,52 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             request,
             "partials/commit_progress.html",
             {"started": False, "error": commit_state.error, **data},
+        )
+
+    @app.get("/history", response_class=HTMLResponse)
+    def history(request: Request) -> HTMLResponse:
+        return TEMPLATES.TemplateResponse(
+            request,
+            "history.html",
+            {
+                "title": "History",
+                "csrf_token": request.state.session["csrf_token"],
+                **history_data(conn),
+            },
+        )
+
+    @app.get("/history/plans/{plan_id}", response_class=HTMLResponse)
+    def history_plan(request: Request, plan_id: str) -> HTMLResponse:
+        try:
+            data = plan_detail_data(conn, plan_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return TEMPLATES.TemplateResponse(
+            request,
+            "history_plan.html",
+            {
+                "title": "Plan Detail",
+                "csrf_token": request.state.session["csrf_token"],
+                **data,
+            },
+        )
+
+    @app.post("/history/undo/{history_id}", response_class=HTMLResponse)
+    def history_undo(request: Request, history_id: int) -> HTMLResponse:
+        result = undo_history_entry(conn, settings, history_id)
+        return TEMPLATES.TemplateResponse(
+            request,
+            "partials/history_undo_result.html",
+            {"results": [result]},
+        )
+
+    @app.post("/history/plans/{plan_id}/undo", response_class=HTMLResponse)
+    def history_plan_undo(request: Request, plan_id: str) -> HTMLResponse:
+        results = undo_history_plan(conn, settings, plan_id)
+        return TEMPLATES.TemplateResponse(
+            request,
+            "partials/history_undo_result.html",
+            {"results": results},
         )
 
     @app.post("/csrf-check")
