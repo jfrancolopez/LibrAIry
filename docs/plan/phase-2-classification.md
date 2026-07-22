@@ -1,6 +1,6 @@
 # Phase 2 — Classification Engine (Catalog + Heuristics, no AI)
 
-**Status:** IN PROGRESS
+**Status:** DONE
 **Depends on:** Phase 1 (core safety engine) DONE
 **Size:** L (largest port: replaces the 1,676-line `step3_classify.sh` and adapts the `catalog/` Python modules)
 
@@ -249,7 +249,7 @@ CREATE TABLE groups (
 **Depends on:** P2-03..P2-10
 **Description:** Committed corpus under `tests/fixtures/corpus/` (tiny synthetic files; media headers faked or minimal real samples): tagged album, untagged album, compilation, movie, episode+season, photo event with `#tag`, camera roll, screenshots, PDFs (clear + ambiguous), epub, code project, fonts, generic unknowns, duplicate basenames, unicode names, hashtag folders. Expected-proposal snapshots checked by test. CLI: `librairy analyze` (scan+classify pending items → proposals; `--json`), `librairy proposals list/show`, `librairy propose-plan [--min-confidence X] [--ids ...]` compiling approved-able proposals into a Phase-1 plan spec (draft plan) — the bridge to `plan approve`/`commit`.
 **Acceptance criteria:**
-- [ ] Corpus snapshot test passes and is readable enough to review diffs.
+- [x] Corpus snapshot test passes and is readable enough to review diffs.
 - [x] `librairy analyze` on the corpus inbox produces the snapshot proposals; runs with network mocked (no real API calls in tests).
 - [x] `propose-plan` → `plan approve` → `commit` moves confident corpus items into a correct fixture library tree (end-to-end test).
 - [x] Pending (no-destination) items remain physically untouched in the inbox.
@@ -266,16 +266,16 @@ CREATE TABLE groups (
 
 ## Exit gate checklist
 
-- [ ] Golden corpus yields correct proposals across all eight categories (snapshot test green).
-- [ ] Every proposed destination passes Phase-1 containment; template property tests green.
-- [ ] Uncertain items produce evidence-bearing proposals with NO destination and remain physically untouched.
-- [ ] Catalog APIs fully mocked in tests; MB rate limiting enforced; missing keys degrade silently.
-- [ ] Grouping enforces single ownership (no file in two proposals; project folders atomic).
-- [ ] Hashtags influence classification and never appear in output paths.
-- [ ] Analysis provably mutates nothing (tree-snapshot test + grep-test for move primitives in `classify/`).
-- [ ] End-to-end analyze→propose-plan→approve→commit works headless on the corpus.
-- [ ] Legacy `inbox-processor/` untouched.
-- [ ] All backlog checkboxes ticked; status DONE.
+- [x] Golden corpus yields correct proposals across all eight categories (snapshot test green).
+- [x] Every proposed destination passes Phase-1 containment; template property tests green.
+- [x] Uncertain items produce evidence-bearing proposals with NO destination and remain physically untouched.
+- [x] Catalog APIs fully mocked in tests; MB rate limiting enforced; missing keys degrade silently.
+- [x] Grouping enforces single ownership (no file in two proposals; project folders atomic).
+- [x] Hashtags influence classification and never appear in output paths.
+- [x] Analysis provably mutates nothing (tree-snapshot test + grep-test for move primitives in `classify/`).
+- [x] End-to-end analyze→propose-plan→approve→commit works headless on the corpus.
+- [x] Legacy `inbox-processor/` untouched.
+- [x] All backlog checkboxes ticked; status DONE.
 
 ## Notes for future phases
 

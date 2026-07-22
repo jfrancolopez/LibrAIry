@@ -1,0 +1,10 @@
+[
+  {"category": "music", "dest": null, "name": "unknown.mp3"},
+  {"category": "movies", "dest": null, "name": "The Matrix (1999).mkv"},
+  {"category": "shows", "dest": null, "name": "S02E05.mkv"},
+  {"category": "photos", "dest": "Photos/0/Screenshots/Screenshot 2026.png", "name": "Screenshots"},
+  {"category": "documents", "dest": null, "name": "scan001.pdf"},
+  {"category": "books", "dest": "Books/Unknown Author/Dune/Dune.epub", "name": "Dune"},
+  {"category": "projects", "dest": "Projects/Demo Project/Demo Project", "name": "Demo Project"},
+  {"category": "misc", "dest": null, "name": "random"}
+]
