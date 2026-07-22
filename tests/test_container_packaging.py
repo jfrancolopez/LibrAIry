@@ -39,3 +39,5 @@ def test_compose_exposes_puid_pgid_defaults() -> None:
 
     assert "PUID: ${PUID:-99}" in compose
     assert "PGID: ${PGID:-100}" in compose
+    assert "healthcheck:" in compose
+    assert "http://127.0.0.1:8080/healthz" in compose

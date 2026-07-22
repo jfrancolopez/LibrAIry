@@ -122,6 +122,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     try:
         settings = validate_or_die()
+        if args.command == "run":
+            raise SystemExit(run_supervisor(settings))
         conn = connect(settings)
         result = _dispatch(args, conn, settings)
     except Exception as exc:
@@ -187,8 +189,6 @@ def _dispatch(args: argparse.Namespace, conn: sqlite3.Connection, settings: Sett
             return asdict(run_once(conn, settings))
         run_forever(conn, settings)
         return {"stopped": True}
-    if args.command == "run":
-        raise SystemExit(run_supervisor(settings))
     if args.command == "index" and args.index_command == "rebuild":
         return {"indexed": rebuild_search_index(conn)}
     return None

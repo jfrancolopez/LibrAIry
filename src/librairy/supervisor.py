@@ -8,6 +8,7 @@ import time
 from collections import deque
 from dataclasses import dataclass
 
+from librairy.boot import validate_boot_or_die
 from librairy.config import Settings
 
 MAX_RESTARTS = 5
@@ -110,6 +111,7 @@ def child_specs(settings: Settings) -> list[ChildSpec]:
 
 
 def run_supervisor(settings: Settings) -> int:
+    validate_boot_or_die(settings)
     supervisor = Supervisor(child_specs(settings))
     signal.signal(signal.SIGTERM, supervisor.request_stop)
     signal.signal(signal.SIGINT, supervisor.request_stop)

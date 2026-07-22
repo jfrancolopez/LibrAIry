@@ -223,6 +223,11 @@ class Settings(BaseSettings):
         "",
         "# Web dashboard port",
         "DASHBOARD_PORT=8080",
+        "",
+        "# UID/GID used by the container entrypoint when creating files on mounted shares",
+        "# UNRAID defaults are nobody:users (99:100)",
+        "PUID=99",
+        "PGID=100",
     )
 
     @field_validator("ai_provider_order", "ignore_patterns", "czkawka_extensions", mode="before")

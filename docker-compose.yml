@@ -20,5 +20,10 @@ services:
       - "host.docker.internal:host-gateway"
     ports:
       - "${DASHBOARD_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     restart: unless-stopped
     command: ["librairy", "run"]
