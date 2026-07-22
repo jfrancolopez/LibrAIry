@@ -39,6 +39,9 @@ Configuration has two layers. Boot-time environment variables define paths, port
 | `LIBRARY_INDEX_TTL` | Legacy index TTL, safe to leave default. |
 | `DASHBOARD_PORT` | Web portal port inside the app and host mapping default. |
 | `FILE_STABILITY_SECONDS` | How long files must stop changing before scanning. |
+| `LOG_LEVEL` | Structured log level. Use `DEBUG` only while diagnosing. |
+| `LOG_MAX_BYTES` | Rotating log file max size in bytes. |
+| `LOG_BACKUP_COUNT` | Number of rotated log files to keep. |
 | `PUID` | Container file-owner UID, default `99`. |
 | `PGID` | Container file-owner GID, default `100`. |
 

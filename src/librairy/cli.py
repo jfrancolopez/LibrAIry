@@ -18,6 +18,7 @@ from librairy.config import Settings, validate_or_die
 from librairy.db import connect, database_path
 from librairy.executor import execute_plan
 from librairy.history import list_history, undo_op, undo_plan
+from librairy.logging import configure_logging
 from librairy.models import Item
 from librairy.planner import (
     approve_plan,
@@ -124,6 +125,7 @@ def main(argv: list[str] | None = None) -> int:
         settings = validate_or_die()
         if args.command == "run":
             raise SystemExit(run_supervisor(settings))
+        configure_logging(settings, component="cli", stream=sys.stderr)
         conn = connect(settings)
         result = _dispatch(args, conn, settings)
     except Exception as exc:

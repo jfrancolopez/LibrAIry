@@ -19,3 +19,7 @@ The image includes `ffprobe`, `exiftool`, `fpcalc`, `rmlint`, and `czkawka_cli`.
 ## Search Looks Stale
 
 Run `librairy index rebuild` or use the Health screen rebuild button. The FTS index is derived state and can be rebuilt from SQLite item/proposal metadata.
+
+## Logs
+
+Logs are written to stdout for Docker and to `HOST_APPDATA_DIR/logs/librairy.log` with rotation. Set `LOG_LEVEL=DEBUG` temporarily for more detail. API keys and session tokens are redacted before records are emitted.

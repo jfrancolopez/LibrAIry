@@ -67,6 +67,9 @@ class Settings(BaseSettings):
     library_index_ttl: int = Field(86400, ge=0, alias="LIBRARY_INDEX_TTL")
     dashboard_port: int = Field(8080, ge=1, le=65535, alias="DASHBOARD_PORT")
     file_stability_seconds: int = Field(10, ge=0, alias="FILE_STABILITY_SECONDS")
+    log_level: str = Field("INFO", alias="LOG_LEVEL")
+    log_max_bytes: int = Field(10 * 1024 * 1024, ge=1024, alias="LOG_MAX_BYTES")
+    log_backup_count: int = Field(5, ge=1, alias="LOG_BACKUP_COUNT")
 
     ENV_EXAMPLE: ClassVar[tuple[str, ...]] = (
         "# =============================================================================",
@@ -223,6 +226,11 @@ class Settings(BaseSettings):
         "",
         "# Web dashboard port",
         "DASHBOARD_PORT=8080",
+        "",
+        "# Structured logging level and rotation",
+        "LOG_LEVEL=INFO",
+        "LOG_MAX_BYTES=10485760",
+        "LOG_BACKUP_COUNT=5",
         "",
         "# UID/GID used by the container entrypoint when creating files on mounted shares",
         "# UNRAID defaults are nobody:users (99:100)",

@@ -12,6 +12,7 @@ from fastapi.templating import Jinja2Templates
 from librairy.config import Settings
 from librairy.db import connect
 from librairy.dedup import DedupConfigError
+from librairy.logging import configure_logging
 from librairy.search import SearchFilters, rebuild_search_index, search_data
 from librairy.settings_service import (
     SettingsValidationError,
@@ -69,6 +70,7 @@ EXEMPT_PATHS = {"/", "/login", "/setup", "/healthz"}
 
 def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None = None) -> FastAPI:
     settings = settings or Settings()
+    configure_logging(settings, component="web")
     conn = conn or connect(settings)
     limiter = LoginRateLimiter()
     commit_state = CommitState()

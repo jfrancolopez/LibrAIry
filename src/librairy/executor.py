@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import errno
+import logging
 import os
 import shutil
 import signal
@@ -19,6 +20,7 @@ from librairy.quarantine import record_quarantine_entry
 from librairy.search import sync_search_item
 
 TERMINAL_RESULTS = {"done", "skipped_changed", "skipped_missing", "renamed_collision", "failed"}
+LOGGER = logging.getLogger(__name__)
 
 
 class ExecutionError(RuntimeError):
@@ -80,6 +82,17 @@ def _execute_plan_unlocked(
             result = "failed"
             _finish_op(conn, row["id"], result, None)
             _journal(conn, row, row["dest_relpath"], row["src_fingerprint"], str(exc))
+        LOGGER.info(
+            "plan=%s op=%s type=%s src=%s/%s dest=%s/%s result=%s",
+            plan_id,
+            row["id"],
+            row["op_type"],
+            row["src_root"],
+            row["src_relpath"],
+            row["dest_root"],
+            row["dest_relpath"],
+            result,
+        )
         counts[result] += 1
         _test_pause_after_op()
 

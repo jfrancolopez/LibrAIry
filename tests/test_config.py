@@ -41,6 +41,9 @@ ENV_KEYS = [
     "LIBRARY_INDEX_TTL",
     "DASHBOARD_PORT",
     "FILE_STABILITY_SECONDS",
+    "LOG_LEVEL",
+    "LOG_MAX_BYTES",
+    "LOG_BACKUP_COUNT",
 ]
 
 
@@ -66,6 +69,9 @@ def test_defaults_cover_documented_env_vars() -> None:
     assert settings.library_index_ttl == 86400
     assert settings.dashboard_port == 8080
     assert settings.file_stability_seconds == 10
+    assert settings.log_level == "INFO"
+    assert settings.log_max_bytes == 10 * 1024 * 1024
+    assert settings.log_backup_count == 5
 
 
 def test_legacy_ollama_model_alias(monkeypatch: pytest.MonkeyPatch) -> None:

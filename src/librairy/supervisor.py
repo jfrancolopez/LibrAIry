@@ -10,6 +10,7 @@ from dataclasses import dataclass
 
 from librairy.boot import validate_boot_or_die
 from librairy.config import Settings
+from librairy.logging import configure_logging
 
 MAX_RESTARTS = 5
 RESTART_WINDOW_SECONDS = 60
@@ -112,6 +113,7 @@ def child_specs(settings: Settings) -> list[ChildSpec]:
 
 def run_supervisor(settings: Settings) -> int:
     validate_boot_or_die(settings)
+    configure_logging(settings, component="supervisor")
     supervisor = Supervisor(child_specs(settings))
     signal.signal(signal.SIGTERM, supervisor.request_stop)
     signal.signal(signal.SIGINT, supervisor.request_stop)

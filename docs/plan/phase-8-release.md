@@ -174,9 +174,9 @@ Turn a feature-complete system into something a stranger installs on their UNRAI
 **Depends on:** —
 **Description:** Per Design Constraints: logging config module (stdout + rotating file), component loggers adopted across worker/web/executor, redaction filter, DEBUG gating.
 **Acceptance criteria:**
-- [ ] Log lines carry timestamp/level/component; rotation proven with a small max-size test config.
-- [ ] Redaction filter test: logging records containing fixture API keys/session tokens emit masked output.
-- [ ] Executor logs every op result at INFO (journal remains the authority; logs are convenience).
+- [x] Log lines carry timestamp/level/component; rotation proven with a small max-size test config.
+- [x] Redaction filter test: logging records containing fixture API keys/session tokens emit masked output.
+- [x] Executor logs every op result at INFO (journal remains the authority; logs are convenience).
 **Size:** S
 
 ### P8-08 v1.0 release: workflow, changelog, tag
