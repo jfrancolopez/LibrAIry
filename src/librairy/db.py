@@ -5,7 +5,7 @@ from pathlib import Path
 
 from librairy.config import Settings
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 
 class DatabaseVersionError(RuntimeError):
@@ -191,6 +191,25 @@ CREATE VIRTUAL TABLE search_fts USING fts5(
 );
 """
 
+MIGRATION_009 = """
+CREATE VIRTUAL TABLE content_fts USING fts5(
+  text,
+  item_id UNINDEXED,
+  tokenize='unicode61 remove_diacritics 2'
+);
+CREATE TABLE content_extractions (
+  item_id      INTEGER PRIMARY KEY REFERENCES items(id),
+  fingerprint  TEXT NOT NULL,
+  extractor    TEXT,
+  chars        INTEGER NOT NULL DEFAULT 0,
+  truncated    INTEGER NOT NULL DEFAULT 0,
+  attempts     INTEGER NOT NULL DEFAULT 0,
+  extracted_at TEXT,
+  error        TEXT
+);
+CREATE INDEX idx_content_extractions_error ON content_extractions(error);
+"""
+
 MIGRATIONS = {
     1: MIGRATION_001,
     2: MIGRATION_002,
@@ -200,6 +219,7 @@ MIGRATIONS = {
     6: MIGRATION_006,
     7: MIGRATION_007,
     8: MIGRATION_008,
+    9: MIGRATION_009,
 }
 
 

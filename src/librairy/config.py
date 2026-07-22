@@ -70,6 +70,12 @@ class Settings(BaseSettings):
     log_level: str = Field("INFO", alias="LOG_LEVEL")
     log_max_bytes: int = Field(10 * 1024 * 1024, ge=1024, alias="LOG_MAX_BYTES")
     log_backup_count: int = Field(5, ge=1, alias="LOG_BACKUP_COUNT")
+    content_search_enabled: bool = Field(False, alias="CONTENT_SEARCH_ENABLED")
+    content_extract_max_chars: int = Field(
+        2 * 1024 * 1024,
+        ge=1024,
+        alias="CONTENT_EXTRACT_MAX_CHARS",
+    )
 
     ENV_EXAMPLE: ClassVar[tuple[str, ...]] = (
         "# =============================================================================",

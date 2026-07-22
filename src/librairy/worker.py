@@ -9,6 +9,7 @@ from dataclasses import asdict, dataclass
 
 from librairy.classify import analyze_items
 from librairy.config import Settings
+from librairy.content.extract import process_content_extractions
 from librairy.db import connect
 from librairy.dedup import (
     detect_exact_duplicates,
@@ -39,6 +40,8 @@ class WorkerSummary:
     analyzed: int
     proposed: int
     pending: int
+    content_extracted: int = 0
+    content_failed: int = 0
 
     @property
     def work_found(self) -> bool:
@@ -50,6 +53,7 @@ class WorkerSummary:
                 self.duplicate_candidates,
                 self.similar_flags,
                 self.analyzed,
+                self.content_extracted,
             )
         )
 
@@ -77,6 +81,8 @@ class Worker:
             similar_flags = detect_similar_media(self.conn, settings)
             _set_worker_state(self.conn, "current_phase", "analyze")
             analysis = analyze_items(self.conn, settings, settings.batch_size)
+            _set_worker_state(self.conn, "current_phase", "content")
+            content = process_content_extractions(self.conn, settings, settings.batch_size)
             summary = WorkerSummary(
                 scanned=scan.discovered,
                 hashed=scan.hashed,
@@ -86,6 +92,8 @@ class Worker:
                 analyzed=analysis.analyzed,
                 proposed=analysis.proposed,
                 pending=analysis.pending,
+                content_extracted=content.extracted,
+                content_failed=content.failed,
             )
             _set_worker_state(self.conn, "last_cycle_at", utc_now())
             _set_worker_state(self.conn, "current_phase", "idle")
