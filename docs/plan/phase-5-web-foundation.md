@@ -144,10 +144,10 @@ Ship the portal shell: a login-protected, Pip-Boy-themed FastAPI web app served 
 **Depends on:** P5-02
 **Description:** Dashboard route + template per Design Constraints: worker status lamp + current phase, lifecycle counts (with "N proposals awaiting review" as the visual centerpiece), recent operations feed, provider summary line, disk-free bars for the four roots; HTMX 5s polling partial; empty states ("inbox clear — drop files to begin") in Pip-Boy voice.
 **Acceptance criteria:**
-- [ ] With the worker running against a seeded sandbox, counts and phase update live (integration test polls the partial twice across a state change).
-- [ ] All data read-only from existing tables (no new writes from web; test wraps requests and asserts no DB mutations besides sessions).
-- [ ] Renders correctly with zero data (fresh install) — no division-by-zero, friendly empties.
-- [ ] Page interactive < 1s on the seeded sandbox (no N+1 queries; count queries are single statements).
+- [x] With the worker running against a seeded sandbox, counts and phase update live (integration test polls the partial twice across a state change).
+- [x] All data read-only from existing tables (no new writes from web; test wraps requests and asserts no DB mutations besides sessions).
+- [x] Renders correctly with zero data (fresh install) — no division-by-zero, friendly empties.
+- [x] Page interactive < 1s on the seeded sandbox (no N+1 queries; count queries are single statements).
 **Size:** M
 
 ### P5-05 Health screen

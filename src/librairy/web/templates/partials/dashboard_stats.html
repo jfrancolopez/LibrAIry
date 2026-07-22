@@ -1,0 +1,42 @@
+<div id="dashboard-stats" class="dashboard-grid">
+  <article class="metric centerpiece">
+    <span class="status">[OK] AWAITING REVIEW</span>
+    <strong>{{ proposal_count }}</strong>
+    <span>proposals staged</span>
+  </article>
+  <article class="metric">
+    <span class="status">[OK] WORKER</span>
+    <strong>{{ current_phase }}</strong>
+    <span>{{ worker_state.get('last_cycle_at', 'no heartbeat yet') }}</span>
+  </article>
+  <article class="metric">
+    <span class="status">[OK] LIFECYCLE</span>
+    {% if counts %}
+      {% for state, count in counts.items() %}<span>{{ state }}: {{ count }}</span>{% endfor %}
+    {% else %}
+      <span>inbox clear - drop files to begin</span>
+    {% endif %}
+  </article>
+  <article class="metric wide">
+    <span class="status">[OK] PROVIDERS</span>
+    {% if providers %}
+      {% for provider in providers %}<span>{{ provider.name }}: {{ provider.kind }} / {{ provider.enabled }}</span>{% endfor %}
+    {% else %}
+      <span>no provider status recorded yet</span>
+    {% endif %}
+  </article>
+  <article class="metric wide">
+    <span class="status">[OK] DISK</span>
+    {% for disk in disks %}
+      <span>{{ disk.root }}: {{ disk.free_gb }}GB free / {{ disk.total_gb }}GB [{{ disk.percent_free }}%]</span>
+    {% endfor %}
+  </article>
+  <article class="metric wide">
+    <span class="status">[OK] RECENT OPS</span>
+    {% if recent_history %}
+      {% for row in recent_history %}<span>{{ row.action }} {{ row.outcome }} {{ row.dest_relpath }}</span>{% endfor %}
+    {% else %}
+      <span>no committed operations yet</span>
+    {% endif %}
+  </article>
+</div>

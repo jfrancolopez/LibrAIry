@@ -20,6 +20,7 @@ from librairy.web.auth import (
     set_admin_password,
     verify_admin_password,
 )
+from librairy.web.dashboard import dashboard_data
 
 PACKAGE_DIR = Path(__file__).parent
 TEMPLATES = Jinja2Templates(directory=PACKAGE_DIR / "templates")
@@ -87,7 +88,19 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
 
     @app.get("/dashboard", response_class=HTMLResponse)
     def dashboard(request: Request) -> HTMLResponse:
-        return TEMPLATES.TemplateResponse(request, "dashboard.html", {"title": "Dashboard"})
+        return TEMPLATES.TemplateResponse(
+            request,
+            "dashboard.html",
+            {"title": "Dashboard", **dashboard_data(conn, settings)},
+        )
+
+    @app.get("/dashboard/stats", response_class=HTMLResponse)
+    def dashboard_stats(request: Request) -> HTMLResponse:
+        return TEMPLATES.TemplateResponse(
+            request,
+            "partials/dashboard_stats.html",
+            dashboard_data(conn, settings),
+        )
 
     @app.post("/csrf-check")
     def csrf_check() -> dict[str, str]:
