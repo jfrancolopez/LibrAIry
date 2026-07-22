@@ -11,7 +11,7 @@ from fastapi.templating import Jinja2Templates
 
 from librairy.config import Settings
 from librairy.db import connect
-from librairy.search import rebuild_search_index
+from librairy.search import SearchFilters, rebuild_search_index, search_data
 from librairy.web.auth import (
     SESSION_COOKIE,
     LoginRateLimiter,
@@ -429,6 +429,40 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
     def index_rebuild(request: Request) -> HTMLResponse:  # noqa: ARG001
         indexed = rebuild_search_index(conn)
         return HTMLResponse(f'<p id="index-result" class="status">[OK] indexed {indexed}</p>')
+
+    @app.get("/search", response_class=HTMLResponse)
+    def search(
+        request: Request,
+        q: str = "",
+        category: str | None = None,
+        root: str | None = None,
+        year: int | None = None,
+        genre: str | None = None,
+        page: int = 1,
+    ) -> HTMLResponse:
+        filters = SearchFilters(category=category, root=root, year=year, genre=genre, page=page)
+        return TEMPLATES.TemplateResponse(
+            request,
+            "search.html",
+            {"title": "Search", **search_data(conn, settings, q, filters)},
+        )
+
+    @app.get("/search/results", response_class=HTMLResponse)
+    def search_results(
+        request: Request,
+        q: str = "",
+        category: str | None = None,
+        root: str | None = None,
+        year: int | None = None,
+        genre: str | None = None,
+        page: int = 1,
+    ) -> HTMLResponse:
+        filters = SearchFilters(category=category, root=root, year=year, genre=genre, page=page)
+        return TEMPLATES.TemplateResponse(
+            request,
+            "partials/search_results.html",
+            search_data(conn, settings, q, filters),
+        )
 
     @app.exception_handler(404)
     async def not_found(request: Request, exc) -> HTMLResponse:  # noqa: ARG001

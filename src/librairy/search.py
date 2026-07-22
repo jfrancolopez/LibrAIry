@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from pathlib import PurePosixPath
 from typing import Any
 
+from librairy.config import Settings
+
 PAGE_SIZE = 50
 TEXT_FIELDS = ("name", "clean_name", "tags", "artist", "album", "title", "show", "genre", "event")
 CATEGORIES = {"music", "movies", "shows", "photos", "documents", "books", "projects", "misc"}
@@ -88,11 +90,13 @@ def search_items(
     return list(
         conn.execute(
             f"""
-            SELECT item_id, root, category,
+                SELECT search_fts.item_id, search_fts.root, search_fts.category,
+                   i.relpath AS relpath,
                    highlight(search_fts, 0, '<mark>', '</mark>') AS name,
                    highlight(search_fts, 1, '<mark>', '</mark>') AS clean_name,
                    snippet(search_fts, 2, '<mark>', '</mark>', '...', 12) AS snippet
             FROM search_fts
+            JOIN items i ON i.id = search_fts.item_id
             WHERE {where}
             ORDER BY {order}
             LIMIT ? OFFSET ?
@@ -100,6 +104,39 @@ def search_items(
             params,
         )
     )
+
+
+def search_data(
+    conn: sqlite3.Connection,
+    settings: Settings,
+    query: str,
+    filters: SearchFilters | None = None,
+) -> dict[str, object]:
+    filters = filters or SearchFilters()
+    rows = [dict(row) for row in search_items(conn, query, filters)]
+    for row in rows:
+        row["host_path"] = host_path(settings, row["root"], row["relpath"])
+        row["history_count"] = conn.execute(
+            "SELECT COUNT(*) FROM history WHERE dest_root=? AND dest_relpath=?",
+            (row["root"], row["relpath"]),
+        ).fetchone()[0]
+    return {
+        "query": query,
+        "filters": filters,
+        "results": rows,
+        "page_size": PAGE_SIZE,
+        "has_prev": filters.page > 1,
+        "has_next": len(rows) == PAGE_SIZE,
+    }
+
+
+def host_path(settings: Settings, root: str, relpath: str) -> str:
+    base = {
+        "inbox": settings.host_inbox_dir,
+        "library": settings.host_library_dir,
+        "quarantine": settings.host_quarantine_dir,
+    }.get(root, settings.host_library_dir)
+    return (base / relpath).as_posix()
 
 
 def search_checksum(conn: sqlite3.Connection, query: str = "") -> tuple[int, tuple[int, ...]]:
@@ -152,10 +189,10 @@ def _where(filters: SearchFilters) -> tuple[str, list[object]]:
     clauses = ["1=1"]
     params: list[object] = []
     if filters.category:
-        clauses.append("category=?")
+        clauses.append("search_fts.category=?")
         params.append(filters.category)
     if filters.root:
-        clauses.append("root=?")
+        clauses.append("search_fts.root=?")
         params.append(filters.root)
     if filters.year:
         clauses.append("search_fts MATCH ?")

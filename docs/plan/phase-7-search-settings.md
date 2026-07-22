@@ -122,10 +122,10 @@ Make the library *findable* and the system *tunable*: instant search with facets
 **Depends on:** P7-01
 **Description:** Search route/template: query box (HTMX live search, 300 ms debounce), facet sidebar (category/root/year/genre/group-kind), highlighted snippets, result rows (icon, name, path, category, confidence origin), actions per row: detail view, show-in-history, copy host path. Empty/first-visit state teaches query syntax by example.
 **Acceptance criteria:**
-- [ ] Text + each facet + combinations return correct fixtures (parametrized).
-- [ ] Highlighting marks matched terms; pagination works via HTMX.
-- [ ] Copy-path renders the HOST-mapped path (env-derived), not the container path (test).
-- [ ] Row actions link correctly into detail/history; keyboard operable.
+- [x] Text + each facet + combinations return correct fixtures (parametrized).
+- [x] Highlighting marks matched terms; pagination works via HTMX.
+- [x] Copy-path renders the HOST-mapped path (env-derived), not the container path (test).
+- [x] Row actions link correctly into detail/history; keyboard operable.
 **Size:** M
 
 ### P7-03 Browse screen + item detail

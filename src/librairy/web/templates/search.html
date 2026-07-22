@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block content %}
+  <p class="status">[OK] FTS SEARCH</p>
+  <h1>Search</h1>
+  <form class="filter-bar" hx-get="/search/results" hx-target="#search-results" hx-swap="outerHTML" hx-trigger="keyup changed delay:300ms from:input, change from:select, submit">
+    <label>Query <input name="q" value="{{ query }}" placeholder="queen night opera"></label>
+    <label>Category <input name="category" value="{{ filters.category or '' }}"></label>
+    <label>Root <select name="root"><option value="">any</option><option value="library">library</option><option value="inbox">inbox</option><option value="quarantine">quarantine</option></select></label>
+    <label>Year <input name="year" type="number" value="{{ filters.year or '' }}"></label>
+    <label>Genre <input name="genre" value="{{ filters.genre or '' }}"></label>
+    <button type="submit">Search</button>
+  </form>
+  {% include "partials/search_results.html" %}
+{% endblock %}

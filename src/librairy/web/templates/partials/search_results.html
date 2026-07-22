@@ -1,0 +1,27 @@
+<div id="search-results">
+  {% if not query and not filters.category and not filters.root and not filters.year and not filters.genre %}
+    <p>[OK] Try: <code>queen night opera</code>, <code>photos 2026</code>, or filter by root/category.</p>
+  {% endif %}
+  {% if results %}
+    <table>
+      <thead><tr><th scope="col">Name</th><th scope="col">Path</th><th scope="col">Category</th><th scope="col">Actions</th></tr></thead>
+      <tbody>
+        {% for row in results %}
+          <tr>
+            <td>{{ row.name|safe }}<span>{{ row.snippet|safe }}</span></td>
+            <td><code>{{ row.root }}/{{ row.relpath }}</code><span>copy: {{ row.host_path }}</span></td>
+            <td>{{ row.category or 'misc' }}</td>
+            <td><a href="/preview/items/{{ row.item_id }}">Detail</a> <a href="/history">History{% if row.history_count %} ({{ row.history_count }}){% endif %}</a></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% elif query or filters.category or filters.root or filters.year or filters.genre %}
+    <p>[WARN] no matching indexed items</p>
+  {% endif %}
+  <nav class="pager" aria-label="Search pages">
+    {% if has_prev %}<a hx-get="/search/results?q={{ query }}&page={{ filters.page - 1 }}" hx-target="#search-results" hx-swap="outerHTML" href="/search?q={{ query }}&page={{ filters.page - 1 }}">Prev</a>{% endif %}
+    <span>page {{ filters.page }}</span>
+    {% if has_next %}<a hx-get="/search/results?q={{ query }}&page={{ filters.page + 1 }}" hx-target="#search-results" hx-swap="outerHTML" href="/search?q={{ query }}&page={{ filters.page + 1 }}">Next</a>{% endif %}
+  </nav>
+</div>
