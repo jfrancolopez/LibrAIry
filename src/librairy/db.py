@@ -5,7 +5,7 @@ from pathlib import Path
 
 from librairy.config import Settings
 
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 
 
 class DatabaseVersionError(RuntimeError):
@@ -210,6 +210,24 @@ CREATE TABLE content_extractions (
 CREATE INDEX idx_content_extractions_error ON content_extractions(error);
 """
 
+MIGRATION_010 = """
+CREATE TABLE backup_queue (
+  id          INTEGER PRIMARY KEY,
+  item_id     INTEGER NOT NULL REFERENCES items(id),
+  relpath     TEXT NOT NULL,
+  fingerprint TEXT NOT NULL,
+  state       TEXT NOT NULL DEFAULT 'queued'
+              CHECK (state IN ('queued','copying','done','failed')),
+  attempts    INTEGER NOT NULL DEFAULT 0,
+  last_error  TEXT,
+  created_at  TEXT NOT NULL,
+  updated_at  TEXT NOT NULL,
+  UNIQUE (item_id, relpath, fingerprint)
+);
+CREATE INDEX idx_backup_queue_state ON backup_queue(state);
+CREATE INDEX idx_backup_queue_item_id ON backup_queue(item_id);
+"""
+
 MIGRATIONS = {
     1: MIGRATION_001,
     2: MIGRATION_002,
@@ -220,6 +238,7 @@ MIGRATIONS = {
     7: MIGRATION_007,
     8: MIGRATION_008,
     9: MIGRATION_009,
+    10: MIGRATION_010,
 }
 
 

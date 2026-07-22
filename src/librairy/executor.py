@@ -10,6 +10,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from librairy.backup import enqueue_backup_item
 from librairy.config import Settings
 from librairy.fingerprint import blake2b_file
 from librairy.lifecycle import assert_transition
@@ -130,6 +131,14 @@ def _execute_op(conn: sqlite3.Connection, row: sqlite3.Row, settings: Settings) 
     _finish_op(conn, row["id"], result, final_relpath)
     _journal(conn, row, final_relpath, row["src_fingerprint"], "ok")
     _move_item_row(conn, row, final_relpath, final_dest)
+    if row["dest_root"] == "library":
+        enqueue_backup_item(
+            conn,
+            settings,
+            item_id=row["item_id"],
+            relpath=final_relpath,
+            fingerprint=row["src_fingerprint"],
+        )
     if row["op_type"] == "quarantine":
         record_quarantine_entry(conn, row)
     return result

@@ -76,6 +76,11 @@ class Settings(BaseSettings):
         ge=1024,
         alias="CONTENT_EXTRACT_MAX_CHARS",
     )
+    backup_enabled: bool = Field(False, alias="BACKUP_ENABLED")
+    backup_remote: str = Field("", alias="BACKUP_REMOTE")
+    backup_bandwidth_limit: str = Field("", alias="BACKUP_BANDWIDTH_LIMIT")
+    backup_schedule: str = Field("after_commit", alias="BACKUP_SCHEDULE")
+    backup_include_db_snapshot: bool = Field(True, alias="BACKUP_INCLUDE_DB_SNAPSHOT")
 
     ENV_EXAMPLE: ClassVar[tuple[str, ...]] = (
         "# =============================================================================",

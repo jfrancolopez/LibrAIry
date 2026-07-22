@@ -63,6 +63,8 @@ def test_fresh_db_migrates_to_current_schema(tmp_path: Path) -> None:
         "idx_quarantine_entries_item_id",
         "idx_quarantine_entries_restored_at",
         "idx_content_extractions_error",
+        "idx_backup_queue_state",
+        "idx_backup_queue_item_id",
     }
 
     columns = {row[1] for row in conn.execute("PRAGMA table_info(provider_status)")}

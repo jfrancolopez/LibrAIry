@@ -25,6 +25,18 @@ def settings_for(tmp_path: Path) -> Settings:
     )
 
 
+def backup_settings_for(tmp_path: Path) -> Settings:
+    return Settings(
+        APPDATA_DIR=tmp_path / "appdata",
+        INBOX_DIR=tmp_path / "inbox",
+        LIBRARY_DIR=tmp_path / "library",
+        QUARANTINE_DIR=tmp_path / "quarantine",
+        FILE_STABILITY_SECONDS=0,
+        BACKUP_ENABLED=True,
+        _env_file=None,
+    )
+
+
 def setup_plan(tmp_path: Path, specs: list[OperationSpec]):
     settings = settings_for(tmp_path)
     settings.inbox_dir.mkdir()
@@ -32,6 +44,19 @@ def setup_plan(tmp_path: Path, specs: list[OperationSpec]):
     settings.quarantine_dir.mkdir()
     (settings.inbox_dir / "a.txt").write_text("a", encoding="utf-8")
     (settings.inbox_dir / "b.txt").write_text("b", encoding="utf-8")
+    conn = connect(settings)
+    scan_root(conn, "inbox", settings.inbox_dir, settings)
+    plan_id = create_plan(conn, specs, settings)
+    approve_plan(conn, plan_id, settings)
+    return settings, conn, plan_id
+
+
+def setup_backup_plan(tmp_path: Path, specs: list[OperationSpec]):
+    settings = backup_settings_for(tmp_path)
+    settings.inbox_dir.mkdir()
+    settings.library_dir.mkdir()
+    settings.quarantine_dir.mkdir()
+    (settings.inbox_dir / "a.txt").write_text("a", encoding="utf-8")
     conn = connect(settings)
     scan_root(conn, "inbox", settings.inbox_dir, settings)
     plan_id = create_plan(conn, specs, settings)
@@ -59,6 +84,20 @@ def test_execute_multi_op_plan_and_journal(tmp_path: Path) -> None:
         (plan_id,),
     ).fetchone()[0]
     assert history_count == 2
+
+
+def test_successful_library_commit_queues_backup_when_enabled(tmp_path: Path) -> None:
+    settings, conn, plan_id = setup_backup_plan(
+        tmp_path,
+        [OperationSpec("move", "a.txt", "library", "Documents/a.txt")],
+    )
+
+    execute_plan(conn, plan_id, settings)
+
+    row = conn.execute("SELECT relpath, fingerprint, state FROM backup_queue").fetchone()
+    assert row["relpath"] == "Documents/a.txt"
+    assert row["fingerprint"]
+    assert row["state"] == "queued"
 
 
 def test_quarantine_op_records_entry_and_uses_quarantined_state(tmp_path: Path) -> None:
