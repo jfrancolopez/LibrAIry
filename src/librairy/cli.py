@@ -8,11 +8,17 @@ from dataclasses import asdict
 from pathlib import Path
 
 from librairy import __version__
+from librairy.classify import analyze_items
 from librairy.config import Settings, validate_or_die
 from librairy.db import connect, database_path
 from librairy.executor import execute_plan
 from librairy.history import list_history, undo_op, undo_plan
-from librairy.planner import approve_plan, create_plan, load_operation_specs
+from librairy.planner import (
+    approve_plan,
+    create_plan,
+    create_plan_from_proposals,
+    load_operation_specs,
+)
 from librairy.scanner import scan_root
 
 
@@ -27,6 +33,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     scan = subparsers.add_parser("scan", help="Scan configured roots")
     scan.add_argument("--root", choices=["inbox", "library", "quarantine"], default="inbox")
+
+    analyze = subparsers.add_parser("analyze", help="Analyze ready inbox items into proposals")
+    analyze.add_argument("--limit", type=int)
 
     plan = subparsers.add_parser("plan", help="Create, inspect, and approve plans")
     plan_subparsers = plan.add_subparsers(dest="plan_command")
@@ -50,6 +59,17 @@ def build_parser() -> argparse.ArgumentParser:
     group.add_argument("--op", type=int)
     group.add_argument("--plan")
     undo.add_argument("--yes", action="store_true", help="Confirm undo")
+
+    proposals = subparsers.add_parser("proposals", help="Proposal utilities")
+    proposal_subparsers = proposals.add_subparsers(dest="proposal_command")
+    proposal_list = proposal_subparsers.add_parser("list", help="List proposals")
+    proposal_list.add_argument("--status", default="proposed")
+    proposal_show = proposal_subparsers.add_parser("show", help="Show proposal")
+    proposal_show.add_argument("proposal_id", type=int)
+
+    propose_plan = subparsers.add_parser("propose-plan", help="Create a draft plan from proposals")
+    propose_plan.add_argument("--min-confidence", type=float, default=None)
+    propose_plan.add_argument("--ids", nargs="*", type=int)
 
     db = subparsers.add_parser("db", help="Database utilities")
     db_subparsers = db.add_subparsers(dest="db_command")
@@ -84,6 +104,8 @@ def _dispatch(args: argparse.Namespace, conn: sqlite3.Connection, settings: Sett
         root_path = getattr(settings, f"{args.root}_dir")
         summary = scan_root(conn, args.root, root_path, settings)
         return asdict(summary)
+    if args.command == "analyze":
+        return asdict(analyze_items(conn, settings, args.limit))
     if args.command == "plan":
         return _plan_command(args, conn, settings)
     if args.command == "commit":
@@ -100,6 +122,21 @@ def _dispatch(args: argparse.Namespace, conn: sqlite3.Connection, settings: Sett
             result = undo_op(conn, args.op, settings)
             return asdict(result)
         return {"results": [asdict(result) for result in undo_plan(conn, args.plan, settings)]}
+    if args.command == "proposals":
+        return _proposal_command(args, conn)
+    if args.command == "propose-plan":
+        min_confidence = (
+            args.min_confidence
+            if args.min_confidence is not None
+            else settings.confidence_threshold
+        )
+        plan_id = create_plan_from_proposals(
+            conn,
+            settings,
+            min_confidence=min_confidence,
+            proposal_ids=args.ids,
+        )
+        return {"plan_id": plan_id, "status": "draft"}
     if args.command == "db":
         if args.db_command == "path":
             return {"path": str(database_path(settings))}
@@ -122,6 +159,19 @@ def _plan_command(args: argparse.Namespace, conn: sqlite3.Connection, settings: 
     if args.plan_command == "approve":
         plan_hash = approve_plan(conn, args.plan_id, settings)
         return {"plan_id": args.plan_id, "status": "approved", "plan_hash": plan_hash}
+    return None
+
+
+def _proposal_command(args: argparse.Namespace, conn: sqlite3.Connection):
+    if args.proposal_command == "list":
+        rows = conn.execute(
+            "SELECT * FROM proposals WHERE status=? ORDER BY id",
+            (args.status,),
+        ).fetchall()
+        return {"proposals": [_row_dict(row) for row in rows]}
+    if args.proposal_command == "show":
+        row = conn.execute("SELECT * FROM proposals WHERE id=?", (args.proposal_id,)).fetchone()
+        return {"proposal": _row_dict(row) if row else None}
     return None
 
 

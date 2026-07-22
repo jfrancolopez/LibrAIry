@@ -250,9 +250,9 @@ CREATE TABLE groups (
 **Description:** Committed corpus under `tests/fixtures/corpus/` (tiny synthetic files; media headers faked or minimal real samples): tagged album, untagged album, compilation, movie, episode+season, photo event with `#tag`, camera roll, screenshots, PDFs (clear + ambiguous), epub, code project, fonts, generic unknowns, duplicate basenames, unicode names, hashtag folders. Expected-proposal snapshots checked by test. CLI: `librairy analyze` (scan+classify pending items → proposals; `--json`), `librairy proposals list/show`, `librairy propose-plan [--min-confidence X] [--ids ...]` compiling approved-able proposals into a Phase-1 plan spec (draft plan) — the bridge to `plan approve`/`commit`.
 **Acceptance criteria:**
 - [ ] Corpus snapshot test passes and is readable enough to review diffs.
-- [ ] `librairy analyze` on the corpus inbox produces the snapshot proposals; runs with network mocked (no real API calls in tests).
-- [ ] `propose-plan` → `plan approve` → `commit` moves confident corpus items into a correct fixture library tree (end-to-end test).
-- [ ] Pending (no-destination) items remain physically untouched in the inbox.
+- [x] `librairy analyze` on the corpus inbox produces the snapshot proposals; runs with network mocked (no real API calls in tests).
+- [x] `propose-plan` → `plan approve` → `commit` moves confident corpus items into a correct fixture library tree (end-to-end test).
+- [x] Pending (no-destination) items remain physically untouched in the inbox.
 **Size:** M
 
 ## Verification steps

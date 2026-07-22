@@ -135,6 +135,31 @@ def load_operation_specs(path: Path) -> list[OperationSpec]:
     return [OperationSpec(**item) for item in data]
 
 
+def create_plan_from_proposals(
+    conn: sqlite3.Connection,
+    settings: Settings,
+    *,
+    min_confidence: float,
+    proposal_ids: list[int] | None = None,
+) -> str:
+    sql = """
+        SELECT p.*, i.relpath AS src_relpath
+        FROM proposals p JOIN items i ON i.id=p.item_id
+        WHERE p.status='proposed' AND p.dest_relpath IS NOT NULL AND p.confidence>=?
+    """
+    params: list[object] = [min_confidence]
+    if proposal_ids:
+        placeholders = ",".join("?" for _ in proposal_ids)
+        sql += f" AND p.id IN ({placeholders})"
+        params.extend(proposal_ids)
+    rows = conn.execute(sql, params).fetchall()
+    specs = [
+        OperationSpec("move", row["src_relpath"], "library", row["dest_relpath"])
+        for row in rows
+    ]
+    return create_plan(conn, specs, settings)
+
+
 def _approval_errors(conn: sqlite3.Connection, plan_id: str, settings: Settings) -> list[str]:
     rows = conn.execute(
         "SELECT * FROM plan_ops WHERE plan_id=? ORDER BY seq",
