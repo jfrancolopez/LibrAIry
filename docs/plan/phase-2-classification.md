@@ -196,10 +196,10 @@ CREATE TABLE groups (
 **Depends on:** P2-02, P2-04
 **Description:** Port `video_lookup.py`: filename parser (title/year/SxxEyy), TMDB search movie/TV, genre mapping (port `utils.py` maps), vote-count-derived confidence, season grouping. Missing `TMDB_KEY` → heuristic-only naming from the parsed filename at reduced confidence.
 **Acceptance criteria:**
-- [ ] Parser handles the fixture set: dotted scene names, year-in-title, SxxEyy variants, junk tokens.
-- [ ] Recorded TMDB fixtures produce correct movie and episode proposals with genre evidence.
-- [ ] No key → parsed-name proposal with confidence below catalog-backed levels; evidence says `heuristic`.
-- [ ] Episodes of one season share a group and a season folder destination.
+- [x] Parser handles the fixture set: dotted scene names, year-in-title, SxxEyy variants, junk tokens.
+- [x] Recorded TMDB fixtures produce correct movie and episode proposals with genre evidence.
+- [x] No key → parsed-name proposal with confidence below catalog-backed levels; evidence says `heuristic`.
+- [x] Episodes of one season share a group and a season folder destination.
 **Size:** M
 
 ### P2-07 Hashtag hints
