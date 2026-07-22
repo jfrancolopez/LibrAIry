@@ -1,6 +1,6 @@
 # Phase 7 — Search/Browse, Settings, AI Provider Selector
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Depends on:** Phase 6 (review/commit UI) DONE
 **Size:** M
 
@@ -110,11 +110,11 @@ Make the library *findable* and the system *tunable*: instant search with facets
 **Depends on:** Phase 6
 **Description:** Migration 005 per Design Constraints; backfill on migration; sync calls at indexer/proposal/commit write points; `librairy index rebuild` + health-screen rebuild button; malformed-query hardening.
 **Acceptance criteria:**
-- [ ] Backfill indexes the seeded sandbox (library+inbox+quarantine items with metadata fields populated).
-- [ ] New proposal, commit, and quarantine each update the FTS rows (three targeted tests).
-- [ ] `index rebuild` from an empty FTS table reproduces identical search results (checksum/count comparison).
-- [ ] Hostile queries (`"`, `AND OR`, `*`, unbalanced parens, emoji) return results or empty — never 500 (parametrized test).
-- [ ] Perf test: seeded 10k items, search < 500 ms in CI.
+- [x] Backfill indexes the seeded sandbox (library+inbox+quarantine items with metadata fields populated).
+- [x] New proposal, commit, and quarantine each update the FTS rows (three targeted tests).
+- [x] `index rebuild` from an empty FTS table reproduces identical search results (checksum/count comparison).
+- [x] Hostile queries (`"`, `AND OR`, `*`, unbalanced parens, emoji) return results or empty — never 500 (parametrized test).
+- [x] Perf test: seeded 10k items, search < 500 ms in CI.
 **Size:** M
 
 ### P7-02 Search screen

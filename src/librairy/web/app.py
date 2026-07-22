@@ -11,6 +11,7 @@ from fastapi.templating import Jinja2Templates
 
 from librairy.config import Settings
 from librairy.db import connect
+from librairy.search import rebuild_search_index
 from librairy.web.auth import (
     SESSION_COOKIE,
     LoginRateLimiter,
@@ -423,6 +424,11 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
     @app.get("/healthz")
     def healthz() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.post("/index/rebuild", response_class=HTMLResponse)
+    def index_rebuild(request: Request) -> HTMLResponse:  # noqa: ARG001
+        indexed = rebuild_search_index(conn)
+        return HTMLResponse(f'<p id="index-result" class="status">[OK] indexed {indexed}</p>')
 
     @app.exception_handler(404)
     async def not_found(request: Request, exc) -> HTMLResponse:  # noqa: ARG001

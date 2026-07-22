@@ -27,6 +27,7 @@ from librairy.planner import (
 )
 from librairy.quarantine import list_quarantine_entries, restore_all, restore_entry
 from librairy.scanner import scan_root
+from librairy.search import rebuild_search_index
 from librairy.supervisor import run_supervisor
 from librairy.worker import run_forever, run_once
 
@@ -93,6 +94,10 @@ def build_parser() -> argparse.ArgumentParser:
     db_subparsers = db.add_subparsers(dest="db_command")
     db_subparsers.add_parser("path", help="Print database path")
     db_subparsers.add_parser("migrate", help="Apply migrations")
+
+    index = subparsers.add_parser("index", help="Search index utilities")
+    index_subparsers = index.add_subparsers(dest="index_command")
+    index_subparsers.add_parser("rebuild", help="Rebuild the FTS search index")
 
     ai = subparsers.add_parser("ai", help="AI provider utilities")
     ai_subparsers = ai.add_subparsers(dest="ai_command")
@@ -184,6 +189,8 @@ def _dispatch(args: argparse.Namespace, conn: sqlite3.Connection, settings: Sett
         return {"stopped": True}
     if args.command == "run":
         raise SystemExit(run_supervisor(settings))
+    if args.command == "index" and args.index_command == "rebuild":
+        return {"indexed": rebuild_search_index(conn)}
     return None
 
 

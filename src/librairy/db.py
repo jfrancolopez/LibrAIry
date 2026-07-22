@@ -5,7 +5,7 @@ from pathlib import Path
 
 from librairy.config import Settings
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 
 class DatabaseVersionError(RuntimeError):
@@ -173,6 +173,24 @@ ALTER TABLE proposals ADD COLUMN action TEXT NOT NULL DEFAULT 'move';
 ALTER TABLE proposals ADD COLUMN dest_root TEXT NOT NULL DEFAULT 'library';
 """
 
+MIGRATION_008 = """
+CREATE VIRTUAL TABLE search_fts USING fts5(
+  name,
+  clean_name,
+  tags,
+  artist,
+  album,
+  title,
+  show,
+  genre,
+  event,
+  category UNINDEXED,
+  root UNINDEXED,
+  item_id UNINDEXED,
+  tokenize='unicode61 remove_diacritics 2'
+);
+"""
+
 MIGRATIONS = {
     1: MIGRATION_001,
     2: MIGRATION_002,
@@ -181,6 +199,7 @@ MIGRATIONS = {
     5: MIGRATION_005,
     6: MIGRATION_006,
     7: MIGRATION_007,
+    8: MIGRATION_008,
 }
 
 
@@ -212,6 +231,7 @@ def user_version(conn: sqlite3.Connection) -> int:
 
 def migrate(conn: sqlite3.Connection) -> None:
     current = user_version(conn)
+    starting_version = current
     if current > SCHEMA_VERSION:
         raise DatabaseVersionError(
             f"Database schema version {current} is newer than this code supports "
@@ -225,3 +245,7 @@ def migrate(conn: sqlite3.Connection) -> None:
             if conn.in_transaction:
                 conn.execute("ROLLBACK")
             raise
+    if starting_version < 8 <= SCHEMA_VERSION:
+        from librairy.search import rebuild_search_index
+
+        rebuild_search_index(conn)

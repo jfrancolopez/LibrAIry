@@ -10,6 +10,7 @@ from librairy.lifecycle import transition_item
 from librairy.paths import PathValidationError, sanitize_component, validate_dest
 from librairy.planner import utc_now
 from librairy.proposals import decode_evidence
+from librairy.search import sync_search_item
 from librairy.taxonomy import CATEGORIES, render_destination
 
 PAGE_SIZE = 50
@@ -114,6 +115,7 @@ def edit_proposal(
         """,
         (category, safe_name, destination, utc_now(), proposal_id),
     )
+    sync_search_item(conn, row["item_id"])
     updated = _proposal_rows(
         conn,
         ReviewFilters(state=row["status"], page=1),

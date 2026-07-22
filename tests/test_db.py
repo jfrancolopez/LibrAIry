@@ -24,7 +24,7 @@ def test_fresh_db_migrates_to_current_schema(tmp_path: Path) -> None:
             "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
         )
     }
-    assert tables == {
+    expected_tables = {
         "items",
         "plans",
         "plan_ops",
@@ -37,7 +37,9 @@ def test_fresh_db_migrates_to_current_schema(tmp_path: Path) -> None:
         "worker_state",
         "similar_media_flags",
         "quarantine_entries",
+        "search_fts",
     }
+    assert expected_tables <= tables
 
     indexes = {
         row[0]

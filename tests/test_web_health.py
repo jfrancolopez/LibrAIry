@@ -127,3 +127,21 @@ def test_health_summary_all_green_when_dependencies_ok(tmp_path: Path, monkeypat
 
     assert response.status_code == 200
     assert "[OK] SYSTEM HEALTH" in response.text
+
+
+def test_health_screen_rebuilds_search_index(tmp_path: Path) -> None:
+    client, conn, _ = client_for(tmp_path)
+    item_id = conn.execute(
+        """
+        INSERT INTO items(root, relpath, size, mtime_ns, fingerprint, first_seen_at, last_seen_at)
+        VALUES ('library', 'Documents/a.txt', 1, 1, 'a', 'now', 'now')
+        """
+    ).lastrowid
+    conn.execute("DELETE FROM search_fts")
+
+    page = client.get("/health")
+    response = client.post("/index/rebuild", headers={"x-csrf-token": client.cookies["csrf_token"]})
+
+    assert "Rebuild Search Index" in page.text
+    assert response.text == '<p id="index-result" class="status">[OK] indexed 1</p>'
+    assert conn.execute("SELECT item_id FROM search_fts").fetchone()[0] == item_id

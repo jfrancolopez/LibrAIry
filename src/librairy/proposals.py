@@ -6,6 +6,7 @@ from dataclasses import asdict
 
 from librairy.models import Category, EvidenceEntry, Proposal
 from librairy.planner import utc_now
+from librairy.search import sync_search_item
 
 VALID_EVIDENCE_SOURCES = {
     "heuristic",
@@ -66,7 +67,9 @@ def upsert_proposal(
                 now,
             ),
         )
-        return int(cursor.lastrowid)
+        proposal_id = int(cursor.lastrowid)
+        sync_search_item(conn, item_id)
+        return proposal_id
 
     conn.execute(
         """
@@ -87,6 +90,7 @@ def upsert_proposal(
             existing["id"],
         ),
     )
+    sync_search_item(conn, item_id)
     return int(existing["id"])
 
 
@@ -95,6 +99,7 @@ def supersede_proposal(conn: sqlite3.Connection, item_id: int) -> None:
         "UPDATE proposals SET status='superseded', updated_at=? WHERE item_id=?",
         (utc_now(), item_id),
     )
+    sync_search_item(conn, item_id)
 
 
 def get_proposal(conn: sqlite3.Connection, proposal_id: int) -> Proposal | None:

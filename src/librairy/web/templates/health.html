@@ -25,6 +25,8 @@
       <span class="status">[{{ db_status.status }}] DB</span>
       <span>{{ db_status.detail }}</span>
       {% if db_status.hint %}<span>{{ db_status.hint }}</span>{% endif %}
+      <button hx-post="/index/rebuild" hx-target="#index-result" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>Rebuild Search Index</button>
+      <div id="index-result"></div>
     </article>
     <article class="metric wide">
       <span class="status">[{{ worker_status.status }}] WORKER</span>

@@ -11,6 +11,7 @@ from librairy.config import Settings
 from librairy.fingerprint import blake2b_file
 from librairy.lifecycle import should_reset_for_fingerprint_change
 from librairy.proposals import supersede_proposal
+from librairy.search import sync_search_item
 
 VALID_ROOTS = {"inbox", "library", "quarantine"}
 
@@ -116,6 +117,10 @@ def scan_root(
                 """,
                 (root, relpath, stat.st_size, stat.st_mtime_ns, fingerprint, state, now, now),
             )
+            item_id = conn.execute(
+                "SELECT id FROM items WHERE root=? AND relpath=?", (root, relpath)
+            ).fetchone()[0]
+            sync_search_item(conn, item_id)
             unchanged = (
                 existing
                 and existing["size"] == stat.st_size

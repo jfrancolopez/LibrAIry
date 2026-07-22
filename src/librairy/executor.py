@@ -16,6 +16,7 @@ from librairy.locks import acquire_lock
 from librairy.paths import resolve_collision, validate_dest
 from librairy.planner import compute_plan_hash, utc_now
 from librairy.quarantine import record_quarantine_entry
+from librairy.search import sync_search_item
 
 TERMINAL_RESULTS = {"done", "skipped_changed", "skipped_missing", "renamed_collision", "failed"}
 
@@ -203,6 +204,7 @@ def _move_item_row(
             row["item_id"],
         ),
     )
+    sync_search_item(conn, row["item_id"])
 
 
 def _root_path(settings: Settings, root: str) -> Path:

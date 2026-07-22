@@ -25,7 +25,8 @@ def settings_for(tmp_path: Path, **overrides) -> Settings:
 def test_schema_adds_provider_status(tmp_path: Path) -> None:
     conn = connect(settings_for(tmp_path))
 
-    assert user_version(conn) == SCHEMA_VERSION == 7
+    assert user_version(conn) == SCHEMA_VERSION
+    assert SCHEMA_VERSION >= 8
     conn.execute("SELECT * FROM provider_status")
 
 

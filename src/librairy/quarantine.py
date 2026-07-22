@@ -9,6 +9,7 @@ from librairy.fingerprint import blake2b_file
 from librairy.lifecycle import assert_transition
 from librairy.paths import resolve_collision, validate_dest
 from librairy.planner import OperationSpec, utc_now
+from librairy.search import sync_search_item
 
 
 class QuarantineError(RuntimeError):
@@ -80,6 +81,7 @@ def restore_entry(conn: sqlite3.Connection, entry_id: int, settings: Settings) -
             item["id"],
         ),
     )
+    sync_search_item(conn, item["id"])
     conn.execute("UPDATE quarantine_entries SET restored_at=? WHERE id=?", (utc_now(), entry_id))
     conn.execute(
         """
