@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import resource
 import shutil
 import tempfile
 import time
@@ -107,6 +108,7 @@ def run_smoke(base_dir: Path, *, count: int, commit_count: int) -> dict[str, obj
         "search_ms": search_ms,
         "timings": timings,
         "db_bytes": database_path(settings).stat().st_size,
+        "peak_rss_mb": peak_rss_mb(),
     }
 
 
@@ -136,6 +138,13 @@ def ui_latencies(conn, settings: Settings) -> tuple[int, int]:  # noqa: ANN001
 
 def elapsed(started: float) -> float:
     return round(time.perf_counter() - started, 3)
+
+
+def peak_rss_mb() -> int:
+    usage = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    if usage > 10_000_000:  # macOS reports bytes; Linux reports KiB.
+        return round(usage / 1024 / 1024)
+    return round(usage / 1024)
 
 
 if __name__ == "__main__":

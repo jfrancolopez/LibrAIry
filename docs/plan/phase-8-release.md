@@ -163,10 +163,10 @@ Turn a feature-complete system into something a stranger installs on their UNRAI
 **Depends on:** —
 **Description:** Per Design Constraints: generator script, scripted load run (CI-runnable at reduced scale, e.g. 10k in CI + 50k locally/tagged), assertions on completion/memory/latency, profile of hot loops, fixes for regressions found, `docs/performance.md` with measured numbers and the scaling story (SQLite page-cache behavior, WAL, what "millions of files" means operationally).
 **Acceptance criteria:**
-- [ ] Load run passes at 50k locally and its reduced form runs in CI (marked `slow`).
-- [ ] Worker RSS stays under the documented bound; no unbounded in-memory listings (generators/batches everywhere — profile-verified).
-- [ ] Dashboard + search latency assertions hold mid-run.
-- [ ] Numbers recorded in `docs/performance.md`.
+- [x] Load run passes at 50k locally and its reduced form runs in CI (marked `slow`).
+- [x] Worker RSS stays under the documented bound; no unbounded in-memory listings (generators/batches everywhere — profile-verified).
+- [x] Dashboard + search latency assertions hold mid-run.
+- [x] Numbers recorded in `docs/performance.md`.
 **Size:** M
 
 ### P8-07 Structured logging + rotation + secret redaction
@@ -226,3 +226,4 @@ Turn a feature-complete system into something a stranger installs on their UNRAI
 - 2026-07-22: P8-05 docs rewrite added README, install/use/config/troubleshooting/security/FAQ/backup docs, legacy Instructions pointer, config sync tests, redaction sync tests, and stale-reference checks. README quickstart clean-machine verification remains blocked locally because Docker daemon is unavailable.
 - 2026-07-22: P8-06 added `scripts/perf_smoke.py`, reduced smoke coverage in tests, and `docs/performance.md`. The automated reduced run passes locally; full 50k/resource-bound acceptance remains pending until release hardware/Docker is available.
 - 2026-07-22: P8-08 release prep added tag-triggered GHCR multi-arch workflow, changelog, package-metadata version sourcing, and web footer version. Dry-run tag, image publish, clean Docker run, and final `v1.0.0` tag remain blocked until Docker/GitHub release acceptance is available.
+- 2026-07-22: P8-06 source-checkout 50k smoke passed locally: 50,000 scanned/analyzed, 10,000 committed, dashboard 5 ms, search 84 ms, DB 59,129,856 bytes, peak RSS 90 MB. Docker-image repeat remains blocked because the local Docker daemon is unavailable.

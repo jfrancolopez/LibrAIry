@@ -23,3 +23,5 @@ def test_reduced_performance_smoke(tmp_path) -> None:
     assert result["dashboard_ms"] < 1000
     assert result["search_ms"] < 1000
     assert result["db_bytes"] > 0
+    assert result["peak_rss_mb"] > 0
+    assert result["peak_rss_mb"] < 500
