@@ -145,10 +145,10 @@ CREATE TABLE worker_state (
 **Depends on:** P4-01
 **Description:** Quarantine proposals → plan ops per Design Constraints; `quarantine_entries` rows written on commit; `librairy quarantine list` (reason, duplicate-of, original path, age) and `librairy quarantine restore <id|--all>` via the executor (journaled, collision-safe).
 **Acceptance criteria:**
-- [ ] Commit of a quarantine op moves the file under `/data/quarantine/<date>/…` preserving relative structure; entry row complete.
-- [ ] Restore returns it to the original path (or collision-renamed sibling), journaled, `restored_at` set.
-- [ ] Quarantined items are excluded from re-analysis (state machine test).
-- [ ] Nothing in the quarantine flow can delete a file (grep/invariant test extends to new modules).
+- [x] Commit of a quarantine op moves the file under `/data/quarantine/<date>/…` preserving relative structure; entry row complete.
+- [x] Restore returns it to the original path (or collision-renamed sibling), journaled, `restored_at` set.
+- [x] Quarantined items are excluded from re-analysis (state machine test).
+- [x] Nothing in the quarantine flow can delete a file (grep/invariant test extends to new modules).
 **Size:** M
 
 ### P4-04 Item lifecycle state machine

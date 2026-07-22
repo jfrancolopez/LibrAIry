@@ -25,6 +25,7 @@ from librairy.planner import (
     create_plan_from_proposals,
     load_operation_specs,
 )
+from librairy.quarantine import list_quarantine_entries, restore_all, restore_entry
 from librairy.scanner import scan_root
 
 
@@ -76,6 +77,15 @@ def build_parser() -> argparse.ArgumentParser:
     propose_plan = subparsers.add_parser("propose-plan", help="Create a draft plan from proposals")
     propose_plan.add_argument("--min-confidence", type=float, default=None)
     propose_plan.add_argument("--ids", nargs="*", type=int)
+
+    quarantine = subparsers.add_parser("quarantine", help="Quarantine utilities")
+    quarantine_subparsers = quarantine.add_subparsers(dest="quarantine_command")
+    quarantine_subparsers.add_parser("list", help="List quarantine entries")
+    quarantine_restore = quarantine_subparsers.add_parser(
+        "restore", help="Restore quarantine entries"
+    )
+    quarantine_restore.add_argument("entry_id", nargs="?", type=int)
+    quarantine_restore.add_argument("--all", action="store_true")
 
     db = subparsers.add_parser("db", help="Database utilities")
     db_subparsers = db.add_subparsers(dest="db_command")
@@ -151,6 +161,8 @@ def _dispatch(args: argparse.Namespace, conn: sqlite3.Connection, settings: Sett
             proposal_ids=args.ids,
         )
         return {"plan_id": plan_id, "status": "draft"}
+    if args.command == "quarantine":
+        return _quarantine_command(args, conn, settings)
     if args.command == "db":
         if args.db_command == "path":
             return {"path": str(database_path(settings))}
@@ -188,6 +200,18 @@ def _proposal_command(args: argparse.Namespace, conn: sqlite3.Connection):
     if args.proposal_command == "show":
         row = conn.execute("SELECT * FROM proposals WHERE id=?", (args.proposal_id,)).fetchone()
         return {"proposal": _row_dict(row) if row else None}
+    return None
+
+
+def _quarantine_command(args: argparse.Namespace, conn: sqlite3.Connection, settings: Settings):
+    if args.quarantine_command == "list":
+        return {"entries": [_row_dict(row) for row in list_quarantine_entries(conn)]}
+    if args.quarantine_command == "restore":
+        if args.all:
+            return {"results": [asdict(result) for result in restore_all(conn, settings)]}
+        if args.entry_id is None:
+            return {"error": "restore requires entry_id or --all", "partial": True}
+        return asdict(restore_entry(conn, args.entry_id, settings))
     return None
 
 

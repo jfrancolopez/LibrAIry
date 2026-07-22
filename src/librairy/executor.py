@@ -14,6 +14,7 @@ from librairy.fingerprint import blake2b_file
 from librairy.locks import acquire_lock
 from librairy.paths import resolve_collision, validate_dest
 from librairy.planner import compute_plan_hash, utc_now
+from librairy.quarantine import record_quarantine_entry
 
 TERMINAL_RESULTS = {"done", "skipped_changed", "skipped_missing", "renamed_collision", "failed"}
 
@@ -110,6 +111,8 @@ def _execute_op(conn: sqlite3.Connection, row: sqlite3.Row, settings: Settings) 
     _finish_op(conn, row["id"], result, final_relpath)
     _journal(conn, row, final_relpath, row["src_fingerprint"], "ok")
     _move_item_row(conn, row, final_relpath, final_dest)
+    if row["op_type"] == "quarantine":
+        record_quarantine_entry(conn, row)
     return result
 
 
@@ -179,9 +182,10 @@ def _move_item_row(
     final_dest: Path,
 ) -> None:
     stat = final_dest.stat()
+    state = "quarantined" if row["dest_root"] == "quarantine" else "discovered"
     conn.execute(
         """
-        UPDATE items SET root=?, relpath=?, size=?, mtime_ns=?, state='discovered',
+        UPDATE items SET root=?, relpath=?, size=?, mtime_ns=?, state=?,
           last_seen_at=?, missing_since=NULL
         WHERE id=?
         """,
@@ -190,6 +194,7 @@ def _move_item_row(
             final_relpath,
             stat.st_size,
             stat.st_mtime_ns,
+            state,
             utc_now(),
             row["item_id"],
         ),

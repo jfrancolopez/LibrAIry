@@ -8,6 +8,7 @@ from librairy.config import Settings
 from librairy.db import connect
 from librairy.executor import ExecutionError, execute_plan
 from librairy.planner import OperationSpec, approve_plan, create_plan
+from librairy.quarantine import quarantine_operation, restore_entry
 from librairy.scanner import scan_root
 
 
@@ -56,6 +57,60 @@ def test_execute_multi_op_plan_and_journal(tmp_path: Path) -> None:
         (plan_id,),
     ).fetchone()[0]
     assert history_count == 2
+
+
+def test_quarantine_op_records_entry_and_uses_quarantined_state(tmp_path: Path) -> None:
+    settings, conn, plan_id = setup_plan(
+        tmp_path,
+        [quarantine_operation("b.txt", date="2026-07-21")],
+    )
+
+    summary = execute_plan(conn, plan_id, settings)
+
+    assert summary.done == 1
+    assert (settings.quarantine_dir / "2026-07-21/b.txt").read_text(encoding="utf-8") == "b"
+    entry = conn.execute("SELECT * FROM quarantine_entries").fetchone()
+    assert entry["original_root"] == "inbox"
+    assert entry["original_relpath"] == "b.txt"
+    assert entry["plan_id"] == plan_id
+    item = conn.execute(
+        "SELECT root, relpath, state FROM items WHERE id=?", (entry["item_id"],)
+    ).fetchone()
+    assert dict(item) == {
+        "root": "quarantine",
+        "relpath": "2026-07-21/b.txt",
+        "state": "quarantined",
+    }
+
+
+def test_restore_quarantine_entry_is_journaled_and_collision_safe(tmp_path: Path) -> None:
+    settings, conn, plan_id = setup_plan(
+        tmp_path,
+        [quarantine_operation("b.txt", date="2026-07-21")],
+    )
+    execute_plan(conn, plan_id, settings)
+    entry_id = conn.execute("SELECT id FROM quarantine_entries").fetchone()[0]
+    (settings.inbox_dir / "b.txt").write_text("collision", encoding="utf-8")
+
+    result = restore_entry(conn, entry_id, settings)
+
+    assert result.outcome == "ok"
+    assert result.dest_relpath == "b (2).txt"
+    assert (settings.inbox_dir / "b (2).txt").read_text(encoding="utf-8") == "b"
+    assert conn.execute(
+        "SELECT restored_at FROM quarantine_entries WHERE id=?", (entry_id,)
+    ).fetchone()[0]
+    assert (
+        conn.execute("SELECT action FROM history ORDER BY id DESC LIMIT 1").fetchone()[0]
+        == "restore_quarantine"
+    )
+
+
+def test_quarantine_module_does_not_delete_files() -> None:
+    source = Path("src/librairy/quarantine.py").read_text(encoding="utf-8")
+
+    assert ".unlink" not in source
+    assert "os.remove" not in source
 
 
 def test_changed_source_is_skipped(tmp_path: Path) -> None:

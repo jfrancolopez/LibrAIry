@@ -5,7 +5,7 @@ from pathlib import Path
 
 from librairy.config import Settings
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 
 class DatabaseVersionError(RuntimeError):
@@ -152,12 +152,29 @@ CREATE INDEX idx_similar_media_flags_status ON similar_media_flags(status);
 CREATE INDEX idx_similar_media_flags_item_id ON similar_media_flags(item_id);
 """
 
+MIGRATION_006 = """
+CREATE TABLE quarantine_entries (
+  id               INTEGER PRIMARY KEY,
+  item_id          INTEGER NOT NULL REFERENCES items(id),
+  reason           TEXT NOT NULL CHECK (reason IN ('exact_duplicate','similar_media','user')),
+  duplicate_of     INTEGER REFERENCES items(id),
+  original_root    TEXT NOT NULL,
+  original_relpath TEXT NOT NULL,
+  quarantined_at   TEXT,
+  restored_at      TEXT,
+  plan_id          TEXT
+);
+CREATE INDEX idx_quarantine_entries_item_id ON quarantine_entries(item_id);
+CREATE INDEX idx_quarantine_entries_restored_at ON quarantine_entries(restored_at);
+"""
+
 MIGRATIONS = {
     1: MIGRATION_001,
     2: MIGRATION_002,
     3: MIGRATION_003,
     4: MIGRATION_004,
     5: MIGRATION_005,
+    6: MIGRATION_006,
 }
 
 
