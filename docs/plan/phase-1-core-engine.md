@@ -222,12 +222,12 @@ CREATE TABLE sessions (                     -- used from Phase 5; created now so
 **Depends on:** P1-03
 **Description:** `scanner.py` + `fingerprint.py`: walk a root (skip hidden files/dirs and `IGNORE_PATTERNS` globs), upsert items by `(root, relpath)`, record size/mtime, compute `blake2b` fingerprints (streamed, 1 MiB chunks). Incremental: unchanged size+mtime skips re-hashing; changed files re-hash and reset state to `discovered`; vanished files get `missing_since`. Stability detection: a file whose size or mtime changed within the last `N` seconds (configurable, default 10) is recorded but flagged not-yet-stable (still copying) — callers exclude unstable items.
 **Acceptance criteria:**
-- [ ] Scan of a fixture tree produces correct items with correct fingerprints (verified against `b2sum`-style reference).
-- [ ] Second scan with no changes re-hashes nothing (verified via hash-call counter/mock).
-- [ ] Modified file is detected by size/mtime and re-fingerprinted.
-- [ ] Deleted file gets `missing_since` set; reappearing file clears it.
-- [ ] A growing file (simulated) is flagged unstable and excluded from "ready" queries.
-- [ ] Symlinks are recorded as their own item type or skipped (documented choice) — never followed out of the root.
+- [x] Scan of a fixture tree produces correct items with correct fingerprints (verified against `b2sum`-style reference).
+- [x] Second scan with no changes re-hashes nothing (verified via hash-call counter/mock).
+- [x] Modified file is detected by size/mtime and re-fingerprinted.
+- [x] Deleted file gets `missing_since` set; reappearing file clears it.
+- [x] A growing file (simulated) is flagged unstable and excluded from "ready" queries.
+- [x] Symlinks are recorded as their own item type or skipped (documented choice) — never followed out of the root.
 **Test notes:** all under `tmp_path`; include unicode names, deep nesting, 0-byte files, duplicate basenames in different dirs.
 **Size:** M
 
