@@ -63,6 +63,7 @@ def test_readme_links_to_new_documentation_set() -> None:
         "troubleshooting.md",
         "security.md",
         "backup-restore.md",
+        "performance.md",
         "faq.md",
     ):
         assert name in readme

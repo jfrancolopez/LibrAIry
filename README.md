@@ -31,6 +31,7 @@ Open `http://localhost:8080`, create the admin password, then drop files into `d
 - [Troubleshooting](docs/troubleshooting.md)
 - [Security](docs/security.md)
 - [Backup and restore](docs/backup-restore.md)
+- [Performance](docs/performance.md)
 - [FAQ](docs/faq.md)
 
 ## Development
