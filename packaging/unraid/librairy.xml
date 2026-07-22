@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Container version="2">
+  <Name>LibrAIry</Name>
+  <Repository>ghcr.io/jfrancolopez/librairy:latest</Repository>
+  <Registry>https://ghcr.io/jfrancolopez/librairy</Registry>
+  <Network>bridge</Network>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/jfrancolopez/LibrAIry/issues</Support>
+  <Project>https://github.com/jfrancolopez/LibrAIry</Project>
+  <Overview>LibrAIry is a privacy-first, AI-assisted file organizer for NAS libraries. Drop files into an inbox, review proposed destinations, then commit approved moves. It never deletes files, never overwrites destinations, and treats the existing library as read-only.</Overview>
+  <Category>MediaApp:Other Tools:</Category>
+  <WebUI>http://[IP]:[PORT:8080]</WebUI>
+  <TemplateURL>https://raw.githubusercontent.com/jfrancolopez/LibrAIry/main/packaging/unraid/librairy.xml</TemplateURL>
+  <Icon>https://raw.githubusercontent.com/jfrancolopez/LibrAIry/main/packaging/unraid/icon.svg</Icon>
+  <ExtraParams>--add-host=host.docker.internal:host-gateway</ExtraParams>
+  <PostArgs></PostArgs>
+  <CPUset></CPUset>
+  <DateInstalled></DateInstalled>
+  <DonateText></DonateText>
+  <DonateLink></DonateLink>
+  <Description>Self-hosted file organization with FastAPI web review, SQLite, local-first AI, reversible quarantine, and safe commit plans.</Description>
+  <Config Name="WebUI Port" Target="8080" Default="8080" Mode="tcp" Description="Port for the LibrAIry web portal." Type="Port" Display="always" Required="true" Mask="false">8080</Config>
+  <Config Name="Inbox Path" Target="/data/inbox" Default="/mnt/user/librAIry/inbox" Mode="rw" Description="Drop messy files here. LibrAIry scans this path." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/librAIry/inbox</Config>
+  <Config Name="Library Path" Target="/data/library" Default="/mnt/user/librAIry/library" Mode="rw" Description="Organized output. Existing files are indexed read-only and never modified." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/librAIry/library</Config>
+  <Config Name="Quarantine Path" Target="/data/quarantine" Default="/mnt/user/librAIry/quarantine" Mode="rw" Description="Reversible duplicate/review storage. LibrAIry never deletes files." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/librAIry/quarantine</Config>
+  <Config Name="Appdata Path" Target="/data/appdata" Default="/mnt/user/appdata/librairy" Mode="rw" Description="SQLite database, settings, thumbnails, and logs." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/librairy</Config>
+  <Config Name="PUID" Target="PUID" Default="99" Mode="" Description="UID used for files created in mounted shares. UNRAID default nobody is 99." Type="Variable" Display="always" Required="true" Mask="false">99</Config>
+  <Config Name="PGID" Target="PGID" Default="100" Mode="" Description="GID used for files created in mounted shares. UNRAID default users is 100." Type="Variable" Display="always" Required="true" Mask="false">100</Config>
+  <Config Name="Ollama Host" Target="OLLAMA_HOST" Default="http://host.docker.internal:11434" Mode="" Description="LAN URL where Ollama is reachable. Leave default when Ollama runs on the Docker host." Type="Variable" Display="always" Required="false" Mask="false">http://host.docker.internal:11434</Config>
+  <Config Name="Primary Ollama Model" Target="OLLAMA_MODEL_PRIMARY" Default="qwen3:4b" Mode="" Description="Default local model. Use qwen3:4b for CPU hosts or qwen3:8b for stronger GPU hosts." Type="Variable" Display="advanced" Required="false" Mask="false">qwen3:4b</Config>
+  <Config Name="TMDB Key" Target="TMDB_KEY" Default="" Mode="" Description="Optional free TMDB API key for movie and TV metadata." Type="Variable" Display="always" Required="false" Mask="true"></Config>
+  <Config Name="AcoustID Key" Target="ACOUSTID_KEY" Default="" Mode="" Description="Optional free AcoustID key for audio fingerprint lookup." Type="Variable" Display="always" Required="false" Mask="true"></Config>
+</Container>

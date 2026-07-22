@@ -222,3 +222,4 @@ Turn a feature-complete system into something a stranger installs on their UNRAI
 
 - 2026-07-22: P8-01 local implementation added a multi-stage Dockerfile, PUID/PGID entrypoint, healthcheck, `.dockerignore`, and static packaging tests. Runtime acceptance checks remain blocked locally because Docker daemon is unavailable.
 - 2026-07-22: P8-02 boot validation is locally implemented for missing/unwritable roots, nested roots, DB open/migration, and busy ports, with numbered friendly errors before supervisor startup. Container boot/healthy checks remain blocked locally because Docker daemon is unavailable.
+- 2026-07-22: P8-03 local packaging added the UNRAID template, icon, Docker install guide, UNRAID install guide, and XML/docs checks. Clean Docker/UNRAID drills remain blocked locally because Docker daemon and real UNRAID hardware are unavailable.

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="LibrAIry icon">
+  <rect width="256" height="256" rx="36" fill="#03120a"/>
+  <rect x="24" y="34" width="208" height="156" rx="12" fill="none" stroke="#55ff88" stroke-width="8"/>
+  <path d="M48 74h160M48 112h116M48 150h142" stroke="#55ff88" stroke-width="12" stroke-linecap="round"/>
+  <path d="M64 214h128" stroke="#ffbf4d" stroke-width="12" stroke-linecap="round"/>
+  <text x="128" y="232" text-anchor="middle" font-family="monospace" font-size="24" fill="#55ff88">AI</text>
+</svg>
