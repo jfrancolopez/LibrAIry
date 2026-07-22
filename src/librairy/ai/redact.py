@@ -6,7 +6,6 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from librairy.classify.hashtags import extract_hashtags
 from librairy.models import EvidenceEntry, Item
 
 SAFE_TAGS = {
@@ -22,6 +21,7 @@ SAFE_TAGS = {
 PATH_MARKERS = ("/data/", "/Users/", "C:\\", "\\\\")
 COORD_RE = re.compile(r"-?\d{1,3}\.\d{4,}")
 YEAR_RE = re.compile(r"\b(19\d{2}|20\d{2}|2100)\b")
+TAG_RE = re.compile(r"#([^\s#]+)")
 
 
 class RedactedItemView(BaseModel):
@@ -76,7 +76,7 @@ def build_view(
         folder_chain=tuple(
             _safe_component(part) for part in path.parent.parts if part not in {"", "."}
         ),
-        hashtag_hints=extract_hashtags(relpath).tags,
+        hashtag_hints=_hashtags(relpath),
         evidence_summaries=tuple(_evidence_summary(entry) for entry in evidence[:20]),
     )
 
@@ -192,3 +192,13 @@ def _year(metadata: dict[str, Any], tags: dict[str, str]) -> int | None:
 def _evidence_summary(entry: EvidenceEntry) -> str:
     detail = _safe_text(entry.detail) or "redacted"
     return f"{entry.source}:{entry.field}:{detail}:{entry.weight:.2f}"
+
+
+def _hashtags(relpath: str) -> tuple[str, ...]:
+    tags: list[str] = []
+    for folder in PurePosixPath(relpath).parent.parts:
+        for match in TAG_RE.findall(folder):
+            tag = _safe_component(match).lower().replace(" ", "-")
+            if tag:
+                tags.append(tag)
+    return tuple(tags)

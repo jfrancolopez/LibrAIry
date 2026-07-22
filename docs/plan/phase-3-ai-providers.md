@@ -160,11 +160,11 @@ Add AI as one more evidence source in the classification cascade — behind the 
 **Depends on:** P3-02, P3-05
 **Description:** `ai/orchestrator.py`: chain iteration, per-provider timeout/retries, circuit-breaking, confidence cap for AI-only results, merge into the Phase-2 cascade at the defined insertion point; batch-level degradation warning.
 **Acceptance criteria:**
-- [ ] Corpus item unresolved by Phase-2 sources gets a correct proposal from a mocked local provider; evidence records provider+model+local/cloud.
-- [ ] `CONFIDENCE_THRESHOLD` and `AI_TIMEOUT` changes demonstrably alter behavior (tests with different settings).
-- [ ] All providers down → analysis completes, one warning, deterministic results unchanged (diff-test vs AI-disabled run).
-- [ ] AI-influenced destinations pass containment (reuse the Phase-2 property test over AI-shaped inputs).
-- [ ] Circuit breaker: after N transport failures a provider is skipped for the batch (call-count test).
+- [x] Corpus item unresolved by Phase-2 sources gets a correct proposal from a mocked local provider; evidence records provider+model+local/cloud.
+- [x] `CONFIDENCE_THRESHOLD` and `AI_TIMEOUT` changes demonstrably alter behavior (tests with different settings).
+- [x] All providers down → analysis completes, one warning, deterministic results unchanged (diff-test vs AI-disabled run).
+- [x] AI-influenced destinations pass containment (reuse the Phase-2 property test over AI-shaped inputs).
+- [x] Circuit breaker: after N transport failures a provider is skipped for the batch (call-count test).
 **Size:** M
 
 ### P3-07 AI CLI

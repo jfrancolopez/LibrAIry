@@ -4,12 +4,13 @@ import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 
+from librairy.ai.orchestrator import AIBatchState, apply_ai_if_needed
 from librairy.classify.documents import classify_document_like
 from librairy.classify.heuristics import classify_path
 from librairy.classify.music import AUDIO_EXTS, classify_music
 from librairy.classify.video import VIDEO_EXTS, classify_video
 from librairy.config import Settings
-from librairy.models import EvidenceEntry
+from librairy.models import EvidenceEntry, Item
 from librairy.proposals import upsert_proposal
 from librairy.scanner import ready_items
 
@@ -37,8 +38,17 @@ def analyze_items(
     if limit is not None:
         items = items[:limit]
     proposed = pending = 0
+    ai_state = AIBatchState({})
     for item in items:
-        result = classify_item(settings.inbox_dir / item["relpath"], item["relpath"], settings)
+        item_model = _item_from_row(item)
+        result = classify_item(
+            settings.inbox_dir / item["relpath"],
+            item["relpath"],
+            settings,
+            conn=conn,
+            item=item_model,
+            ai_state=ai_state,
+        )
         proposal_id = upsert_proposal(
             conn,
             item_id=item["id"],
@@ -56,18 +66,55 @@ def analyze_items(
     return AnalyzeSummary(len(items), proposed, pending)
 
 
-def classify_item(path: Path, relpath: str, settings: Settings):
+def classify_item(
+    path: Path,
+    relpath: str,
+    settings: Settings,
+    *,
+    conn: sqlite3.Connection | None = None,
+    item: Item | None = None,
+    ai_state: AIBatchState | None = None,
+):
     heuristic = classify_path(path, settings)
     if heuristic is not None:
-        return heuristic
+        return _with_ai(conn, settings, item, ai_state, heuristic)
     suffix = Path(relpath).suffix.lower()
     if suffix in AUDIO_EXTS:
-        return classify_music(relpath, settings=settings)
+        return _with_ai(conn, settings, item, ai_state, classify_music(relpath, settings=settings))
     if suffix in VIDEO_EXTS:
-        return classify_video(relpath, settings=settings)
+        return _with_ai(conn, settings, item, ai_state, classify_video(relpath, settings=settings))
     if suffix:
-        return classify_document_like(relpath, settings=settings)
-    return _unknown(relpath)
+        return _with_ai(
+            conn, settings, item, ai_state, classify_document_like(relpath, settings=settings)
+        )
+    return _with_ai(conn, settings, item, ai_state, _unknown(relpath))
+
+
+def _with_ai(
+    conn: sqlite3.Connection | None,
+    settings: Settings,
+    item: Item | None,
+    ai_state: AIBatchState | None,
+    result,
+):
+    if conn is None or item is None or ai_state is None:
+        return result
+    return apply_ai_if_needed(conn, settings, item, result, ai_state)
+
+
+def _item_from_row(row: sqlite3.Row) -> Item:
+    return Item(
+        id=row["id"],
+        root=row["root"],
+        relpath=row["relpath"],
+        size=row["size"],
+        mtime_ns=row["mtime_ns"],
+        fingerprint=row["fingerprint"],
+        state=row["state"],
+        first_seen_at=row["first_seen_at"],
+        last_seen_at=row["last_seen_at"],
+        missing_since=row["missing_since"],
+    )
 
 
 @dataclass(frozen=True)
