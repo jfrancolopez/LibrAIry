@@ -152,10 +152,10 @@ Turn a feature-complete system into something a stranger installs on their UNRAI
 **Depends on:** P8-02, P8-03
 **Description:** Per Design Constraints: new docs set, README rewrite with screenshots (Pip-Boy dashboard + review screen), configuration reference generated/synced from the settings model, security page (incl. exactly what a cloud prompt contains after redaction), backup/restore, FAQ with the RAM/ROM note, legacy `Instructions.md` → pointer. Remove `setup.sh` if the docs no longer reference it (its wizard role is superseded by env + web settings) — or keep and update it; decide, document, be consistent.
 **Acceptance criteria:**
-- [ ] Every env var and web setting appears in `docs/configuration.md` (sync test against the settings model).
+- [x] Every env var and web setting appears in `docs/configuration.md` (sync test against the settings model).
 - [ ] README quickstart verified end-to-end on a clean machine.
-- [ ] Security page lists the redaction allowlist verbatim from `ai/redact.py` (sync test).
-- [ ] No doc references deleted artifacts (bash steps, RAM/ROM as current, `/data/reports`) except as historical/migration notes (link-and-grep check).
+- [x] Security page lists the redaction allowlist verbatim from `ai/redact.py` (sync test).
+- [x] No doc references deleted artifacts (bash steps, RAM/ROM as current, `/data/reports`) except as historical/migration notes (link-and-grep check).
 **Size:** M
 
 ### P8-06 Performance pass + 50k smoke test
@@ -223,3 +223,4 @@ Turn a feature-complete system into something a stranger installs on their UNRAI
 - 2026-07-22: P8-01 local implementation added a multi-stage Dockerfile, PUID/PGID entrypoint, healthcheck, `.dockerignore`, and static packaging tests. Runtime acceptance checks remain blocked locally because Docker daemon is unavailable.
 - 2026-07-22: P8-02 boot validation is locally implemented for missing/unwritable roots, nested roots, DB open/migration, and busy ports, with numbered friendly errors before supervisor startup. Container boot/healthy checks remain blocked locally because Docker daemon is unavailable.
 - 2026-07-22: P8-03 local packaging added the UNRAID template, icon, Docker install guide, UNRAID install guide, and XML/docs checks. Clean Docker/UNRAID drills remain blocked locally because Docker daemon and real UNRAID hardware are unavailable.
+- 2026-07-22: P8-05 docs rewrite added README, install/use/config/troubleshooting/security/FAQ/backup docs, legacy Instructions pointer, config sync tests, redaction sync tests, and stale-reference checks. README quickstart clean-machine verification remains blocked locally because Docker daemon is unavailable.

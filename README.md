@@ -1,84 +1,46 @@
 # LibrAIry
 
-Privacy-first file organization and library management for a NAS or workstation.
+Privacy-first, AI-assisted file organization for a NAS or workstation.
 
-LibrAIry watches an inbox, analyzes stable files, stages reviewable proposals, and only moves files when an approved plan is committed. It never deletes user files, never overwrites existing destinations, and treats the existing library as read-only input.
+LibrAIry watches an inbox, analyzes stable files, stages reviewable proposals, and moves files only after you approve and commit a plan in the web portal. It never deletes user files, never overwrites existing destinations, and treats the existing library as read-only input.
 
-## Current Engine
-
-- Python package under `src/librairy/`.
-- SQLite database in `/data/appdata`.
-- Worker command: `librairy worker`.
-- One-shot worker command for cron/tests: `librairy worker --once`.
-- Review flow from CLI: `proposals list` -> `propose-plan` -> `plan approve` -> `commit --yes`.
-- AI is optional and local-first. Ollama is enabled by default; cloud providers require both an API key and an explicit DB opt-in flag.
-
-## Library Layout
-
-Top-level destinations are:
-
-```text
-Music/
-Movies/
-Shows/
-Photos/
-Documents/
-Books/
-Projects/
-Misc/
-```
-
-Duplicate files are proposed for reversible quarantine under `/data/quarantine/<date>/...`. Similar media is flagged for review only and is never auto-quarantined.
-
-## Quick Start
+## 5-Minute Docker Quickstart
 
 ```bash
 cp .env.example .env
-docker compose build
-docker compose up -d
+mkdir -p data/inbox data/library data/quarantine data/appdata
+docker compose up -d --build
 ```
 
-Drop files into the configured inbox. The worker scans, deduplicates, analyzes, and stages proposals.
+Open `http://localhost:8080`, create the admin password, then drop files into `data/inbox`.
 
-Inspect proposals:
+## What You Get
 
-```bash
-docker compose run --rm librairy librairy proposals list
-```
+- Dashboard, health, review, commit, quarantine, history, search, browse, settings, and provider selector screens.
+- SQLite + FTS5 index in appdata, rebuildable with `librairy index rebuild`.
+- Local-first AI through Ollama; cloud AI is disabled unless you set a key and explicitly enable the provider.
+- Reversible quarantine for duplicates; no delete controls.
+- Fallout/Pip-Boy-style lightweight LAN portal.
 
-Create and approve a plan from proposals:
+## Documentation
 
-```bash
-docker compose run --rm librairy librairy propose-plan
-docker compose run --rm librairy librairy plan approve <plan-id>
-```
+- [Docker install](docs/install-docker.md)
+- [UNRAID install](docs/install-unraid.md)
+- [Configuration](docs/configuration.md)
+- [Using LibrAIry](docs/using-librairy.md)
+- [Troubleshooting](docs/troubleshooting.md)
+- [Security](docs/security.md)
+- [Backup and restore](docs/backup-restore.md)
+- [FAQ](docs/faq.md)
 
-Commit approved moves:
-
-```bash
-docker compose run --rm librairy librairy commit <plan-id> --yes
-```
-
-Undo a committed plan:
-
-```bash
-docker compose run --rm librairy librairy undo --plan <plan-id> --yes
-```
-
-Check AI providers:
-
-```bash
-docker compose run --rm librairy librairy ai status
-docker compose run --rm librairy librairy ai test ollama-primary
-```
-
-## Local Development
+## Development
 
 ```bash
 python -m venv .venv
 .venv/bin/pip install -e ".[dev]"
 .venv/bin/ruff check src tests scripts
 .venv/bin/pytest
+docker compose config
 ```
 
 ## Safety Guarantees
