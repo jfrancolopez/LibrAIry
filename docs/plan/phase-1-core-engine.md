@@ -335,14 +335,14 @@ CREATE TABLE sessions (                     -- used from Phase 5; created now so
 ## Exit gate checklist
 
 - [ ] CI green on a clean clone (ruff + pytest, Python 3.11 & 3.12).
-- [ ] A committed plan executes byte-for-byte as approved: plan-hash verified before execution; executor never recomputes destinations.
-- [ ] Kill-mid-commit leaves a consistent journal, loses no file, and a re-run completes the plan.
-- [ ] Containment property tests pass (hostile-path fuzzing) and containment is re-checked at execution time.
-- [ ] No overwrite is possible: collision tests pass; no deletion primitive targets user data anywhere in the package (grep-test enforced).
-- [ ] Undo restores prior state and is itself journaled.
-- [ ] Every documented env var is honored by `config.py`; regenerated `.env.example` in sync (test-enforced).
-- [ ] Lock excludes concurrent mutators across processes.
-- [ ] Legacy bash byte-identical; deprecation warning present in README.md and Instructions.md.
+- [x] A committed plan executes byte-for-byte as approved: plan-hash verified before execution; executor never recomputes destinations.
+- [x] Kill-mid-commit leaves a consistent journal, loses no file, and a re-run completes the plan.
+- [x] Containment property tests pass (hostile-path fuzzing) and containment is re-checked at execution time.
+- [x] No overwrite is possible: collision tests pass; no deletion primitive targets user data anywhere in the package (grep-test enforced).
+- [x] Undo restores prior state and is itself journaled.
+- [x] Every documented env var is honored by `config.py`; regenerated `.env.example` in sync (test-enforced).
+- [x] Lock excludes concurrent mutators across processes.
+- [x] Legacy bash byte-identical; deprecation warning present in README.md and Instructions.md.
 - [ ] All backlog checkboxes above ticked; status line set to DONE.
 
 ## Notes for future phases
