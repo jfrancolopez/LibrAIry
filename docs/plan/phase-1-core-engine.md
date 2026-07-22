@@ -1,6 +1,6 @@
 # Phase 1 — Core Safety Engine + Project Foundation
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Depends on:** none (first phase)
 **Size:** L (largest phase — deliberately: a scaffold-only phase would leave nothing testable as a system)
 
@@ -185,10 +185,10 @@ CREATE TABLE sessions (                     -- used from Phase 5; created now so
 **Depends on:** —
 **Description:** Create `pyproject.toml` (project `librairy`, `src` layout, console script `librairy = librairy.cli:main`), `src/librairy/__init__.py`, `src/librairy/__main__.py`, empty module stubs per the architecture, `tests/` with a passing smoke test, `ruff` config, and `.github/workflows/ci.yml` running ruff + pytest on push/PR (Python 3.11 and 3.12). Extend `.gitignore` for `*.egg-info`, `.pytest_cache`, `.ruff_cache`, `dist/`.
 **Acceptance criteria:**
-- [ ] `pip install -e ".[dev]"` succeeds on a clean checkout.
-- [ ] `pytest` runs and passes; `ruff check src tests` passes.
+- [x] `pip install -e ".[dev]"` succeeds on a clean checkout.
+- [x] `pytest` runs and passes; `ruff check src tests` passes.
 - [ ] CI workflow runs both on GitHub Actions and is green.
-- [ ] `librairy --help` (console script) and `python -m librairy --help` both work.
+- [x] `librairy --help` (console script) and `python -m librairy --help` both work.
 **Test notes:** smoke test imports the package and asserts version string.
 **Size:** S
 
