@@ -248,10 +248,10 @@ CREATE TABLE sessions (                     -- used from Phase 5; created now so
 **Depends on:** P1-01
 **Description:** `paths.py`: `validate_dest(root: Path, relpath: str) -> Path` implementing the containment rules in Design Constraints; `sanitize_component(name)` for single path components; `resolve_collision(dest: Path) -> Path` producing `name (2).ext` style alternatives (correct for extensionless names and dotfiles — no `name_1.name` corruption like the legacy code).
 **Acceptance criteria:**
-- [ ] Rejects: `../x`, `a/../../x`, absolute paths, `~`, empty components, components of only dots, backslash separators, NUL and control chars.
-- [ ] Rejects a relpath whose parent directory is a symlink escaping the root (test builds one).
-- [ ] Property/fuzz test: for thousands of generated hostile strings, `validate_dest` either raises or returns a path strictly inside the root — never anything else.
-- [ ] Collision naming: `file.txt`→`file (2).txt`; `file`→`file (2)`; `.hidden`→`.hidden (2)`; `a.tar.gz`→`a.tar (2).gz` or documented alternative — deterministic and tested.
+- [x] Rejects: `../x`, `a/../../x`, absolute paths, `~`, empty components, components of only dots, backslash separators, NUL and control chars.
+- [x] Rejects a relpath whose parent directory is a symlink escaping the root (test builds one).
+- [x] Property/fuzz test: for thousands of generated hostile strings, `validate_dest` either raises or returns a path strictly inside the root — never anything else.
+- [x] Collision naming: `file.txt`→`file (2).txt`; `file`→`file (2)`; `.hidden`→`.hidden (2)`; `a.tar.gz`→`a.tar (2).gz` or documented alternative — deterministic and tested.
 **Test notes:** use `hypothesis` if added as dev-dep (allowed), else a generated corpus; either way thousands of cases.
 **Size:** M
 
