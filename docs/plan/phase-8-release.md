@@ -1,6 +1,6 @@
 # Phase 8 — Release Hardening, UNRAID Packaging, v1.0
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Depends on:** Phase 7 (search/settings) DONE
 **Size:** M
 
@@ -220,4 +220,4 @@ Turn a feature-complete system into something a stranger installs on their UNRAI
 
 ## Open questions log
 
-*(Executing agent: record ambiguities and the safest-default decision taken, then continue.)*
+- 2026-07-22: P8-01 local implementation added a multi-stage Dockerfile, PUID/PGID entrypoint, healthcheck, `.dockerignore`, and static packaging tests. Runtime acceptance checks remain blocked locally because Docker daemon is unavailable.
