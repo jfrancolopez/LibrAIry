@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from librairy.ai.base import HealthResult
 from librairy.ai.registry import provider_chain
 from librairy.config import Settings
-from librairy.db import connect
+from librairy.db import connect, database_path
 from librairy.web import health as health_module
 from librairy.web.app import create_app
 
@@ -145,3 +145,13 @@ def test_health_screen_rebuilds_search_index(tmp_path: Path) -> None:
     assert "Rebuild Search Index" in page.text
     assert response.text == '<p id="index-result" class="status">[OK] indexed 1</p>'
     assert conn.execute("SELECT item_id FROM search_fts").fetchone()[0] == item_id
+
+
+def test_db_status_checks_actual_database_path(tmp_path: Path) -> None:
+    _, _, settings = client_for(tmp_path)
+
+    row = health_module.db_status(settings)
+
+    assert database_path(settings).exists()
+    assert row.status == "OK"
+    assert "quick_check=ok" in row.detail

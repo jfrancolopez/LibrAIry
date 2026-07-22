@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from librairy.config import Settings
 from librairy.fingerprint import blake2b_file
 from librairy.lifecycle import assert_transition
-from librairy.paths import resolve_collision, validate_dest
+from librairy.paths import resolve_collision, validate_dest, validate_relpath
 from librairy.planner import OperationSpec, utc_now
 from librairy.search import sync_search_item
 
@@ -54,7 +54,7 @@ def restore_entry(conn: sqlite3.Connection, entry_id: int, settings: Settings) -
     item = conn.execute("SELECT * FROM items WHERE id=?", (entry["item_id"],)).fetchone()
     if item is None or item["root"] != "quarantine":
         return RestoreResult(entry_id, "missing")
-    src = settings.quarantine_dir / item["relpath"]
+    src = validate_relpath(settings.quarantine_dir, item["relpath"], kind="source")
     if not src.exists():
         return RestoreResult(entry_id, "missing")
     fingerprint = blake2b_file(src)

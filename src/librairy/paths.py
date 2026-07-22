@@ -10,9 +10,9 @@ class PathValidationError(ValueError):
     pass
 
 
-def validate_dest(root: Path, relpath: str) -> Path:
+def validate_relpath(root: Path, relpath: str, *, kind: str = "path") -> Path:
     if not relpath:
-        raise PathValidationError("destination path is empty")
+        raise PathValidationError(f"{kind} is empty")
     if "\\" in relpath:
         raise PathValidationError("backslash separators are not allowed")
     if CONTROL_CHARS.search(relpath):
@@ -32,11 +32,15 @@ def validate_dest(root: Path, relpath: str) -> Path:
     candidate = root_resolved.joinpath(*parts)
     parent = candidate.parent.resolve()
     if not parent.is_relative_to(root_resolved):
-        raise PathValidationError("destination parent escapes root")
+        raise PathValidationError(f"{kind} parent escapes root")
     resolved = candidate.resolve(strict=False)
     if not resolved.is_relative_to(root_resolved):
-        raise PathValidationError("destination escapes root")
+        raise PathValidationError(f"{kind} escapes root")
     return resolved
+
+
+def validate_dest(root: Path, relpath: str) -> Path:
+    return validate_relpath(root, relpath, kind="destination")
 
 
 def sanitize_component(name: str) -> str:

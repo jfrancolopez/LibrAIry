@@ -13,6 +13,7 @@ from librairy.ai.orchestrator import provider_for_config
 from librairy.ai.registry import provider_chain
 from librairy.ai.status import upsert_provider_status
 from librairy.config import Settings
+from librairy.db import database_path
 from librairy.web.dashboard import _disk_stats, _worker_state
 
 PROBE_TTL_SECONDS = 60
@@ -67,7 +68,7 @@ def test_provider(conn: sqlite3.Connection, settings: Settings, name: str) -> sq
 
 
 def db_status(settings: Settings) -> HealthRow:
-    db_path = settings.appdata_dir / "librairy.sqlite3"
+    db_path = database_path(settings)
     if not db_path.exists():
         return HealthRow("SQLite", "WARN", "database has not been created", "start LibrAIry once")
     try:

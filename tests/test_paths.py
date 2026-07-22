@@ -6,7 +6,13 @@ from pathlib import Path
 
 import pytest
 
-from librairy.paths import PathValidationError, resolve_collision, sanitize_component, validate_dest
+from librairy.paths import (
+    PathValidationError,
+    resolve_collision,
+    sanitize_component,
+    validate_dest,
+    validate_relpath,
+)
 
 
 @pytest.mark.parametrize(
@@ -34,6 +40,15 @@ def test_validate_dest_rejects_hostile_paths(tmp_path: Path, relpath: str) -> No
 
 def test_validate_dest_accepts_safe_relative_path(tmp_path: Path) -> None:
     assert validate_dest(tmp_path, "Music/Artist/file.flac") == tmp_path / "Music/Artist/file.flac"
+
+
+def test_validate_relpath_uses_custom_error_kind(tmp_path: Path) -> None:
+    outside = tmp_path.parent / "outside"
+    outside.mkdir()
+    (tmp_path / "escape").symlink_to(outside)
+
+    with pytest.raises(PathValidationError, match="source parent escapes root"):
+        validate_relpath(tmp_path, "escape/file.txt", kind="source")
 
 
 def test_validate_dest_rejects_symlink_parent_escape(tmp_path: Path) -> None:

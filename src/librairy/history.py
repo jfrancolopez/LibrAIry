@@ -7,7 +7,7 @@ from librairy.config import Settings
 from librairy.executor import _move_verified, _root_path
 from librairy.fingerprint import blake2b_file
 from librairy.locks import acquire_lock
-from librairy.paths import resolve_collision, validate_dest
+from librairy.paths import resolve_collision, validate_dest, validate_relpath
 from librairy.planner import utc_now
 
 
@@ -58,7 +58,11 @@ def _undo_op_unlocked(
     entry = conn.execute("SELECT * FROM history WHERE id=?", (history_id,)).fetchone()
     if entry is None:
         raise UndoError(f"history entry not found: {history_id}")
-    src = _root_path(settings, entry["dest_root"]) / entry["dest_relpath"]
+    src = validate_relpath(
+        _root_path(settings, entry["dest_root"]),
+        entry["dest_relpath"],
+        kind="source",
+    )
     if not src.exists():
         return _record_refused(conn, entry, "undo_refused_missing")
     current_fingerprint = blake2b_file(src)

@@ -7,7 +7,9 @@ import pytest
 from librairy.config import Settings
 from librairy.db import connect
 from librairy.executor import ExecutionError, execute_plan
-from librairy.planner import OperationSpec, approve_plan, create_plan
+from librairy.history import undo_op
+from librairy.paths import PathValidationError
+from librairy.planner import OperationSpec, approve_plan, compute_plan_hash, create_plan
 from librairy.quarantine import quarantine_operation, restore_entry
 from librairy.scanner import scan_root
 
@@ -125,6 +127,20 @@ def test_changed_source_is_skipped(tmp_path: Path) -> None:
     assert summary.skipped_changed == 1
     assert (settings.inbox_dir / "a.txt").read_text(encoding="utf-8") == "changed"
     assert not (settings.library_dir / "Documents/a.txt").exists()
+    assert conn.execute("SELECT status FROM plans WHERE id=?", (plan_id,)).fetchone()[0] == "failed"
+
+
+def test_missing_source_marks_plan_failed_for_retry_visibility(tmp_path: Path) -> None:
+    settings, conn, plan_id = setup_plan(
+        tmp_path,
+        [OperationSpec("move", "a.txt", "library", "Documents/a.txt")],
+    )
+    (settings.inbox_dir / "a.txt").unlink()
+
+    summary = execute_plan(conn, plan_id, settings)
+
+    assert summary.skipped_missing == 1
+    assert conn.execute("SELECT status FROM plans WHERE id=?", (plan_id,)).fetchone()[0] == "failed"
 
 
 def test_destination_collision_is_renamed(tmp_path: Path) -> None:
@@ -162,6 +178,39 @@ def test_hash_mismatch_aborts_before_touching_files(tmp_path: Path) -> None:
 
     assert (settings.inbox_dir / "a.txt").exists()
     assert not (settings.library_dir / "Documents/tampered.txt").exists()
+
+
+def test_execute_rejects_source_path_escape_even_with_matching_plan_hash(tmp_path: Path) -> None:
+    settings, conn, plan_id = setup_plan(
+        tmp_path,
+        [OperationSpec("move", "a.txt", "library", "Documents/a.txt")],
+    )
+    conn.execute(
+        "UPDATE plan_ops SET src_relpath='../outside.txt' WHERE plan_id=?",
+        (plan_id,),
+    )
+    conn.execute(
+        "UPDATE plans SET plan_hash=? WHERE id=?",
+        (compute_plan_hash(conn, plan_id), plan_id),
+    )
+
+    summary = execute_plan(conn, plan_id, settings)
+
+    assert summary.failed == 1
+    assert (settings.inbox_dir / "a.txt").exists()
+
+
+def test_undo_rejects_source_path_escape(tmp_path: Path) -> None:
+    settings, conn, plan_id = setup_plan(
+        tmp_path,
+        [OperationSpec("move", "a.txt", "library", "Documents/a.txt")],
+    )
+    execute_plan(conn, plan_id, settings)
+    history_id = conn.execute("SELECT id FROM history WHERE plan_id=?", (plan_id,)).fetchone()[0]
+    conn.execute("UPDATE history SET dest_relpath='../outside.txt' WHERE id=?", (history_id,))
+
+    with pytest.raises(PathValidationError):
+        undo_op(conn, history_id, settings)
 
 
 def test_completed_plan_rerun_is_noop(tmp_path: Path) -> None:

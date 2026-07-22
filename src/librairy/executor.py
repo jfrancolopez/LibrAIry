@@ -14,7 +14,7 @@ from librairy.config import Settings
 from librairy.fingerprint import blake2b_file
 from librairy.lifecycle import assert_transition
 from librairy.locks import acquire_lock
-from librairy.paths import resolve_collision, validate_dest
+from librairy.paths import resolve_collision, validate_dest, validate_relpath
 from librairy.planner import compute_plan_hash, utc_now
 from librairy.quarantine import record_quarantine_entry
 from librairy.search import sync_search_item
@@ -96,7 +96,11 @@ def _execute_plan_unlocked(
         counts[result] += 1
         _test_pause_after_op()
 
-    final_status = "failed" if counts["failed"] else "done"
+    final_status = (
+        "failed"
+        if counts["failed"] or counts["skipped_changed"] or counts["skipped_missing"]
+        else "done"
+    )
     conn.execute(
         "UPDATE plans SET status=?, finished_at=? WHERE id=?",
         (final_status, utc_now(), plan_id),
@@ -105,7 +109,7 @@ def _execute_plan_unlocked(
 
 
 def _execute_op(conn: sqlite3.Connection, row: sqlite3.Row, settings: Settings) -> str:
-    src = _root_path(settings, row["src_root"]) / row["src_relpath"]
+    src = validate_relpath(_root_path(settings, row["src_root"]), row["src_relpath"], kind="source")
     if not src.exists():
         _finish_op(conn, row["id"], "skipped_missing", None)
         _journal(conn, row, row["dest_relpath"], row["src_fingerprint"], "skipped_missing")
