@@ -153,10 +153,10 @@ CREATE TABLE groups (
 **Depends on:** P2-01
 **Description:** `taxonomy.py` with the eight categories, template presets, `render_destination(proposal_fields, style) -> str (relpath)`, style selection read from the `settings` DB table (key `templates.<category>.style`, default `conventional`) falling back to config. Unknown/missing tokens → template unusable for that item → no destination (never a path with a literal `{artist}`).
 **Acceptance criteria:**
-- [ ] Both styles render correctly for music/movies/shows/books; photos/documents/projects/misc render their single style.
-- [ ] Rendered paths always pass `paths.validate_dest`; property test over hostile token values (slashes, dots, unicode) proves components are sanitized.
-- [ ] Missing required token → explicit "no destination" result, not a broken path.
-- [ ] Style change in settings changes the next render (no restart needed).
+- [x] Both styles render correctly for music/movies/shows/books; photos/documents/projects/misc render their single style.
+- [x] Rendered paths always pass `paths.validate_dest`; property test over hostile token values (slashes, dots, unicode) proves components are sanitized.
+- [x] Missing required token → explicit "no destination" result, not a broken path.
+- [x] Style change in settings changes the next render (no restart needed).
 **Size:** M
 
 ### P2-03 Port the heuristics engine
