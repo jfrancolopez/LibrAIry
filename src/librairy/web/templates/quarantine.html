@@ -13,7 +13,7 @@
           <button hx-post="/quarantine/staged/{{ proposal.id }}/unstage" hx-target="#quarantine-result" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>Un-stage</button>
         </article>
       {% endfor %}
-    {% else %}<p>[OK] no staged quarantine proposals</p>{% endif %}
+    {% else %}<p>[OK] no duplicate quarantine proposals are staged yet.</p>{% endif %}
   </section>
   <section class="metric wide">
     <h2>Executed</h2>
@@ -26,7 +26,7 @@
           {% if not entry.restored_at %}<button hx-post="/quarantine/restore/{{ entry.id }}" hx-target="#quarantine-result" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>Restore</button>{% endif %}
         </article>
       {% endfor %}
-    {% else %}<p>[OK] no executed quarantine entries</p>{% endif %}
+    {% else %}<p>[OK] no files have been quarantined. Quarantine is reversible and never deletes files.</p>{% endif %}
   </section>
   <section class="metric wide">
     <h2>Similar Media - Human Judgment Required</h2>
@@ -38,7 +38,7 @@
           <span>[WARN] {{ flag.kind }} score {{ flag.score if flag.score is not none else 'n/a' }} - needs human judgment</span>
         </article>
       {% endfor %}
-    {% else %}<p>[OK] no similar-media flags</p>{% endif %}
+    {% else %}<p>[OK] no similar-media flags yet. If czkawka is enabled, future scans will list human-review matches here.</p>{% endif %}
   </section>
   <div id="quarantine-result"></div>
 {% endblock %}

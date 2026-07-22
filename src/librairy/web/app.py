@@ -30,10 +30,12 @@ from librairy.web.auth import (
     LoginRateLimiter,
     create_session,
     delete_session,
+    dismiss_welcome_banner,
     has_admin_password,
     session_from_request,
     set_admin_password,
     verify_admin_password,
+    welcome_banner_visible,
 )
 from librairy.web.browse import browse_category, browse_home, item_detail
 from librairy.web.commit import (
@@ -76,6 +78,9 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
     app.state.commit_state = commit_state
     app.mount("/static", StaticFiles(directory=PACKAGE_DIR / "static"), name="static")
     TEMPLATES.env.globals["provider_header"] = lambda: provider_header(conn, settings)
+    TEMPLATES.env.globals["welcome_banner_visible"] = lambda request: welcome_banner_visible(
+        conn, request.state.session
+    )
     app.middleware("http")(_auth_and_security(conn))
 
     @app.get("/", include_in_schema=False)
@@ -126,6 +131,11 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         response.delete_cookie(SESSION_COOKIE)
         response.delete_cookie("csrf_token")
         return response
+
+    @app.post("/welcome/dismiss", response_class=HTMLResponse)
+    def welcome_dismiss(request: Request) -> HTMLResponse:
+        dismiss_welcome_banner(conn, request.state.session)
+        return HTMLResponse("")
 
     @app.get("/dashboard", response_class=HTMLResponse)
     def dashboard(request: Request) -> HTMLResponse:

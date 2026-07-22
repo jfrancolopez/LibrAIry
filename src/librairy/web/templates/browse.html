@@ -3,6 +3,7 @@
   <p class="status">[OK] READ-ONLY BROWSE</p>
   <h1>Browse</h1>
   <p class="muted"><a href="/access">How to open this library from SMB, FTP, or WebDAV clients</a></p>
+  {% if categories|sum(attribute=1) == 0 %}<p>[OK] browse is empty until files are indexed or committed into the library.</p>{% endif %}
   <div class="dashboard-grid">
     {% for category, count in categories %}
       <a class="metric" href="/browse/{{ category }}"><strong>{{ count }}</strong><span>{{ category }}</span></a>

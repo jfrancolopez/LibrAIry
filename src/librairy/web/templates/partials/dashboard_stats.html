@@ -14,7 +14,7 @@
     {% if counts %}
       {% for state, count in counts.items() %}<span>{{ state }}: {{ count }}</span>{% endfor %}
     {% else %}
-      <span>inbox clear - drop files to begin</span>
+      <span>inbox clear - drop files to begin at {{ host_inbox_dir }}.</span>
     {% endif %}
   </article>
   <article class="metric wide">
@@ -22,7 +22,7 @@
     {% if providers %}
       {% for provider in providers %}<span>{{ provider.name }}: {{ provider.kind }} / {{ provider.enabled }}</span>{% endfor %}
     {% else %}
-      <span>no provider status recorded yet</span>
+      <span>No provider status yet. Local heuristics still run; configure Ollama in Settings when ready.</span>
     {% endif %}
   </article>
   <article class="metric wide">
@@ -36,7 +36,7 @@
     {% if recent_history %}
       {% for row in recent_history %}<span>{{ row.action }} {{ row.outcome }} {{ row.dest_relpath }}</span>{% endfor %}
     {% else %}
-      <span>no committed operations yet</span>
+      <span>No committed operations yet. Approve proposals in Review, then commit them safely.</span>
     {% endif %}
   </article>
 </div>

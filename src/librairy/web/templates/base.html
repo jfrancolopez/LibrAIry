@@ -25,6 +25,16 @@
       </nav>
     </header>
     <main class="shell">
+      {% if request.url.path == '/dashboard' and welcome_banner_visible(request) %}
+        <section id="welcome-banner" class="panel">
+          <p class="status">[OK] FIRST VISIT</p>
+          <p>Drop files into your inbox, wait for analysis, review proposals, then commit approved moves. LibrAIry never deletes files or rewrites your existing library.</p>
+          <a href="/dashboard">Start at Dashboard</a>
+          <a href="/review">Review Queue</a>
+          <a href="/access">Open Library Help</a>
+          <button hx-post="/welcome/dismiss" hx-target="#welcome-banner" hx-swap="outerHTML" hx-headers='{"x-csrf-token":"{{ request.state.session.csrf_token }}"}'>Dismiss</button>
+        </section>
+      {% endif %}
       <section class="panel">
         {% block content %}{% endblock %}
       </section>

@@ -142,9 +142,9 @@ Turn a feature-complete system into something a stranger installs on their UNRAI
 **Depends on:** —
 **Description:** Empty-state passes over every screen (dashboard "inbox clear — drop files into <host inbox path> to begin", review "nothing to review yet", search/browse/quarantine/history equivalents), setup-screen copy (password guidance, what happens next), a dismissible first-visit banner linking the walkthrough doc, favicon + page titles.
 **Acceptance criteria:**
-- [ ] Every screen renders a purposeful empty state on a fresh install (template sweep test).
-- [ ] Dashboard empty state shows the real host inbox path from env.
-- [ ] First-visit banner appears once, dismisses persistently (per session store).
+- [x] Every screen renders a purposeful empty state on a fresh install (template sweep test).
+- [x] Dashboard empty state shows the real host inbox path from env.
+- [x] First-visit banner appears once, dismisses persistently (per session store).
 **Size:** S
 
 ### P8-05 Documentation rewrite

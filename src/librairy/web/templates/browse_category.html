@@ -4,10 +4,10 @@
   <h1>{{ category }}{% if folder %} / {{ folder }}{% endif %}</h1>
   <section class="metric wide">
     <h2>Folders</h2>
-    {% for name, count in folders %}<a href="/browse/{{ category }}?folder={{ folder ~ '/' ~ name if folder else name }}">{{ name }} / {{ count }}</a>{% else %}<span>[OK] no subfolders</span>{% endfor %}
+    {% for name, count in folders %}<a href="/browse/{{ category }}?folder={{ folder ~ '/' ~ name if folder else name }}">{{ name }} / {{ count }}</a>{% else %}<span>[OK] no subfolders yet for this category</span>{% endfor %}
   </section>
   <section class="metric wide">
     <h2>Items</h2>
-    {% for item in items %}<span><a href="/items/{{ item.item_id }}">{{ item.relpath }}</a></span>{% else %}<span>[OK] no items at this level</span>{% endfor %}
+    {% for item in items %}<span><a href="/items/{{ item.item_id }}">{{ item.relpath }}</a></span>{% else %}<span>[OK] no items at this level yet</span>{% endfor %}
   </section>
 {% endblock %}

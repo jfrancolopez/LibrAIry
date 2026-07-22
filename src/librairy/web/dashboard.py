@@ -32,6 +32,7 @@ def dashboard_data(conn: sqlite3.Connection, settings: Settings) -> dict[str, ob
         "recent_history": _recent_history(conn),
         "providers": _providers(conn),
         "disks": _disk_stats(settings),
+        "host_inbox_dir": settings.host_inbox_dir,
     }
 
 

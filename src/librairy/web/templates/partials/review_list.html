@@ -25,7 +25,7 @@
       </section>
     {% endfor %}
   {% else %}
-    <p>[OK] queue clear - no matching proposals</p>
+    <p>[OK] nothing to review yet - drop files into the inbox and wait for the worker to stage proposals.</p>
   {% endif %}
   <nav class="pager" aria-label="Review pages">
     {% if has_prev %}<a hx-get="/review/list?page={{ filters.page - 1 }}&state={{ filters.state }}" hx-target="#review-list" hx-swap="outerHTML" href="/review?page={{ filters.page - 1 }}&state={{ filters.state }}">Prev</a>{% endif %}

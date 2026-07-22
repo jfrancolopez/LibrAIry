@@ -1,6 +1,6 @@
 <div id="search-results">
   {% if not query and not filters.category and not filters.root and not filters.year and not filters.genre %}
-    <p>[OK] Try: <code>queen night opera</code>, <code>photos 2026</code>, or filter by root/category.</p>
+    <p>[OK] Search is ready. Try: <code>queen night opera</code>, <code>photos 2026</code>, or filter by root/category after files are indexed.</p>
   {% endif %}
   {% if results %}
     <table>
@@ -17,7 +17,7 @@
       </tbody>
     </table>
   {% elif query or filters.category or filters.root or filters.year or filters.genre %}
-    <p>[WARN] no matching indexed items</p>
+    <p>[WARN] no matching indexed items - check spelling or rebuild the search index from Health.</p>
   {% endif %}
   <nav class="pager" aria-label="Search pages">
     {% if has_prev %}<a hx-get="/search/results?q={{ query }}&page={{ filters.page - 1 }}" hx-target="#search-results" hx-swap="outerHTML" href="/search?q={{ query }}&page={{ filters.page - 1 }}">Prev</a>{% endif %}

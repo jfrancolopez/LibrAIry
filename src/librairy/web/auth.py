@@ -12,6 +12,7 @@ from fastapi import HTTPException, Request
 
 SESSION_COOKIE = "librairy_session"
 ADMIN_PASSWORD_KEY = "auth.admin_password"
+WELCOME_DISMISSED_PREFIX = "ux.welcome_dismissed."
 SESSION_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
 SCRYPT_N = 2**14
 SCRYPT_R = 8
@@ -117,6 +118,20 @@ def session_from_request(conn: sqlite3.Connection, request: Request) -> sqlite3.
 def delete_session(conn: sqlite3.Connection, token: str | None) -> None:
     if token:
         conn.execute("DELETE FROM sessions WHERE token_hash=?", (_token_hash(token),))
+
+
+def welcome_banner_visible(conn: sqlite3.Connection, session: sqlite3.Row | None) -> bool:
+    if session is None:
+        return False
+    key = f"{WELCOME_DISMISSED_PREFIX}{session['token_hash']}"
+    return conn.execute("SELECT 1 FROM settings WHERE key=?", (key,)).fetchone() is None
+
+
+def dismiss_welcome_banner(conn: sqlite3.Connection, session: sqlite3.Row | None) -> None:
+    if session is None:
+        return
+    key = f"{WELCOME_DISMISSED_PREFIX}{session['token_hash']}"
+    conn.execute("INSERT OR REPLACE INTO settings(key, value) VALUES (?, 'true')", (key,))
 
 
 def _token_hash(token: str) -> str:
