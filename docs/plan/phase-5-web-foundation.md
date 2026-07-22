@@ -182,11 +182,11 @@ Ship the portal shell: a login-protected, Pip-Boy-themed FastAPI web app served 
 ## Exit gate checklist
 
 - [ ] `docker compose up` → portal on `DASHBOARD_PORT` → setup/login → live dashboard reflecting a real worker run.
-- [ ] Unauthenticated access fully blocked (sweep test); CSRF on all non-GET; sessions hashed at rest; rate limiting works.
-- [ ] Supervisor restarts crashed children, shuts down cleanly on SIGTERM, surfaces flapping.
+- [x] Unauthenticated access fully blocked (sweep test); CSRF on all non-GET; sessions hashed at rest; rate limiting works.
+- [x] Supervisor restarts crashed children, shuts down cleanly on SIGTERM, surfaces flapping.
 - [ ] Container restart preserves sessions and all state.
-- [ ] Zero external asset/network dependencies in the UI; security headers present; no path/traceback leaks.
-- [ ] Health screen truthfully reports tools/providers/disk/DB with remedy hints.
+- [x] Zero external asset/network dependencies in the UI; security headers present; no path/traceback leaks.
+- [x] Health screen truthfully reports tools/providers/disk/DB with remedy hints.
 - [ ] All backlog checkboxes ticked; status DONE.
 
 ## Notes for future phases
@@ -198,4 +198,4 @@ Ship the portal shell: a login-protected, Pip-Boy-themed FastAPI web app served 
 
 ## Open questions log
 
-*(Executing agent: record ambiguities and the safest-default decision taken, then continue.)*
+- 2026-07-22: Local Phase 5 verification passed (`ruff check src tests scripts`, `pytest`: 210 passed, `docker compose config`). Docker daemon is unavailable locally, so `docker compose up --build`, container health, and restart-persistence checks remain blocked.
