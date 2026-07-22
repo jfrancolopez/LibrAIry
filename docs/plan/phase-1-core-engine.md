@@ -275,8 +275,8 @@ CREATE TABLE sessions (                     -- used from Phase 5; created now so
 **Depends on:** P1-02
 **Description:** `locks.py`: `flock`-based exclusive lock on `<appdata>/librairy.lock` with context manager, non-blocking acquire + clear "another LibrAIry process holds the lock" error, and stale-proof semantics (flock releases on process death automatically).
 **Acceptance criteria:**
-- [ ] Second acquirer in another *process* fails fast with the friendly message (test with `multiprocessing`/`subprocess`).
-- [ ] Lock is released on normal exit, exception, and SIGKILL of the holder.
+- [x] Second acquirer in another *process* fails fast with the friendly message (test with `multiprocessing`/`subprocess`).
+- [x] Lock is released on normal exit, exception, and SIGKILL of the holder.
 **Test notes:** must test across processes, not threads (flock is per-fd).
 **Size:** S
 
