@@ -175,9 +175,9 @@ CREATE TABLE groups (
 **Depends on:** —
 **Description:** `tools/ffprobe.py` (format+streams JSON → typed audio/video metadata incl. tags), `tools/exiftool.py` (batch `-j` mode → typed image metadata incl. GPS, camera, dates — GPS is extracted and stored locally; Phase 3's redaction governs what ever leaves the machine), `tools/fpcalc.py` (Chromaprint fingerprint). Common wrapper: timeout (from settings), missing-binary detection with one warning (not per-file spam), structured errors, and a per-item metadata cache in the DB (JSON in a `item_metadata` table or `items` column — keep simple, document choice) so re-analysis doesn't re-run tools on unchanged files.
 **Acceptance criteria:**
-- [ ] Each adapter parses recorded real-output fixtures correctly.
-- [ ] Timeout and missing-binary produce typed failures; cascade continues.
-- [ ] Unchanged file re-analysis hits the cache (call-counter test).
+- [x] Each adapter parses recorded real-output fixtures correctly.
+- [x] Timeout and missing-binary produce typed failures; cascade continues.
+- [x] Unchanged file re-analysis hits the cache (call-counter test).
 **Size:** M
 
 ### P2-05 Music classification (tags → AcoustID → MusicBrainz)
