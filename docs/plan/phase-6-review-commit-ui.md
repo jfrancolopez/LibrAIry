@@ -132,10 +132,10 @@ Put the product's core loop in the browser: review accumulated proposals in batc
 **Depends on:** P6-01
 **Description:** Per Design Constraints: edit endpoints with the sanitize→validate→collision-precheck→save pipeline; category change re-renders the destination via templates; inline errors.
 **Acceptance criteria:**
-- [ ] `../../etc/x`, absolute paths, backslashes, control chars, `{token}` remnants all rejected inline with a reason (parametrized test).
-- [ ] Edit colliding with an existing library file or another proposal shows the auto-suffix preview; saved value is the suffixed one on approval.
-- [ ] Server revalidation proven independent of the browser: raw httpx POST with hostile values → 422, nothing saved.
-- [ ] Editing never touches the filesystem (mutation-sweep test on edit handlers).
+- [x] `../../etc/x`, absolute paths, backslashes, control chars, `{token}` remnants all rejected inline with a reason (parametrized test).
+- [x] Edit colliding with an existing library file or another proposal shows the auto-suffix preview; saved value is the suffixed one on approval.
+- [x] Server revalidation proven independent of the browser: raw httpx POST with hostile values → 422, nothing saved.
+- [x] Editing never touches the filesystem (mutation-sweep test on edit handlers).
 **Size:** M
 
 ### P6-04 Previews

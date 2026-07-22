@@ -181,6 +181,12 @@ td span { display: block; }
   align-items: center;
 }
 
+.edit-form {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 16rem;
+}
+
 :focus-visible {
   outline: 3px solid var(--amber);
   outline-offset: 4px;

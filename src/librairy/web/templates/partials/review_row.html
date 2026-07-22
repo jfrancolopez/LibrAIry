@@ -1,0 +1,26 @@
+<tr id="proposal-{{ proposal.id }}">
+  <td><input form="review-actions" name="proposal_id" type="checkbox" aria-label="select {{ proposal.item_relpath }}" value="{{ proposal.id }}"></td>
+  <td>{{ proposal.item_relpath }}</td>
+  <td>
+    {% if proposal.dest_relpath %}{{ proposal.dest_root }}/{{ proposal.dest_relpath }}{% else %}<span class="status">[WARN] pending destination</span>{% endif %}
+    {% if warning %}<span class="status">[WARN] {{ warning }}</span>{% endif %}
+  </td>
+  <td><span class="confidence" style="--score: {{ (proposal.confidence * 100)|round|int }}%">{{ '%.2f'|format(proposal.confidence) }}</span></td>
+  <td>
+    {% for line in proposal.evidence_lines %}<span>{{ line }}</span>{% endfor %}
+  </td>
+  <td>
+    <form
+      class="edit-form"
+      hx-post="/review/proposals/{{ proposal.id }}/edit"
+      hx-target="#proposal-{{ proposal.id }}"
+      hx-swap="outerHTML"
+      hx-headers='{"x-csrf-token":"{{ request.state.session.csrf_token }}"}'
+    >
+      <label>Category <input name="category" value="{{ proposal.category }}"></label>
+      <label>Name <input name="clean_name" value="{{ proposal.clean_name }}"></label>
+      <label>Destination <input name="dest_relpath" value="{{ proposal.dest_relpath or '' }}"></label>
+      <button type="submit">Save</button>
+    </form>
+  </td>
+</tr>

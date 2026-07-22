@@ -23,7 +23,7 @@ from librairy.web.auth import (
 )
 from librairy.web.dashboard import dashboard_data
 from librairy.web.health import health_data, test_provider
-from librairy.web.review import apply_review_action, filters_from_query, review_data
+from librairy.web.review import apply_review_action, edit_proposal, filters_from_query, review_data
 
 PACKAGE_DIR = Path(__file__).parent
 TEMPLATES = Jinja2Templates(directory=PACKAGE_DIR / "templates")
@@ -208,6 +208,31 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             request,
             "partials/review_list.html",
             {"toast": f"{changed} proposal(s) updated", **review_data(conn, filters)},
+        )
+
+    @app.post("/review/proposals/{proposal_id}/edit", response_class=HTMLResponse)
+    def review_edit(
+        request: Request,
+        proposal_id: int,
+        category: Annotated[str, Form()],
+        clean_name: Annotated[str, Form()],
+        dest_relpath: Annotated[str | None, Form()] = None,
+    ) -> HTMLResponse:
+        try:
+            proposal, warning = edit_proposal(
+                conn,
+                settings,
+                proposal_id,
+                category=category,
+                clean_name=clean_name,
+                dest_relpath=dest_relpath,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return TEMPLATES.TemplateResponse(
+            request,
+            "partials/review_row.html",
+            {"proposal": proposal, "warning": warning},
         )
 
     @app.post("/csrf-check")

@@ -18,16 +18,7 @@
           </thead>
           <tbody>
             {% for proposal in group.rows %}
-              <tr>
-                <td><input form="review-actions" name="proposal_id" type="checkbox" aria-label="select {{ proposal.item_relpath }}" value="{{ proposal.id }}"></td>
-                <td>{{ proposal.item_relpath }}</td>
-                <td>{% if proposal.dest_relpath %}{{ proposal.dest_root }}/{{ proposal.dest_relpath }}{% else %}<span class="status">[WARN] pending destination</span>{% endif %}</td>
-                <td><span class="confidence" style="--score: {{ (proposal.confidence * 100)|round|int }}%">{{ '%.2f'|format(proposal.confidence) }}</span></td>
-                <td>
-                  {% for line in proposal.evidence_lines %}<span>{{ line }}</span>{% endfor %}
-                </td>
-                <td><button type="button" disabled>Edit in P6-03</button></td>
-              </tr>
+              {% include "partials/review_row.html" %}
             {% endfor %}
           </tbody>
         </table>

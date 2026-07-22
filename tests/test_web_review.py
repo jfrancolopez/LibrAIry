@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from librairy.config import Settings
@@ -65,7 +66,7 @@ def test_review_evidence_labels_cloud_marker_and_pending_edit(tmp_path: Path) ->
     assert "[HEURISTIC] category unknown item fallback 0.20" in response.text
     assert "[CLOUD AI:openai/gpt-4o-mini/cloud] category" in response.text
     assert "[WARN] pending destination" in response.text
-    assert "Edit in P6-03" in response.text
+    assert "Destination" in response.text
 
 
 def test_review_large_seed_is_paginated_and_fast(tmp_path: Path) -> None:
@@ -153,6 +154,82 @@ def test_review_actions_are_csrf_protected_and_keyboard_controls_render(tmp_path
     assert "aria-label=\"select a.txt\"" in page.text
 
 
+@pytest.mark.parametrize(
+    "dest_relpath",
+    ["../../etc/x", "/tmp/x", "Documents\\x.txt", "Documents/bad\x00.txt", "Documents/{token}.txt"],
+)
+def test_edit_rejects_hostile_destinations_without_saving(
+    tmp_path: Path, dest_relpath: str
+) -> None:
+    client, conn = client_for(tmp_path)
+    proposal_id = seed_proposal(conn, "a.txt", "documents", "Documents/a.txt", 0.9, None)
+
+    response = client.post(
+        f"/review/proposals/{proposal_id}/edit",
+        data={
+            "category": "documents",
+            "clean_name": "safe.txt",
+            "dest_relpath": dest_relpath,
+        },
+        headers={"x-csrf-token": client.cookies["csrf_token"]},
+    )
+
+    row = conn.execute(
+        "SELECT clean_name, dest_relpath FROM proposals WHERE id=?", (proposal_id,)
+    ).fetchone()
+    assert response.status_code == 422
+    assert row["clean_name"] == "a.txt"
+    assert row["dest_relpath"] == "Documents/a.txt"
+
+
+def test_edit_suffixes_existing_file_and_live_proposal_collisions(tmp_path: Path) -> None:
+    client, conn = client_for(tmp_path)
+    settings = client.app.state.settings
+    (settings.library_dir / "Documents").mkdir(parents=True)
+    (settings.library_dir / "Documents/a.txt").write_text("existing", encoding="utf-8")
+    first = seed_proposal(conn, "a.txt", "documents", "Documents/old.txt", 0.9, None)
+    second = seed_proposal(conn, "b.txt", "documents", "Documents/b.txt", 0.9, None)
+
+    first_response = client.post(
+        f"/review/proposals/{first}/edit",
+        data={"category": "documents", "clean_name": "a.txt", "dest_relpath": "Documents/a.txt"},
+        headers={"x-csrf-token": client.cookies["csrf_token"]},
+    )
+    second_response = client.post(
+        f"/review/proposals/{second}/edit",
+        data={"category": "documents", "clean_name": "a.txt", "dest_relpath": "Documents/a.txt"},
+        headers={"x-csrf-token": client.cookies["csrf_token"]},
+    )
+
+    assert "collision suffix applied" in first_response.text
+    assert first_response.status_code == 200
+    assert second_response.status_code == 200
+    assert proposal_dest(conn, first) == "Documents/a (2).txt"
+    assert proposal_dest(conn, second) == "Documents/a (3).txt"
+
+
+def test_edit_route_does_not_mutate_filesystem(tmp_path: Path) -> None:
+    client, conn = client_for(tmp_path)
+    settings = client.app.state.settings
+    settings.library_dir.mkdir(parents=True, exist_ok=True)
+    before = sorted(
+        path.relative_to(settings.library_dir) for path in settings.library_dir.rglob("*")
+    )
+    proposal_id = seed_proposal(conn, "a.txt", "documents", "Documents/a.txt", 0.9, None)
+
+    response = client.post(
+        f"/review/proposals/{proposal_id}/edit",
+        data={"category": "documents", "clean_name": "b.txt", "dest_relpath": "Documents/b.txt"},
+        headers={"x-csrf-token": client.cookies["csrf_token"]},
+    )
+    after = sorted(
+        path.relative_to(settings.library_dir) for path in settings.library_dir.rglob("*")
+    )
+
+    assert response.status_code == 200
+    assert before == after
+
+
 def seed_proposal(
     conn,
     relpath: str,
@@ -197,6 +274,12 @@ def insert_group(conn, kind: str, label: str) -> int:
 
 def proposal_status(conn, proposal_id: int) -> str:
     return conn.execute("SELECT status FROM proposals WHERE id=?", (proposal_id,)).fetchone()[0]
+
+
+def proposal_dest(conn, proposal_id: int) -> str:
+    return conn.execute(
+        "SELECT dest_relpath FROM proposals WHERE id=?", (proposal_id,)
+    ).fetchone()[0]
 
 
 def item_state(conn, proposal_id: int) -> str:

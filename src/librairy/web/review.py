@@ -2,13 +2,27 @@ from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass
+from pathlib import Path, PurePosixPath
 from typing import Any
 
+from librairy.config import Settings
 from librairy.lifecycle import transition_item
+from librairy.paths import PathValidationError, sanitize_component, validate_dest
 from librairy.planner import utc_now
 from librairy.proposals import decode_evidence
+from librairy.taxonomy import CATEGORIES, render_destination
 
 PAGE_SIZE = 50
+DEFAULT_CATEGORY_FIELDS = {
+    "music": {"artist": "Unknown Artist", "album": "Unknown Album", "genre": "General"},
+    "movies": {"title": "Unknown Movie", "year": 0, "genre": "General"},
+    "shows": {"show": "Unknown Show", "season": 1, "genre": "General"},
+    "photos": {"year": 0, "event": "Unknown Event"},
+    "documents": {"year": 0},
+    "books": {"author": "Unknown Author", "title": "Unknown Book", "genre": "General"},
+    "projects": {"project": "Unknown Project"},
+    "misc": {},
+}
 
 
 @dataclass(frozen=True)
@@ -67,6 +81,48 @@ def apply_review_action(
     return len(rows)
 
 
+def edit_proposal(
+    conn: sqlite3.Connection,
+    settings: Settings,
+    proposal_id: int,
+    *,
+    category: str,
+    clean_name: str,
+    dest_relpath: str | None,
+) -> tuple[dict[str, Any], str | None]:
+    if category not in CATEGORIES:
+        raise ValueError(f"unknown category: {category}")
+    row = conn.execute("SELECT * FROM proposals WHERE id=?", (proposal_id,)).fetchone()
+    if row is None:
+        raise ValueError("proposal not found")
+    safe_name = sanitize_component(clean_name)
+    dest_root = row["dest_root"]
+    destination = _validated_destination(
+        conn,
+        settings,
+        proposal_id,
+        dest_root,
+        category,
+        safe_name,
+        dest_relpath,
+    )
+    conn.execute(
+        """
+        UPDATE proposals
+        SET category=?, clean_name=?, dest_relpath=?, updated_at=?
+        WHERE id=?
+        """,
+        (category, safe_name, destination, utc_now(), proposal_id),
+    )
+    updated = _proposal_rows(
+        conn,
+        ReviewFilters(state=row["status"], page=1),
+        proposal_ids=[proposal_id],
+    )[0]
+    warning = "collision suffix applied" if destination != (dest_relpath or destination) else None
+    return updated, warning
+
+
 def evidence_lines(payload: str) -> list[str]:
     lines: list[str] = []
     for entry in decode_evidence(payload):
@@ -103,8 +159,16 @@ def filters_from_query(
     )
 
 
-def _proposal_rows(conn: sqlite3.Connection, filters: ReviewFilters) -> list[dict[str, Any]]:
+def _proposal_rows(
+    conn: sqlite3.Connection,
+    filters: ReviewFilters,
+    *,
+    proposal_ids: list[int] | None = None,
+) -> list[dict[str, Any]]:
     where, params = _where(filters)
+    if proposal_ids:
+        where = f"{where} AND p.id IN ({_placeholders(proposal_ids)})"
+        params.extend(proposal_ids)
     params = [*params, PAGE_SIZE, (filters.page - 1) * PAGE_SIZE]
     rows = conn.execute(
         f"""
@@ -191,3 +255,72 @@ def _where(filters: ReviewFilters) -> tuple[str, list[object]]:
 
 def _placeholders(values: list[int]) -> str:
     return ",".join("?" for _ in values)
+
+
+def _validated_destination(
+    conn: sqlite3.Connection,
+    settings: Settings,
+    proposal_id: int,
+    dest_root: str,
+    category: str,
+    clean_name: str,
+    dest_relpath: str | None,
+) -> str:
+    raw_dest = dest_relpath.strip() if dest_relpath else ""
+    if not raw_dest:
+        rendered = render_destination(
+            category,
+            {"clean_name": clean_name, **DEFAULT_CATEGORY_FIELDS[category]},
+            library_root=settings.library_dir,
+            conn=conn,
+        )
+        if rendered.relpath is None:
+            raise PathValidationError(rendered.reason or "destination cannot be rendered")
+        raw_dest = rendered.relpath
+    if "{" in raw_dest or "}" in raw_dest:
+        raise PathValidationError("template tokens are not allowed in destinations")
+    root = settings.quarantine_dir if dest_root == "quarantine" else settings.library_dir
+    dest = validate_dest(root, raw_dest)
+    relpath = dest.relative_to(root.resolve()).as_posix()
+    if dest.exists() or _live_destination_exists(conn, proposal_id, dest_root, relpath):
+        return _available_relpath(conn, proposal_id, dest_root, root, relpath)
+    return relpath
+
+
+def _live_destination_exists(
+    conn: sqlite3.Connection, proposal_id: int, dest_root: str, relpath: str
+) -> bool:
+    row = conn.execute(
+        """
+        SELECT 1 FROM proposals
+        WHERE id != ? AND status IN ('proposed', 'approved')
+          AND dest_root=? AND dest_relpath=?
+        """,
+        (proposal_id, dest_root, relpath),
+    ).fetchone()
+    return row is not None
+
+
+def _available_relpath(
+    conn: sqlite3.Connection,
+    proposal_id: int,
+    dest_root: str,
+    root: Path,
+    relpath: str,
+) -> str:
+    parsed = PurePosixPath(relpath)
+    stem, suffix = _collision_parts(parsed.name)
+    counter = 2
+    while True:
+        candidate = parsed.with_name(f"{stem} ({counter}){suffix}").as_posix()
+        dest = validate_dest(root, candidate)
+        if not dest.exists() and not _live_destination_exists(
+            conn, proposal_id, dest_root, candidate
+        ):
+            return candidate
+        counter += 1
+
+
+def _collision_parts(name: str) -> tuple[str, str]:
+    path = PurePosixPath(name)
+    return path.stem, path.suffix
