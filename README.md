@@ -1,6 +1,8 @@
 # LibrAIry
 **AI-Powered File Organization & Library Manager**
 
+> **Legacy pipeline warning:** the current bash pipeline under `inbox-processor/` is frozen while LibrAIry is rebuilt into the safer Python engine described in [`docs/plan/README.md`](docs/plan/README.md). It has known dangerous behaviors: step4 "dry-run" can move files into `/data/inbox/_review_pending`; step5 executes a different plan than step4 previewed; and the watcher can loop indefinitely. Use only on disposable test data until the phased rewrite is complete.
+
 > Drop your chaos into an inbox. LibrAIry sorts, names, deduplicates, and indexes everything — using catalog APIs first, local AI as a fallback, cloud AI only as a last resort. No subscriptions required for the core workflow.
 
 ---

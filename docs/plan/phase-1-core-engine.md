@@ -308,8 +308,8 @@ CREATE TABLE sessions (                     -- used from Phase 5; created now so
 **Depends on:** —
 **Description:** Add a prominent deprecation warning to `README.md` (top) and `Instructions.md` (top): the bash pipeline is frozen, will be replaced, and has known dangerous behaviors — explicitly: step4 "dry-run" moves files into `/data/inbox/_review_pending`; step5 executes a different plan than step4 previewed; the watcher loops indefinitely. Link to `docs/plan/README.md`. **No functional change to any `.sh` file — this is the only legacy edit this phase permits.**
 **Acceptance criteria:**
-- [ ] Warning present at the top of both docs, naming the three dangerous behaviors.
-- [ ] `git diff` shows zero changes under `inbox-processor/`.
+- [x] Warning present at the top of both docs, naming the three dangerous behaviors.
+- [x] `git diff` shows zero changes under `inbox-processor/`.
 **Size:** S
 
 ### P1-12 Adversarial test suite

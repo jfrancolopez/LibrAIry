@@ -1,5 +1,7 @@
 # LibrAIry — Complete Setup & Operations Guide
 
+> **Legacy pipeline warning:** the current bash pipeline under `inbox-processor/` is frozen while LibrAIry is rebuilt into the safer Python engine described in [`docs/plan/README.md`](docs/plan/README.md). It has known dangerous behaviors: step4 "dry-run" can move files into `/data/inbox/_review_pending`; step5 executes a different plan than step4 previewed; and the watcher can loop indefinitely. Use only on disposable test data until the phased rewrite is complete.
+
 This document covers everything needed to install, configure, run, and maintain LibrAIry from scratch. For a high-level overview see [README.md](README.md).
 
 ---
