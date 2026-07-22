@@ -166,8 +166,8 @@ Ship the portal shell: a login-protected, Pip-Boy-themed FastAPI web app served 
 **Depends on:** P5-02..P5-05
 **Description:** httpx TestClient fixtures (app + tmp sandbox + seeded DB), covering auth flows, CSRF, headers, route protection sweep, dashboard/health rendering, and a supervisor smoke test (subprocess, brief run, SIGTERM).
 **Acceptance criteria:**
-- [ ] All above green in CI; route-protection sweep auto-discovers routes (new unprotected routes fail the sweep by default).
-- [ ] Coverage includes at least one full browser-flow simulation: setup → login → dashboard → logout → blocked.
+- [x] All above green in CI; route-protection sweep auto-discovers routes (new unprotected routes fail the sweep by default).
+- [x] Coverage includes at least one full browser-flow simulation: setup → login → dashboard → logout → blocked.
 **Size:** S
 
 ## Verification steps
