@@ -87,6 +87,22 @@ def test_logout_invalidates_session_and_expiry_is_honored(tmp_path: Path) -> Non
     assert client.get("/dashboard", follow_redirects=False).headers["location"] == "/login"
 
 
+def test_plain_logout_form_posts_csrf_field(tmp_path: Path) -> None:
+    client, _ = client_for(tmp_path)
+    client.post("/setup", data={"password": "correct horse battery"})
+
+    page = client.get("/dashboard")
+    response = client.post(
+        "/logout",
+        data={"csrf_token": client.cookies["csrf_token"]},
+        follow_redirects=False,
+    )
+
+    assert 'name="csrf_token"' in page.text
+    assert response.status_code == 302
+    assert response.headers["location"] == "/login"
+
+
 def test_scrypt_params_are_stored_and_verifiable_after_parameter_change() -> None:
     stored = hash_password("secret phrase", n=2**14, r=8, p=1)
     stored["n"] = json.loads(json.dumps(stored))["n"]

@@ -65,6 +65,18 @@ def test_commit_flow_executes_exact_approved_plan_and_hash(tmp_path: Path) -> No
     )
 
 
+def test_plain_commit_create_form_posts_csrf_field(tmp_path: Path) -> None:
+    client, conn, settings = client_for(tmp_path)
+    seed_approved(conn, settings, "a.txt", "Documents/a.txt")
+
+    page = client.get("/commit")
+    response = client.post("/commit/create", data={"csrf_token": client.cookies["csrf_token"]})
+
+    assert 'name="csrf_token"' in page.text
+    assert response.status_code == 200
+    assert "Confirm Commit" in response.text
+
+
 def test_commit_reports_changed_source_without_touching_file(tmp_path: Path) -> None:
     client, conn, settings = client_for(tmp_path)
     seed_approved(conn, settings, "a.txt", "Documents/a.txt")

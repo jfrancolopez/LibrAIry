@@ -4,6 +4,7 @@
   <h1>Commit</h1>
   <p>{{ approved_count }} approved proposal(s) ready.</p>
   <form method="post" action="/commit/create">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <button type="submit">Create Commit Plan</button>
   </form>
 {% endblock %}

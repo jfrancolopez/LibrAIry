@@ -146,7 +146,11 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         return TEMPLATES.TemplateResponse(
             request,
             "dashboard.html",
-            {"title": "Dashboard", **dashboard_data(conn, settings)},
+            {
+                "title": "Dashboard",
+                "csrf_token": request.state.session["csrf_token"],
+                **dashboard_data(conn, settings),
+            },
         )
 
     @app.get("/dashboard/stats", response_class=HTMLResponse)
@@ -667,7 +671,7 @@ def _auth_and_security(conn: sqlite3.Connection):
         if _protected_path(path) and session is None:
             response = RedirectResponse("/login", status_code=302)
         elif request.method not in {"GET", "HEAD", "OPTIONS"} and _protected_path(path):
-            token = request.headers.get("x-csrf-token")
+            token = request.headers.get("x-csrf-token") or await _csrf_form_token(request)
             if token != session["csrf_token"]:
                 response = HTMLResponse("forbidden", status_code=403)
             else:
@@ -680,6 +684,18 @@ def _auth_and_security(conn: sqlite3.Connection):
         return response
 
     return middleware
+
+
+async def _csrf_form_token(request: Request) -> str | None:
+    content_type = request.headers.get("content-type", "")
+    if (
+        "application/x-www-form-urlencoded" not in content_type
+        and "multipart/form-data" not in content_type
+    ):
+        return None
+    form = await request.form()
+    token = form.get("csrf_token")
+    return str(token) if token is not None else None
 
 
 def _protected_path(path: str) -> bool:
