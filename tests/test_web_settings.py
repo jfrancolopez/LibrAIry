@@ -5,11 +5,22 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from librairy.ai.base import HealthResult
+from librairy.ai.registry import provider_chain
 from librairy.classify import analyze_items
 from librairy.config import Settings
 from librairy.db import connect
 from librairy.settings_service import effective_settings, save_settings
+from librairy.web import health as health_module
 from librairy.web.app import create_app
+
+
+class FakeProvider:
+    def __init__(self, config, settings) -> None:  # noqa: ANN001
+        self.config = config
+
+    def health(self, timeout: int) -> HealthResult:  # noqa: ARG002
+        return HealthResult(True, latency_ms=4, models=("qwen3:8b",))
 
 
 def client_for(tmp_path: Path, **overrides) -> tuple[TestClient, object, Settings]:
@@ -130,3 +141,81 @@ def test_settings_apply_to_next_analysis_batch(tmp_path: Path) -> None:
     assert summary.proposed == 1
     assert effective_settings(conn, settings).confidence_threshold == 0.4
     assert row["dest_relpath"].startswith("Music/General/Unknown Artist")
+
+
+def test_provider_header_degrades_to_heuristics_only(tmp_path: Path) -> None:
+    client, _, _ = client_for(tmp_path, OLLAMA_HOST="")
+
+    response = client.get("/settings")
+
+    assert response.status_code == 200
+    assert "AI: heuristics-only" in response.text
+
+
+def test_add_named_ollama_endpoint_and_test_health(tmp_path: Path, monkeypatch) -> None:
+    client, conn, _ = client_for(tmp_path, OLLAMA_HOST="")
+    monkeypatch.setattr(health_module, "provider_for_config", FakeProvider)
+
+    added = client.post(
+        "/settings/providers/ollama",
+        data={"name": "lan-beast", "url": "http://ollama.test:11434", "model": "qwen3:8b"},
+        headers={"x-csrf-token": client.cookies["csrf_token"]},
+        follow_redirects=False,
+    )
+    tested = client.post(
+        "/health/providers/lan-beast",
+        headers={"x-csrf-token": client.cookies["csrf_token"]},
+    )
+
+    row = conn.execute("SELECT * FROM provider_status WHERE name='lan-beast'").fetchone()
+    assert added.status_code == 302
+    assert tested.status_code == 200
+    assert row["last_ok_at"] is not None
+    assert row["available_models"] == '["qwen3:8b"]'
+
+
+def test_provider_order_and_disable_change_next_chain(tmp_path: Path) -> None:
+    client, conn, settings = client_for(tmp_path, OPENAI_API_KEY="key")
+    client.post(
+        "/settings/providers/cloud/openai/enable",
+        data={"confirm": "CLOUD"},
+        headers={"x-csrf-token": client.cookies["csrf_token"]},
+    )
+    client.post(
+        "/settings/providers/order",
+        data={"order": "openai,ollama,anthropic,gemini"},
+        headers={"x-csrf-token": client.cookies["csrf_token"]},
+    )
+    chain = provider_chain(conn, settings)
+
+    assert [provider.kind for provider in chain[:2]] == ["openai", "ollama"]
+
+
+def test_cloud_enable_requires_confirm(tmp_path: Path) -> None:
+    client, conn, _ = client_for(tmp_path, OPENAI_API_KEY="key")
+
+    response = client.post(
+        "/settings/providers/cloud/openai/enable",
+        data={"confirm": ""},
+        headers={"x-csrf-token": client.cookies["csrf_token"]},
+    )
+
+    row = conn.execute("SELECT value FROM settings WHERE key='ai.openai.enabled'").fetchone()
+    assert response.status_code == 422
+    assert row is None
+
+
+def test_removing_endpoint_after_chain_snapshot_does_not_break_next_chain(tmp_path: Path) -> None:
+    client, conn, settings = client_for(tmp_path)
+    before = provider_chain(conn, settings)
+
+    response = client.post(
+        "/settings/providers/ollama/ollama-primary/remove",
+        headers={"x-csrf-token": client.cookies["csrf_token"]},
+        follow_redirects=False,
+    )
+    after = provider_chain(conn, settings)
+
+    assert response.status_code == 302
+    assert before
+    assert all(provider.name != "ollama-primary" for provider in after)

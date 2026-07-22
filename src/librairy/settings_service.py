@@ -4,6 +4,15 @@ import json
 import sqlite3
 from dataclasses import dataclass
 
+from librairy.ai.registry import (
+    configured_providers,
+    ollama_endpoints,
+    provider_chain,
+    provider_order,
+    set_ollama_endpoints,
+    set_provider_enabled,
+    set_provider_order,
+)
 from librairy.config import Settings
 from librairy.dedup import DedupConfigError, dedup_options, set_dedup_option
 from librairy.planner import utc_now
@@ -20,6 +29,9 @@ class SettingsValidationError(ValueError):
     pass
 
 
+CLOUD_PROVIDERS = {"openai", "anthropic", "gemini"}
+
+
 @dataclass(frozen=True)
 class RuntimeSettingsView:
     confidence_threshold: float
@@ -31,11 +43,86 @@ class RuntimeSettingsView:
 
 def settings_page_data(conn: sqlite3.Connection, settings: Settings) -> dict[str, object]:
     view = runtime_settings(conn, settings)
+    providers = configured_providers(conn, settings)
     return {
         "settings_view": view,
         "template_options": TEMPLATES,
         "examples": {category: example_path(conn, category, settings) for category in CATEGORIES},
+        "providers": providers,
+        "provider_order": provider_order(conn, settings),
+        "cloud_providers": CLOUD_PROVIDERS,
     }
+
+
+def provider_header(conn: sqlite3.Connection, settings: Settings) -> str:
+    chain = provider_chain(conn, settings)
+    if not chain:
+        return "AI: heuristics-only"
+    first = chain[0]
+    row = conn.execute("SELECT * FROM provider_status WHERE name=?", (first.name,)).fetchone()
+    status = "OK" if row and row["last_ok_at"] and not row["last_error"] else "WARN"
+    return f"AI: {first.name} ({first.model}) [{status}]"
+
+
+def add_ollama_endpoint(
+    conn: sqlite3.Connection, settings: Settings, *, name: str, url: str, model: str
+) -> None:
+    name = name.strip()
+    url = url.strip()
+    model = model.strip()
+    if not name or not url or not model:
+        raise SettingsValidationError("name, URL, and model are required")
+    endpoints = ollama_endpoints(conn, settings)
+    if any(str(endpoint.get("name")) == name for endpoint in endpoints):
+        raise SettingsValidationError("provider name already exists")
+    endpoints.append({"name": name, "url": url, "model": model, "enabled": True})
+    set_ollama_endpoints(conn, endpoints)
+    _journal(conn, "ai.ollama.endpoints", "add", name)
+
+
+def remove_ollama_endpoint(conn: sqlite3.Connection, settings: Settings, name: str) -> None:
+    endpoints = [
+        endpoint for endpoint in ollama_endpoints(conn, settings) if endpoint.get("name") != name
+    ]
+    set_ollama_endpoints(conn, endpoints)
+    _journal(conn, "ai.ollama.endpoints", "remove", name)
+
+
+def set_ollama_enabled(
+    conn: sqlite3.Connection, settings: Settings, name: str, enabled: bool
+) -> None:
+    endpoints = ollama_endpoints(conn, settings)
+    for endpoint in endpoints:
+        if endpoint.get("name") == name:
+            endpoint["enabled"] = enabled
+    set_ollama_endpoints(conn, endpoints)
+    _journal(conn, f"ai.{name}.enabled", "toggle", enabled)
+
+
+def reorder_providers(conn: sqlite3.Connection, settings: Settings, order: list[str]) -> None:
+    old = provider_order(conn, settings)
+    set_provider_order(conn, order)
+    _journal_if_changed(conn, "ai.provider_order", old, provider_order(conn, settings))
+
+
+def enable_cloud_provider(
+    conn: sqlite3.Connection, settings: Settings, kind: str, *, confirm: str
+) -> None:
+    if kind not in CLOUD_PROVIDERS:
+        raise SettingsValidationError("unknown cloud provider")
+    if confirm != "CLOUD":
+        raise SettingsValidationError("type CLOUD to confirm cloud AI enablement")
+    if runtime_settings(conn, settings).keys[kind] != "set":
+        raise SettingsValidationError(f"{kind} API key is not set")
+    set_provider_enabled(conn, kind, True)
+    _journal(conn, f"ai.{kind}.enabled", False, True)
+
+
+def disable_cloud_provider(conn: sqlite3.Connection, kind: str) -> None:
+    if kind not in CLOUD_PROVIDERS:
+        raise SettingsValidationError("unknown cloud provider")
+    set_provider_enabled(conn, kind, False)
+    _journal(conn, f"ai.{kind}.enabled", True, False)
 
 
 def runtime_settings(conn: sqlite3.Connection, settings: Settings) -> RuntimeSettingsView:

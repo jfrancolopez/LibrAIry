@@ -156,11 +156,11 @@ Make the library *findable* and the system *tunable*: instant search with facets
 **Depends on:** P7-04
 **Description:** Per Design Constraints: header widget + settings panel (chain reorder, enable/disable, endpoint CRUD, model pick from captured lists, per-row test button, cloud confirm step with redaction note).
 **Acceptance criteria:**
-- [ ] Adding a named endpoint + test button round-trips against a mock Ollama; status row updates live.
-- [ ] Chain reorder/disable changes the next analysis batch's provider order without restart (mid-run flip test from Design Constraints).
-- [ ] Enabling a cloud provider requires the confirm step; skipping it (raw POST) → 422 (server-enforced, not just UI).
-- [ ] Header widget reflects active provider and health; degrades to `AI: heuristics-only` when chain is empty/down.
-- [ ] Removing an endpoint mid-batch doesn't crash the worker (it finishes the batch on its snapshot; test).
+- [x] Adding a named endpoint + test button round-trips against a mock Ollama; status row updates live.
+- [x] Chain reorder/disable changes the next analysis batch's provider order without restart (mid-run flip test from Design Constraints).
+- [x] Enabling a cloud provider requires the confirm step; skipping it (raw POST) → 422 (server-enforced, not just UI).
+- [x] Header widget reflects active provider and health; degrades to `AI: heuristics-only` when chain is empty/down.
+- [x] Removing an endpoint mid-batch doesn't crash the worker (it finishes the batch on its snapshot; test).
 **Size:** M
 
 ### P7-06 Access pointers page

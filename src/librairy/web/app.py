@@ -13,7 +13,18 @@ from librairy.config import Settings
 from librairy.db import connect
 from librairy.dedup import DedupConfigError
 from librairy.search import SearchFilters, rebuild_search_index, search_data
-from librairy.settings_service import SettingsValidationError, save_settings, settings_page_data
+from librairy.settings_service import (
+    SettingsValidationError,
+    add_ollama_endpoint,
+    disable_cloud_provider,
+    enable_cloud_provider,
+    provider_header,
+    remove_ollama_endpoint,
+    reorder_providers,
+    save_settings,
+    set_ollama_enabled,
+    settings_page_data,
+)
 from librairy.web.auth import (
     SESSION_COOKIE,
     LoginRateLimiter,
@@ -64,6 +75,7 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
     app.state.settings = settings
     app.state.commit_state = commit_state
     app.mount("/static", StaticFiles(directory=PACKAGE_DIR / "static"), name="static")
+    TEMPLATES.env.globals["provider_header"] = lambda: provider_header(conn, settings)
     app.middleware("http")(_auth_and_security(conn))
 
     @app.get("/", include_in_schema=False)
@@ -193,6 +205,52 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
                 },
                 status_code=422,
             )
+        return RedirectResponse("/settings?saved=1", status_code=302)
+
+    @app.post("/settings/providers/ollama", response_class=HTMLResponse)
+    async def settings_provider_add(request: Request) -> RedirectResponse:
+        form = await request.form()
+        try:
+            add_ollama_endpoint(
+                conn,
+                settings,
+                name=str(form.get("name", "")),
+                url=str(form.get("url", "")),
+                model=str(form.get("model", "")),
+            )
+        except SettingsValidationError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return RedirectResponse("/settings?saved=1", status_code=302)
+
+    @app.post("/settings/providers/ollama/{name}/remove", response_class=HTMLResponse)
+    def settings_provider_remove(name: str) -> RedirectResponse:
+        remove_ollama_endpoint(conn, settings, name)
+        return RedirectResponse("/settings?saved=1", status_code=302)
+
+    @app.post("/settings/providers/ollama/{name}/toggle", response_class=HTMLResponse)
+    async def settings_provider_toggle(request: Request, name: str) -> RedirectResponse:
+        form = await request.form()
+        set_ollama_enabled(conn, settings, name, "enabled" in form)
+        return RedirectResponse("/settings?saved=1", status_code=302)
+
+    @app.post("/settings/providers/order", response_class=HTMLResponse)
+    async def settings_provider_order(request: Request) -> RedirectResponse:
+        form = await request.form()
+        reorder_providers(conn, settings, str(form.get("order", "")).split(","))
+        return RedirectResponse("/settings?saved=1", status_code=302)
+
+    @app.post("/settings/providers/cloud/{kind}/enable", response_class=HTMLResponse)
+    async def settings_cloud_enable(request: Request, kind: str) -> RedirectResponse:
+        form = await request.form()
+        try:
+            enable_cloud_provider(conn, settings, kind, confirm=str(form.get("confirm", "")))
+        except SettingsValidationError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return RedirectResponse("/settings?saved=1", status_code=302)
+
+    @app.post("/settings/providers/cloud/{kind}/disable", response_class=HTMLResponse)
+    def settings_cloud_disable(kind: str) -> RedirectResponse:
+        disable_cloud_provider(conn, kind)
         return RedirectResponse("/settings?saved=1", status_code=302)
 
     @app.post("/health/providers/{name}", response_class=HTMLResponse)

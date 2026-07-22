@@ -50,4 +50,69 @@
 
   <button type="submit">[OK] SAVE SETTINGS</button>
 </form>
+
+<h2>AI Provider Selector</h2>
+<p class="muted">{{ provider_header() }}. Changes apply to the next analysis batch.</p>
+<form method="post" action="/settings/providers/order" hx-post="/settings/providers/order" hx-target="body" hx-swap="outerHTML" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>
+  <label>Provider kind order
+    <input name="order" value="{{ provider_order|join(',') }}">
+  </label>
+  <button type="submit">[OK] REORDER</button>
+</form>
+
+<h3>Ollama Endpoints</h3>
+<table>
+  <thead><tr><th>Name</th><th>Endpoint</th><th>Model</th><th>Status</th><th>Actions</th></tr></thead>
+  <tbody>
+    {% for provider in providers if provider.kind == 'ollama' %}
+      <tr>
+        <td>{{ provider.name }}</td>
+        <td>{{ provider.endpoint }}</td>
+        <td>{{ provider.model }}</td>
+        <td>{% if provider.enabled %}[OK] enabled{% else %}[WARN] disabled{% endif %}</td>
+        <td>
+          <form hx-post="/settings/providers/ollama/{{ provider.name }}/toggle" hx-target="body" hx-swap="outerHTML" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>
+            <label><input type="checkbox" name="enabled" {% if provider.enabled %}checked{% endif %}> enabled</label>
+            <button>Save</button>
+          </form>
+          <button hx-post="/health/providers/{{ provider.name }}" hx-target="#provider-test-{{ provider.name }}" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>Test</button>
+          <form hx-post="/settings/providers/ollama/{{ provider.name }}/remove" hx-target="body" hx-swap="outerHTML" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>
+            <button>Remove</button>
+          </form>
+          <span id="provider-test-{{ provider.name }}"></span>
+        </td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+<form method="post" action="/settings/providers/ollama" hx-post="/settings/providers/ollama" hx-target="body" hx-swap="outerHTML" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>
+  <label>Name <input name="name" placeholder="lan-beast"></label>
+  <label>URL <input name="url" placeholder="http://192.168.1.50:11434"></label>
+  <label>Model <input name="model" placeholder="qwen3:8b"></label>
+  <button type="submit">[OK] ADD OLLAMA</button>
+</form>
+
+<h3>Cloud Providers</h3>
+<table>
+  <tbody>
+    {% for provider in providers if provider.kind in cloud_providers %}
+      <tr>
+        <th>{{ provider.name }}</th>
+        <td>{{ provider.model }}</td>
+        <td>[CLOUD - data leaves this machine] keys: {{ settings_view.keys[provider.kind] }}</td>
+        <td>{% if provider.enabled %}[OK] enabled{% else %}[WARN] disabled{% endif %}</td>
+        <td>
+          {% if provider.enabled %}
+            <form hx-post="/settings/providers/cloud/{{ provider.kind }}/disable" hx-target="body" hx-swap="outerHTML" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'><button>Disable</button></form>
+          {% else %}
+            <form hx-post="/settings/providers/cloud/{{ provider.kind }}/enable" hx-target="body" hx-swap="outerHTML" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>
+              <input name="confirm" placeholder="type CLOUD">
+              <button>Enable</button>
+            </form>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
 {% endblock %}

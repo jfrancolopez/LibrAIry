@@ -9,8 +9,8 @@ from librairy.config import Settings
 
 
 def provider_chain(conn: sqlite3.Connection, settings: Settings) -> list[ProviderConfig]:
-    providers = _configured_providers(conn, settings)
-    order = settings.ai_provider_order
+    providers = configured_providers(conn, settings)
+    order = provider_order(conn, settings)
     ordered = sorted(
         providers, key=lambda provider: order.index(provider.kind) if provider.kind in order else 99
     )
@@ -24,6 +24,44 @@ def set_provider_enabled(conn: sqlite3.Connection, kind: str, enabled: bool) -> 
     conn.execute(
         "INSERT OR REPLACE INTO settings(key, value) VALUES (?, ?)",
         (f"ai.{kind}.enabled", json.dumps(enabled)),
+    )
+
+
+def configured_providers(conn: sqlite3.Connection, settings: Settings) -> list[ProviderConfig]:
+    providers = _configured_providers(conn, settings)
+    order = provider_order(conn, settings)
+    return sorted(
+        providers, key=lambda provider: order.index(provider.kind) if provider.kind in order else 99
+    )
+
+
+def provider_order(conn: sqlite3.Connection, settings: Settings) -> list[str]:
+    value = _setting_json(conn, "ai.provider_order")
+    if isinstance(value, list):
+        return [str(kind) for kind in value]
+    return list(settings.ai_provider_order)
+
+
+def set_provider_order(conn: sqlite3.Connection, order: list[str]) -> None:
+    valid = {"ollama", "openai", "anthropic", "gemini"}
+    clean = [kind for kind in order if kind in valid]
+    clean.extend(kind for kind in valid if kind not in clean)
+    conn.execute(
+        "INSERT OR REPLACE INTO settings(key, value) VALUES (?, ?)",
+        ("ai.provider_order", json.dumps(clean)),
+    )
+
+
+def ollama_endpoints(conn: sqlite3.Connection, settings: Settings) -> list[dict[str, object]]:
+    _ollama_configs(conn, settings)
+    value = _setting_json(conn, "ai.ollama.endpoints") or []
+    return [dict(endpoint) for endpoint in value]
+
+
+def set_ollama_endpoints(conn: sqlite3.Connection, endpoints: list[dict[str, object]]) -> None:
+    conn.execute(
+        "INSERT OR REPLACE INTO settings(key, value) VALUES (?, ?)",
+        ("ai.ollama.endpoints", json.dumps(endpoints)),
     )
 
 
