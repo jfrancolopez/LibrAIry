@@ -23,6 +23,7 @@ class SearchFilters:
     year: int | None = None
     genre: str | None = None
     group_kind: str | None = None
+    content: bool = False
     page: int = 1
 
 
@@ -76,8 +77,24 @@ def search_items(
     conn: sqlite3.Connection,
     query: str,
     filters: SearchFilters | None = None,
-) -> list[sqlite3.Row]:
+) -> list[dict[str, object]]:
     filters = filters or SearchFilters()
+    rows = _name_search_items(conn, query, filters)
+    if filters.content and query:
+        seen = {int(row["item_id"]) for row in rows}
+        for row in _content_search_items(conn, query, filters):
+            if int(row["item_id"]) in seen:
+                continue
+            rows.append(row)
+            seen.add(int(row["item_id"]))
+    return rows[:PAGE_SIZE]
+
+
+def _name_search_items(
+    conn: sqlite3.Connection,
+    query: str,
+    filters: SearchFilters,
+) -> list[dict[str, object]]:
     where, params = _where(filters)
     match = _match_query(query)
     if match:
@@ -87,8 +104,9 @@ def search_items(
     else:
         order = "item_id"
     params.extend([PAGE_SIZE, (filters.page - 1) * PAGE_SIZE])
-    return list(
-        conn.execute(
+    return [
+        dict(row) | {"source": "name"}
+        for row in conn.execute(
             f"""
                 SELECT search_fts.item_id, search_fts.root, search_fts.category,
                    i.relpath AS relpath,
@@ -103,7 +121,43 @@ def search_items(
             """,
             params,
         )
-    )
+    ]
+
+
+def _content_search_items(
+    conn: sqlite3.Connection,
+    query: str,
+    filters: SearchFilters,
+) -> list[dict[str, object]]:
+    match = _match_query(query)
+    if not match:
+        return []
+    clauses = ["content_fts MATCH ?"]
+    params: list[object] = [match]
+    if filters.category:
+        clauses.append("COALESCE(search_fts.category, '')=?")
+        params.append(filters.category)
+    if filters.root:
+        clauses.append("i.root=?")
+        params.append(filters.root)
+    params.extend([PAGE_SIZE, (filters.page - 1) * PAGE_SIZE])
+    return [
+        dict(row) | {"source": "content", "name": row["relpath"], "clean_name": row["relpath"]}
+        for row in conn.execute(
+            f"""
+            SELECT content_fts.item_id, i.root, COALESCE(search_fts.category, 'misc') AS category,
+                   i.relpath AS relpath,
+                   snippet(content_fts, 0, '<mark>', '</mark>', '...', 16) AS snippet
+            FROM content_fts
+            JOIN items i ON i.id = content_fts.item_id
+            LEFT JOIN search_fts ON search_fts.item_id = i.id
+            WHERE {" AND ".join(clauses)}
+            ORDER BY bm25(content_fts)
+            LIMIT ? OFFSET ?
+            """,
+            params,
+        )
+    ]
 
 
 def search_data(
@@ -113,7 +167,7 @@ def search_data(
     filters: SearchFilters | None = None,
 ) -> dict[str, object]:
     filters = filters or SearchFilters()
-    rows = [dict(row) for row in search_items(conn, query, filters)]
+    rows = search_items(conn, query, filters)
     for row in rows:
         row["host_path"] = host_path(settings, row["root"], row["relpath"])
         row["history_count"] = conn.execute(

@@ -5,6 +5,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from librairy.config import Settings
+from librairy.content.extract import process_content_extractions
 from librairy.db import connect
 from librairy.models import EvidenceEntry
 from librairy.proposals import upsert_proposal
@@ -20,6 +21,7 @@ def client_for(tmp_path: Path) -> tuple[TestClient, object, Settings]:
         QUARANTINE_DIR=tmp_path / "quarantine",
         HOST_LIBRARY_DIR=Path("/mnt/user/library"),
         FILE_STABILITY_SECONDS=0,
+        CONTENT_SEARCH_ENABLED=True,
         _env_file=None,
     )
     settings.inbox_dir.mkdir()
@@ -69,6 +71,24 @@ def test_search_first_visit_and_empty_state_are_keyboard_operable(tmp_path: Path
     assert "placeholder=\"queen night opera\"" in first.text
     assert "<button type=\"submit\">Search</button>" in first.text
     assert "[WARN] no matching indexed items" in empty.text
+
+
+def test_search_content_facet_renders_marker_and_snippet(tmp_path: Path) -> None:
+    client, conn, settings = client_for(tmp_path)
+    seed_library(conn, settings, "Documents/doc_0042.txt", "documents")
+    (settings.library_dir / "Documents/doc_0042.txt").write_text(
+        "inside text mentions coding",
+        encoding="utf-8",
+    )
+    conn.execute("UPDATE items SET fingerprint='changed' WHERE relpath='Documents/doc_0042.txt'")
+    process_content_extractions(conn, settings)
+
+    without_content = client.get("/search/results?q=coding")
+    with_content = client.get("/search/results?q=coding&content=true")
+
+    assert "doc_0042.txt" not in without_content.text
+    assert "[CONTENT]" in with_content.text
+    assert "<mark>coding</mark>" in with_content.text
 
 
 def seed_library(conn, settings: Settings, relpath: str, category: str) -> int:

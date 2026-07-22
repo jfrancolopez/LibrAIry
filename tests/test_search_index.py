@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from librairy.config import Settings
+from librairy.content.extract import process_content_extractions, rebuild_content_index
 from librairy.db import (
     MIGRATION_001,
     MIGRATION_002,
@@ -25,7 +26,7 @@ from librairy.planner import approve_plan, create_plan
 from librairy.proposals import upsert_proposal
 from librairy.quarantine import quarantine_operation
 from librairy.scanner import scan_root
-from librairy.search import rebuild_search_index, search_checksum, search_items
+from librairy.search import SearchFilters, rebuild_search_index, search_checksum, search_items
 
 
 def settings_for(tmp_path: Path) -> Settings:
@@ -35,6 +36,7 @@ def settings_for(tmp_path: Path) -> Settings:
         LIBRARY_DIR=tmp_path / "library",
         QUARANTINE_DIR=tmp_path / "quarantine",
         FILE_STABILITY_SECONDS=0,
+        CONTENT_SEARCH_ENABLED=True,
         _env_file=None,
     )
 
@@ -134,6 +136,56 @@ def test_index_rebuild_cli(tmp_path: Path) -> None:
 
     assert result.returncode == 0
     assert json.loads(result.stdout) == {"indexed": 0}
+
+
+def test_content_search_facet_finds_inner_text_only_when_enabled(tmp_path: Path) -> None:
+    settings = settings_for(tmp_path)
+    settings.library_dir.mkdir()
+    conn = connect(settings)
+    path = settings.library_dir / "Documents/doc_0042.txt"
+    path.parent.mkdir(parents=True)
+    path.write_text("this file talks about coding", encoding="utf-8")
+    conn.execute(
+        """
+        INSERT INTO items(root, relpath, size, mtime_ns, fingerprint, first_seen_at, last_seen_at)
+        VALUES ('library', 'Documents/doc_0042.txt', ?, ?, 'fp-content', 'now', 'now')
+        """,
+        (path.stat().st_size, path.stat().st_mtime_ns),
+    )
+    rebuild_search_index(conn)
+    process_content_extractions(conn, settings)
+
+    assert search_items(conn, "coding", SearchFilters(content=False)) == []
+    rows = search_items(conn, "coding", SearchFilters(content=True))
+
+    assert rows[0]["relpath"] == "Documents/doc_0042.txt"
+    assert rows[0]["source"] == "content"
+    assert "<mark>coding</mark>" in str(rows[0]["snippet"])
+
+
+def test_content_index_rebuild_reproduces_results(tmp_path: Path) -> None:
+    settings = settings_for(tmp_path)
+    settings.library_dir.mkdir()
+    conn = connect(settings)
+    path = settings.library_dir / "Documents/doc_0042.txt"
+    path.parent.mkdir(parents=True)
+    path.write_text("coding", encoding="utf-8")
+    conn.execute(
+        """
+        INSERT INTO items(root, relpath, size, mtime_ns, fingerprint, first_seen_at, last_seen_at)
+        VALUES ('library', 'Documents/doc_0042.txt', ?, ?, 'fp-content', 'now', 'now')
+        """,
+        (path.stat().st_size, path.stat().st_mtime_ns),
+    )
+    before_count = rebuild_content_index(conn, settings)
+    before = search_items(conn, "coding", SearchFilters(content=True))
+
+    conn.execute("DELETE FROM content_fts")
+    after_count = rebuild_content_index(conn, settings)
+    after = search_items(conn, "coding", SearchFilters(content=True))
+
+    assert before_count == after_count == 1
+    assert [row["item_id"] for row in before] == [row["item_id"] for row in after]
 
 
 @pytest.mark.parametrize("query", ['"', "AND OR", "*", "(unbalanced", "queen 🐍"])

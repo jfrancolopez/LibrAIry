@@ -54,6 +54,13 @@ def process_content_extractions(
     return ExtractionSummary(extracted, skipped, failed)
 
 
+def rebuild_content_index(conn: sqlite3.Connection, settings: Settings) -> int:
+    conn.execute("DELETE FROM content_fts")
+    conn.execute("DELETE FROM content_extractions")
+    enabled_settings = settings.model_copy(update={"content_search_enabled": True})
+    return process_content_extractions(conn, enabled_settings).extracted
+
+
 def extract_item(
     conn: sqlite3.Connection,
     settings: Settings,

@@ -569,9 +569,17 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         root: str | None = None,
         year: int | None = None,
         genre: str | None = None,
+        content: bool = False,
         page: int = 1,
     ) -> HTMLResponse:
-        filters = SearchFilters(category=category, root=root, year=year, genre=genre, page=page)
+        filters = SearchFilters(
+            category=category,
+            root=root,
+            year=year,
+            genre=genre,
+            content=content,
+            page=page,
+        )
         return TEMPLATES.TemplateResponse(
             request,
             "search.html",
@@ -586,9 +594,17 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         root: str | None = None,
         year: int | None = None,
         genre: str | None = None,
+        content: bool = False,
         page: int = 1,
     ) -> HTMLResponse:
-        filters = SearchFilters(category=category, root=root, year=year, genre=genre, page=page)
+        filters = SearchFilters(
+            category=category,
+            root=root,
+            year=year,
+            genre=genre,
+            content=content,
+            page=page,
+        )
         return TEMPLATES.TemplateResponse(
             request,
             "partials/search_results.html",

@@ -15,6 +15,7 @@ from librairy.ai.registry import provider_chain
 from librairy.ai.status import list_provider_status, upsert_provider_status
 from librairy.classify import analyze_items
 from librairy.config import Settings, validate_or_die
+from librairy.content.extract import rebuild_content_index
 from librairy.db import connect, database_path
 from librairy.executor import execute_plan
 from librairy.history import list_history, undo_op, undo_plan
@@ -98,7 +99,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     index = subparsers.add_parser("index", help="Search index utilities")
     index_subparsers = index.add_subparsers(dest="index_command")
-    index_subparsers.add_parser("rebuild", help="Rebuild the FTS search index")
+    index_rebuild = index_subparsers.add_parser("rebuild", help="Rebuild the FTS search index")
+    index_rebuild.add_argument(
+        "--content",
+        action="store_true",
+        help="Rebuild document content FTS",
+    )
 
     ai = subparsers.add_parser("ai", help="AI provider utilities")
     ai_subparsers = ai.add_subparsers(dest="ai_command")
@@ -192,6 +198,8 @@ def _dispatch(args: argparse.Namespace, conn: sqlite3.Connection, settings: Sett
         run_forever(conn, settings)
         return {"stopped": True}
     if args.command == "index" and args.index_command == "rebuild":
+        if args.content:
+            return {"content_indexed": rebuild_content_index(conn, settings)}
         return {"indexed": rebuild_search_index(conn)}
     return None
 

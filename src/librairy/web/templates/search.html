@@ -8,6 +8,7 @@
     <label>Root <select name="root"><option value="">any</option><option value="library">library</option><option value="inbox">inbox</option><option value="quarantine">quarantine</option></select></label>
     <label>Year <input name="year" type="number" value="{{ filters.year or '' }}"></label>
     <label>Genre <input name="genre" value="{{ filters.genre or '' }}"></label>
+    <label><input name="content" type="checkbox" value="true" {% if filters.content %}checked{% endif %}> search inside documents</label>
     <button type="submit">Search</button>
   </form>
   {% include "partials/search_results.html" %}
