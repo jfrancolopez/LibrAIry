@@ -139,10 +139,10 @@ Add AI as one more evidence source in the classification cascade — behind the 
 **Depends on:** —
 **Description:** `ai/redact.py`: `RedactedItemView` + `build_view(item, metadata, evidence) -> RedactedItemView` per Design Constraints; the ONLY prompt-input type accepted by `base.Provider.classify`.
 **Acceptance criteria:**
-- [ ] Hostile-metadata test: item with GPS, city/country, camera serial, absolute paths in every field → serialized view contains none of them (string-scan assertions for coordinates, `/data/`, city names from fixture).
-- [ ] View has no field capable of carrying GPS/location (model-schema test).
-- [ ] Display paths are inbox-relative in every case, including nested and unicode paths.
-- [ ] Sibling list is bounded (e.g. ≤20 names) so prompts cannot balloon.
+- [x] Hostile-metadata test: item with GPS, city/country, camera serial, absolute paths in every field → serialized view contains none of them (string-scan assertions for coordinates, `/data/`, city names from fixture).
+- [x] View has no field capable of carrying GPS/location (model-schema test).
+- [x] Display paths are inbox-relative in every case, including nested and unicode paths.
+- [x] Sibling list is bounded (e.g. ≤20 names) so prompts cannot balloon.
 **Size:** M
 
 ### P3-05 Prompt builder + response validation

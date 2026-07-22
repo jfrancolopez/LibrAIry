@@ -5,6 +5,7 @@ from typing import Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from librairy.ai.redact import RedactedItemView
 from librairy.models import Category
 
 
@@ -41,4 +42,4 @@ class Provider(Protocol):
 
     def health(self, timeout: int) -> HealthResult: ...
 
-    def classify(self, view, timeout: int) -> AIAnswer | None: ...
+    def classify(self, view: RedactedItemView, timeout: int) -> AIAnswer | None: ...
