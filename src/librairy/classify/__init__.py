@@ -13,6 +13,15 @@ from librairy.models import EvidenceEntry
 from librairy.proposals import upsert_proposal
 from librairy.scanner import ready_items
 
+CASCADE_EVIDENCE_SOURCES = (
+    "heuristic",
+    "tags",
+    "catalog",
+    "library-pattern",
+    "ai",  # Phase 3 inserts the AI provider source here.
+    "fallback",
+)
+
 
 @dataclass(frozen=True)
 class AnalyzeSummary:
