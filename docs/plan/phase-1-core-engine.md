@@ -236,10 +236,10 @@ CREATE TABLE sessions (                     -- used from Phase 5; created now so
 **Depends on:** P1-03, P1-04
 **Description:** `planner.py`: create a `draft` plan from a list of operation specs (this phase: loaded from a JSON file via CLI; Phase 2+ will generate specs from proposals). Each op captures the source item's current fingerprint. `approve(plan_id)` validates every op (containment via P1-06, source exists, no duplicate sources, no two ops sharing one destination), computes `plan_hash` = sha256 over the canonical JSON serialization of ordered ops, and flips status to `approved`. Any attempt to modify an approved plan's ops fails.
 **Acceptance criteria:**
-- [ ] Draft → approved sets `plan_hash`; recomputing the hash from stored ops matches.
-- [ ] Approval rejects: duplicate source paths, duplicate destinations, missing sources, containment violations — with per-op error messages.
-- [ ] Ops of an approved plan cannot be inserted/updated/deleted (guarded in code; test proves it).
-- [ ] Plan serialization is canonical (stable key order, no float drift) so hashes are reproducible.
+- [x] Draft → approved sets `plan_hash`; recomputing the hash from stored ops matches.
+- [x] Approval rejects: duplicate source paths, duplicate destinations, missing sources, containment violations — with per-op error messages.
+- [x] Ops of an approved plan cannot be inserted/updated/deleted (guarded in code; test proves it).
+- [x] Plan serialization is canonical (stable key order, no float drift) so hashes are reproducible.
 **Test notes:** golden hash test with a fixed fixture plan.
 **Size:** M
 
