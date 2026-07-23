@@ -119,7 +119,8 @@ def test_browse_templates_have_no_mutating_affordances(tmp_path: Path) -> None:
         f"/items/{item_id}"
     ).text
 
-    html = re.sub(r'<form class="nav-form".*?</form>', "", html, flags=re.S)
+    # The shared app header (logout form) is chrome, not a browse affordance.
+    html = re.sub(r"<header class=\"app-header\".*?</header>", "", html, flags=re.S)
 
     assert "<form" not in html
     assert "hx-post" not in html

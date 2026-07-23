@@ -55,10 +55,10 @@ def test_first_visit_banner_dismissal_survives_logout_login(tmp_path: Path) -> N
     client.post("/login", data={"password": "correct horse battery"})
     after_login = client.get("/dashboard")
 
-    assert "FIRST VISIT" in first.text
+    assert 'id="welcome-banner"' in first.text
     assert dismissed.status_code == 200
-    assert "FIRST VISIT" not in second.text
-    assert "FIRST VISIT" not in after_login.text
+    assert 'id="welcome-banner"' not in second.text
+    assert 'id="welcome-banner"' not in after_login.text
 
 
 def test_fresh_install_empty_states_are_purposeful(tmp_path: Path) -> None:
@@ -96,7 +96,7 @@ def test_logout_control_renders_in_authenticated_header(tmp_path: Path) -> None:
 
     assert dashboard.text.count('action="/logout"') == 1
     assert settings.text.count('action="/logout"') == 1
-    assert "[OK] LOGOUT" in dashboard.text
+    assert "Log out" in dashboard.text
     assert "<button type=\"submit\">Logout</button>" not in dashboard.text
     assert logout.status_code == 302
     assert logout.headers["location"] == "/login"

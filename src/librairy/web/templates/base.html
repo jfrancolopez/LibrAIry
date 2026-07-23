@@ -10,42 +10,53 @@
   </head>
   <body>
     <div class="scanlines" aria-hidden="true"></div>
-    <header class="terminal-header">
-      <a class="wordmark" href="/">LIBRAIRY</a>
-      <nav aria-label="Primary navigation">
-        <a href="/settings">[OK] {{ provider_header() }}</a>
-        <a href="/dashboard">[OK] DASH</a>
-        <a href="/search">[OK] SEARCH</a>
-        <a href="/browse">[OK] BROWSE</a>
-        <a href="/access">[OK] ACCESS</a>
-        <a href="/review">[OK] REVIEW</a>
-        <a href="/commit">[OK] COMMIT</a>
-        <a href="/quarantine">[OK] QUARANTINE</a>
-        <a href="/history">[OK] HISTORY</a>
-        <a href="/health">[OK] HEALTH</a>
-        {% if request.state.session and portal_password_set() %}
-          <form class="nav-form" method="post" action="/logout">
-            <input type="hidden" name="csrf_token" value="{{ request.state.session.csrf_token }}">
-            <button type="submit">[OK] LOGOUT</button>
-          </form>
-        {% endif %}
+    <header class="app-header">
+      <a class="wordmark" href="/dashboard">LibrAIry</a>
+      <nav class="app-nav" aria-label="Primary navigation">
+        {% set navitems = [
+          ('/dashboard', 'Dashboard'),
+          ('/search', 'Search'),
+          ('/browse', 'Browse'),
+          ('/review', 'Review'),
+          ('/commit', 'Commit'),
+          ('/quarantine', 'Quarantine'),
+          ('/history', 'History'),
+          ('/health', 'Health'),
+          ('/access', 'Access')
+        ] %}
+        {% for href, label in navitems %}
+          <a href="{{ href }}"{% if request.url.path.startswith(href) %} class="active" aria-current="page"{% endif %}>{{ label }}</a>
+        {% endfor %}
       </nav>
+      <div class="app-account">
+        <a class="provider-pill" href="/settings" title="AI provider status">{{ provider_header() }}</a>
+        <a href="/settings">Settings</a>
+        {% if request.state.session and portal_password_set() %}
+          <form class="logout-form" method="post" action="/logout">
+            <input type="hidden" name="csrf_token" value="{{ request.state.session.csrf_token }}">
+            <button type="submit" class="btn-ghost">Log out</button>
+          </form>
+        {% elif request.state.session %}
+          <a href="/settings#portal-security">Set password</a>
+        {% endif %}
+      </div>
     </header>
     <main class="shell">
       {% if request.url.path == '/dashboard' and welcome_banner_visible(request) %}
         <section id="welcome-banner" class="panel">
-          <p class="status">[OK] FIRST VISIT</p>
-          <p>Drop files into your inbox, wait for analysis, review proposals, then commit approved moves. LibrAIry never deletes files or rewrites your existing library.</p>
-          <a href="/dashboard">Start at Dashboard</a>
-          <a href="/review">Review Queue</a>
-          <a href="/access">Open Library Help</a>
-          <button hx-post="/welcome/dismiss" hx-target="#welcome-banner" hx-swap="outerHTML" hx-headers='{"x-csrf-token":"{{ request.state.session.csrf_token }}"}'>Dismiss</button>
+          <h2>Welcome to LibrAIry</h2>
+          <p>Drop files into your inbox, wait for analysis, review the proposals, then commit the moves you approve. LibrAIry never deletes files or rewrites your existing library.</p>
+          <p>
+            <a class="btn btn-primary" href="/review">Go to review queue</a>
+            <a class="btn" href="/access">Library access help</a>
+            <button class="btn-ghost" hx-post="/welcome/dismiss" hx-target="#welcome-banner" hx-swap="outerHTML" hx-headers='{"x-csrf-token":"{{ request.state.session.csrf_token }}"}'>Dismiss</button>
+          </p>
         </section>
       {% endif %}
       <section class="panel">
         {% block content %}{% endblock %}
       </section>
     </main>
-    <footer class="terminal-footer">LibrAIry v{{ app_version }}</footer>
+    <footer class="app-footer">LibrAIry v{{ app_version }}</footer>
   </body>
 </html>

@@ -114,7 +114,7 @@ def test_open_portal_serves_pages_without_a_password(tmp_path: Path) -> None:
     assert dashboard.status_code == 200
     assert SESSION_COOKIE in client.cookies
     assert client.get("/login", follow_redirects=False).headers["location"] == "/dashboard"
-    assert "[OK] LOGOUT" not in dashboard.text
+    assert "Log out" not in dashboard.text
     assert (
         conn.execute("SELECT 1 FROM settings WHERE key='auth.admin_password'").fetchone() is None
     )
