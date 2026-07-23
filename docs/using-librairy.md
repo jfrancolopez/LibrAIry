@@ -1,6 +1,6 @@
 # Using LibrAIry
 
-1. Open the portal and create the admin password.
+1. Open the portal. It goes straight to the dashboard; setting a password is optional (Settings -> Portal Security).
 2. Drop files or folders into the inbox host path.
 3. Watch Dashboard and Health for worker progress.
 4. Open Review, approve/edit/reject/postpone proposals.

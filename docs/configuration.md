@@ -48,6 +48,7 @@ Configuration has two layers. Boot-time environment variables define paths, port
 | `BACKUP_REMOTE` | Default rclone remote destination, e.g. `b2:librairy-backup`. |
 | `BACKUP_BANDWIDTH_LIMIT` | Optional rclone bandwidth limit. |
 | `BACKUP_SCHEDULE` | Backup schedule setting; `after_commit` is the default. |
+| `AUTH_REQUIRED` | `false` (default) leaves the portal open on your LAN with no password. `true` forces first-run password setup and blocks password removal. |
 | `BACKUP_INCLUDE_DB_SNAPSHOT` | Whether backup includes a SQLite appdata snapshot. |
 | `PUID` | Container file-owner UID, default `99`. |
 | `PGID` | Container file-owner GID, default `100`. |

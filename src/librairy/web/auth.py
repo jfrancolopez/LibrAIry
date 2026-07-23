@@ -57,6 +57,15 @@ def set_admin_password(conn: sqlite3.Connection, password: str) -> None:
     )
 
 
+def clear_admin_password(conn: sqlite3.Connection) -> None:
+    conn.execute("DELETE FROM settings WHERE key=?", (ADMIN_PASSWORD_KEY,))
+
+
+def portal_is_open(conn: sqlite3.Connection, auth_required: bool) -> bool:
+    """True when the portal serves pages without a login: no password, none demanded."""
+    return not auth_required and not has_admin_password(conn)
+
+
 def verify_admin_password(conn: sqlite3.Connection, password: str) -> bool:
     row = conn.execute("SELECT value FROM settings WHERE key=?", (ADMIN_PASSWORD_KEY,)).fetchone()
     if row is None:
@@ -95,6 +104,12 @@ def create_session(conn: sqlite3.Connection) -> Session:
         (token_hash, str(now), str(expires), csrf_token),
     )
     return Session(token, csrf_token)
+
+
+def session_row(conn: sqlite3.Connection, token: str) -> sqlite3.Row | None:
+    return conn.execute(
+        "SELECT * FROM sessions WHERE token_hash=?", (_token_hash(token),)
+    ).fetchone()
 
 
 def session_from_request(conn: sqlite3.Connection, request: Request) -> sqlite3.Row | None:

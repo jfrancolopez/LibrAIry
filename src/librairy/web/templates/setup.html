@@ -2,9 +2,16 @@
 {% block content %}
   <p class="status">[OK] FIRST RUN</p>
   <h1>Create Admin Password</h1>
-  <p class="muted">This protects the LAN web portal. After setup, LibrAIry starts at the dashboard and keeps scanning in the background.</p>
+  {% if password_optional %}
+    <p class="muted">A password is optional. LibrAIry assumes a trusted LAN, so the portal is open by default — set one here if the host is reachable from anywhere else. You can also set or remove it later in Settings.</p>
+  {% else %}
+    <p class="muted">This protects the LAN web portal. After setup, LibrAIry starts at the dashboard and keeps scanning in the background.</p>
+  {% endif %}
   <form method="post" action="/setup">
     <label>Password <input type="password" name="password" required minlength="8"></label>
     <button type="submit">Initialize Secure Portal</button>
   </form>
+  {% if password_optional %}
+    <p><a href="/dashboard">Skip — continue without a password</a></p>
+  {% endif %}
 {% endblock %}

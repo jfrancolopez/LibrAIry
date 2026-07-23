@@ -33,7 +33,7 @@ In UNRAID, open Docker, choose Add Container, select the LibrAIry template, then
 - PUID/PGID: default `99`/`100` (`nobody:users`) works for standard UNRAID shares.
 - Ollama Host: your LAN Ollama URL, often `http://host.docker.internal:11434` or `http://<machine-ip>:11434`.
 
-Open the WebUI at `http://<unraid-ip>:8080`, create the admin password, then drop files into the inbox.
+Open the WebUI at `http://<unraid-ip>:8080` and drop files into the inbox. The portal is open by default; set a password in Settings -> Portal Security, or set `AUTH_REQUIRED=true` to require one from first run.
 
 ## Ownership
 

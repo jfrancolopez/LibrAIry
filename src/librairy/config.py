@@ -83,6 +83,7 @@ class Settings(BaseSettings):
     backup_bandwidth_limit: str = Field("", alias="BACKUP_BANDWIDTH_LIMIT")
     backup_schedule: str = Field("after_commit", alias="BACKUP_SCHEDULE")
     backup_include_db_snapshot: bool = Field(True, alias="BACKUP_INCLUDE_DB_SNAPSHOT")
+    auth_required: bool = Field(False, alias="AUTH_REQUIRED")
 
     ENV_EXAMPLE: ClassVar[tuple[str, ...]] = (
         "# =============================================================================",
@@ -238,6 +239,20 @@ class Settings(BaseSettings):
         "BACKUP_BANDWIDTH_LIMIT=",
         "BACKUP_SCHEDULE=after_commit",
         "BACKUP_INCLUDE_DB_SNAPSHOT=true",
+        "",
+        "",
+        "# =============================================================================",
+        "# PORTAL ACCESS",
+        "# =============================================================================",
+        "# The portal is open on your LAN by default: no password, straight to the",
+        "# dashboard. Set a password any time from Settings -> Portal Security.",
+        "#",
+        "# Set AUTH_REQUIRED=true to force first-run password setup and refuse to run",
+        "# the portal without one (recommended if the host is reachable beyond a",
+        "# trusted LAN).",
+        "# =============================================================================",
+        "",
+        "AUTH_REQUIRED=false",
         "",
         "",
         "# =============================================================================",

@@ -9,13 +9,14 @@ from librairy.db import connect
 from librairy.web.app import create_app
 
 
-def client_for(tmp_path: Path) -> TestClient:
+def client_for(tmp_path: Path, *, auth_required: bool = True) -> TestClient:
     settings = Settings(
         APPDATA_DIR=tmp_path / "appdata",
         INBOX_DIR=tmp_path / "inbox",
         LIBRARY_DIR=tmp_path / "library",
         QUARANTINE_DIR=tmp_path / "quarantine",
         HOST_INBOX_DIR=Path("/mnt/user/dropbox/inbox"),
+        AUTH_REQUIRED=auth_required,
         _env_file=None,
     )
     for path in (settings.inbox_dir, settings.library_dir, settings.quarantine_dir):
@@ -30,6 +31,14 @@ def test_setup_screen_explains_first_run(tmp_path: Path) -> None:
     assert response.status_code == 200
     assert "protects the LAN web portal" in response.text
     assert "Initialize Secure Portal" in response.text
+
+
+def test_setup_screen_offers_to_skip_when_password_is_optional(tmp_path: Path) -> None:
+    response = client_for(tmp_path, auth_required=False).get("/setup")
+
+    assert response.status_code == 200
+    assert "A password is optional" in response.text
+    assert "Skip — continue without a password" in response.text
 
 
 def test_first_visit_banner_dismissal_survives_logout_login(tmp_path: Path) -> None:

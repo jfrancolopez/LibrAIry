@@ -32,11 +32,14 @@ from librairy.settings_service import (
 from librairy.web.auth import (
     SESSION_COOKIE,
     LoginRateLimiter,
+    clear_admin_password,
     create_session,
     delete_session,
     dismiss_welcome_banner,
     has_admin_password,
+    portal_is_open,
     session_from_request,
+    session_row,
     set_admin_password,
     verify_admin_password,
     welcome_banner_visible,
@@ -87,19 +90,23 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
     TEMPLATES.env.globals["welcome_banner_visible"] = lambda request: welcome_banner_visible(
         conn, request.state.session
     )
-    app.middleware("http")(_auth_and_security(conn))
+    TEMPLATES.env.globals["portal_password_set"] = lambda: has_admin_password(conn)
+    app.middleware("http")(_auth_and_security(conn, settings))
 
     @app.get("/", include_in_schema=False)
     def index() -> RedirectResponse:
-        return RedirectResponse(
-            "/setup" if not has_admin_password(conn) else "/dashboard", status_code=302
-        )
+        needs_setup = settings.auth_required and not has_admin_password(conn)
+        return RedirectResponse("/setup" if needs_setup else "/dashboard", status_code=302)
 
     @app.get("/setup", response_class=HTMLResponse)
     def setup(request: Request) -> HTMLResponse:
         if has_admin_password(conn):
             return RedirectResponse("/login", status_code=302)
-        return TEMPLATES.TemplateResponse(request, "setup.html", {"title": "First Run Setup"})
+        return TEMPLATES.TemplateResponse(
+            request,
+            "setup.html",
+            {"title": "First Run Setup", "password_optional": not settings.auth_required},
+        )
 
     @app.post("/setup")
     def setup_submit(password: str = Form(...)) -> RedirectResponse:
@@ -114,6 +121,8 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
 
     @app.get("/login", response_class=HTMLResponse)
     def login(request: Request) -> HTMLResponse:
+        if portal_is_open(conn, settings.auth_required):
+            return RedirectResponse("/dashboard", status_code=302)
         return TEMPLATES.TemplateResponse(request, "login.html", {"title": "Login"})
 
     @app.post("/login")
@@ -134,6 +143,21 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         if request.headers.get("HX-Request"):
             return HTMLResponse("", status_code=204, headers={"HX-Redirect": "/settings?saved=1"})
         return RedirectResponse("/settings?saved=1", status_code=302)
+
+    def _settings_error(request: Request, message: str) -> HTMLResponse:
+        return TEMPLATES.TemplateResponse(
+            request,
+            "settings.html",
+            {
+                "title": "Settings",
+                "csrf_token": request.state.session["csrf_token"],
+                "error": message,
+                "saved": False,
+                "storage_paths": _storage_paths(),
+                **settings_page_data(conn, settings),
+            },
+            status_code=422,
+        )
 
     def _storage_paths() -> list[dict[str, str]]:
         return [
@@ -158,10 +182,44 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
     @app.post("/logout")
     def logout(request: Request) -> RedirectResponse:
         delete_session(conn, request.cookies.get(SESSION_COOKIE))
-        response = RedirectResponse("/login", status_code=302)
+        destination = "/dashboard" if portal_is_open(conn, settings.auth_required) else "/login"
+        response = RedirectResponse(destination, status_code=302)
         response.delete_cookie(SESSION_COOKIE)
         response.delete_cookie("csrf_token")
         return response
+
+    @app.post("/settings/password", response_class=HTMLResponse)
+    async def settings_password(request: Request) -> Response:
+        form = await _request_form(request)
+        new_password = str(form.get("new_password", ""))
+        try:
+            if has_admin_password(conn) and not verify_admin_password(
+                conn, str(form.get("current_password", ""))
+            ):
+                raise SettingsValidationError("current password is incorrect")
+            if len(new_password) < 8:
+                raise SettingsValidationError("password must be at least 8 characters")
+            if new_password != str(form.get("confirm_password", "")):
+                raise SettingsValidationError("passwords do not match")
+        except SettingsValidationError as exc:
+            return _settings_error(request, str(exc))
+        set_admin_password(conn, new_password)
+        return _settings_redirect(request)
+
+    @app.post("/settings/password/remove", response_class=HTMLResponse)
+    async def settings_password_remove(request: Request) -> Response:
+        form = await _request_form(request)
+        try:
+            if settings.auth_required:
+                raise SettingsValidationError(
+                    "AUTH_REQUIRED=true: the portal password cannot be removed"
+                )
+            if not verify_admin_password(conn, str(form.get("current_password", ""))):
+                raise SettingsValidationError("current password is incorrect")
+        except SettingsValidationError as exc:
+            return _settings_error(request, str(exc))
+        clear_admin_password(conn)
+        return _settings_redirect(request)
 
     @app.post("/welcome/dismiss", response_class=HTMLResponse)
     def welcome_dismiss(request: Request) -> HTMLResponse:
@@ -228,7 +286,7 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
 
     @app.post("/settings", response_class=HTMLResponse)
     async def settings_submit(request: Request) -> HTMLResponse:
-        form = await request.form()
+        form = await _request_form(request)
         dedup_values = {
             "use_fingerprints": "use_fingerprints" in form,
             "use_rmlint": "use_rmlint" in form,
@@ -258,24 +316,12 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
                     template_style_value=str(form.get(f"template_{category}", "conventional")),
                 )
         except (ValueError, DedupConfigError, SettingsValidationError) as exc:
-            return TEMPLATES.TemplateResponse(
-                request,
-                "settings.html",
-                {
-                    "title": "Settings",
-                    "csrf_token": request.state.session["csrf_token"],
-                    "error": str(exc),
-                    "saved": False,
-                    "storage_paths": _storage_paths(),
-                    **settings_page_data(conn, settings),
-                },
-                status_code=422,
-            )
+            return _settings_error(request, str(exc))
         return _settings_redirect(request)
 
     @app.post("/settings/providers/ollama", response_class=HTMLResponse)
     async def settings_provider_add(request: Request) -> Response:
-        form = await request.form()
+        form = await _request_form(request)
         try:
             add_ollama_endpoint(
                 conn,
@@ -297,19 +343,19 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
     async def settings_provider_toggle(
         request: Request, name: str
     ) -> Response:
-        form = await request.form()
+        form = await _request_form(request)
         set_ollama_enabled(conn, settings, name, "enabled" in form)
         return _settings_redirect(request)
 
     @app.post("/settings/providers/order", response_class=HTMLResponse)
     async def settings_provider_order(request: Request) -> Response:
-        form = await request.form()
+        form = await _request_form(request)
         reorder_providers(conn, settings, str(form.get("order", "")).split(","))
         return _settings_redirect(request)
 
     @app.post("/settings/providers/cloud/{kind}/enable", response_class=HTMLResponse)
     async def settings_cloud_enable(request: Request, kind: str) -> Response:
-        form = await request.form()
+        form = await _request_form(request)
         try:
             enable_cloud_provider(conn, settings, kind, confirm=str(form.get("confirm", "")))
         except SettingsValidationError as exc:
@@ -729,10 +775,22 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
     return app
 
 
-def _auth_and_security(conn: sqlite3.Connection):
+def _auth_and_security(conn: sqlite3.Connection, settings: Settings):
     async def middleware(request: Request, call_next):
         path = request.url.path
         session = session_from_request(conn, request)
+        issued_token: str | None = None
+        if (
+            session is None
+            and _protected_path(path)
+            and request.method in {"GET", "HEAD"}
+            and portal_is_open(conn, settings.auth_required)
+        ):
+            # Open portal: mint a session on page loads so CSRF tokens and the
+            # session-shaped template context keep working without a login.
+            issued = create_session(conn)
+            issued_token = issued.token
+            session = session_row(conn, issued.token)
         request.state.session = session
         if _protected_path(path) and session is None:
             response = RedirectResponse("/login", status_code=302)
@@ -744,6 +802,11 @@ def _auth_and_security(conn: sqlite3.Connection):
                 response = await call_next(request)
         else:
             response = await call_next(request)
+        if issued_token is not None and session is not None:
+            _set_session_cookie(response, issued_token)
+            response.set_cookie(
+                "csrf_token", session["csrf_token"], httponly=False, samesite="lax"
+            )
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Content-Security-Policy"] = "default-src 'self'"
@@ -759,16 +822,30 @@ async def _csrf_form_token(request: Request) -> str | None:
         and "multipart/form-data" not in content_type
     ):
         return None
-    form = await request.form()
+    form = await _request_form(request)
     token = form.get("csrf_token")
     return str(token) if token is not None else None
+
+
+async def _request_form(request: Request):
+    """Read the form once per request.
+
+    The CSRF middleware has to parse the body to find a `csrf_token` field, which
+    drains the receive stream — route handlers building their own `Request` would
+    then see an empty form. The parsed form is cached in the shared request scope.
+    """
+    cached = getattr(request.state, "form", None)
+    if cached is None:
+        cached = await request.form()
+        request.state.form = cached
+    return cached
 
 
 def _protected_path(path: str) -> bool:
     return not (path in EXEMPT_PATHS or path.startswith("/static/"))
 
 
-def _set_session_cookie(response: RedirectResponse, token: str) -> None:
+def _set_session_cookie(response: Response, token: str) -> None:
     response.set_cookie(
         SESSION_COOKIE,
         token,

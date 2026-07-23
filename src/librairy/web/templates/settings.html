@@ -18,6 +18,38 @@
   </table>
 </section>
 
+<section class="metric wide" id="portal-security">
+  <h2>Portal Security</h2>
+  {% if portal_password_set() %}
+    <p class="muted">A portal password is set. Everyone on your LAN needs it to reach LibrAIry.</p>
+    <form method="post" action="/settings/password">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Current password <input type="password" name="current_password" required></label>
+      <label>New password <input type="password" name="new_password" required minlength="8"></label>
+      <label>Confirm new password <input type="password" name="confirm_password" required minlength="8"></label>
+      <button type="submit">[OK] CHANGE PASSWORD</button>
+    </form>
+    {% if auth_required %}
+      <p class="muted">AUTH_REQUIRED=true is set in the environment, so the password cannot be removed here.</p>
+    {% else %}
+      <form method="post" action="/settings/password/remove">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label>Current password <input type="password" name="current_password" required></label>
+        <button type="submit">[WARN] REMOVE PASSWORD</button>
+      </form>
+      <p class="muted">Removing the password reopens the portal to anyone who can reach this host on the network.</p>
+    {% endif %}
+  {% else %}
+    <p class="muted">The portal is open: no password, straight to the dashboard. That is fine on a trusted LAN — set a password if this host is reachable from anywhere else.</p>
+    <form method="post" action="/settings/password">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>New password <input type="password" name="new_password" required minlength="8"></label>
+      <label>Confirm password <input type="password" name="confirm_password" required minlength="8"></label>
+      <button type="submit">[OK] SET PASSWORD</button>
+    </form>
+  {% endif %}
+</section>
+
 <form method="post" action="/settings" hx-post="/settings" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>
   <h2>Analysis</h2>
   <label>Confidence threshold

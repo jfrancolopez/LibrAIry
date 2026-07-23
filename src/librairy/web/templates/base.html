@@ -22,7 +22,7 @@
         <a href="/quarantine">[OK] QUARANTINE</a>
         <a href="/history">[OK] HISTORY</a>
         <a href="/health">[OK] HEALTH</a>
-        {% if request.state.session %}
+        {% if request.state.session and portal_password_set() %}
           <form class="nav-form" method="post" action="/logout">
             <input type="hidden" name="csrf_token" value="{{ request.state.session.csrf_token }}">
             <button type="submit">[OK] LOGOUT</button>

@@ -7,8 +7,10 @@ from librairy.db import connect
 from librairy.web.app import create_app
 
 
-def client_for(tmp_path):
-    settings = Settings(APPDATA_DIR=tmp_path / "appdata", _env_file=None)
+def client_for(tmp_path, *, auth_required: bool = True):
+    settings = Settings(
+        APPDATA_DIR=tmp_path / "appdata", AUTH_REQUIRED=auth_required, _env_file=None
+    )
     return TestClient(create_app(settings, connect(settings)))
 
 

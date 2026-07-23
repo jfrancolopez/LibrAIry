@@ -12,7 +12,7 @@ mkdir -p data/inbox data/library data/quarantine data/appdata
 docker compose up -d --build
 ```
 
-Open `http://localhost:8080`, create the admin password, then drop files into `data/inbox`.
+Open `http://localhost:8080` and drop files into `data/inbox`. No password is required on a trusted LAN; set one any time in Settings -> Portal Security, or force it at boot with `AUTH_REQUIRED=true`.
 
 ## What You Get
 

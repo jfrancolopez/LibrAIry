@@ -14,6 +14,7 @@ from librairy.web.auth import SESSION_COOKIE
 def client_for(tmp_path: Path) -> tuple[TestClient, object]:
     settings = Settings(
         APPDATA_DIR=tmp_path / "appdata",
+        AUTH_REQUIRED=True,
         INBOX_DIR=tmp_path / "inbox",
         LIBRARY_DIR=tmp_path / "library",
         QUARANTINE_DIR=tmp_path / "quarantine",

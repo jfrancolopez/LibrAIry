@@ -56,6 +56,7 @@ def settings_page_data(conn: sqlite3.Connection, settings: Settings) -> dict[str
         "provider_order": provider_order(conn, settings),
         "cloud_providers": CLOUD_PROVIDERS,
         "backup_remotes": configured_remotes(settings),
+        "auth_required": settings.auth_required,
     }
 
 
