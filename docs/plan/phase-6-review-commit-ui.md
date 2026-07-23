@@ -1,6 +1,6 @@
 # Phase 6 — Review Queue, Commit, Quarantine, History UI
 
-**Status:** IN PROGRESS
+**Status:** DONE — remaining boxes publish-gated, see phase-10
 **Depends on:** Phase 5 (web foundation) DONE
 **Size:** M/L (this is the product's core loop in the browser)
 

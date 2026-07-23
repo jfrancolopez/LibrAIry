@@ -1,6 +1,6 @@
 # Phase 1 — Core Safety Engine + Project Foundation
 
-**Status:** IN PROGRESS
+**Status:** DONE — remaining boxes publish-gated, see phase-10
 **Depends on:** none (first phase)
 **Size:** L (largest phase — deliberately: a scaffold-only phase would leave nothing testable as a system)
 

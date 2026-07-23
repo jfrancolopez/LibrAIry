@@ -9,6 +9,9 @@ The old single-file operations guide has been replaced by focused documentation:
 - [Troubleshooting](docs/troubleshooting.md)
 - [Security](docs/security.md)
 - [Backup and restore](docs/backup-restore.md)
+- [One-way backup](docs/backup.md)
+- [Content search](docs/content-search.md)
+- [Performance](docs/performance.md)
 - [FAQ](docs/faq.md)
 
 Start with Docker install or UNRAID install, then use the web portal walkthrough.

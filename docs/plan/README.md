@@ -15,15 +15,15 @@ This directory contains the complete, phased backlog to take LibrAIry from its c
 
 | # | File | Title | Depends on | Status |
 |---|------|-------|-----------|--------|
-| 1 | [phase-1-core-engine.md](phase-1-core-engine.md) | Core safety engine + project foundation | — | NOT STARTED |
-| 2 | [phase-2-classification.md](phase-2-classification.md) | Classification engine (catalog + heuristics, no AI) | 1 | NOT STARTED |
-| 3 | [phase-3-ai-providers.md](phase-3-ai-providers.md) | AI provider layer + privacy redaction | 2 | NOT STARTED |
-| 4 | [phase-4-dedup-worker.md](phase-4-dedup-worker.md) | Dedup, background worker, bash retirement | 3 | NOT STARTED |
-| 5 | [phase-5-web-foundation.md](phase-5-web-foundation.md) | Web shell: auth, Pip-Boy theme, dashboard, health | 4 | NOT STARTED |
-| 6 | [phase-6-review-commit-ui.md](phase-6-review-commit-ui.md) | Review queue, commit, quarantine, history UI | 5 | NOT STARTED |
-| 7 | [phase-7-search-settings.md](phase-7-search-settings.md) | Search/browse, settings, AI provider selector | 6 | NOT STARTED |
-| 8 | [phase-8-release.md](phase-8-release.md) | Release hardening, UNRAID packaging, v1.0 | 7 | NOT STARTED |
-| 9 | [phase-9-fast-follows.md](phase-9-fast-follows.md) | Post-1.0: document text search, rclone backup | 8 | NOT STARTED |
+| 1 | [phase-1-core-engine.md](phase-1-core-engine.md) | Core safety engine + project foundation | — | DONE |
+| 2 | [phase-2-classification.md](phase-2-classification.md) | Classification engine (catalog + heuristics, no AI) | 1 | DONE |
+| 3 | [phase-3-ai-providers.md](phase-3-ai-providers.md) | AI provider layer + privacy redaction | 2 | DONE |
+| 4 | [phase-4-dedup-worker.md](phase-4-dedup-worker.md) | Dedup, background worker, bash retirement | 3 | DONE |
+| 5 | [phase-5-web-foundation.md](phase-5-web-foundation.md) | Web shell: auth, Pip-Boy theme, dashboard, health | 4 | DONE |
+| 6 | [phase-6-review-commit-ui.md](phase-6-review-commit-ui.md) | Review queue, commit, quarantine, history UI | 5 | DONE |
+| 7 | [phase-7-search-settings.md](phase-7-search-settings.md) | Search/browse, settings, AI provider selector | 6 | DONE |
+| 8 | [phase-8-release.md](phase-8-release.md) | Release hardening, UNRAID packaging, v1.0 | 7 | DONE |
+| 9 | [phase-9-fast-follows.md](phase-9-fast-follows.md) | Post-1.0: document text search, rclone backup | 8 | DONE |
 | 10 | [phase-10-release-acceptance.md](phase-10-release-acceptance.md) | Release acceptance & v1.0.0 publish | 9 | NOT STARTED |
 | 11 | [phase-11-tui.md](phase-11-tui.md) | Terminal UI (`librairy tui`) | 10, 14 | NOT STARTED |
 | 12 | [phase-12-portal-fixes.md](phase-12-portal-fixes.md) | Portal defect fixes (pre-v1.0-tag blockers) | 10 (P10-01..05) | NOT STARTED |
@@ -32,6 +32,8 @@ This directory contains the complete, phased backlog to take LibrAIry from its c
 | 15 | [phase-15-catalog-expansion.md](phase-15-catalog-expansion.md) | Catalog expansion + web API key entry (v1.2) | 14 | NOT STARTED |
 
 Dependency shape: linear 1 → … → 9 for the original v1.0 build (phases 1–4 headless, 5–7 web, 8 packages, 9 fast-follows). Post-completion order (owner-decided 2026-07-23): **P10-01..05 → phase 12 (defect fixes) → P10-06 (tag v1.0.0) → 13 (theme, v1.1) → 14 (redesigns) → 15 (catalogs, v1.2) → 11 (TUI last, so it inherits the final design language).**
+
+All phases 1–9 were executed on 2026-07-21/22. Migration numbers inside phase-doc Design Constraints are planning-time estimates; `src/librairy/db.py` (`SCHEMA_VERSION = 10`) is authoritative. Publish-gated leftovers are tracked in `CHANGELOG.md`.
 
 ---
 

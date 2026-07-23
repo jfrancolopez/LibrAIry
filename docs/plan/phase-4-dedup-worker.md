@@ -1,6 +1,6 @@
 # Phase 4 — Dedup, Background Worker, Bash Retirement
 
-**Status:** IN PROGRESS
+**Status:** DONE — remaining boxes publish-gated, see phase-10
 **Depends on:** Phase 3 (AI providers) DONE
 **Size:** M/L
 

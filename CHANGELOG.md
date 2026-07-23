@@ -24,4 +24,3 @@ LibrAIry v1 is a self-hosted, privacy-first file organizer for NAS and desktop D
 
 - Docker daemon clean-machine build/run verification.
 - Real UNRAID template drill.
-- Full 50k performance smoke with recorded numbers.

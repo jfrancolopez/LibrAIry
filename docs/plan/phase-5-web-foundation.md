@@ -1,6 +1,6 @@
 # Phase 5 — Web Foundation: Auth, Pip-Boy Theme, Dashboard, Health
 
-**Status:** IN PROGRESS
+**Status:** DONE — remaining boxes publish-gated, see phase-10
 **Depends on:** Phase 4 (worker + bash retirement) DONE
 **Size:** M
 

@@ -1,6 +1,6 @@
 # Phase 9 — Post-1.0 Fast-Follows: Document Text Search, rclone One-Way Backup
 
-**Status:** IN PROGRESS
+**Status:** DONE — remaining boxes publish-gated, see phase-10
 **Depends on:** Phase 8 (v1.0 released) DONE
 **Size:** M (two independent features; may be executed as two separate runs, P9-01..02 then P9-03..05)
 
