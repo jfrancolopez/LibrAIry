@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import json
+import subprocess
 from pathlib import Path
 
 from librairy.config import Settings
-from librairy.tools.common import ToolResult
 from librairy.tools.czkawka import parse_similar_media, similar_media
 
 
@@ -34,13 +35,17 @@ def test_parse_czkawka_similarity_groups() -> None:
 def test_czkawka_extensions_change_invocation(tmp_path: Path, monkeypatch) -> None:
     calls: list[list[str]] = []
 
-    def fake_run(command: list[str], settings: Settings) -> ToolResult:
+    def fake_run(command: list[str], **kwargs) -> subprocess.CompletedProcess[str]:  # noqa: ANN003
         calls.append(command)
-        return ToolResult(True, data=[])
+        output_path = Path(command[command.index("-C") + 1])
+        output_path.write_text(json.dumps([]), encoding="utf-8")
+        return subprocess.CompletedProcess(command, 0, "", "")
 
-    monkeypatch.setattr("librairy.tools.czkawka.run_json_tool", fake_run)
+    monkeypatch.setattr("librairy.tools.czkawka.shutil.which", lambda binary: f"/bin/{binary}")
+    monkeypatch.setattr("librairy.tools.czkawka.subprocess.run", fake_run)
 
     result = similar_media([tmp_path / "inbox"], "image", settings_for(tmp_path))
 
     assert result.ok is True
-    assert calls[0][-2:] == ["-e", "jpg,png"]
+    assert "-C" in calls[0]
+    assert calls[0][-2:] == ["-x", "jpg,png"]
