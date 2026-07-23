@@ -1,0 +1,3 @@
+Meeting notes about the LibrAIry v1.0 release drill.
+Attendees: Franco.
+Decision: ship it.

@@ -25,9 +25,13 @@ This directory contains the complete, phased backlog to take LibrAIry from its c
 | 8 | [phase-8-release.md](phase-8-release.md) | Release hardening, UNRAID packaging, v1.0 | 7 | NOT STARTED |
 | 9 | [phase-9-fast-follows.md](phase-9-fast-follows.md) | Post-1.0: document text search, rclone backup | 8 | NOT STARTED |
 | 10 | [phase-10-release-acceptance.md](phase-10-release-acceptance.md) | Release acceptance & v1.0.0 publish | 9 | NOT STARTED |
-| 11 | [phase-11-tui.md](phase-11-tui.md) | Pip-Boy terminal UI (`librairy tui`) → v1.1.0 | 10 | NOT STARTED |
+| 11 | [phase-11-tui.md](phase-11-tui.md) | Terminal UI (`librairy tui`) | 10, 14 | NOT STARTED |
+| 12 | [phase-12-portal-fixes.md](phase-12-portal-fixes.md) | Portal defect fixes (pre-v1.0-tag blockers) | 10 (P10-01..05) | NOT STARTED |
+| 13 | [phase-13-theme-system.md](phase-13-theme-system.md) | Theme system + settings UX (v1.1) | 12 | NOT STARTED |
+| 14 | [phase-14-screen-redesigns.md](phase-14-screen-redesigns.md) | Screen redesigns: dashboard/review/browse/history/health | 13 | NOT STARTED |
+| 15 | [phase-15-catalog-expansion.md](phase-15-catalog-expansion.md) | Catalog expansion + web API key entry (v1.2) | 14 | NOT STARTED |
 
-Dependency shape: strictly linear (1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 → 11). Phases 1–4 are headless (CLI-testable, no browser needed). Phases 5–7 build the web experience on the proven engine. Phase 8 packages. Phase 9 is optional post-release work. Phase 10 performs the deferred release-acceptance gates and publishes v1.0.0; phase 11 adds the SSH terminal UI as v1.1.0.
+Dependency shape: linear 1 → … → 9 for the original v1.0 build (phases 1–4 headless, 5–7 web, 8 packages, 9 fast-follows). Post-completion order (owner-decided 2026-07-23): **P10-01..05 → phase 12 (defect fixes) → P10-06 (tag v1.0.0) → 13 (theme, v1.1) → 14 (redesigns) → 15 (catalogs, v1.2) → 11 (TUI last, so it inherits the final design language).**
 
 ---
 
