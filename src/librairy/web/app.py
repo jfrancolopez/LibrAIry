@@ -135,6 +135,26 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             return HTMLResponse("", status_code=204, headers={"HX-Redirect": "/settings?saved=1"})
         return RedirectResponse("/settings?saved=1", status_code=302)
 
+    def _storage_paths() -> list[dict[str, str]]:
+        return [
+            {"name": "Inbox", "host": str(settings.host_inbox_dir), "container": "/data/inbox"},
+            {
+                "name": "Library",
+                "host": str(settings.host_library_dir),
+                "container": "/data/library",
+            },
+            {
+                "name": "Quarantine",
+                "host": str(settings.host_quarantine_dir),
+                "container": "/data/quarantine",
+            },
+            {
+                "name": "Appdata",
+                "host": str(settings.host_appdata_dir),
+                "container": "/data/appdata",
+            },
+        ]
+
     @app.post("/logout")
     def logout(request: Request) -> RedirectResponse:
         delete_session(conn, request.cookies.get(SESSION_COOKIE))
@@ -190,6 +210,7 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
                 "csrf_token": request.state.session["csrf_token"],
                 "error": None,
                 "saved": request.query_params.get("saved") == "1",
+                "storage_paths": _storage_paths(),
                 **settings_page_data(conn, settings),
             },
         )
@@ -245,6 +266,7 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
                     "csrf_token": request.state.session["csrf_token"],
                     "error": str(exc),
                     "saved": False,
+                    "storage_paths": _storage_paths(),
                     **settings_page_data(conn, settings),
                 },
                 status_code=422,

@@ -32,6 +32,28 @@ Inside the container they always mount as:
 /data/appdata
 ```
 
+## Using Test Folders On macOS
+
+For a safe local drill, point the host paths at throwaway folders on your Desktop:
+
+```bash
+mkdir -p ~/Desktop/librairy-test-inbox \
+  ~/Desktop/librairy-test-library \
+  ~/Desktop/librairy-test-quarantine \
+  ~/Desktop/librairy-test-appdata
+```
+
+Then set these values in `.env`:
+
+```text
+HOST_INBOX_DIR=/Users/<you>/Desktop/librairy-test-inbox
+HOST_LIBRARY_DIR=/Users/<you>/Desktop/librairy-test-library
+HOST_QUARANTINE_DIR=/Users/<you>/Desktop/librairy-test-quarantine
+HOST_APPDATA_DIR=/Users/<you>/Desktop/librairy-test-appdata
+```
+
+Apply the new bind mounts with `docker compose up -d --build`. Docker Desktop must be allowed to share the parent folder; `~/Desktop` is shared by default on standard macOS installs. The Settings screen shows these host paths read-only so you can confirm which folders the running container is using.
+
 ## Plain Docker Run
 
 ```bash

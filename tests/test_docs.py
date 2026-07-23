@@ -85,3 +85,11 @@ def test_content_search_privacy_assertions_match_code() -> None:
     assert "content.extract" not in ai_imports
     assert "content_fts" not in ai_imports
     assert "content" not in RedactedItemView.model_fields
+
+
+def test_docker_docs_include_macos_test_folder_walkthrough() -> None:
+    docker_docs = (ROOT / "docs/install-docker.md").read_text(encoding="utf-8")
+
+    assert "Using Test Folders On macOS" in docker_docs
+    assert "HOST_INBOX_DIR=/Users/<you>/Desktop/librairy-test-inbox" in docker_docs
+    assert "docker compose up -d --build" in docker_docs

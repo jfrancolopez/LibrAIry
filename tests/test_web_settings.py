@@ -190,6 +190,23 @@ def test_settings_lists_rclone_remotes_without_credentials(tmp_path: Path) -> No
     assert "do-not-render" not in response.text
 
 
+def test_settings_shows_storage_paths_read_only(tmp_path: Path) -> None:
+    client, _, _ = client_for(
+        tmp_path,
+        HOST_INBOX_DIR=Path("/Users/test/Desktop/librairy-test-inbox"),
+        HOST_LIBRARY_DIR=Path("/Users/test/Desktop/librairy-test-library"),
+        HOST_QUARANTINE_DIR=Path("/Users/test/Desktop/librairy-test-quarantine"),
+        HOST_APPDATA_DIR=Path("/Users/test/Desktop/librairy-test-appdata"),
+    )
+
+    response = client.get("/settings")
+
+    assert "Storage Paths" in response.text
+    assert "/Users/test/Desktop/librairy-test-inbox" in response.text
+    assert "/data/inbox" in response.text
+    assert "Set these in `.env`" in response.text
+
+
 def test_settings_apply_to_next_analysis_batch(tmp_path: Path) -> None:
     _, conn, settings = client_for(tmp_path, CONFIDENCE_THRESHOLD=0.8)
     save_settings(

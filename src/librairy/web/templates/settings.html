@@ -5,6 +5,19 @@
 {% if saved %}<p class="status" id="settings-result">[OK] SETTINGS SAVED</p>{% endif %}
 {% if error %}<p class="status warn" id="settings-error">[WARN] {{ error }}</p>{% endif %}
 
+<section class="metric wide">
+  <h2>Storage Paths</h2>
+  <p class="muted">Read-only at runtime. Set these in `.env`, then run `docker compose up -d` to recreate the container with new mounts.</p>
+  <table>
+    <thead><tr><th>Use</th><th>Host path</th><th>Container path</th></tr></thead>
+    <tbody>
+      {% for path in storage_paths %}
+        <tr><th>{{ path.name }}</th><td>{{ path.host }}</td><td>{{ path.container }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
 <form method="post" action="/settings" hx-post="/settings" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>
   <h2>Analysis</h2>
   <label>Confidence threshold
