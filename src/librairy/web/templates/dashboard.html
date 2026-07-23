@@ -5,8 +5,4 @@
   <div id="dashboard-stats" hx-get="/dashboard/stats" hx-trigger="every 5s" hx-swap="outerHTML">
     {% include "partials/dashboard_stats.html" %}
   </div>
-  <form method="post" action="/logout">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <button type="submit">Logout</button>
-  </form>
 {% endblock %}

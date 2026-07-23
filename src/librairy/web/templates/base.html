@@ -22,6 +22,12 @@
         <a href="/quarantine">[OK] QUARANTINE</a>
         <a href="/history">[OK] HISTORY</a>
         <a href="/health">[OK] HEALTH</a>
+        {% if request.state.session %}
+          <form class="nav-form" method="post" action="/logout">
+            <input type="hidden" name="csrf_token" value="{{ request.state.session.csrf_token }}">
+            <button type="submit">[OK] LOGOUT</button>
+          </form>
+        {% endif %}
       </nav>
     </header>
     <main class="shell">

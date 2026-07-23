@@ -54,6 +54,17 @@ nav {
   color: var(--phosphor-dim);
 }
 
+.nav-form {
+  display: inline;
+  margin: 0;
+}
+
+.nav-form button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
 .shell {
   width: min(960px, calc(100% - 2rem));
   margin: clamp(2rem, 8vw, 6rem) auto;
