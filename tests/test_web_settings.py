@@ -422,3 +422,24 @@ def test_thumbnail_cache_is_per_theme(tmp_path: Path) -> None:
     assert amber != beige
     assert "#ffd479" in amber.read_text(encoding="utf-8")
     assert "#145f5b" in beige.read_text(encoding="utf-8")
+
+
+def test_settings_sections_render_in_order_with_save_bar(tmp_path: Path) -> None:
+    client, _, _ = client_for(tmp_path)
+
+    page = client.get("/settings").text
+    order = [
+        "Appearance",
+        "Organization Templates",
+        "Duplicates",
+        "Content Search",
+        "One-Way Backup",
+        "Catalog Keys",
+        "Storage Paths",
+    ]
+    positions = [page.index(heading) for heading in order]
+
+    assert positions == sorted(positions)
+    assert 'id="settings-save-bar"' in page
+    assert 'class="save-bar"' in page
+    assert "/static/settings.js" in page

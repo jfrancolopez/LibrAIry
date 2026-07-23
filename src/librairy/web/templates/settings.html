@@ -5,19 +5,6 @@
 {% if saved %}<p class="status" id="settings-result">[OK] SETTINGS SAVED</p>{% endif %}
 {% if error %}<p class="status warn" id="settings-error">[WARN] {{ error }}</p>{% endif %}
 
-<section class="metric wide">
-  <h2>Storage Paths</h2>
-  <p class="muted">Read-only at runtime. Set these in `.env`, then run `docker compose up -d` to recreate the container with new mounts.</p>
-  <table>
-    <thead><tr><th>Use</th><th>Host path</th><th>Container path</th></tr></thead>
-    <tbody>
-      {% for path in storage_paths %}
-        <tr><th>{{ path.name }}</th><td>{{ path.host }}</td><td>{{ path.container }}</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</section>
-
 <section class="metric wide" id="portal-security">
   <h2>Portal Security</h2>
   {% if portal_password_set() %}
@@ -50,7 +37,7 @@
   {% endif %}
 </section>
 
-<form method="post" action="/settings" hx-post="/settings" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>
+<form id="settings-form" method="post" action="/settings" hx-post="/settings" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>
   <h2>Appearance</h2>
   <p class="muted">Pick a retro palette. Applies on the next page you load — no restart.</p>
   <label>Theme
@@ -67,6 +54,7 @@
   <label><input type="checkbox" name="appearance_background_reset"> Reset background to the theme default</label>
 
   <h2>Analysis</h2>
+  <p class="muted">How confident a proposal must be, and how many files each worker pass handles.</p>
   <label>Confidence threshold
     <input type="range" min="0" max="1" step="0.01" name="confidence_threshold" value="{{ settings_view.confidence_threshold }}">
     <span>{{ "%.2f"|format(settings_view.confidence_threshold) }}</span>
@@ -75,7 +63,8 @@
     <input type="number" min="1" max="1000" name="batch_size" value="{{ settings_view.batch_size }}">
   </label>
 
-  <h2>Destination Templates</h2>
+  <h2>Organization Templates</h2>
+  <p class="muted">The folder layout each category is filed into. The example updates as you switch styles.</p>
   <div class="grid">
     {% for category, styles in template_options.items() %}
       <section class="card">
@@ -92,7 +81,8 @@
     {% endfor %}
   </div>
 
-  <h2>Duplicate Detection</h2>
+  <h2>Duplicates</h2>
+  <p class="muted">Which detectors decide two files are identical, or near-identical media. At least one exact method stays on.</p>
   <label><input type="checkbox" name="use_fingerprints" {% if settings_view.dedup.use_fingerprints %}checked{% endif %}> BLAKE2b fingerprints</label>
   <label><input type="checkbox" name="use_rmlint" {% if settings_view.dedup.use_rmlint %}checked{% endif %}> rmlint exact cross-check</label>
   <label><input type="checkbox" name="use_czkawka" {% if settings_view.dedup.use_czkawka %}checked{% endif %}> czkawka near-media scan</label>
@@ -118,7 +108,8 @@
   <label><input type="checkbox" name="backup_include_db_snapshot" {% if settings_view.backup.include_db_snapshot %}checked{% endif %}> Include SQLite snapshot</label>
   <p class="muted">No credential fields exist here. Configure remotes in appdata/rclone/rclone.conf with rclone itself.</p>
 
-  <h2>API Key Status</h2>
+  <h2>Catalog Keys</h2>
+  <p class="muted">Read-only status. Keys come from environment variables and are never rendered here.</p>
   <table>
     <tbody>
       {% for name, status in settings_view.keys.items() %}
@@ -126,10 +117,26 @@
       {% endfor %}
     </tbody>
   </table>
-  <p class="muted">Secrets are read from environment variables only and are never rendered here.</p>
 
-  <button type="submit">[OK] SAVE SETTINGS</button>
+  <div id="settings-save-bar" class="save-bar" hidden>
+    <span>Unsaved changes</span>
+    <button type="submit">[OK] SAVE SETTINGS</button>
+    <button type="button" id="settings-discard">discard</button>
+  </div>
 </form>
+
+<section class="metric wide">
+  <h2>Storage Paths</h2>
+  <p class="muted">Read-only at runtime. Set these in `.env`, then run `docker compose up -d` to recreate the container with new mounts.</p>
+  <table>
+    <thead><tr><th>Use</th><th>Host path</th><th>Container path</th></tr></thead>
+    <tbody>
+      {% for path in storage_paths %}
+        <tr><th>{{ path.name }}</th><td>{{ path.host }}</td><td>{{ path.container }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
 
 <h2>AI Provider Selector</h2>
 <p class="muted">{{ provider_header() }}. Changes apply to the next analysis batch.</p>
@@ -195,4 +202,6 @@
     {% endfor %}
   </tbody>
 </table>
+
+<script src="/static/settings.js" defer></script>
 {% endblock %}

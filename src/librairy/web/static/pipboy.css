@@ -252,6 +252,29 @@ td span { display: block; }
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
 }
 
+.save-bar {
+  position: sticky;
+  bottom: 1rem;
+  z-index: 5;
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  margin-top: 1.5rem;
+  padding: 0.75rem 1rem;
+  border: var(--border-width) solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+  box-shadow: var(--panel-shadow);
+}
+
+.save-bar[hidden] { display: none; }
+
+.save-bar span {
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
 :focus-visible {
   outline: 3px solid var(--accent);
   outline-offset: 4px;
