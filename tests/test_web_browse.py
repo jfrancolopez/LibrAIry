@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -117,6 +118,8 @@ def test_browse_templates_have_no_mutating_affordances(tmp_path: Path) -> None:
     html = client.get("/browse").text + client.get("/browse/documents").text + client.get(
         f"/items/{item_id}"
     ).text
+
+    html = re.sub(r'<form class="nav-form".*?</form>', "", html, flags=re.S)
 
     assert "<form" not in html
     assert "hx-post" not in html

@@ -44,7 +44,7 @@ def test_recorded_tmdb_movie_fixture_produces_destination(tmp_path: Path) -> Non
     )
 
     assert result.category == "movies"
-    assert result.dest_relpath == "Movies/The Matrix (1999)/The Matrix (1999).mkv"
+    assert result.dest_relpath == "Movies/Action/The Matrix (1999)/The Matrix (1999).mkv"
     assert [entry.source for entry in result.evidence] == ["heuristic", "tmdb"]
 
 
@@ -59,7 +59,7 @@ def test_recorded_tmdb_episode_fixture_groups_season(tmp_path: Path) -> None:
     )
 
     assert result.category == "shows"
-    assert result.dest_relpath == "Shows/Example Show/Season 02/S02E05.mkv"
+    assert result.dest_relpath == "Shows/Sci-Fi/Example Show/Season 02/S02E05.mkv"
     assert result.group_key == "show:Example Show:s02"
 
 
