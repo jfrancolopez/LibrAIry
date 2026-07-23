@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import FastAPI, Form, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -128,6 +128,11 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         response.set_cookie("csrf_token", session.csrf_token, httponly=False, samesite="lax")
         return response
 
+    def _settings_redirect(request: Request) -> Response:
+        if request.headers.get("HX-Request"):
+            return HTMLResponse("", status_code=204, headers={"HX-Redirect": "/settings?saved=1"})
+        return RedirectResponse("/settings?saved=1", status_code=302)
+
     @app.post("/logout")
     def logout(request: Request) -> RedirectResponse:
         delete_session(conn, request.cookies.get(SESSION_COOKIE))
@@ -231,10 +236,10 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
                 },
                 status_code=422,
             )
-        return RedirectResponse("/settings?saved=1", status_code=302)
+        return _settings_redirect(request)
 
     @app.post("/settings/providers/ollama", response_class=HTMLResponse)
-    async def settings_provider_add(request: Request) -> RedirectResponse:
+    async def settings_provider_add(request: Request) -> Response:
         form = await request.form()
         try:
             add_ollama_endpoint(
@@ -246,38 +251,40 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             )
         except SettingsValidationError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
-        return RedirectResponse("/settings?saved=1", status_code=302)
+        return _settings_redirect(request)
 
     @app.post("/settings/providers/ollama/{name}/remove", response_class=HTMLResponse)
-    def settings_provider_remove(name: str) -> RedirectResponse:
+    def settings_provider_remove(request: Request, name: str) -> Response:
         remove_ollama_endpoint(conn, settings, name)
-        return RedirectResponse("/settings?saved=1", status_code=302)
+        return _settings_redirect(request)
 
     @app.post("/settings/providers/ollama/{name}/toggle", response_class=HTMLResponse)
-    async def settings_provider_toggle(request: Request, name: str) -> RedirectResponse:
+    async def settings_provider_toggle(
+        request: Request, name: str
+    ) -> Response:
         form = await request.form()
         set_ollama_enabled(conn, settings, name, "enabled" in form)
-        return RedirectResponse("/settings?saved=1", status_code=302)
+        return _settings_redirect(request)
 
     @app.post("/settings/providers/order", response_class=HTMLResponse)
-    async def settings_provider_order(request: Request) -> RedirectResponse:
+    async def settings_provider_order(request: Request) -> Response:
         form = await request.form()
         reorder_providers(conn, settings, str(form.get("order", "")).split(","))
-        return RedirectResponse("/settings?saved=1", status_code=302)
+        return _settings_redirect(request)
 
     @app.post("/settings/providers/cloud/{kind}/enable", response_class=HTMLResponse)
-    async def settings_cloud_enable(request: Request, kind: str) -> RedirectResponse:
+    async def settings_cloud_enable(request: Request, kind: str) -> Response:
         form = await request.form()
         try:
             enable_cloud_provider(conn, settings, kind, confirm=str(form.get("confirm", "")))
         except SettingsValidationError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
-        return RedirectResponse("/settings?saved=1", status_code=302)
+        return _settings_redirect(request)
 
     @app.post("/settings/providers/cloud/{kind}/disable", response_class=HTMLResponse)
-    def settings_cloud_disable(kind: str) -> RedirectResponse:
+    def settings_cloud_disable(request: Request, kind: str) -> Response:
         disable_cloud_provider(conn, kind)
-        return RedirectResponse("/settings?saved=1", status_code=302)
+        return _settings_redirect(request)
 
     @app.post("/health/providers/{name}", response_class=HTMLResponse)
     def provider_health(request: Request, name: str) -> HTMLResponse:

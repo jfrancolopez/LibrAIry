@@ -115,6 +115,29 @@ def test_settings_post_persists_and_journals_without_secrets(tmp_path: Path) -> 
     assert "sk-openai-secret" not in "\n".join(row["outcome"] for row in entries)
 
 
+def test_settings_hx_post_redirects_without_full_document_swap(tmp_path: Path) -> None:
+    client, _, _ = client_for(tmp_path)
+
+    response = client.post(
+        "/settings",
+        data={
+            "confidence_threshold": "0.8",
+            "batch_size": "50",
+            "use_fingerprints": "on",
+            "use_rmlint": "on",
+            "use_czkawka": "on",
+        },
+        headers={"x-csrf-token": client.cookies["csrf_token"], "HX-Request": "true"},
+        follow_redirects=False,
+    )
+    saved = client.get("/settings?saved=1")
+
+    assert response.status_code == 204
+    assert response.headers["HX-Redirect"] == "/settings?saved=1"
+    assert "<html" not in response.text.lower()
+    assert "[OK] SETTINGS SAVED" in saved.text
+
+
 def test_settings_toggle_content_search_and_backup_apply_next_cycle(tmp_path: Path) -> None:
     client, conn, settings = client_for(tmp_path)
 

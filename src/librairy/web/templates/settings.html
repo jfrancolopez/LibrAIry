@@ -2,10 +2,10 @@
 {% block content %}
 <h1>[OK] SETTINGS</h1>
 <p class="muted">Runtime settings are stored in the LibrAIry database and apply to the next analysis batch. Paths and API keys stay in environment variables.</p>
-{% if saved %}<p class="status" id="settings-result">[OK] settings saved</p>{% endif %}
+{% if saved %}<p class="status" id="settings-result">[OK] SETTINGS SAVED</p>{% endif %}
 {% if error %}<p class="status warn" id="settings-error">[WARN] {{ error }}</p>{% endif %}
 
-<form method="post" action="/settings" hx-post="/settings" hx-target="body" hx-swap="outerHTML" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>
+<form method="post" action="/settings" hx-post="/settings" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>
   <h2>Analysis</h2>
   <label>Confidence threshold
     <input type="range" min="0" max="1" step="0.01" name="confidence_threshold" value="{{ settings_view.confidence_threshold }}">
@@ -73,7 +73,7 @@
 
 <h2>AI Provider Selector</h2>
 <p class="muted">{{ provider_header() }}. Changes apply to the next analysis batch.</p>
-<form method="post" action="/settings/providers/order" hx-post="/settings/providers/order" hx-target="body" hx-swap="outerHTML" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>
+<form method="post" action="/settings/providers/order" hx-post="/settings/providers/order" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>
   <label>Provider kind order
     <input name="order" value="{{ provider_order|join(',') }}">
   </label>
@@ -91,12 +91,12 @@
         <td>{{ provider.model }}</td>
         <td>{% if provider.enabled %}[OK] enabled{% else %}[WARN] disabled{% endif %}</td>
         <td>
-          <form hx-post="/settings/providers/ollama/{{ provider.name }}/toggle" hx-target="body" hx-swap="outerHTML" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>
+          <form hx-post="/settings/providers/ollama/{{ provider.name }}/toggle" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>
             <label><input type="checkbox" name="enabled" {% if provider.enabled %}checked{% endif %}> enabled</label>
             <button>Save</button>
           </form>
           <button hx-post="/health/providers/{{ provider.name }}" hx-target="#provider-test-{{ provider.name }}" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>Test</button>
-          <form hx-post="/settings/providers/ollama/{{ provider.name }}/remove" hx-target="body" hx-swap="outerHTML" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>
+          <form hx-post="/settings/providers/ollama/{{ provider.name }}/remove" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>
             <button>Remove</button>
           </form>
           <span id="provider-test-{{ provider.name }}"></span>
@@ -105,7 +105,7 @@
     {% endfor %}
   </tbody>
 </table>
-<form method="post" action="/settings/providers/ollama" hx-post="/settings/providers/ollama" hx-target="body" hx-swap="outerHTML" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>
+<form method="post" action="/settings/providers/ollama" hx-post="/settings/providers/ollama" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>
   <label>Name <input name="name" placeholder="lan-beast"></label>
   <label>URL <input name="url" placeholder="http://192.168.1.50:11434"></label>
   <label>Model <input name="model" placeholder="qwen3:8b"></label>
@@ -123,9 +123,9 @@
         <td>{% if provider.enabled %}[OK] enabled{% else %}[WARN] disabled{% endif %}</td>
         <td>
           {% if provider.enabled %}
-            <form hx-post="/settings/providers/cloud/{{ provider.kind }}/disable" hx-target="body" hx-swap="outerHTML" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'><button>Disable</button></form>
+            <form hx-post="/settings/providers/cloud/{{ provider.kind }}/disable" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'><button>Disable</button></form>
           {% else %}
-            <form hx-post="/settings/providers/cloud/{{ provider.kind }}/enable" hx-target="body" hx-swap="outerHTML" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>
+            <form hx-post="/settings/providers/cloud/{{ provider.kind }}/enable" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>
               <input name="confirm" placeholder="type CLOUD">
               <button>Enable</button>
             </form>
