@@ -26,6 +26,11 @@ def test_root_redirects_and_static_assets_load(tmp_path) -> None:
     assert css.status_code == 200
     assert "--phosphor" in css.text
     assert htmx.status_code == 200
+    # Guard against the P5-01 placeholder ever shipping again: it disabled every
+    # htmx interaction in the browser while server-side tests stayed green.
+    assert "placeholder" not in htmx.text
+    assert len(htmx.content) > 20000
+    assert "onLoad" in htmx.text
 
 
 def test_setup_shell_has_theme_no_external_assets_and_status_idiom(tmp_path) -> None:
@@ -50,7 +55,10 @@ def test_autoescape_and_security_headers(tmp_path) -> None:
     assert "<script>" not in response.text
     assert response.headers["x-content-type-options"] == "nosniff"
     assert response.headers["x-frame-options"] == "DENY"
-    assert response.headers["content-security-policy"] == "default-src 'self'"
+    csp = response.headers["content-security-policy"]
+    assert "default-src 'self'" in csp
+    assert "style-src 'self' 'unsafe-inline'" in csp
+    assert "script-src" not in csp  # scripts fall back to the strict default-src
 
 
 def test_healthz_is_minimal_json(tmp_path) -> None:

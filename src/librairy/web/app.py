@@ -826,7 +826,13 @@ def _auth_and_security(conn: sqlite3.Connection, settings: Settings):
             )
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
-        response.headers["Content-Security-Policy"] = "default-src 'self'"
+        # Scripts stay locked to same-origin ('self'); inline styles are allowed
+        # so the per-user theme background override (an inline style attribute on
+        # <html>) and htmx's injected indicator styles apply. img data: URIs are
+        # permitted for future inline thumbnails.
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
+        )
         return response
 
     return middleware
