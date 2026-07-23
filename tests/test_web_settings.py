@@ -109,7 +109,7 @@ def test_settings_post_persists_and_journals_without_secrets(tmp_path: Path) -> 
     assert {row["src_relpath"] for row in entries} >= {
         "runtime.batch_size",
         "runtime.confidence_threshold",
-        "templates.music.style",
+        "templates.movies.style",
         "dedup.use_rmlint",
     }
     assert "sk-openai-secret" not in "\n".join(row["outcome"] for row in entries)
@@ -136,6 +136,18 @@ def test_settings_hx_post_redirects_without_full_document_swap(tmp_path: Path) -
     assert response.headers["HX-Redirect"] == "/settings?saved=1"
     assert "<html" not in response.text.lower()
     assert "[OK] SETTINGS SAVED" in saved.text
+
+
+def test_template_style_example_updates_without_saving(tmp_path: Path) -> None:
+    client, _, _ = client_for(tmp_path)
+
+    response = client.get(
+        "/settings/template-example",
+        params={"category": "music", "template_music": "conventional"},
+    )
+
+    assert response.status_code == 200
+    assert response.text == "Example: Music/Artist/Album/Example.ext"
 
 
 def test_settings_toggle_content_search_and_backup_apply_next_cycle(tmp_path: Path) -> None:

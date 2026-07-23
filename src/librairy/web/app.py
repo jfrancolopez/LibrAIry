@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+from html import escape
 from pathlib import Path
 from typing import Annotated
 
@@ -20,6 +21,7 @@ from librairy.settings_service import (
     add_ollama_endpoint,
     disable_cloud_provider,
     enable_cloud_provider,
+    example_path,
     provider_header,
     remove_ollama_endpoint,
     reorder_providers,
@@ -191,6 +193,17 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
                 **settings_page_data(conn, settings),
             },
         )
+
+    @app.get("/settings/template-example", response_class=HTMLResponse)
+    def settings_template_example(request: Request, category: str) -> HTMLResponse:
+        style = request.query_params.get("style") or request.query_params.get(
+            f"template_{category}"
+        )
+        try:
+            example = example_path(conn, category, settings, style=style)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return HTMLResponse(f"Example: {escape(example)}")
 
     @app.post("/settings", response_class=HTMLResponse)
     async def settings_submit(request: Request) -> HTMLResponse:

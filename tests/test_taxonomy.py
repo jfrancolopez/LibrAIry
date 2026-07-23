@@ -7,7 +7,7 @@ from pathlib import Path
 from librairy.config import Settings
 from librairy.db import connect
 from librairy.paths import validate_dest
-from librairy.taxonomy import render_destination, set_template_style
+from librairy.taxonomy import render_destination, set_template_style, template_style
 
 
 def base_fields() -> dict[str, object]:
@@ -77,15 +77,26 @@ def test_rendered_paths_sanitize_hostile_tokens(tmp_path: Path) -> None:
         validate_dest(tmp_path, result.relpath)
 
 
-def test_db_style_change_affects_next_render(tmp_path: Path) -> None:
+def test_fresh_default_styles_are_genre_first_for_media(tmp_path: Path) -> None:
+    settings = Settings(APPDATA_DIR=tmp_path / "appdata", _env_file=None)
+    conn = connect(settings)
+
+    assert template_style(conn, "music") == "genre-first"
+    assert template_style(conn, "movies") == "genre-first"
+    assert template_style(conn, "shows") == "genre-first"
+    assert template_style(conn, "books") == "conventional"
+    assert template_style(conn, "photos") == "conventional"
+
+
+def test_persisted_style_change_affects_next_render(tmp_path: Path) -> None:
     settings = Settings(APPDATA_DIR=tmp_path / "appdata", _env_file=None)
     conn = connect(settings)
 
     first = render_destination("music", base_fields(), library_root=tmp_path, conn=conn)
-    set_template_style(conn, "music", "genre-first")
+    set_template_style(conn, "music", "conventional")
     second = render_destination("music", base_fields(), library_root=tmp_path, conn=conn)
 
     assert first.relpath is not None
     assert second.relpath is not None
-    assert first.relpath.startswith("Music/Queen")
-    assert second.relpath.startswith("Music/Rock/Queen")
+    assert first.relpath.startswith("Music/Rock/Queen")
+    assert second.relpath.startswith("Music/Queen")

@@ -21,13 +21,13 @@
       <section class="card">
         <h3>{{ category|upper }}</h3>
         <label>Style
-          <select name="template_{{ category }}">
+          <select name="template_{{ category }}" hx-get="/settings/template-example?category={{ category }}" hx-trigger="change" hx-include="this" hx-target="#template-example-{{ category }}">
             {% for style in styles %}
               <option value="{{ style }}" {% if settings_view.templates[category] == style %}selected{% endif %}>{{ style }}</option>
             {% endfor %}
           </select>
         </label>
-        <p class="muted">Example: {{ examples[category] }}</p>
+        <p class="muted" id="template-example-{{ category }}">Example: {{ examples[category] }}</p>
       </section>
     {% endfor %}
   </div>

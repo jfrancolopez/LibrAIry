@@ -12,6 +12,11 @@ from librairy.paths import PathValidationError, sanitize_component, validate_des
 
 CATEGORIES = ("music", "movies", "shows", "photos", "documents", "books", "projects", "misc")
 DEFAULT_STYLE = "conventional"
+DEFAULT_STYLES = {
+    "music": "genre-first",
+    "movies": "genre-first",
+    "shows": "genre-first",
+}
 
 TEMPLATES: dict[str, dict[str, str]] = {
     "music": {
@@ -65,14 +70,15 @@ def render_destination(
 
 
 def template_style(conn: sqlite3.Connection | None, category: str) -> str:
+    default = DEFAULT_STYLES.get(category, DEFAULT_STYLE)
     if conn is None:
-        return DEFAULT_STYLE
+        return default
     row = conn.execute(
         "SELECT value FROM settings WHERE key=?",
         (f"templates.{category}.style",),
     ).fetchone()
     if row is None:
-        return DEFAULT_STYLE
+        return default
     value = json.loads(row["value"])
     return str(value)
 

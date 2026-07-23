@@ -243,7 +243,9 @@ def save_settings(
             _journal_if_changed(conn, setting_key, old, value)
 
 
-def example_path(conn: sqlite3.Connection, category: str, settings: Settings) -> str:
+def example_path(
+    conn: sqlite3.Connection, category: str, settings: Settings, *, style: str | None = None
+) -> str:
     fields = {
         "clean_name": "Example.ext",
         "artist": "Artist",
@@ -257,7 +259,9 @@ def example_path(conn: sqlite3.Connection, category: str, settings: Settings) ->
         "author": "Author",
         "project": "Project",
     }
-    result = render_destination(category, fields, library_root=settings.library_dir, conn=conn)
+    result = render_destination(
+        category, fields, library_root=settings.library_dir, conn=conn, style=style
+    )
     return result.relpath or result.reason or "unavailable"
 
 
