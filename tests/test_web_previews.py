@@ -52,7 +52,7 @@ def test_thumbnail_cache_hit_skips_regeneration(tmp_path: Path, monkeypatch) -> 
     item_id = insert_file(conn, settings, "photo.jpg", b"image")
     calls = []
 
-    def fake_write(target: Path, name: str, kind: str) -> None:
+    def fake_write(target: Path, name: str, kind: str, swatch) -> None:
         calls.append((target, name, kind))
         target.write_text("<svg></svg>", encoding="utf-8")
 

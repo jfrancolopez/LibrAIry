@@ -111,7 +111,7 @@ Turn a feature-complete system into something a stranger installs on their UNRAI
 **Depends on:** Phase 7
 **Description:** Per Design Constraints: multi-stage build, czkawka binary per arch (checksum-verified), pinned versions, non-root + PUID/PGID entrypoint, HEALTHCHECK, `.dockerignore`.
 **Acceptance criteria:**
-- [ ] `docker buildx build --platform linux/amd64,linux/arm64` succeeds; both images pass the CI smoke run (`librairy --help`, `czkawka_cli --version`, ffprobe/exiftool/fpcalc/rmlint present).
+- [x] `docker buildx build --platform linux/amd64,linux/arm64` succeeds; both images pass the CI smoke run (`librairy --help`, `czkawka_cli --version`, ffprobe/exiftool/fpcalc/rmlint present).
 - [x] Files created in mounted volumes are owned by PUID:PGID (test with a scratch mount).
 - [x] Container processes run non-root (`docker top`/test asserts UID ≠ 0).
 - [ ] HEALTHCHECK transitions healthy after boot and unhealthy when the web child is killed.

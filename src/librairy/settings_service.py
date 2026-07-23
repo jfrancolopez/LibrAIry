@@ -25,6 +25,12 @@ from librairy.taxonomy import (
     set_template_style,
     template_style,
 )
+from librairy.web.theme import (
+    DEFAULT_THEME,
+    THEME_NAMES,
+    normalize_background,
+    normalize_theme,
+)
 
 
 class SettingsValidationError(ValueError):
@@ -43,6 +49,7 @@ class RuntimeSettingsView:
     keys: dict[str, str]
     content_search_enabled: bool
     backup: dict[str, object]
+    appearance: dict[str, str]
 
 
 def settings_page_data(conn: sqlite3.Connection, settings: Settings) -> dict[str, object]:
@@ -57,6 +64,7 @@ def settings_page_data(conn: sqlite3.Connection, settings: Settings) -> dict[str
         "cloud_providers": CLOUD_PROVIDERS,
         "backup_remotes": configured_remotes(settings),
         "auth_required": settings.auth_required,
+        "theme_options": THEME_NAMES,
     }
 
 
@@ -178,7 +186,16 @@ def runtime_settings(conn: sqlite3.Connection, settings: Settings) -> RuntimeSet
                 settings.backup_include_db_snapshot,
             ),
         },
+        appearance=appearance_settings(conn),
     )
+
+
+def appearance_settings(conn: sqlite3.Connection) -> dict[str, str]:
+    """Theme + background override, read on every page render (no restart)."""
+    return {
+        "theme": normalize_theme(_setting_value(conn, "appearance.theme", DEFAULT_THEME)),
+        "background": normalize_background(_setting_value(conn, "appearance.background", "")),
+    }
 
 
 def effective_settings(conn: sqlite3.Connection, settings: Settings) -> Settings:
@@ -208,6 +225,7 @@ def save_settings(
     dedup_values: dict[str, bool] | None = None,
     content_search_enabled: bool | None = None,
     backup_values: dict[str, object] | None = None,
+    appearance_values: dict[str, str] | None = None,
 ) -> None:
     if confidence_threshold is not None and not 0 <= confidence_threshold <= 1:
         raise SettingsValidationError("confidence threshold must be between 0 and 1")
@@ -240,6 +258,18 @@ def save_settings(
         for key, value in backup_values.items():
             setting_key = f"backup.{key}"
             old = _setting_value(conn, setting_key, getattr(settings, f"backup_{key}"))
+            _set_json(conn, setting_key, value)
+            _journal_if_changed(conn, setting_key, old, value)
+    if appearance_values:
+        for key, raw in appearance_values.items():
+            if key == "theme":
+                value = normalize_theme(raw)
+            elif key == "background":
+                value = normalize_background(raw)
+            else:
+                raise SettingsValidationError(f"unknown appearance setting: {key}")
+            setting_key = f"appearance.{key}"
+            old = _setting_value(conn, setting_key, "")
             _set_json(conn, setting_key, value)
             _journal_if_changed(conn, setting_key, old, value)
 

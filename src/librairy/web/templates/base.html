@@ -1,5 +1,6 @@
+{% set appearance = appearance_view() %}
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="{{ appearance.theme }}"{% if appearance.background %} style="--bg: {{ appearance.background }}; --bg-glow: {{ appearance.background }}"{% endif %}>
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">

@@ -10,7 +10,7 @@ from librairy.ai.registry import provider_chain
 from librairy.classify import analyze_items
 from librairy.config import Settings
 from librairy.db import connect
-from librairy.settings_service import effective_settings, save_settings
+from librairy.settings_service import effective_settings, runtime_settings, save_settings
 from librairy.web import health as health_module
 from librairy.web.app import create_app
 
@@ -328,3 +328,97 @@ def test_removing_endpoint_after_chain_snapshot_does_not_break_next_chain(tmp_pa
     assert response.status_code == 302
     assert before
     assert all(provider.name != "ollama-primary" for provider in after)
+
+
+def test_theme_selection_round_trips_and_applies_without_restart(tmp_path: Path) -> None:
+    client, conn, settings = client_for(tmp_path)
+    csrf = client.cookies["csrf_token"]
+
+    default_page = client.get("/dashboard")
+    client.post(
+        "/settings",
+        headers={"x-csrf-token": csrf},
+        data={
+            "confidence_threshold": "0.8",
+            "batch_size": "50",
+            "use_fingerprints": "on",
+            "appearance_theme": "crt-amber",
+            "appearance_background": "#101010",
+        },
+    )
+    after = client.get("/dashboard")
+
+    assert 'data-theme="beige-box"' in default_page.text
+    assert 'data-theme="crt-amber"' in after.text
+    assert "--bg: #101010" in after.text
+    assert runtime_settings(conn, settings).appearance == {
+        "theme": "crt-amber",
+        "background": "#101010",
+    }
+
+
+def test_invalid_theme_and_background_fall_back_to_defaults(tmp_path: Path) -> None:
+    client, conn, settings = client_for(tmp_path)
+    csrf = client.cookies["csrf_token"]
+
+    client.post(
+        "/settings",
+        headers={"x-csrf-token": csrf},
+        data={
+            "confidence_threshold": "0.8",
+            "batch_size": "50",
+            "use_fingerprints": "on",
+            "appearance_theme": "hot-pink-deluxe",
+            "appearance_background": "url(javascript:alert(1))",
+        },
+    )
+    page = client.get("/dashboard")
+
+    assert runtime_settings(conn, settings).appearance == {
+        "theme": "beige-box",
+        "background": "",
+    }
+    assert 'data-theme="beige-box"' in page.text
+    assert "javascript" not in page.text
+
+
+def test_background_reset_clears_the_override(tmp_path: Path) -> None:
+    client, conn, settings = client_for(tmp_path)
+    csrf = client.cookies["csrf_token"]
+    base = {
+        "confidence_threshold": "0.8",
+        "batch_size": "50",
+        "use_fingerprints": "on",
+        "appearance_theme": "vaporwave",
+    }
+
+    client.post(
+        "/settings",
+        headers={"x-csrf-token": csrf},
+        data={**base, "appearance_background": "#223344"},
+    )
+    before = runtime_settings(conn, settings).appearance["background"]
+    client.post(
+        "/settings",
+        headers={"x-csrf-token": csrf},
+        data={**base, "appearance_background": "#223344", "appearance_background_reset": "on"},
+    )
+    after = runtime_settings(conn, settings).appearance
+
+    assert before == "#223344"
+    assert after == {"theme": "vaporwave", "background": ""}
+
+
+def test_thumbnail_cache_is_per_theme(tmp_path: Path) -> None:
+    from librairy.web.thumbs import get_thumbnail
+
+    _, _, settings = client_for(tmp_path)
+    source = settings.inbox_dir / "photo.jpg"
+    source.write_bytes(b"image")
+
+    amber = get_thumbnail(settings, source, "image", "fp1", theme="crt-amber")
+    beige = get_thumbnail(settings, source, "image", "fp1", theme="beige-box")
+
+    assert amber != beige
+    assert "#ffd479" in amber.read_text(encoding="utf-8")
+    assert "#145f5b" in beige.read_text(encoding="utf-8")

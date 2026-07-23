@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import html
+import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
 
 from librairy.config import Settings
 from librairy.paths import PathValidationError, validate_dest
+from librairy.web.theme import ThemeSwatch, normalize_theme, swatch_for
 
 LOGGER = logging.getLogger(__name__)
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".heic", ".avif", ".webp"}
@@ -40,7 +42,13 @@ def preview_for_item(conn, settings: Settings, item_id: int) -> Preview:
     kind = _kind(path)
     title = path.name
     if kind in {"image", "video"}:
-        get_thumbnail(settings, path, kind, row["fingerprint"] or f"item-{item_id}")
+        get_thumbnail(
+            settings,
+            path,
+            kind,
+            row["fingerprint"] or f"item-{item_id}",
+            theme=_active_theme(conn),
+        )
         facts = (f"type: {kind}", f"size: {row['size']} bytes")
         return Preview(kind, title, f"/preview/items/{item_id}/thumb", facts)
     if kind == "audio":
@@ -54,16 +62,37 @@ def thumbnail_for_item(conn, settings: Settings, item_id: int) -> Path:
     kind = _kind(path)
     if kind not in {"image", "video"}:
         raise PreviewNotFound("thumbnail unavailable")
-    return get_thumbnail(settings, path, kind, row["fingerprint"] or f"item-{item_id}")
+    return get_thumbnail(
+        settings,
+        path,
+        kind,
+        row["fingerprint"] or f"item-{item_id}",
+        theme=_active_theme(conn),
+    )
 
 
-def get_thumbnail(settings: Settings, source: Path, kind: str, fingerprint: str) -> Path:
+def get_thumbnail(
+    settings: Settings,
+    source: Path,
+    kind: str,
+    fingerprint: str,
+    *,
+    theme: str | None = None,
+) -> Path:
     thumbs = settings.appdata_dir / "thumbs"
     thumbs.mkdir(parents=True, exist_ok=True)
-    target = thumbs / f"{_safe_fingerprint(fingerprint)}-{kind}.svg"
+    # The theme is part of the cache key: switching palettes must repaint the
+    # placeholder rather than serve a thumbnail in the previous theme's colors.
+    name = normalize_theme(theme)
+    target = thumbs / f"{_safe_fingerprint(fingerprint)}-{kind}-{name}.svg"
     if not target.exists():
-        _write_svg_thumbnail(target, source.name, kind)
+        _write_svg_thumbnail(target, source.name, kind, swatch_for(name))
     return target
+
+
+def _active_theme(conn) -> str:
+    row = conn.execute("SELECT value FROM settings WHERE key='appearance.theme'").fetchone()
+    return normalize_theme(json.loads(row["value"]) if row else None)
 
 
 def prune_cache(settings: Settings, max_bytes: int) -> None:
@@ -121,15 +150,15 @@ def _root_path(settings: Settings, root: str) -> Path:
     raise PreviewForbidden("unknown item root")
 
 
-def _write_svg_thumbnail(target: Path, name: str, kind: str) -> None:
+def _write_svg_thumbnail(target: Path, name: str, kind: str, swatch: ThemeSwatch) -> None:
     label = html.escape(f"{kind.upper()} PREVIEW")
     filename = html.escape(name[:48])
-    label_line = _svg_text(82, label, "#ffbf4d", 20)
-    file_line = _svg_text(112, filename, "#56d364", 13)
+    label_line = _svg_text(82, label, swatch.accent, 20)
+    file_line = _svg_text(112, filename, swatch.text, 13)
     target.write_text(
         f"""<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180" viewBox="0 0 320 180">
-<rect width="320" height="180" fill="#061008"/>
-<rect x="10" y="10" width="300" height="160" fill="none" stroke="#56d364" stroke-width="2"/>
+<rect width="320" height="180" fill="{swatch.background}"/>
+<rect x="10" y="10" width="300" height="160" fill="none" stroke="{swatch.border}" stroke-width="2"/>
 {label_line}
 {file_line}
 </svg>""",

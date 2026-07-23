@@ -51,6 +51,21 @@
 </section>
 
 <form method="post" action="/settings" hx-post="/settings" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>
+  <h2>Appearance</h2>
+  <p class="muted">Pick a retro palette. Applies on the next page you load — no restart.</p>
+  <label>Theme
+    <select name="appearance_theme">
+      {% for name in theme_options %}
+        <option value="{{ name }}" {% if settings_view.appearance.theme == name %}selected{% endif %}>{{ name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Background override
+    <input type="color" name="appearance_background" value="{{ settings_view.appearance.background or '#000000' }}">
+  </label>
+  <p class="muted">Leave the override empty to use the theme's own background. Extreme colors can hurt readability — the presets are contrast-checked, custom backgrounds are not.</p>
+  <label><input type="checkbox" name="appearance_background_reset"> Reset background to the theme default</label>
+
   <h2>Analysis</h2>
   <label>Confidence threshold
     <input type="range" min="0" max="1" step="0.01" name="confidence_threshold" value="{{ settings_view.confidence_threshold }}">

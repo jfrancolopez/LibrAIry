@@ -98,7 +98,7 @@ Turn the finished codebase into a published, verified v1.0.0: green CI without d
 4. `tests/test_release.py`: assert `cargo install` absent from Dockerfile, `releases/download` + `sha256sum -c` present, `cache-from` present in the workflow.
 **Acceptance criteria:**
 - [x] No `cargo`/`build-essential` in the Dockerfile; czkawka fetched per-arch with pinned checksum verification.
-- [ ] `czkawka_cli --version` executes in the build on both arches (local: `docker buildx build --platform linux/amd64,linux/arm64 .` at least reaching past that step; full proof in P10-05/06).
+- [x] `czkawka_cli --version` executes in the build on both arches (local: `docker buildx build --platform linux/amd64,linux/arm64 .` at least reaching past that step; full proof in P10-05/06).
 - [x] `latest` tag guarded against pre-release refs; GHA layer cache configured.
 - [x] New/extended release tests green.
 **Size:** S
@@ -185,3 +185,4 @@ Turn the finished codebase into a published, verified v1.0.0: green CI without d
   - Observation, not a defect: two identical files arriving in the *same* inbox batch both got destinations rather than one being flagged. Dedup compares against the committed library, so a duplicate pair with no library counterpart yet is only caught on a later pass. Worth a decision in a future phase.
 - 2026-07-23: **P10-07 was still broken after its own fix**; verifying against the real binary (rather than mocks) found two further silent no-ops, both now fixed and drilled — czkawka takes one `-x` per extension (a comma-joined list excludes every supported type, aborts the scan, writes `[]`, and exits 0), and it exits non-zero *when it finds matches*, so `-W` is required or every successful detection reads as a tool failure. Two similar JPEGs now return one parsed group from a real run.
 - 2026-07-23: remaining unticked boxes in this phase are blocked on things an agent cannot do from here: GitHub Actions annotations and matrix results (no `gh` auth in this environment — CI parity was instead reproduced locally on Python 3.12: `ruff` clean, 355 tests green), the published GHCR image (needs O2, the owner's tag push), and the UNRAID drill (O4).
+- 2026-07-23: **multi-arch build proven locally.** `docker buildx build --platform linux/amd64,linux/arm64 .` completes on both legs using a `docker-container` driver builder (the default `docker` driver cannot do multi-platform). The runtime stage's verification RUN — `ffprobe`, `fpcalc`, `pdftotext`, `rclone`, `rmlint`, `czkawka_cli --version`, `librairy --help` — executed on amd64 under QEMU as well as native arm64, so the prebuilt czkawka 11.0.1 binaries are good on both. This closes P10-02's per-arch box and phase-8's multi-arch smoke box without needing a published image.

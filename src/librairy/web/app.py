@@ -19,6 +19,7 @@ from librairy.search import SearchFilters, rebuild_search_index, search_data
 from librairy.settings_service import (
     SettingsValidationError,
     add_ollama_endpoint,
+    appearance_settings,
     disable_cloud_provider,
     enable_cloud_provider,
     example_path,
@@ -91,6 +92,7 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         conn, request.state.session
     )
     TEMPLATES.env.globals["portal_password_set"] = lambda: has_admin_password(conn)
+    TEMPLATES.env.globals["appearance_view"] = lambda: appearance_settings(conn)
     app.middleware("http")(_auth_and_security(conn, settings))
 
     @app.get("/", include_in_schema=False)
@@ -300,6 +302,14 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
                 batch_size=int(str(form.get("batch_size", "50"))),
                 dedup_values=dedup_values,
                 content_search_enabled="content_search_enabled" in form,
+                appearance_values={
+                    "theme": str(form.get("appearance_theme", "")),
+                    "background": (
+                        ""
+                        if "appearance_background_reset" in form
+                        else str(form.get("appearance_background", "")).strip()
+                    ),
+                },
                 backup_values={
                     "enabled": "backup_enabled" in form,
                     "remote": str(form.get("backup_remote", "")).strip(),

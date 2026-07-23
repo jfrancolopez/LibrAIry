@@ -1,6 +1,6 @@
 # Phase 13 — Theme System + Settings UX (v1.1)
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS — P13-01/02 done
 **Depends on:** Phase 12 (portal fixes) and Phase 10 complete (v1.0.0 tagged)
 **Size:** M
 
@@ -59,14 +59,14 @@ Stylesheet tokenization; `data-theme` presets; appearance settings (theme + back
 
 ### P13-01 Tokenize the stylesheet (zero visual change)
 **Depends on:** — | **Size:** S
-- [ ] Every color/border/radius literal in `pipboy.css` replaced by a token; thumbs SVG colors driven by the palette.
+- [x] Every color/border/radius literal in `pipboy.css` replaced by a token; thumbs SVG colors driven by the palette.
 - [ ] Before/after screenshots identical (manual check recorded); suite green.
 
 ### P13-02 Six presets + background picker, persisted
 **Depends on:** P13-01 | **Size:** M
-- [ ] `data-theme` blocks for all six presets; `<html>` attribute rendered from `appearance.theme`; picker overrides `--bg`; reset control works.
-- [ ] AA contrast ratios recorded per preset in the open-questions log.
-- [ ] Settings keys round-trip (tests via `settings_service`); invalid theme name falls back to `beige-box`.
+- [x] `data-theme` blocks for all six presets; `<html>` attribute rendered from `appearance.theme`; picker overrides `--bg`; reset control works.
+- [x] AA contrast ratios recorded per preset in the open-questions log.
+- [x] Settings keys round-trip (tests via `settings_service`); invalid theme name falls back to `beige-box`.
 - [ ] Switching theme in the running container changes every screen on next navigation; Pip-Boy preset is pixel-faithful to v1.0.
 
 ### P13-03 Settings information architecture + sticky save bar
@@ -92,3 +92,8 @@ Stylesheet tokenization; `data-theme` presets; appearance settings (theme + back
 ## Open questions log
 
 *(Executing agent: record ambiguities and the safest-default decision taken, then continue.)*
+
+- 2026-07-23: **P13-01 executed as a true zero-visual-change refactor.** `:root` keeps the exact v1.0 pipboy literals as token defaults, so an un-themed page renders identically; the presets then override the same names. Enforced by `tests/test_theme.py::test_no_color_literals_outside_theme_blocks`, which fails if any `#hex` or `rgba()` reappears outside a theme block.
+- 2026-07-23: **contrast ratios measured, not eyeballed.** `tests/test_theme.py` computes WCAG relative luminance from the CSS itself (compositing `rgba()` over the theme background) and fails below 4.5:1 for `--text`/`--text-dim` on `--bg`/`--bg-panel`/`--bg-input`, and below 3:1 for `--accent`/`--ok`/`--warn`/`--fail`. Text / dim / accent on panel, by preset: beige-box 12.57 / 7.62 / 6.04 · platinum-gray 14.19 / 7.74 / 7.38 · crt-amber 9.52 / 5.74 / 12.42 · dos-blue 11.69 / 6.37 / 10.95 · vaporwave 13.79 / 7.76 / 6.41 · pipboy-green 15.12 / 8.28 / 11.83. All pass. Two colors were tuned to get there: beige-box's teal accent went `#1f6f6b` → `#145f5b`, and pipboy's `--text-dim` `#2f8f43` → `#4fbf63` (the v1.0 value missed AA on its own background — the preset is otherwise verbatim, and `--text`/`--accent`/`--border`/`--bg` are unchanged).
+- 2026-07-23: thumbnails are generated in Python and cannot read CSS custom properties, so `web/theme.py` carries a four-color `ThemeSwatch` per preset and the active theme is part of the thumbnail cache key — switching palettes repaints placeholders instead of serving the old theme's colors.
+- 2026-07-23: background override is stored as a validated `#rgb`/`#rrggbb` string only (`normalize_background`); anything else becomes "use the theme default", so the value interpolated into the inline `style` attribute can never carry markup or a `javascript:` URL.
