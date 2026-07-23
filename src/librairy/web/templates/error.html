@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
-  <p class="status">[{{ status }}] ROUTE</p>
-  <h1>{{ title }}</h1>
+  <p class="status warn">[ERROR {{ status }}]</p>
+  <h1>{{ title or 'Error' }}</h1>
   <p>{{ message }}</p>
+  <p><a href="/dashboard">Back to dashboard</a> <a href="/history">History</a></p>
 {% endblock %}

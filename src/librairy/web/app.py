@@ -691,7 +691,7 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         return TEMPLATES.TemplateResponse(
             request,
             "error.html",
-            {"title": "Not Found", "status": "FAIL", "message": "Route not found"},
+            {"title": "Not Found", "status": 404, "message": "Route not found"},
             status_code=404,
         )
 
@@ -700,7 +700,7 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         return TEMPLATES.TemplateResponse(
             request,
             "error.html",
-            {"title": "System Fault", "status": "FAIL", "message": "Internal system fault"},
+            {"title": "System Fault", "status": 500, "message": "Internal system fault"},
             status_code=500,
         )
 

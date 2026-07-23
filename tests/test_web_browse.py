@@ -73,6 +73,43 @@ def test_item_detail_shows_preview_metadata_evidence_siblings_and_history(tmp_pa
     assert "/mnt/user/library/Photos/2026/Italy/a.jpg" in response.text
 
 
+def test_item_detail_degrades_when_preview_generation_fails(tmp_path: Path, monkeypatch) -> None:
+    client, conn, settings = client_for(tmp_path)
+    item_id = seed_item(conn, settings, "Photos/2026/Italy/a.jpg", "photos")
+
+    def broken_preview(*args, **kwargs):  # noqa: ANN002, ANN003
+        raise OSError("cache unavailable")
+
+    monkeypatch.setattr("librairy.web.browse.preview_for_item", broken_preview)
+
+    response = client.get(f"/items/{item_id}")
+
+    assert response.status_code == 200
+    assert "preview unavailable" in response.text
+    assert "cache unavailable" in response.text
+
+
+def test_item_detail_degrades_when_evidence_decode_fails(tmp_path: Path) -> None:
+    client, conn, settings = client_for(tmp_path)
+    item_id = seed_item(conn, settings, "Documents/a.txt", "documents")
+    conn.execute("UPDATE proposals SET evidence='not-json' WHERE item_id=?", (item_id,))
+
+    response = client.get(f"/items/{item_id}")
+
+    assert response.status_code == 200
+    assert "evidence unavailable" in response.text
+
+
+def test_error_page_identifies_itself(tmp_path: Path) -> None:
+    client, _, _ = client_for(tmp_path)
+
+    response = client.get("/missing-route")
+
+    assert response.status_code == 404
+    assert "[ERROR 404]" in response.text
+    assert "Back to dashboard" in response.text
+
+
 def test_browse_templates_have_no_mutating_affordances(tmp_path: Path) -> None:
     client, conn, settings = client_for(tmp_path)
     item_id = seed_item(conn, settings, "Documents/a.txt", "documents")

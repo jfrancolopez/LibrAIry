@@ -80,17 +80,27 @@ def item_detail(conn: sqlite3.Connection, settings: Settings, item_id: int) -> d
         (row["root"], row["relpath"], row["root"], row["relpath"]),
     ).fetchall()
     siblings = _siblings(conn, row, proposal)
+    preview_error = None
     try:
         preview = preview_for_item(conn, settings, item_id)
-    except PreviewError:
+    except (OSError, PreviewError) as exc:
         preview = None
+        preview_error = str(exc) or exc.__class__.__name__
+    evidence_error = None
+    try:
+        evidence = decode_evidence(proposal["evidence"]) if proposal else []
+    except (TypeError, ValueError) as exc:
+        evidence = []
+        evidence_error = str(exc) or exc.__class__.__name__
     return {
         "item": row,
         "proposal": proposal,
-        "evidence": decode_evidence(proposal["evidence"]) if proposal else [],
+        "evidence": evidence,
+        "evidence_error": evidence_error,
         "history": history,
         "siblings": siblings,
         "preview": preview,
+        "preview_error": preview_error,
         "host_path": host_path(settings, row["root"], row["relpath"]),
     }
 
