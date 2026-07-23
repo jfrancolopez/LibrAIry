@@ -91,9 +91,13 @@ def test_accents_and_status_colors_stay_distinguishable(theme: str) -> None:
 
 def test_no_color_literals_outside_theme_blocks() -> None:
     without_blocks = re.sub(r'(:root|\[data-theme="[^"]+"\])\s*\{[^}]*\}', "", CSS)
+    without_comments = re.sub(r"/\*.*?\*/", "", without_blocks, flags=re.S)
 
-    assert "#" not in re.sub(r"/\*.*?\*/", "", without_blocks, flags=re.S)
-    assert "rgba(" not in without_blocks
+    # Hex color literals only (ignore `#id` selectors, which contain a letter run
+    # after the `#` rather than 3/6/8 hex digits followed by a boundary).
+    assert not re.search(r"#[0-9a-fA-F]{3}\b|#[0-9a-fA-F]{6}\b|#[0-9a-fA-F]{8}\b", without_comments)
+    assert "rgba(" not in without_comments
+    assert "hsl(" not in without_comments
 
 
 def test_pipboy_preset_reproduces_the_v1_palette() -> None:

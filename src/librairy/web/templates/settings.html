@@ -141,16 +141,32 @@
 
 <section class="metric wide">
   <h2 id="storage">Storage Paths</h2>
-  <p class="muted">Read-only at runtime. Set these in `.env`, then run `docker compose up -d` to recreate the container with new mounts.</p>
+  <p class="muted">These are set when the container starts and can't be changed while it runs (Docker mounts are fixed at launch). Use the generator below to build a <code>.env</code>, then run <code>docker compose up -d</code> to recreate the container with the new folders.</p>
   <table>
     <thead><tr><th>Use</th><th>Host path</th><th>Container path</th></tr></thead>
     <tbody>
       {% for path in storage_paths %}
-        <tr><th>{{ path.name }}</th><td>{{ path.host }}</td><td>{{ path.container }}</td></tr>
+        <tr><th>{{ path.name }}</th><td class="mono">{{ path.host }}</td><td class="mono">{{ path.container }}</td></tr>
       {% endfor %}
     </tbody>
   </table>
+
+  <h3>Set up folders</h3>
+  <div id="path-helper" class="card">
+    <p class="muted">Point LibrAIry at folders on your computer. On macOS, keep them inside your home folder (e.g. the Desktop) so Docker can share them.</p>
+    <button type="button" class="btn-ghost" id="path-example">Use macOS Desktop test folders</button>
+    <label>Inbox (drop files here) <input class="path-field mono" data-key="HOST_INBOX_DIR" value="{{ storage_paths[0].host }}"></label>
+    <label>Library (organized output) <input class="path-field mono" data-key="HOST_LIBRARY_DIR" value="{{ storage_paths[1].host }}"></label>
+    <label>Quarantine (reversible) <input class="path-field mono" data-key="HOST_QUARANTINE_DIR" value="{{ storage_paths[2].host }}"></label>
+    <label>Appdata (database, logs) <input class="path-field mono" data-key="HOST_APPDATA_DIR" value="{{ storage_paths[3].host }}"></label>
+    <label>Paste this into your <code>.env</code>, then run the command below:
+      <textarea id="path-env" class="mono" rows="6" readonly></textarea>
+    </label>
+    <button type="button" class="btn-primary" id="path-copy">Copy .env snippet</button>
+    <p class="mono" id="path-cmd">docker compose up -d</p>
+  </div>
 </section>
+<script src="/static/path-helper.js" defer></script>
 
 <h2 id="providers">AI Provider Selector</h2>
 <p class="muted">{{ provider_header() }}. Changes apply to the next analysis batch.</p>

@@ -204,7 +204,7 @@ def test_settings_shows_storage_paths_read_only(tmp_path: Path) -> None:
     assert "Storage Paths" in response.text
     assert "/Users/test/Desktop/librairy-test-inbox" in response.text
     assert "/data/inbox" in response.text
-    assert "Set these in `.env`" in response.text
+    assert "docker compose up -d" in response.text
 
 
 def test_settings_apply_to_next_analysis_batch(tmp_path: Path) -> None:
@@ -460,3 +460,17 @@ def test_settings_has_section_nav_with_working_anchors(tmp_path: Path) -> None:
                    "content-search", "backup", "catalog-keys", "storage", "providers"):
         assert f'href="#{anchor}"' in page
         assert f'id="{anchor}"' in page
+
+
+def test_settings_storage_path_helper_renders(tmp_path: Path) -> None:
+    client, _, _ = client_for(
+        tmp_path, HOST_INBOX_DIR=Path("/srv/inbox"), HOST_LIBRARY_DIR=Path("/srv/library")
+    )
+
+    page = client.get("/settings").text
+
+    assert 'id="path-helper"' in page
+    assert "/static/path-helper.js" in page
+    assert 'data-key="HOST_INBOX_DIR"' in page
+    assert "/srv/inbox" in page
+    assert "docker compose up -d" in page

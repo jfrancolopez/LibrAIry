@@ -1,6 +1,6 @@
 # Phase 16 — De-Pip-Boy: Friendly UI Foundation & Design System (v1.1)
 
-**Status:** IN PROGRESS — P16-01/02/03/05 DONE (2026-07-23); P16-04/06/07 remain.
+**Status:** IN PROGRESS — P16-01/02/03/05/06 DONE (2026-07-23); P16-04 (form-lint) + P16-07 (screenshots) remain.
 **Depends on:** Phase 13 (theme tokens + presets) DONE. **Execute BEFORE Phase 14** — the screen redesigns inherit the components defined here.
 **Size:** L (foundational; touches every template, no engine changes)
 
@@ -81,7 +81,7 @@ Design tokens (extend Phase 13's set), component CSS (buttons, inputs, cards, ba
 ### P16-06 Storage-paths setup helper (#14)
 **Depends on:** P16-05 | **Size:** S
 **Description:** Runtime remounting is impossible (Docker bind mounts are host-level — stated honestly, per P12-06). Make the *setup* easy instead: the Storage Paths section shows the four current host→container mappings (P12-06) and adds a **copy-paste generator** — inputs for four host paths (prefilled with the current values, with a one-click "use my macOS Desktop test folders" example that fills `~/Desktop/librairy-{inbox,library,quarantine,appdata}`), producing a ready-to-paste `.env` snippet **and** the `docker compose up -d` line, with a note that this recreates the container. No write to the running container; purely a snippet builder (vanilla JS, no secrets).
-- [ ] Section renders current paths + generator; generated `.env` snippet matches the inputs; "Desktop test folders" example fills sensible macOS paths; docs `install-docker.md` cross-links it.
+- [x] Section renders current paths + generator; generated `.env` snippet matches the inputs; "Desktop test folders" example fills sensible macOS paths. (docs cross-link deferred.)
 
 ### P16-07 Screenshots + docs refresh (closes P8-05 / P13-04)
 **Depends on:** P16-03, P16-05 | **Size:** XS

@@ -371,6 +371,11 @@ tbody tr:hover { background: var(--bg-metric); }
 .compare-card.split { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
 
 /* ---- Sticky save bar (Phase 13) -------------------------------------- */
+
+#path-helper { display: grid; gap: var(--space-2); }
+#path-helper textarea { width: 100%; font-size: var(--text-sm); }
+#path-cmd { background: var(--bg-input); padding: var(--space-2) var(--space-3); border-radius: var(--radius-ui); }
+
 .settings-nav {
   display: flex;
   flex-wrap: wrap;
