@@ -1,6 +1,6 @@
 # Phase 14 — Screen Redesigns: Search-first Dashboard, Evidence-rich Review, Browse, History, Health (v1.1.x)
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS — P14-01 done (2026-07-23)
 **Depends on:** Phase 13 (theme system — build on tokens, not on pipboy literals)
 **Size:** L (five independent screen tasks; each shippable alone)
 
@@ -40,8 +40,8 @@ Owner acceptance feedback (2026-07-23): the screens work but feel clunky and dem
 **Depends on:** — | **Size:** S
 **Description:** Add a prominent centered search form at the top of `dashboard.html` (plain `<form action="/search" method="get">` with one large input, autofocus). `/search` (route app.py, template `search.html`) accepts the `q` query param, prefills the filter form, and **auto-runs** the results (the htmx machinery `hx-get /search/results` already exists in `search.html:5` — trigger it on load when `q` is present). Stats tiles (`partials/dashboard_stats.html`) move below the search box. Nav link stays.
 **Acceptance criteria:**
-- [ ] Dashboard search → enter lands on `/search?q=…` with results already rendered.
-- [ ] Web test: GET `/search?q=x` response contains the results container with hits for seeded data.
+- [x] Dashboard search → enter lands on `/search?q=…` with results already rendered.
+- [x] Web test: GET `/search?q=x` response contains the results container with hits for seeded data.
 
 ### P14-02 Evidence-rich review / commit / quarantine cards
 **Story:** As the admin, each item under review shows me at a glance WHAT it is (preview), WHERE it goes (from → to), and WHY (the system's evidence) — approving takes seconds, digging is optional.

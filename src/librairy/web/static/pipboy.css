@@ -301,13 +301,17 @@ button:disabled, .btn:disabled { opacity: 0.55; cursor: not-allowed; }
 .centerpiece { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent-glow); }
 
 /* ---- Search box (dashboard) ------------------------------------------ */
-.search-hero { display: grid; gap: var(--space-3); margin: var(--space-4) 0; }
-.search-hero input[type="search"],
-.search-hero input[name="q"] {
-  width: 100%;
-  font-size: var(--text-lg);
-  min-height: 3rem;
+.search-hero {
+  display: flex;
+  gap: var(--space-3);
+  margin: var(--space-5) 0;
 }
+.search-hero input[type="search"] {
+  flex: 1 1 auto;
+  font-size: var(--text-lg);
+  min-height: 3.25rem;
+}
+.search-hero button { min-height: 3.25rem; padding-inline: var(--space-5); }
 
 /* ---- Tables ----------------------------------------------------------- */
 table { width: 100%; border-collapse: collapse; }

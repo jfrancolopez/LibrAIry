@@ -107,3 +107,19 @@ def seed_library(conn, settings: Settings, relpath: str, category: str) -> int:
         evidence=[EvidenceEntry("heuristic", "category", category, 0.9)],
     )
     return item_id
+
+
+def test_dashboard_search_box_lands_on_results(tmp_path: Path) -> None:
+    client, conn, settings = client_for(tmp_path)
+    queen = seed_library(conn, settings, "Music/Queen/Night Opera/Bohemian.flac", "music")
+
+    dashboard = client.get("/dashboard").text
+    landing = client.get("/search?q=queen opera").text
+
+    # Dashboard has a prominent search box that GETs /search.
+    assert 'class="search-hero"' in dashboard
+    assert 'action="/search"' in dashboard
+    assert 'name="q"' in dashboard
+    # Landing on /search?q=... renders results server-side (no extra click).
+    assert str(queen) in landing
+    assert "Bohemian.flac" in landing
