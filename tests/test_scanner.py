@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import time
 from pathlib import Path
 
 from librairy.config import Settings
@@ -105,6 +106,28 @@ def test_unstable_files_are_not_ready(tmp_path: Path) -> None:
     assert ready_items(conn) == []
     row = conn.execute("SELECT state FROM items WHERE relpath='copying.txt'").fetchone()
     assert row["state"] == "unstable"
+
+
+def test_unchanged_unstable_file_promotes_when_stable(tmp_path: Path) -> None:
+    root = tmp_path / "inbox"
+    root.mkdir()
+    file_path = root / "copying.txt"
+    file_path.write_bytes(b"done copying")
+    settings = settings_for(tmp_path, stability=10)
+    conn = connect(settings)
+
+    first = scan_root(conn, "inbox", root, settings)
+    old = time.time() - 20
+    os.utime(file_path, (old, old))
+    second = scan_root(conn, "inbox", root, settings)
+    row = conn.execute(
+        "SELECT state, fingerprint FROM items WHERE relpath='copying.txt'"
+    ).fetchone()
+
+    assert first.unstable == 1
+    assert second.hashed == 1
+    assert row["state"] == "discovered"
+    assert row["fingerprint"] == digest(b"done copying")
 
 
 def test_symlinks_are_skipped_and_not_followed(tmp_path: Path) -> None:

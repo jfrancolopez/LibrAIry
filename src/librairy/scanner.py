@@ -86,6 +86,7 @@ def scan_root(
                 existing
                 and existing["size"] == stat.st_size
                 and existing["mtime_ns"] == stat.st_mtime_ns
+                and existing["state"] != "unstable"
             ):
                 skipped_unchanged += 1
                 fingerprint = existing["fingerprint"]
