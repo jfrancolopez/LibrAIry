@@ -21,6 +21,8 @@
 
 ---
 
+> **Sequencing note (2026-07-23):** execute **Phase 16 (design system) first.** These five redesigns consume the components (buttons, cards, badges, app shell, evidence card) and the de-Pip-Boy typography defined there — build screens on top of that system, not on the old terminal chrome. The evidence card (P14-02) and the design system's `.card`/`.badge` are the same vocabulary.
+
 ## Phase goal
 
 Owner acceptance feedback (2026-07-23): the screens work but feel clunky and demand too much digging. Five redesigns, all **presentation-layer**: reuse the existing data functions (`web/dashboard.py`, `web/review.py`, `web/commit.py`, `web/browse.py`, `web/history.py`, `web/quarantine.py`, `web/health.py`, `search.py`) — new UI, same engine. No schema changes except where a task explicitly says otherwise.

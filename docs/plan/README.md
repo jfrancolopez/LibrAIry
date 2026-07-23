@@ -30,8 +30,11 @@ This directory contains the complete, phased backlog to take LibrAIry from its c
 | 13 | [phase-13-theme-system.md](phase-13-theme-system.md) | Theme system + settings UX (v1.1) | 12 | IN PROGRESS |
 | 14 | [phase-14-screen-redesigns.md](phase-14-screen-redesigns.md) | Screen redesigns: dashboard/review/browse/history/health | 13 | NOT STARTED |
 | 15 | [phase-15-catalog-expansion.md](phase-15-catalog-expansion.md) | Catalog expansion + web API key entry (v1.2) | 14 | NOT STARTED |
+| 16 | [phase-16-design-system.md](phase-16-design-system.md) | De-Pip-Boy: friendly UI foundation & design system | 13 | NOT STARTED |
 
-Dependency shape: linear 1 → … → 9 for the original v1.0 build (phases 1–4 headless, 5–7 web, 8 packages, 9 fast-follows). Post-completion order (owner-decided 2026-07-23): **P10-01..05 → phase 12 (defect fixes) → P10-06 (tag v1.0.0) → 13 (theme, v1.1) → 14 (redesigns) → 15 (catalogs, v1.2) → 11 (TUI last, so it inherits the final design language).**
+Dependency shape: linear 1 → … → 9 for the original v1.0 build (phases 1–4 headless, 5–7 web, 8 packages, 9 fast-follows). Post-completion order (owner-decided 2026-07-23, revised same day): **P10-01..05 → phase 12 (defect fixes) → P10-06 (tag v1.0.0) → 13 (theme, v1.1; P13-01/02/03 done) → 16 (design system: remove Pip-Boy, friendly components) → 14 (screen redesigns, inheriting the new components) → 15 (catalogs, v1.2) → 11 (TUI last, so it inherits the final design language).** Phase 16 is numbered after 15 but **executes before 14** — the screen redesigns depend on its component library.
+
+**Owner UX amendment (2026-07-23):** the Pip-Boy terminal *idiom* is retired in favor of a clean, friendly, conventional web UI (Phase 16). Retro looks survive as Phase-13 *color* presets only. A separate critical fix the same day: the vendored `htmx.min.js` was a 148-byte placeholder that disabled every browser interaction (dismiss, live examples, review/commit actions) while server tests stayed green — now shipping real htmx 2.0.4. A multi-arch dev image is published at `docker.io/jfrancolopez/librairy:latest` ahead of the formal GHCR v1.0.0 tag.
 
 All phases 1–9 were executed on 2026-07-21/22. Migration numbers inside phase-doc Design Constraints are planning-time estimates; `src/librairy/db.py` (`SCHEMA_VERSION = 10`) is authoritative. Publish-gated leftovers are tracked in `CHANGELOG.md`.
 
@@ -68,7 +71,7 @@ All phases 1–9 were executed on 2026-07-21/22. Migration numbers inside phase-
 - **AI**: Ollama is the default provider; the user typically runs it on a separate LAN machine. Multiple named Ollama endpoints are supported. Default model recommendations: `qwen3:4b` (CPU-only hosts) / `qwen3:8b` (GPU hosts). Cloud providers (OpenAI, Anthropic, Gemini) are individually opt-in. The web UI has a quick provider selector with test-connection, effective without restart, degrading gracefully to heuristics-only when nothing is reachable.
 - **Duplicates**: exact duplicates detected by core BLAKE2b content fingerprints AND an rmlint cross-check (both enabled by default; each tool can be toggled off in settings); near-identical media detected by czkawka. Duplicates are proposed for reversible quarantine — never deleted.
 - **Search**: v1 searches names, metadata, and tags via SQLite FTS5. Text-inside-documents search (pdftotext → FTS5) is a post-1.0 fast-follow. Never Elasticsearch. Media file content is never indexed.
-- **UI style**: Fallout Pip-Boy retro-terminal aesthetic — phosphor green/amber on dark, monospace type, subtle scanlines. A lightweight dashboard and review tool, NOT a file manager.
+- **UI style**: ~~Fallout Pip-Boy retro-terminal aesthetic~~ **(amended 2026-07-23)** — a clean, friendly, conventional web-app UI is the direction (Phase 16). User-friendliness wins every tie. Retro looks (green-on-black, amber CRT, etc.) survive as optional *color themes* (Phase 13), not as the structural idiom. Still a lightweight dashboard and review tool, NOT a file manager. Still vanilla CSS/JS + htmx, no build step, no framework.
 - **UX north star**: pull container → set ENV variables (paths, keys, Ollama host) → run → open web portal. Non-nagging, minimal setup, keeps working in the background.
 - **No over-engineering**: no microservices, no message queues or brokers, no Elasticsearch, no multi-user roles, no plugin system, no Kubernetes.
 
