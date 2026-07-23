@@ -780,11 +780,12 @@ def _auth_and_security(conn: sqlite3.Connection, settings: Settings):
         path = request.url.path
         session = session_from_request(conn, request)
         issued_token: str | None = None
+        open_portal = portal_is_open(conn, settings.auth_required)
         if (
             session is None
             and _protected_path(path)
             and request.method in {"GET", "HEAD"}
-            and portal_is_open(conn, settings.auth_required)
+            and open_portal
         ):
             # Open portal: mint a session on page loads so CSRF tokens and the
             # session-shaped template context keep working without a login.
@@ -793,7 +794,13 @@ def _auth_and_security(conn: sqlite3.Connection, settings: Settings):
             session = session_row(conn, issued.token)
         request.state.session = session
         if _protected_path(path) and session is None:
-            response = RedirectResponse("/login", status_code=302)
+            # An open portal has no login to send anyone to: a session-less
+            # unsafe request is a cross-site post, so refuse it outright.
+            response = (
+                HTMLResponse("forbidden", status_code=403)
+                if open_portal
+                else RedirectResponse("/login", status_code=302)
+            )
         elif request.method not in {"GET", "HEAD", "OPTIONS"} and _protected_path(path):
             token = request.headers.get("x-csrf-token") or await _csrf_form_token(request)
             if token != session["csrf_token"]:

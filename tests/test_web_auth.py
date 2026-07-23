@@ -122,6 +122,11 @@ def test_open_portal_serves_pages_without_a_password(tmp_path: Path) -> None:
 
 def test_open_portal_still_rejects_cross_site_posts(tmp_path: Path) -> None:
     client, _ = client_for(tmp_path, auth_required=False)
+
+    # No session cookie at all: refused outright rather than bounced to a login
+    # page that an open portal does not have.
+    assert client.post("/csrf-check", follow_redirects=False).status_code == 403
+
     client.get("/dashboard")
 
     assert client.post("/csrf-check").status_code == 403
