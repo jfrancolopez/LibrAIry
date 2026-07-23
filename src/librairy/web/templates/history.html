@@ -1,32 +1,36 @@
 {% extends "base.html" %}
 {% block content %}
-  
   <h1>History</h1>
-  <section class="metric wide">
-    <h2>Plans</h2>
-    {% if plans %}
-      {% for plan in plans %}<span><a href="/history/plans/{{ plan.id }}">{{ plan.id }}</a> / {{ plan.status }} / {{ plan.op_count }} ops / {{ plan.plan_hash or 'no hash' }}</span>{% endfor %}
-    {% else %}<p class="muted">No plans yet. Approved review items become immutable commit plans here.</p>{% endif %}
-  </section>
-  <section class="metric wide">
-    <h2>Journal</h2>
-    {% if entries %}
-      <table>
-        <thead><tr><th scope="col">Time</th><th scope="col">Action</th><th scope="col">Source</th><th scope="col">Destination</th><th scope="col">Outcome</th><th scope="col">Undo</th></tr></thead>
-        <tbody>
-          {% for entry in entries %}
-            <tr>
-              <td>{{ entry.ts }}</td>
-              <td>{{ entry.action }}</td>
-              <td>{{ entry.src_root }}/{{ entry.src_relpath }}</td>
-              <td>{{ entry.dest_root }}/{{ entry.dest_relpath }}</td>
-              <td>{{ entry.outcome }}</td>
-              <td>{% if entry.outcome == 'ok' %}<button hx-post="/history/undo/{{ entry.id }}" hx-target="#history-result" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>Undo</button>{% else %}<span>read-only</span>{% endif %}</td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    {% else %}<p class="muted">No journal entries yet. Every committed filesystem operation appears here with undo context.</p>{% endif %}
-  </section>
+  <p class="muted">Every committed move, grouped by plan — newest first. Undo anything; nothing is ever deleted.</p>
   <div id="history-result"></div>
+  {% if timeline %}
+    {% for group in timeline %}
+      <section class="timeline-plan card">
+        <header class="timeline-head">
+          <span class="badge {{ 'badge-ok' if group.status == 'done' else 'badge-warn' }}">{{ group.status or 'plan' }}</span>
+          <a href="/history/plans/{{ group.plan_id }}">Plan {{ group.plan_id }}</a>
+          <span class="muted">{{ group.entries|length }} file(s)</span>
+          <span class="muted">{{ group.ts }}</span>
+          <form class="logout-form" hx-post="/history/plans/{{ group.plan_id }}/undo" hx-target="#history-result" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>
+            <button type="submit" class="btn-ghost">Undo plan</button>
+          </form>
+        </header>
+        <ul class="timeline-list">
+          {% for entry in group.entries %}
+            <li>
+              <span class="badge {{ 'badge-ok' if entry.outcome == 'ok' else 'badge-warn' }}">{{ entry.action }}</span>
+              <span class="mono muted">{{ entry.src_root }}/{{ entry.src_relpath }}</span>
+              <span aria-hidden="true">→</span>
+              {% if entry.browse_href %}<a class="mono" href="{{ entry.browse_href }}">{{ entry.dest_root }}/{{ entry.dest_relpath }}</a>{% else %}<span class="mono">{{ entry.dest_root }}/{{ entry.dest_relpath }}</span>{% endif %}
+              {% if entry.outcome == 'ok' %}
+                <button class="btn-ghost" hx-post="/history/undo/{{ entry.id }}" hx-target="#history-result" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>Undo</button>
+              {% endif %}
+            </li>
+          {% endfor %}
+        </ul>
+      </section>
+    {% endfor %}
+  {% else %}
+    <p class="muted">No journal entries yet. Every committed filesystem operation appears here with undo context.</p>
+  {% endif %}
 {% endblock %}

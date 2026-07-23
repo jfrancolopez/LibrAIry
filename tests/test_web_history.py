@@ -115,3 +115,18 @@ def seed_committed_plan(settings: Settings, conn, names: list[str]) -> str:
 
 def csrf(client: TestClient) -> dict[str, str]:
     return {"x-csrf-token": client.cookies["csrf_token"]}
+
+
+def test_history_timeline_groups_by_plan_and_deep_links_to_browse(tmp_path: Path) -> None:
+    client, conn, settings = client_for(tmp_path)
+    plan_id = seed_committed_plan(settings, conn, ["a.txt", "b.txt"])
+
+    page = client.get("/history").text
+
+    # Grouped git-log style, with an undo-plan control and the plan link.
+    assert "timeline-plan" in page
+    assert f"/history/plans/{plan_id}" in page
+    assert "Undo plan" in page
+    assert "2 file(s)" in page
+    # Committed destinations deep-link into Browse at the containing folder.
+    assert '/browse/documents' in page

@@ -383,6 +383,30 @@ tbody tr:hover { background: var(--bg-metric); }
 
 .pager { display: flex; gap: var(--space-4); align-items: center; margin-top: var(--space-4); }
 
+.timeline-plan { margin: var(--space-3) 0; }
+.timeline-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  padding-bottom: var(--space-2);
+  border-bottom: var(--border-thin) solid var(--border);
+}
+.timeline-list {
+  list-style: none;
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+.timeline-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+}
+
 .edit-form { display: grid; gap: var(--space-2); min-width: 16rem; }
 
 .preview-card,
