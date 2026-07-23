@@ -428,18 +428,35 @@ def test_settings_sections_render_in_order_with_save_bar(tmp_path: Path) -> None
     client, _, _ = client_for(tmp_path)
 
     page = client.get("/settings").text
+    # Match the section anchors (unique to real sections; the jump nav reuses the
+    # words but sits above all of them).
     order = [
-        "Appearance",
-        "Organization Templates",
-        "Duplicates",
-        "Content Search",
-        "One-Way Backup",
-        "Catalog Keys",
-        "Storage Paths",
+        'id="portal-security"',
+        'id="appearance"',
+        'id="analysis"',
+        'id="organization"',
+        'id="duplicates"',
+        'id="content-search"',
+        'id="backup"',
+        'id="catalog-keys"',
+        'id="storage"',
     ]
-    positions = [page.index(heading) for heading in order]
+    positions = [page.index(anchor) for anchor in order]
 
     assert positions == sorted(positions)
     assert 'id="settings-save-bar"' in page
     assert 'class="save-bar"' in page
     assert "/static/settings.js" in page
+
+
+
+def test_settings_has_section_nav_with_working_anchors(tmp_path: Path) -> None:
+    client, _, _ = client_for(tmp_path)
+
+    page = client.get("/settings").text
+
+    assert 'class="settings-nav"' in page
+    for anchor in ("appearance", "analysis", "organization", "duplicates",
+                   "content-search", "backup", "catalog-keys", "storage", "providers"):
+        assert f'href="#{anchor}"' in page
+        assert f'id="{anchor}"' in page

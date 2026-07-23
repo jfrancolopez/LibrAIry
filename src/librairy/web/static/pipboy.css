@@ -371,6 +371,28 @@ tbody tr:hover { background: var(--bg-metric); }
 .compare-card.split { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
 
 /* ---- Sticky save bar (Phase 13) -------------------------------------- */
+.settings-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: var(--space-4) 0;
+  padding-bottom: var(--space-3);
+  border-bottom: var(--border-thin) solid var(--border);
+}
+.settings-nav a {
+  padding: var(--space-1) var(--space-3);
+  background: var(--bg-metric);
+  border: var(--border-thin) solid var(--border);
+  border-radius: 999px;
+  font-size: var(--text-sm);
+  text-decoration: none;
+  color: var(--text);
+}
+.settings-nav a:hover { background: var(--accent); color: var(--on-accent); text-decoration: none; }
+
+/* Anchored sections clear the sticky header when jumped to. */
+[id] { scroll-margin-top: var(--space-5); }
+
 .save-bar {
   position: sticky;
   bottom: var(--space-4);

@@ -1,6 +1,6 @@
 # Phase 16 — De-Pip-Boy: Friendly UI Foundation & Design System (v1.1)
 
-**Status:** IN PROGRESS — P16-01/02/03 DONE (2026-07-23); P16-04/05/06/07 remain.
+**Status:** IN PROGRESS — P16-01/02/03/05 DONE (2026-07-23); P16-04/06/07 remain.
 **Depends on:** Phase 13 (theme tokens + presets) DONE. **Execute BEFORE Phase 14** — the screen redesigns inherit the components defined here.
 **Size:** L (foundational; touches every template, no engine changes)
 
@@ -75,7 +75,7 @@ Design tokens (extend Phase 13's set), component CSS (buttons, inputs, cards, ba
 
 ### P16-05 Settings information architecture (#3, #5)
 **Depends on:** P16-02, P16-03 | **Size:** M
-- [ ] Section nav that anchor-jumps; each section a described `.card`; sticky save bar retained; P12-01 save flow intact.
+- [x] Section nav that anchor-jumps; each section a described `.card`; sticky save bar retained; P12-01 save flow intact.
 - [ ] Owner drill: find and change a setting in each section without scrolling-hunting; save once; confirmation shown.
 
 ### P16-06 Storage-paths setup helper (#14)

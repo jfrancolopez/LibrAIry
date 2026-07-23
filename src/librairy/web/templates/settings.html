@@ -2,6 +2,20 @@
 {% block content %}
 <h1>Settings</h1>
 <p class="muted">Runtime settings are stored in the LibrAIry database and apply to the next analysis batch. Paths and API keys stay in environment variables.</p>
+
+<nav class="settings-nav" aria-label="Settings sections">
+  <a href="#portal-security">Portal security</a>
+  <a href="#appearance">Appearance</a>
+  <a href="#analysis">Analysis</a>
+  <a href="#organization">Organization</a>
+  <a href="#duplicates">Duplicates</a>
+  <a href="#content-search">Content search</a>
+  <a href="#backup">Backup</a>
+  <a href="#providers">AI providers</a>
+  <a href="#catalog-keys">Catalog keys</a>
+  <a href="#storage">Storage paths</a>
+</nav>
+
 {% if saved %}<p id="settings-result"><span class="badge badge-ok">Saved</span> Your settings have been applied.</p>{% endif %}
 {% if error %}<p class="status warn" id="settings-error">{{ error }}</p>{% endif %}
 
@@ -38,7 +52,7 @@
 </section>
 
 <form id="settings-form" method="post" action="/settings" hx-post="/settings" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>
-  <h2>Appearance</h2>
+  <h2 id="appearance">Appearance</h2>
   <p class="muted">Pick a retro palette. Applies on the next page you load — no restart.</p>
   <label>Theme
     <select name="appearance_theme">
@@ -53,7 +67,7 @@
   <p class="muted">Leave the override empty to use the theme's own background. Extreme colors can hurt readability — the presets are contrast-checked, custom backgrounds are not.</p>
   <label><input type="checkbox" name="appearance_background_reset"> Reset background to the theme default</label>
 
-  <h2>Analysis</h2>
+  <h2 id="analysis">Analysis</h2>
   <p class="muted">How confident a proposal must be, and how many files each worker pass handles.</p>
   <label>Confidence threshold
     <input type="range" min="0" max="1" step="0.01" name="confidence_threshold" value="{{ settings_view.confidence_threshold }}">
@@ -63,7 +77,7 @@
     <input type="number" min="1" max="1000" name="batch_size" value="{{ settings_view.batch_size }}">
   </label>
 
-  <h2>Organization Templates</h2>
+  <h2 id="organization">Organization Templates</h2>
   <p class="muted">The folder layout each category is filed into. The example updates as you switch styles.</p>
   <div class="grid">
     {% for category, styles in template_options.items() %}
@@ -81,18 +95,18 @@
     {% endfor %}
   </div>
 
-  <h2>Duplicates</h2>
+  <h2 id="duplicates">Duplicates</h2>
   <p class="muted">Which detectors decide two files are identical, or near-identical media. At least one exact method stays on.</p>
   <label><input type="checkbox" name="use_fingerprints" {% if settings_view.dedup.use_fingerprints %}checked{% endif %}> BLAKE2b fingerprints</label>
   <label><input type="checkbox" name="use_rmlint" {% if settings_view.dedup.use_rmlint %}checked{% endif %}> rmlint exact cross-check</label>
   <label><input type="checkbox" name="use_czkawka" {% if settings_view.dedup.use_czkawka %}checked{% endif %}> czkawka near-media scan</label>
   <p class="muted">At least one exact duplicate method must remain enabled.</p>
 
-  <h2>Content Search</h2>
+  <h2 id="content-search">Content Search</h2>
   <label><input type="checkbox" name="content_search_enabled" {% if settings_view.content_search_enabled %}checked{% endif %}> Extract text from committed documents for local-only search</label>
   <p class="muted">Applies on the next worker cycle. Extracted text stays in SQLite and is never sent to AI providers.</p>
 
-  <h2>One-Way Backup</h2>
+  <h2 id="backup">One-Way Backup</h2>
   <label><input type="checkbox" name="backup_enabled" {% if settings_view.backup.enabled %}checked{% endif %}> Enable rclone copy-out backup</label>
   <label>Remote <input name="backup_remote" value="{{ settings_view.backup.remote }}" placeholder="b2:librairy-backup" list="backup-remotes"></label>
   <datalist id="backup-remotes">
@@ -108,7 +122,7 @@
   <label><input type="checkbox" name="backup_include_db_snapshot" {% if settings_view.backup.include_db_snapshot %}checked{% endif %}> Include SQLite snapshot</label>
   <p class="muted">No credential fields exist here. Configure remotes in appdata/rclone/rclone.conf with rclone itself.</p>
 
-  <h2>Catalog Keys</h2>
+  <h2 id="catalog-keys">Catalog Keys</h2>
   <p class="muted">Read-only status. Keys come from environment variables and are never rendered here.</p>
   <table>
     <tbody>
@@ -126,7 +140,7 @@
 </form>
 
 <section class="metric wide">
-  <h2>Storage Paths</h2>
+  <h2 id="storage">Storage Paths</h2>
   <p class="muted">Read-only at runtime. Set these in `.env`, then run `docker compose up -d` to recreate the container with new mounts.</p>
   <table>
     <thead><tr><th>Use</th><th>Host path</th><th>Container path</th></tr></thead>
@@ -138,7 +152,7 @@
   </table>
 </section>
 
-<h2>AI Provider Selector</h2>
+<h2 id="providers">AI Provider Selector</h2>
 <p class="muted">{{ provider_header() }}. Changes apply to the next analysis batch.</p>
 <form method="post" action="/settings/providers/order" hx-post="/settings/providers/order" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>
   <label>Provider kind order
