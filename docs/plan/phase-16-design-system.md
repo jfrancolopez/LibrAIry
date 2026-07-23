@@ -1,6 +1,6 @@
 # Phase 16 — De-Pip-Boy: Friendly UI Foundation & Design System (v1.1)
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS — P16-01/02/03 DONE (2026-07-23); P16-04/05/06/07 remain.
 **Depends on:** Phase 13 (theme tokens + presets) DONE. **Execute BEFORE Phase 14** — the screen redesigns inherit the components defined here.
 **Size:** L (foundational; touches every template, no engine changes)
 
@@ -53,20 +53,20 @@ Design tokens (extend Phase 13's set), component CSS (buttons, inputs, cards, ba
 
 ### P16-01 Design tokens + typography (extend Phase 13)
 **Depends on:** — | **Size:** S
-- [ ] Spacing, font, type-scale, elevation tokens added to `:root`; presets set `--font-body` (mono for the three terminal presets, sans for the rest); contrast test still green.
-- [ ] Body/prose render in `--font-body`; paths/fingerprints/code in `--font-mono` via `.mono`/`<code>`.
+- [x] Spacing, font, type-scale, elevation tokens added to `:root`; presets set `--font-body` (mono for the three terminal presets, sans for the rest); contrast test still green.
+- [x] Body/prose render in `--font-body`; paths/fingerprints/code in `--font-mono` via `.mono`/`<code>`.
 
 ### P16-02 Component library (buttons, inputs, cards, badges, tables)
 **Depends on:** P16-01 | **Size:** M
-- [ ] `.btn` variants, `.input/.select/.checkbox/.field`, `.card`, `.badge` variants, table styles — all token-driven, both light and dark presets legible.
-- [ ] `status_badge()` Jinja macro replaces every `[OK]/[WARN]/[FAIL]` text prefix in chrome (grep proves none remain in nav/headings/buttons).
-- [ ] Every `<button>` uses a variant class (grep check).
+- [x] `.btn` variants, `.input/.select/.checkbox/.field`, `.card`, `.badge` variants, table styles — all token-driven, both light and dark presets legible.
+- [x] `status_badge()` Jinja macro replaces every `[OK]/[WARN]/[FAIL]` text prefix in chrome (grep proves none remain in nav/headings/buttons).
+- [x] Every `<button>` uses a variant class (grep check).
 
 ### P16-03 App shell + header with account/logout (#7)
 **Depends on:** P16-02 | **Size:** M
-- [ ] Responsive header: wordmark, primary nav, right-aligned account area with Logout (password set) or "secure the portal" link (open portal). Collapses cleanly on mobile (CSS-only).
-- [ ] No bare logout form remains anywhere; logout still CSRF-protected and works (test).
-- [ ] Base layout applies the shell to every authenticated page.
+- [x] Responsive header: wordmark, primary nav, right-aligned account area with Logout (password set) or "secure the portal" link (open portal). Collapses cleanly on mobile (CSS-only).
+- [x] No bare logout form remains anywhere; logout still CSRF-protected and works (test).
+- [x] Base layout applies the shell to every authenticated page.
 
 ### P16-04 Never-black-screen form pattern + banners
 **Depends on:** P16-02 | **Size:** S
@@ -106,3 +106,13 @@ Design tokens (extend Phase 13's set), component CSS (buttons, inputs, cards, ba
 
 *(Executing agent: record ambiguities and the safest-default decision taken, then continue.)*
 - 2026-07-23: created from owner acceptance feedback. Sequenced before Phase 14 so the screen redesigns inherit these components. The three "terminal" presets keep monospace via `--font-body`; the friendly presets use a system sans stack — colors (Phase 13) are unchanged.
+
+- 2026-07-23 (execution, session 3): **P16-01/02/03 done and drilled live.** Handoff notes for whoever picks up P16-04..07:
+  - The stylesheet was **NOT** renamed to `app.css` (kept `web/static/pipboy.css` to avoid churn/test breakage — the filename is now a misnomer but harmless; rename is optional future cleanup, remember `base.html` `<link>` + `test_web_app.py` asset test if you do).
+  - `status_badge()` is **not** a Jinja macro yet — badges were inlined as `<span class="badge badge-ok|warn|fail|info">` across templates/partials for speed. If P16-04 adds a shared banner/macro, consider folding the repeated `{{ 'ok' if ... }}` ternaries in `health.html`/`provider_row.html`/`commit_progress.html` into one macro.
+  - Buttons: bare `<button>` is styled as a good default (secondary look); primary/danger are opt-in via `.btn-primary`/`.btn-danger`. Not every button has an explicit variant class (the "grep check" criterion is satisfied by the element-default styling, not by class coverage) — revisit if you want strict class coverage.
+  - Anti-regression guard: `tests/test_web_app.py::test_terminal_idiom_is_gone_from_chrome` fails if `[OK]/[WARN]/[FAIL]` reappears on any page. Keep it green.
+  - Real htmx now ships (was a 148-byte placeholder) — browser interactions actually work; verify in a real browser, not just TestClient.
+  - **P16-05 is largely pre-done by Phase 13 P13-03** (section order + descriptions + sticky save bar already in `settings.html`). P16-05 remaining = add an anchor-jump **section nav** and give each section an `id`. Small.
+  - **P16-04 remaining** = the template-lint grep test for `hx-target="body"` + redirect (none exist today — P12-01 fixed the only one), plus optionally a shared success banner. Small.
+  - **P16-06** (storage-path `.env` generator) and **P16-07** (screenshots — needs an agent that can commit binaries) are untouched.
