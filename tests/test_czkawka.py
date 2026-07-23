@@ -48,4 +48,10 @@ def test_czkawka_extensions_change_invocation(tmp_path: Path, monkeypatch) -> No
 
     assert result.ok is True
     assert "-C" in calls[0]
-    assert calls[0][-2:] == ["-x", "jpg,png"]
+    # czkawka exits non-zero when it finds matches; without -W every successful
+    # detection would surface as a tool failure.
+    assert "-W" in calls[0]
+    # One -x per extension: czkawka reads a comma-joined list as a single unknown
+    # extension, excludes every supported type, and silently reports no groups.
+    assert calls[0][-4:] == ["-x", "jpg", "-x", "png"]
+    assert "jpg,png" not in calls[0]

@@ -40,9 +40,15 @@ def similar_media(roots: list[Path], mode: str, settings: Settings) -> ToolResul
             *[posix_path(root) for root in roots],
             "-C",
             posix_path(output_path),
-            "-x",
-            ",".join(settings.czkawka_extensions),
+            # czkawka exits non-zero when it *finds* something; without this a
+            # successful detection would be reported as a tool failure.
+            "-W",
         ]
+        # czkawka takes one extension per -x flag. A comma-joined list is read as a
+        # single bogus extension, which excludes everything the tool supports: the
+        # scan then aborts, writes `[]`, and still exits 0 — a silent no-op.
+        for extension in settings.czkawka_extensions:
+            command += ["-x", extension]
         try:
             result = subprocess.run(
                 command,
