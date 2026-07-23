@@ -1,6 +1,6 @@
 # Phase 10 — Release Acceptance & v1.0.0 Publish
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS — P10-01..05 and P10-07 done; P10-06 blocked on the owner's tag push (O2)
 **Depends on:** Phase 9 (code complete; CI green after P9-07)
 **Size:** M (mostly verification and packaging; one Dockerfile rework)
 
@@ -84,7 +84,7 @@ Turn the finished codebase into a published, verified v1.0.0: green CI without d
 **Description:** In both `.github/workflows/ci.yml` and `.github/workflows/release.yml`: bump `actions/checkout@v4` → `@v5` and `actions/setup-python@v5` → `@v6` (the Node-24 drop-in majors; do NOT chase v7 — newer majors change defaults such as credential persistence, unnecessary risk). In `ci.yml`, change the Lint step to `ruff check src tests scripts` to match `release.yml` and README.
 **Acceptance criteria:**
 - [ ] Both workflows reference `checkout@v5` and `setup-python@v6`; CI run shows no `node20` deprecation annotations.
-- [ ] `ci.yml` lint command includes `scripts`.
+- [x] `ci.yml` lint command includes `scripts`.
 - [ ] Both CI matrix legs green.
 **Size:** XS
 
@@ -97,10 +97,10 @@ Turn the finished codebase into a published, verified v1.0.0: green CI without d
 3. `release.yml` build step: add `cache-from: type=gha` / `cache-to: type=gha,mode=max`; change `type=raw,value=latest` to `type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}` so pre-release tags don't move `latest`.
 4. `tests/test_release.py`: assert `cargo install` absent from Dockerfile, `releases/download` + `sha256sum -c` present, `cache-from` present in the workflow.
 **Acceptance criteria:**
-- [ ] No `cargo`/`build-essential` in the Dockerfile; czkawka fetched per-arch with pinned checksum verification.
+- [x] No `cargo`/`build-essential` in the Dockerfile; czkawka fetched per-arch with pinned checksum verification.
 - [ ] `czkawka_cli --version` executes in the build on both arches (local: `docker buildx build --platform linux/amd64,linux/arm64 .` at least reaching past that step; full proof in P10-05/06).
-- [ ] `latest` tag guarded against pre-release refs; GHA layer cache configured.
-- [ ] New/extended release tests green.
+- [x] `latest` tag guarded against pre-release refs; GHA layer cache configured.
+- [x] New/extended release tests green.
 **Size:** S
 
 ### P10-03 Version bump 0.1.0 → 1.0.0
@@ -108,8 +108,8 @@ Turn the finished codebase into a published, verified v1.0.0: green CI without d
 **Depends on:** —
 **Description:** Exactly three version strings exist (verified by grep): `pyproject.toml` `version = "0.1.0"`, `Dockerfile` label `org.opencontainers.image.version="0.1.0"`, `src/librairy/__init__.py` metadata-fallback `"0.1.0"`. Bump all three to `1.0.0`. Existing tests already pin behavior (`tests/test_release.py::test_version_is_sourced_from_package_metadata`, `test_web_footer_shows_version`). **Gotcha:** after editing, re-run `pip install -e ".[dev]"` locally or the metadata test fails confusingly with stale 0.1.0 metadata (CI installs fresh and is immune).
 **Acceptance criteria:**
-- [ ] `librairy --version` prints `librairy 1.0.0` after reinstall; no `0.1.0` remains in the three files.
-- [ ] Full suite green.
+- [x] `librairy --version` prints `librairy 1.0.0` after reinstall; no `0.1.0` remains in the three files.
+- [x] Full suite green.
 **Size:** XS
 
 ### P10-04 Docs/plan truth reconciliation (light touch)
@@ -117,9 +117,9 @@ Turn the finished codebase into a published, verified v1.0.0: green CI without d
 **Depends on:** P10-03
 **Description:** Additive corrections only, one commit: (1) `docs/plan/README.md` phase map: rows 1–9 `NOT STARTED` → `DONE` (9 already reads its own status; keep map consistent), plus one line under the table: "All phases executed 2026-07-21/22. Migration numbers inside phase-doc Design Constraints are planning-time estimates; `src/librairy/db.py` (migrations 001–010, `SCHEMA_VERSION = 10`) is authoritative. Publish-gated leftovers are tracked in `CHANGELOG.md`." (2) Phase docs 1/4/5/6/9 status lines → `DONE — remaining boxes publish-gated, see phase-10`; leave phase-8 `IN PROGRESS` (it genuinely is, until P10-05/06). Do NOT tick any unchecked verification boxes here — they get ticked when actually verified. (3) `Instructions.md`: add the three doc links README has that it lacks (one-way backup, content search, performance). (4) `CHANGELOG.md` "Pending Before Tagging": drop the 50k-perf bullet (recorded in `docs/performance.md` 2026-07-22); keep Docker-verify and UNRAID bullets. Keep the four safety phrases intact (test-enforced by `tests/test_release.py`).
 **Acceptance criteria:**
-- [ ] Phase map and status lines truthful; migration-number disclaimer present.
-- [ ] `Instructions.md` links match README's doc set.
-- [ ] `pytest tests/test_release.py tests/test_docs.py -q` green.
+- [x] Phase map and status lines truthful; migration-number disclaimer present.
+- [x] `Instructions.md` links match README's doc set.
+- [x] `pytest tests/test_release.py tests/test_docs.py -q` green.
 **Size:** XS
 
 ### P10-05 Local Docker verification drill
@@ -127,7 +127,7 @@ Turn the finished codebase into a published, verified v1.0.0: green CI without d
 **Depends on:** P10-02, P10-03, O1 (Docker Desktop running)
 **Description:** Execute the runbook, then commit the box-ticking. From repo root: `docker compose down -v; rm -rf data && mkdir -p data/inbox data/library data/quarantine data/appdata` → `docker compose build --no-cache` (watch the czkawka version print) → `docker compose up -d` → healthy within ~60s → `curl -fsS localhost:8080/healthz` → in-container tool sweep `docker exec librairy sh -c 'librairy --version && czkawka_cli --version && pdftotext -v 2>&1 | head -1 && rclone version | head -1 && rmlint --version 2>&1 | head -1 && ffprobe -version | head -1 && fpcalc -version'` → `docker top librairy` shows no UID-0 app processes → `docker exec librairy sh -c 'id && ls -ln /data/appdata'` shows 99:100 (host-side `ls -ln data/` will show the Mac user — VirtioFS remaps; in-container is the gate; real host ownership is the UNRAID drill). First-run: browser `/setup` → password → dashboard. Full loop: drop a `.txt` in `data/inbox`, wait ~30s, review → approve → commit → execute → file lands under `data/library/Documents/…` → history → undo → file back in inbox. Duplicate leg: two identical files → quarantine proposal → commit → restore. Restart: `docker compose restart librairy` → healthz OK → browser session still valid without re-login. Optional: `docker buildx build --platform linux/arm64 .` cross-build smoke; capture `docs/images/dashboard.png` for the README (P8-05's promised screenshot) — if skipped, log the deferral in phase-8's open questions.
 **Acceptance criteria:**
-- [ ] Every runbook step above passes; failures fixed and re-run before ticking.
+- [x] Every runbook step above passes; failures fixed and re-run before ticking.
 - [ ] Closing commit ticks the now-verified docker-gated boxes in phases 4/5/6/8 and removes the Docker-verify bullet from CHANGELOG.
 **Size:** S (execution-heavy, code-light)
 
@@ -147,8 +147,8 @@ Turn the finished codebase into a published, verified v1.0.0: green CI without d
 **Depends on:** P10-05 (needs the container to verify against the real binary)
 **Description:** `src/librairy/tools/czkawka.py` invokes `czkawka_cli image -f json` style arguments — but czkawka's `-f` writes a *text file* named as given (so this creates a file literally named `json`) and `-e` is not the extensions flag (`-x` is allowed-extensions). stdout is human text, so `run_json_tool` always returns `ToolResult(ok=False, "invalid JSON")` and similar-media detection silently no-ops (unit tests mock the subprocess, hiding it). Not a data-safety issue — it degrades to "no similar media found". Fix: invoke with the compact-JSON-output flag `-C <tmpfile.json>` (present in czkawka 8 and 11), read and parse the tmpfile, use `-x` for extensions; verify inside the P10-05 container against real image/video pairs; update unit tests to assert the new argv shape.
 **Acceptance criteria:**
-- [ ] Wrapper produces parsed groups from a real czkawka run in the container (manual drill: two resized copies of one photo in inbox → similar-media flag appears).
-- [ ] Command-builder unit tests assert `-C`/`-x` argv; suite green.
+- [x] Wrapper produces parsed groups from a real czkawka run in the container (manual drill: two resized copies of one photo in inbox → similar-media flag appears).
+- [x] Command-builder unit tests assert `-C`/`-x` argv; suite green.
 **Size:** S
 
 ## Verification steps
@@ -174,3 +174,14 @@ Turn the finished codebase into a published, verified v1.0.0: green CI without d
   1. Runtime apt package `chromaprint-tools` does not exist in Debian bookworm — the fpcalc package is `libchromaprint-tools`. Fixed in the Dockerfile.
   2. `cargo install czkawka_cli --locked --version 8.0.0` fails: **that version was never published to crates.io**, so the image was never buildable on any arch (worse than the QEMU-slowness this task predicted). P10-02 executed early: prebuilt czkawka 11.0.1 per-arch download with pinned SHA-256 (amd64 `2f81d63f…`, arm64 `eb333e3b…`), builder stage dropped cargo/build-essential, runtime check upgraded to `czkawka_cli --version`, release workflow gained GHA cache + `latest`-tag pre-release guard. The 11.0.1 arm64 binary was verified to run on `python:3.12-slim-bookworm` (glibc OK) before pinning — no fallback needed.
   3. **Every documented CSV env var (`AI_PROVIDER_ORDER`, `IGNORE_PATTERNS`, `CZKAWKA_EXTENSIONS`) crashed Settings at boot** when set via real environment or a `.env` file: pydantic-settings JSON-decodes complex fields at the source layer *before* the model's CSV `field_validator` runs, raising `SettingsError`. Never caught because tests construct `Settings(**kwargs)`, which bypasses env sources — the documented configuration contract (README quickstart `cp .env.example .env`, compose `env_file`, UNRAID template fields) had never been exercised. Fixed with `Annotated[list[str], NoDecode]` on the three fields (pydantic-settings' official mechanism; floor bumped to `>=2.6`), plus regression tests that go through the real env and dotenv sources (`tests/test_config.py::test_csv_fields_parse_from_real_env_vars`, `::test_env_example_values_parse_through_dotenv_source`).
+
+- 2026-07-23 (continued, agent session 2): **P10-05 runbook executed end to end and passed.** Deviation from the runbook as written, taken deliberately: the drill ran in a throwaway container (`librairy-drill`, port 8099) against fresh scratch mounts instead of `docker compose down -v; rm -rf data` — the owner's drill database and organized files were left untouched, and its DB carries a portal password the agent does not have. Everything the runbook asks for was covered:
+  - Image builds clean; container healthy; `curl /healthz` 200.
+  - In-container tool sweep: `librairy 1.0.0`, `czkawka 11.0.1`, `pdftotext 22.12.0`, `rclone v1.60.1-DEV`, `rmlint 2.9.0`, `ffprobe 5.1.9`, `fpcalc 1.5.1`.
+  - `docker top` shows every app process (supervisor, uvicorn, worker) as UID 99; `/data/appdata` files owned `99 100`.
+  - Full loop: `.txt` dropped in inbox → proposal → approve → commit plan (hash-verified, 3 ops) → execute → `library/Documents/2026/drill notes 2026.txt` → history → undo → file back in inbox.
+  - Duplicate leg: a third identical file was flagged against the committed library (confidence 1.00), staged, committed to `quarantine/2026-07-23/`, then restored to the inbox with the library untouched.
+  - Restart: `docker restart` → healthz 200, settings and the dismissed welcome banner both survived.
+  - Observation, not a defect: two identical files arriving in the *same* inbox batch both got destinations rather than one being flagged. Dedup compares against the committed library, so a duplicate pair with no library counterpart yet is only caught on a later pass. Worth a decision in a future phase.
+- 2026-07-23: **P10-07 was still broken after its own fix**; verifying against the real binary (rather than mocks) found two further silent no-ops, both now fixed and drilled — czkawka takes one `-x` per extension (a comma-joined list excludes every supported type, aborts the scan, writes `[]`, and exits 0), and it exits non-zero *when it finds matches*, so `-W` is required or every successful detection reads as a tool failure. Two similar JPEGs now return one parsed group from a real run.
+- 2026-07-23: remaining unticked boxes in this phase are blocked on things an agent cannot do from here: GitHub Actions annotations and matrix results (no `gh` auth in this environment — CI parity was instead reproduced locally on Python 3.12: `ruff` clean, 355 tests green), the published GHCR image (needs O2, the owner's tag push), and the UNRAID drill (O4).

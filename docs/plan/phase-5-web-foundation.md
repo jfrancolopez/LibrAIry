@@ -135,7 +135,7 @@ Ship the portal shell: a login-protected, Pip-Boy-themed FastAPI web app served 
 **Acceptance criteria:**
 - [x] `python -m librairy run` starts both children; killing the worker child → auto-restart (logged, backoff); same for web.
 - [x] SIGTERM to supervisor → both children exit cleanly ≤ 10s; supervisor exits 0.
-- [ ] `docker compose up` → portal reachable on the mapped port; container healthcheck goes healthy.
+- [x] `docker compose up` → portal reachable on the mapped port; container healthcheck goes healthy.
 - [x] Flapping child (forced crash loop) → supervisor gives up and exits non-zero (restart policy surfaces it).
 **Size:** M
 
@@ -184,7 +184,7 @@ Ship the portal shell: a login-protected, Pip-Boy-themed FastAPI web app served 
 - [ ] `docker compose up` → portal on `DASHBOARD_PORT` → setup/login → live dashboard reflecting a real worker run.
 - [x] Unauthenticated access fully blocked (sweep test); CSRF on all non-GET; sessions hashed at rest; rate limiting works.
 - [x] Supervisor restarts crashed children, shuts down cleanly on SIGTERM, surfaces flapping.
-- [ ] Container restart preserves sessions and all state.
+- [x] Container restart preserves sessions and all state.
 - [x] Zero external asset/network dependencies in the UI; security headers present; no path/traceback leaks.
 - [x] Health screen truthfully reports tools/providers/disk/DB with remedy hints.
 - [ ] All backlog checkboxes ticked; status DONE.

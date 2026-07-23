@@ -192,7 +192,7 @@ Put the product's core loop in the browser: review accumulated proposals in batc
 
 ## Exit gate checklist
 
-- [ ] The complete loop — drop → review → edit → approve → commit → verify → quarantine-restore → undo — works entirely in the browser.
+- [x] The complete loop — drop → review → edit → approve → commit → verify → quarantine-restore → undo — works entirely in the browser.
 - [x] Commit executes exactly what confirmation displayed: hash equality asserted by test; skips honestly reported.
 - [x] Every user edit is server-revalidated (containment, collision, sanitization); hostile-input tests green.
 - [x] Previews are safe (ID-based, root-validated, cached) and degrade gracefully.

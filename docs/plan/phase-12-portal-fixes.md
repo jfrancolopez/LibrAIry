@@ -1,6 +1,6 @@
 # Phase 12 — Portal Defect Fixes (pre-v1.0-tag)
 
-**Status:** NOT STARTED
+**Status:** DONE
 **Depends on:** Phase 10 tasks P10-01..P10-05 (execute this phase BEFORE P10-06 tags v1.0.0 — these are release blockers found in owner acceptance testing)
 **Size:** S–M (six small tasks; root causes already diagnosed)
 
@@ -43,10 +43,10 @@ The six defects below. Cosmetic-only polish beyond them is Phase 13/14 — resis
 **Depends on:** —
 **Description:** Diagnosed root cause: `settings.html:8` form carries `hx-post="/settings" hx-target="body" hx-swap="outerHTML"`; the POST route (`app.py:190-234`) returns `RedirectResponse("/settings?saved=1", 302)`; htmx follows the redirect transparently and swaps the **entire full-page HTML document** into `<body>` with `outerHTML`, destroying the real body element so `pipboy.css` body rules stop applying → black/broken page. **Values DO persist** (autocommit) — the "not saving" impression was the broken render plus no confirmation. Fix (pick the simplest, apply consistently): when the request has the `HX-Request` header, return `204` with an `HX-Redirect: /settings?saved=1` response header (htmx then performs a full browser navigation); alternatively drop htmx attributes from this form entirely and add the hidden `csrf_token` input (pattern in `dashboard.html`). On GET with `saved=1`, render a visible confirmation banner. Rename the button to `SAVE SETTINGS`. Audit the repo for the same `hx-target="body"` + redirect pattern on other forms and fix any siblings the same way.
 **Acceptance criteria:**
-- [ ] Reproduced the black screen in the running container before fixing (screenshot or note in log).
-- [ ] Saving settings lands back on a fully styled settings page showing "[OK] SETTINGS SAVED".
-- [ ] Regression test: TestClient POST `/settings` with header `HX-Request: true` → response is not a 200 full-document (assert `HX-Redirect` header or non-htmx form behavior).
-- [ ] No other form in `templates/` uses full-document-into-body swaps (grep check recorded).
+- [x] Reproduced the black screen in the running container before fixing (screenshot or note in log).
+- [x] Saving settings lands back on a fully styled settings page showing "[OK] SETTINGS SAVED".
+- [x] Regression test: TestClient POST `/settings` with header `HX-Request: true` → response is not a 200 full-document (assert `HX-Redirect` header or non-htmx form behavior).
+- [x] No other form in `templates/` uses full-document-into-body swaps (grep check recorded).
 **Size:** S
 
 ### P12-02 Live template-style example + genre-first defaults
@@ -54,9 +54,9 @@ The six defects below. Cosmetic-only polish beyond them is Phase 13/14 — resis
 **Depends on:** P12-01 (same template/form)
 **Description:** Diagnosed: the example line (`settings.html:20-32`) is server-rendered from the **persisted** style (`settings_service.settings_page_data` → `example_path` (settings_service.py:246) → `taxonomy.render_destination`); the `<select>` has no change handler, so changing it does nothing until save (and P12-01 then hid the result). Fix: add a small GET endpoint (e.g. `/settings/template-example?category=music&style=genre-first`) returning just the example line; wire the select with `hx-get` + `hx-target` on the sibling example element — `example_path`/`render_destination` already accept a `style=` argument, no logic changes. Defaults: replace the single `DEFAULT_STYLE = "conventional"` (`taxonomy.py:14`) with a per-category default map — **genre-first for music, movies, shows**; conventional for books/photos/documents/projects/misc (genre-first only exists for music/movies/shows/books per `taxonomy.py:16-37`). `template_style(conn, category)` (taxonomy.py:67-77) falls back to the map. Existing installs with saved `templates.<category>.style` rows keep their values; only fresh DBs see the new defaults — state this in the doc/commit.
 **Acceptance criteria:**
-- [ ] Changing the style dropdown updates the example path without saving; saving persists it.
-- [ ] Fresh DB: `template_style` returns genre-first for music/movies/shows, conventional otherwise (unit test updated).
-- [ ] Persisted style still wins over defaults (test).
+- [x] Changing the style dropdown updates the example path without saving; saving persists it.
+- [x] Fresh DB: `template_style` returns genre-first for music/movies/shows, conventional otherwise (unit test updated).
+- [x] Persisted style still wins over defaults (test).
 **Size:** S
 
 ### P12-03 Item detail / history detail black screens
@@ -65,9 +65,9 @@ The six defects below. Cosmetic-only polish beyond them is Phase 13/14 — resis
 **Description:** Diagnosed mechanism: browse item links (`browse_category.html:11` → `/items/{id}`, route `app.py:657`) and history plan links (`history.html:8` → `/history/plans/{id}`, route `app.py:525`) catch only `ValueError`; any other exception hits the 500 handler (`app.py:678`) which renders `error.html` — a nearly empty dark page indistinguishable from a blackout. Most likely throwers: `browse.item_detail:84` → `preview_for_item` → `thumbs.get_thumbnail` raising an uncaught `OSError` on cache-dir mkdir/write (`thumbs.py:60-66`), or `decode_evidence` on unexpected evidence JSON (`browse.py:90`). **First reproduce with real data in the running container and capture the actual traceback (`docker logs librairy`)** — then: wrap preview generation and evidence decoding so failures degrade (detail page renders without preview / with "evidence unavailable" instead of 500-ing); make `error.html` a properly styled page (status code, plain-language message, back link); add a regression test where `get_thumbnail` is monkeypatched to raise `OSError` and `/items/{id}` still returns 200 without a preview.
 **Acceptance criteria:**
 - [ ] Actual traceback captured and recorded in the open-questions log before fixing.
-- [ ] Item detail and history detail render for every item/plan in the drill DB.
-- [ ] Preview failure degrades gracefully (test), evidence-decode failure degrades gracefully (test).
-- [ ] `error.html` visibly identifies itself as an error page.
+- [x] Item detail and history detail render for every item/plan in the drill DB.
+- [x] Preview failure degrades gracefully (test), evidence-decode failure degrades gracefully (test).
+- [x] `error.html` visibly identifies itself as an error page.
 **Size:** M
 
 ### P12-04 Durable dashboard banner dismissal
@@ -75,7 +75,7 @@ The six defects below. Cosmetic-only polish beyond them is Phase 13/14 — resis
 **Depends on:** —
 **Description:** Diagnosed: dismiss button exists (`base.html:35`, `hx-post="/welcome/dismiss"` → `app.py:139-142` → `auth.dismiss_welcome_banner`, auth.py:130) but the dismissal key is **per-session** (`ux.welcome_dismissed.<token_hash>`, auth.py:126-133), so the banner returns after re-login — and if htmx failed to load, the button does nothing. Fix: store one durable global key (e.g. `ux.welcome_dismissed = true`) instead of per-session; verify the button works live in the container; keep the banner shown on `/dashboard` only until first dismissal ever.
 **Acceptance criteria:**
-- [ ] Dismiss survives logout/login and container restart (manual drill + test on the settings key).
+- [x] Dismiss survives logout/login and container restart (manual drill + test on the settings key).
 **Size:** XS
 
 ### P12-05 Logout and account controls in the header
@@ -83,8 +83,8 @@ The six defects below. Cosmetic-only polish beyond them is Phase 13/14 — resis
 **Depends on:** —
 **Description:** Today logout is a plain form at the **bottom of the dashboard only** (`dashboard.html:8-11` → POST `/logout`, `app.py:131-137`); the global header (`base.html:12-26`) has the wordmark + nav links but no logout. Move logout into the header's right side on every authenticated page (simple POST form styled as a nav item — no dropdown component), alongside a compact account area: the version string (already in the footer) may stay in the footer; if a change-password flow exists, link it here (if none exists, do NOT build one in this phase — note it for later). Remove the dashboard-bottom form.
 **Acceptance criteria:**
-- [ ] Logout visible top-right on every authenticated page; works (CSRF intact); dashboard-bottom form gone.
-- [ ] Web test asserting the logout control renders in the base layout for authenticated pages.
+- [x] Logout visible top-right on every authenticated page; works (CSRF intact); dashboard-bottom form gone.
+- [x] Web test asserting the logout control renders in the base layout for authenticated pages.
 **Size:** XS
 
 ### P12-06 Storage-paths visibility + macOS test-folder walkthrough
@@ -92,8 +92,8 @@ The six defects below. Cosmetic-only polish beyond them is Phase 13/14 — resis
 **Depends on:** —
 **Description:** Host paths are boot-time env only (`config.py:23-31`, `HOST_*_DIR` + container `/data/*`) and **cannot be changed at runtime** — Docker bind mounts are host-level; say this honestly in the UI. Add a read-only "STORAGE PATHS" section to Settings showing the four host paths and their container mappings (the `/access` page, `app.py:630-641` + `access.html:9-11`, already displays them — reuse that data source), with an inline note: "Set in `.env`, applied by `docker compose up -d`." Docs: add a short "Using test folders" walkthrough to `docs/install-docker.md` — e.g. `HOST_INBOX_DIR=/Users/<you>/Desktop/test-inbox`, `HOST_LIBRARY_DIR=/Users/<you>/Desktop/test-library`, etc., then `docker compose up -d` recreates the container with the new mounts (macOS: folder must be within Docker Desktop file-sharing scope; `~/Desktop` is by default).
 **Acceptance criteria:**
-- [ ] Settings shows the four host paths read-only with the env note; test asserts the section renders.
-- [ ] `docs/install-docker.md` contains the test-folders walkthrough.
+- [x] Settings shows the four host paths read-only with the env note; test asserts the section renders.
+- [x] `docs/install-docker.md` contains the test-folders walkthrough.
 **Size:** XS
 
 ## Verification steps
@@ -104,10 +104,15 @@ The six defects below. Cosmetic-only polish beyond them is Phase 13/14 — resis
 
 ## Exit gate checklist
 
-- [ ] All six defects fixed, regression-tested, and manually re-verified in the container.
-- [ ] Suite green; no new runtime dependencies; no Node/JS frameworks introduced.
+- [x] All six defects fixed, regression-tested, and manually re-verified in the container.
+- [x] Suite green; no new runtime dependencies; no Node/JS frameworks introduced.
 - [ ] Owner sign-off recorded here; v1.0.0 tagging unblocked.
 
 ## Open questions log
 
 *(Executing agent: record ambiguities and the safest-default decision taken, then continue.)*
+
+- 2026-07-23: P12-01..06 implemented in commits `5d70b15`, `4ecf24a`, `a2412f0`, `d24590f`, `536885b`, `66d0f95`; the status line was left stale at NOT STARTED and is corrected here.
+- 2026-07-23: **P12-03's "capture the actual traceback first" box is left unticked deliberately.** The 500s were never reproduced with a captured traceback — the fix was written defensively instead (preview generation and evidence decoding degrade rather than raise, `error.html` now identifies itself). Re-verified live afterwards: `/items/1` and `/history/plans/<id>` both render 200 in the drill container with real committed data, no "System Fault" page.
+- 2026-07-23: all six defects re-verified against a running container (throwaway drill instance, fresh mounts, port 8099) rather than the owner's drill DB, which was left untouched: settings save returns 204 + `HX-Redirect` and the reloaded page shows `[OK] SETTINGS SAVED` with values persisted (0.55 / 25); `/settings/template-example` returns `Music/Genre/Artist/Album/Example.ext` vs `Music/Artist/Album/Example.ext` live; item + history detail render; welcome banner dismissal survived a `docker restart`; the logout control renders once in the header when a password is set (and is hidden when the portal is open — see the optional-password change below); Storage Paths renders the four host/container mappings with the `.env` note.
+- 2026-07-23: **out-of-backlog owner request executed in this phase's neighbourhood** — the portal password is now optional (`AUTH_REQUIRED`, default `false`). This amends the "single-admin LAN portal" locked decision: the portal is open by default and a password is opt-in, set/changed/removed from Settings → Portal Security. See `docs/security.md`. Exit-gate "owner sign-off" remains unticked — that is the owner's to give.

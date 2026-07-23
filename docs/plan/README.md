@@ -24,10 +24,10 @@ This directory contains the complete, phased backlog to take LibrAIry from its c
 | 7 | [phase-7-search-settings.md](phase-7-search-settings.md) | Search/browse, settings, AI provider selector | 6 | DONE |
 | 8 | [phase-8-release.md](phase-8-release.md) | Release hardening, UNRAID packaging, v1.0 | 7 | DONE |
 | 9 | [phase-9-fast-follows.md](phase-9-fast-follows.md) | Post-1.0: document text search, rclone backup | 8 | DONE |
-| 10 | [phase-10-release-acceptance.md](phase-10-release-acceptance.md) | Release acceptance & v1.0.0 publish | 9 | NOT STARTED |
+| 10 | [phase-10-release-acceptance.md](phase-10-release-acceptance.md) | Release acceptance & v1.0.0 publish | 9 | IN PROGRESS — P10-06 needs the owner's tag push |
 | 11 | [phase-11-tui.md](phase-11-tui.md) | Terminal UI (`librairy tui`) | 10, 14 | NOT STARTED |
-| 12 | [phase-12-portal-fixes.md](phase-12-portal-fixes.md) | Portal defect fixes (pre-v1.0-tag blockers) | 10 (P10-01..05) | NOT STARTED |
-| 13 | [phase-13-theme-system.md](phase-13-theme-system.md) | Theme system + settings UX (v1.1) | 12 | NOT STARTED |
+| 12 | [phase-12-portal-fixes.md](phase-12-portal-fixes.md) | Portal defect fixes (pre-v1.0-tag blockers) | 10 (P10-01..05) | DONE |
+| 13 | [phase-13-theme-system.md](phase-13-theme-system.md) | Theme system + settings UX (v1.1) | 12 | IN PROGRESS |
 | 14 | [phase-14-screen-redesigns.md](phase-14-screen-redesigns.md) | Screen redesigns: dashboard/review/browse/history/health | 13 | NOT STARTED |
 | 15 | [phase-15-catalog-expansion.md](phase-15-catalog-expansion.md) | Catalog expansion + web API key entry (v1.2) | 14 | NOT STARTED |
 

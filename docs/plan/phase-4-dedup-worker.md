@@ -188,7 +188,7 @@ CREATE TABLE worker_state (
 **Depends on:** P4-06 (gate: E2E must be green first)
 **Description:** Per Design Constraints: remove `inbox-processor/`, rewrite `docker-compose.yml` (single `librairy` service, 4 data mounts incl. appdata, no reports, no watcher, dashboard stub gone — Phase 5 adds the web service command), Dockerfile per constraints (package install + czkawka in image), README/Instructions updated to the CLI flow, deprecation banner removed, `.env.example` regenerated (no orphan vars).
 **Acceptance criteria:**
-- [ ] `docker build` succeeds; `docker compose run librairy librairy --help` works; czkawka_cli present in image (`command -v` check in CI smoke build).
+- [x] `docker build` succeeds; `docker compose run librairy librairy --help` works; czkawka_cli present in image (`command -v` check in CI smoke build).
 - [x] `git grep -l 'step3_classify\|RAM/\|_review_pending'` returns only docs/plan history references.
 - [x] `.env.example` contains no variable the settings model doesn't define, and vice versa (existing sync test still green).
 - [ ] README quickstart (env → compose up → CLI) verified by following it in a container.
