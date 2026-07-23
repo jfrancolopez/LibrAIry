@@ -25,4 +25,12 @@ fi
 mkdir -p /data/inbox /data/library /data/quarantine /data/appdata
 chown -R "${PUID}:${PGID}" /data/inbox /data/library /data/quarantine /data/appdata /app
 
+# Supervisor startup creates SQLite/log artifacts after the initial chown. Fix those
+# once, then exit, so mounted appdata remains owned by PUID:PGID without keeping a
+# root helper process alive.
+(
+  sleep 5
+  chown -R "${PUID}:${PGID}" /data/appdata
+) &
+
 exec gosu "${PUID}:${PGID}" "$@"
