@@ -34,6 +34,18 @@ def test_release_workflow_builds_multiarch_ghcr_image() -> None:
     assert "docker/setup-buildx-action" in workflow
     assert "linux/amd64,linux/arm64" in workflow
     assert "ghcr.io/${{ github.repository_owner }}/librairy" in workflow
+    assert "cache-from" in workflow
+    assert 'value=latest,enable=${{ !contains(github.ref_name, \'-\') }}' in workflow
+
+
+def test_dockerfile_uses_prebuilt_checksummed_czkawka() -> None:
+    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+
+    assert "cargo install" not in dockerfile
+    assert "releases/download" in dockerfile
+    assert "sha256sum -c" in dockerfile
+    assert "linux_czkawka_cli_x86_64" in dockerfile
+    assert "linux_czkawka_cli_arm64" in dockerfile
 
 
 def test_changelog_lists_v1_safety_never_list() -> None:
