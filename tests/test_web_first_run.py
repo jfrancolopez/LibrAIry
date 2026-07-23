@@ -32,7 +32,7 @@ def test_setup_screen_explains_first_run(tmp_path: Path) -> None:
     assert "Initialize Secure Portal" in response.text
 
 
-def test_first_visit_banner_appears_and_dismisses_for_session(tmp_path: Path) -> None:
+def test_first_visit_banner_dismissal_survives_logout_login(tmp_path: Path) -> None:
     client = client_for(tmp_path)
     client.post("/setup", data={"password": "correct horse battery"})
 
@@ -42,10 +42,14 @@ def test_first_visit_banner_appears_and_dismisses_for_session(tmp_path: Path) ->
         headers={"x-csrf-token": client.cookies["csrf_token"]},
     )
     second = client.get("/dashboard")
+    client.post("/logout", headers={"x-csrf-token": client.cookies["csrf_token"]})
+    client.post("/login", data={"password": "correct horse battery"})
+    after_login = client.get("/dashboard")
 
     assert "FIRST VISIT" in first.text
     assert dismissed.status_code == 200
     assert "FIRST VISIT" not in second.text
+    assert "FIRST VISIT" not in after_login.text
 
 
 def test_fresh_install_empty_states_are_purposeful(tmp_path: Path) -> None:
