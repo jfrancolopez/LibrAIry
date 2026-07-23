@@ -12,6 +12,7 @@ from librairy.planner import utc_now
 from librairy.proposals import decode_evidence
 from librairy.search import sync_search_item
 from librairy.taxonomy import CATEGORIES, render_destination
+from librairy.web.evidence import humanize_evidence
 
 PAGE_SIZE = 50
 DEFAULT_CATEGORY_FIELDS = {
@@ -186,7 +187,14 @@ def _proposal_rows(
         """,
         params,
     ).fetchall()
-    return [{**dict(row), "evidence_lines": evidence_lines(row["evidence"])} for row in rows]
+    return [
+        {
+            **dict(row),
+            "evidence_lines": evidence_lines(row["evidence"]),
+            "evidence_views": humanize_evidence(row["evidence"]),
+        }
+        for row in rows
+    ]
 
 
 def _proposal_count(conn: sqlite3.Connection, filters: ReviewFilters) -> int:

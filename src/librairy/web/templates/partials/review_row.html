@@ -2,12 +2,29 @@
   <td><input form="review-actions" name="proposal_id" type="checkbox" aria-label="select {{ proposal.item_relpath }}" value="{{ proposal.id }}"></td>
   <td>{{ proposal.item_relpath }}</td>
   <td>
-    {% if proposal.dest_relpath %}{{ proposal.dest_root }}/{{ proposal.dest_relpath }}{% else %}<span class="badge badge-warn">pending destination</span>{% endif %}
+    <div class="from-to">
+      <span class="mono muted">{{ proposal.item_relpath }}</span>
+      <span aria-hidden="true">→</span>
+      {% if proposal.dest_relpath %}<span class="mono">{{ proposal.dest_root }}/{{ proposal.dest_relpath }}</span>{% else %}<span class="badge badge-warn">pending destination</span>{% endif %}
+    </div>
     {% if warning %}<span class="badge badge-warn">{{ warning }}</span>{% endif %}
   </td>
   <td><span class="confidence" style="--score: {{ (proposal.confidence * 100)|round|int }}%">{{ '%.2f'|format(proposal.confidence) }}</span></td>
   <td>
-    {% for line in proposal.evidence_lines %}<span>{{ line }}</span>{% endfor %}
+    <details class="why">
+      <summary>Why?</summary>
+      <ul class="why-list">
+        {% for view in proposal.evidence_views %}
+          <li>
+            <span class="badge {{ 'badge-warn' if view.cloud else 'badge-info' }}">{{ view.label }}</span>
+            {{ view.text }}
+            <span class="muted">{{ view.weight_pct }}%</span>
+          </li>
+        {% else %}
+          <li class="muted">No evidence recorded.</li>
+        {% endfor %}
+      </ul>
+    </details>
   </td>
   <td>
     <button

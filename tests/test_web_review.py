@@ -63,8 +63,10 @@ def test_review_evidence_labels_cloud_marker_and_pending_edit(tmp_path: Path) ->
 
     response = client.get("/review")
 
-    assert "[HEURISTIC] category unknown item fallback 0.20" in response.text
-    assert "[CLOUD AI:openai/gpt-4o-mini/cloud] category" in response.text
+    # Evidence renders as plain-language "why" lines, not bracket codes.
+    assert "Looks like unknown item fallback" in response.text
+    assert "AI · openai" in response.text
+    assert "Why?" in response.text
     assert "pending destination" in response.text
     assert "Destination" in response.text
 
