@@ -34,7 +34,7 @@ FROM python:3.12-slim-bookworm AS runtime
 
 LABEL org.opencontainers.image.title="LibrAIry" \
       org.opencontainers.image.description="Privacy-first file organizer" \
-      org.opencontainers.image.version="0.1.0"
+      org.opencontainers.image.version="1.0.0"
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
