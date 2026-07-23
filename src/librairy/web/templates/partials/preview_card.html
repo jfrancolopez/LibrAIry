@@ -1,5 +1,5 @@
 <aside class="preview-card">
-  <p class="status">[OK] {{ preview.kind|upper }} PREVIEW</p>
+  <p class="muted">{{ preview.kind|capitalize }} preview</p>
   <h3>{{ preview.title }}</h3>
   {% if preview.thumb_url %}<img src="{{ preview.thumb_url }}" alt="Preview for {{ preview.title }}">{% endif %}
   {% for fact in preview.facts %}<span>{{ fact }}</span>{% endfor %}

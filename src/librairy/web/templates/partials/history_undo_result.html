@@ -1,5 +1,5 @@
 <div id="history-result">
   {% for result in results %}
-    <p class="status">[{% if result.outcome == 'ok' %}OK{% else %}WARN{% endif %}] undo {{ result.history_id }} {{ result.outcome }}{% if result.dest_relpath %} -> {{ result.dest_relpath }}{% endif %}</p>
+    <p><span class="badge badge-{{ 'ok' if result.outcome == 'ok' else 'warn' }}">undo</span> {{ result.history_id }} {{ result.outcome }}{% if result.dest_relpath %} → {{ result.dest_relpath }}{% endif %}</p>
   {% endfor %}
 </div>

@@ -44,7 +44,7 @@ def test_history_lists_commit_plan_detail_and_single_op_undo(tmp_path: Path) -> 
     assert plan_hash in detail.text
     assert "Documents/a.txt" in detail.text
     assert undo.status_code == 200
-    assert "[OK] undo" in undo.text
+    assert ">undo</span>" in undo.text
     assert (settings.inbox_dir / "a.txt").read_text(encoding="utf-8") == "a.txt"
     assert not (settings.library_dir / "Documents/a.txt").exists()
 
@@ -62,7 +62,7 @@ def test_whole_plan_undo_restores_pre_commit_tree_and_journals(tmp_path: Path) -
         )
     ]
     assert response.status_code == 200
-    assert response.text.count("[OK] undo") == 2
+    assert response.text.count(">undo</span>") == 2
     assert (settings.inbox_dir / "a.txt").exists()
     assert (settings.inbox_dir / "b.txt").exists()
     assert not (settings.library_dir / "Documents/a.txt").exists()

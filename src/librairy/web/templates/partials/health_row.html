@@ -1,1 +1,1 @@
-<span>[{{ row.status }}] {{ row.name }} - {{ row.detail }}{% if row.hint %} / {{ row.hint }}{% endif %}</span>
+<span><span class="badge badge-{{ 'ok' if row.status == 'OK' else 'warn' if row.status == 'WARN' else 'fail' }}">{{ row.status }}</span> {{ row.name }} — {{ row.detail }}{% if row.hint %} / {{ row.hint }}{% endif %}</span>

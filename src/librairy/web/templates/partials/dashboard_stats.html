@@ -1,16 +1,16 @@
 <div id="dashboard-stats" class="dashboard-grid">
   <article class="metric centerpiece">
-    <span class="status">[OK] AWAITING REVIEW</span>
+    <span class="status">Awaiting review</span>
     <strong>{{ proposal_count }}</strong>
     <span>proposals staged</span>
   </article>
   <article class="metric">
-    <span class="status">[OK] WORKER</span>
+    <span class="status">Worker</span>
     <strong>{{ current_phase }}</strong>
     <span>{{ worker_state.get('last_cycle_at', 'no heartbeat yet') }}</span>
   </article>
   <article class="metric">
-    <span class="status">[OK] LIFECYCLE</span>
+    <span class="status">Lifecycle</span>
     {% if counts %}
       {% for state, count in counts.items() %}<span>{{ state }}: {{ count }}</span>{% endfor %}
     {% else %}
@@ -18,7 +18,7 @@
     {% endif %}
   </article>
   <article class="metric wide">
-    <span class="status">[OK] PROVIDERS</span>
+    <span class="status">Providers</span>
     {% if providers %}
       {% for provider in providers %}<span>{{ provider.name }}: {{ provider.kind }} / {{ provider.enabled }}</span>{% endfor %}
     {% else %}
@@ -26,7 +26,7 @@
     {% endif %}
   </article>
   <article class="metric wide">
-    <span class="status">[OK] BACKUP</span>
+    <span class="status">Backup</span>
     {% if backup_counts %}
       {% for state, count in backup_counts.items() %}<span>{{ state }}: {{ count }}</span>{% endfor %}
     {% else %}
@@ -34,13 +34,13 @@
     {% endif %}
   </article>
   <article class="metric wide">
-    <span class="status">[OK] DISK</span>
+    <span class="status">Disk</span>
     {% for disk in disks %}
       <span>{{ disk.root }}: {{ disk.free_gb }}GB free / {{ disk.total_gb }}GB [{{ disk.percent_free }}%]</span>
     {% endfor %}
   </article>
   <article class="metric wide">
-    <span class="status">[OK] RECENT OPS</span>
+    <span class="status">Recent ops</span>
     {% if recent_history %}
       {% for row in recent_history %}<span>{{ row.action }} {{ row.outcome }} {{ row.dest_relpath }}</span>{% endfor %}
     {% else %}

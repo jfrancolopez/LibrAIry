@@ -1,32 +1,32 @@
 {% extends "base.html" %}
 {% block content %}
-  <p class="status">[WARN] QUARANTINE REVIEW - NO REMOVAL CONTROLS</p>
+  <p class="status warn">Quarantine is reversible — nothing here is ever removed.</p>
   <h1>Quarantine</h1>
   <section class="metric wide">
     <h2>Staged</h2>
     {% if staged %}
       {% for proposal in staged %}
         <article class="compare-card">
-          <span>[WARN] staged {{ proposal.item_relpath }} -> {{ proposal.dest_root }}/{{ proposal.dest_relpath }}</span>
+          <span><span class="badge badge-warn">staged</span> {{ proposal.item_relpath }} → {{ proposal.dest_root }}/{{ proposal.dest_relpath }}</span>
           <span>reason: {{ proposal.action }} / confidence {{ '%.2f'|format(proposal.confidence) }}</span>
           <button hx-post="/quarantine/staged/{{ proposal.id }}/approve" hx-target="#quarantine-result" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>Approve Stage</button>
           <button hx-post="/quarantine/staged/{{ proposal.id }}/unstage" hx-target="#quarantine-result" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>Un-stage</button>
         </article>
       {% endfor %}
-    {% else %}<p>[OK] no duplicate quarantine proposals are staged yet.</p>{% endif %}
+    {% else %}<p class="muted">No duplicate quarantine proposals are staged yet.</p>{% endif %}
   </section>
   <section class="metric wide">
     <h2>Executed</h2>
     {% if entries %}
       {% for entry in entries %}
         <article class="compare-card">
-          <span>[OK] reason {{ entry.reason }} / original {{ entry.original_root }}:{{ entry.original_relpath }}</span>
+          <span>reason {{ entry.reason }} / original {{ entry.original_root }}:{{ entry.original_relpath }}</span>
           <span>quarantine item: {{ entry.item_relpath or 'missing' }} / state {{ entry.item_state or 'unknown' }}</span>
           <span>quarantined {{ entry.quarantined_at }}{% if entry.restored_at %} / restored {{ entry.restored_at }}{% endif %}</span>
           {% if not entry.restored_at %}<button hx-post="/quarantine/restore/{{ entry.id }}" hx-target="#quarantine-result" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>Restore</button>{% endif %}
         </article>
       {% endfor %}
-    {% else %}<p>[OK] no files have been quarantined. Quarantine is reversible and never deletes files.</p>{% endif %}
+    {% else %}<p class="muted">No files have been quarantined. Quarantine is reversible and never removes files.</p>{% endif %}
   </section>
   <section class="metric wide">
     <h2>Similar Media - Human Judgment Required</h2>
@@ -35,10 +35,10 @@
         <article class="compare-card split">
           <div><strong>Item</strong><span>{{ flag.item_relpath }}</span><span>{{ flag.item_size }} bytes</span></div>
           <div><strong>Similar</strong><span>{{ flag.similar_relpath }}</span><span>{{ flag.similar_size }} bytes</span></div>
-          <span>[WARN] {{ flag.kind }} score {{ flag.score if flag.score is not none else 'n/a' }} - needs human judgment</span>
+          <span><span class="badge badge-warn">{{ flag.kind }}</span> score {{ flag.score if flag.score is not none else 'n/a' }} — needs human judgment</span>
         </article>
       {% endfor %}
-    {% else %}<p>[OK] no similar-media flags yet. If czkawka is enabled, future scans will list human-review matches here.</p>{% endif %}
+    {% else %}<p class="muted">No similar-media flags yet. If czkawka is enabled, future scans list human-review matches here.</p>{% endif %}
   </section>
   <div id="quarantine-result"></div>
 {% endblock %}

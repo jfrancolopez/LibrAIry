@@ -85,7 +85,7 @@ def test_dashboard_surfaces_backup_queue_counts(tmp_path: Path) -> None:
 
     response = client.get("/dashboard/stats")
 
-    assert "[OK] BACKUP" in response.text
+    assert "Backup" in response.text
     assert "queued: 1" in response.text
 
 

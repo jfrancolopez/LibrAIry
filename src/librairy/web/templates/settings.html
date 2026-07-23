@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>[OK] SETTINGS</h1>
+<h1>Settings</h1>
 <p class="muted">Runtime settings are stored in the LibrAIry database and apply to the next analysis batch. Paths and API keys stay in environment variables.</p>
-{% if saved %}<p class="status" id="settings-result">[OK] SETTINGS SAVED</p>{% endif %}
-{% if error %}<p class="status warn" id="settings-error">[WARN] {{ error }}</p>{% endif %}
+{% if saved %}<p id="settings-result"><span class="badge badge-ok">Saved</span> Your settings have been applied.</p>{% endif %}
+{% if error %}<p class="status warn" id="settings-error">{{ error }}</p>{% endif %}
 
 <section class="metric wide" id="portal-security">
   <h2>Portal Security</h2>
@@ -14,7 +14,7 @@
       <label>Current password <input type="password" name="current_password" required></label>
       <label>New password <input type="password" name="new_password" required minlength="8"></label>
       <label>Confirm new password <input type="password" name="confirm_password" required minlength="8"></label>
-      <button type="submit">[OK] CHANGE PASSWORD</button>
+      <button type="submit" class="btn-primary">Change password</button>
     </form>
     {% if auth_required %}
       <p class="muted">AUTH_REQUIRED=true is set in the environment, so the password cannot be removed here.</p>
@@ -22,7 +22,7 @@
       <form method="post" action="/settings/password/remove">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <label>Current password <input type="password" name="current_password" required></label>
-        <button type="submit">[WARN] REMOVE PASSWORD</button>
+        <button type="submit" class="btn-danger">Remove password</button>
       </form>
       <p class="muted">Removing the password reopens the portal to anyone who can reach this host on the network.</p>
     {% endif %}
@@ -32,7 +32,7 @@
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <label>New password <input type="password" name="new_password" required minlength="8"></label>
       <label>Confirm password <input type="password" name="confirm_password" required minlength="8"></label>
-      <button type="submit">[OK] SET PASSWORD</button>
+      <button type="submit" class="btn-primary">Set password</button>
     </form>
   {% endif %}
 </section>
@@ -120,7 +120,7 @@
 
   <div id="settings-save-bar" class="save-bar" hidden>
     <span>Unsaved changes</span>
-    <button type="submit">[OK] SAVE SETTINGS</button>
+    <button type="submit" class="btn-primary">Save settings</button>
     <button type="button" id="settings-discard">discard</button>
   </div>
 </form>
@@ -144,7 +144,7 @@
   <label>Provider kind order
     <input name="order" value="{{ provider_order|join(',') }}">
   </label>
-  <button type="submit">[OK] REORDER</button>
+  <button type="submit">Reorder</button>
 </form>
 
 <h3>Ollama Endpoints</h3>
@@ -156,7 +156,7 @@
         <td>{{ provider.name }}</td>
         <td>{{ provider.endpoint }}</td>
         <td>{{ provider.model }}</td>
-        <td>{% if provider.enabled %}[OK] enabled{% else %}[WARN] disabled{% endif %}</td>
+        <td>{% if provider.enabled %}<span class="badge badge-ok">enabled</span>{% else %}<span class="badge badge-warn">disabled</span>{% endif %}</td>
         <td>
           <form hx-post="/settings/providers/ollama/{{ provider.name }}/toggle" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>
             <label><input type="checkbox" name="enabled" {% if provider.enabled %}checked{% endif %}> enabled</label>
@@ -176,7 +176,7 @@
   <label>Name <input name="name" placeholder="lan-beast"></label>
   <label>URL <input name="url" placeholder="http://192.168.1.50:11434"></label>
   <label>Model <input name="model" placeholder="qwen3:8b"></label>
-  <button type="submit">[OK] ADD OLLAMA</button>
+  <button type="submit">Add Ollama endpoint</button>
 </form>
 
 <h3>Cloud Providers</h3>
@@ -187,7 +187,7 @@
         <th>{{ provider.name }}</th>
         <td>{{ provider.model }}</td>
         <td>[CLOUD - data leaves this machine] keys: {{ settings_view.keys[provider.kind] }}</td>
-        <td>{% if provider.enabled %}[OK] enabled{% else %}[WARN] disabled{% endif %}</td>
+        <td>{% if provider.enabled %}<span class="badge badge-ok">enabled</span>{% else %}<span class="badge badge-warn">disabled</span>{% endif %}</td>
         <td>
           {% if provider.enabled %}
             <form hx-post="/settings/providers/cloud/{{ provider.kind }}/disable" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'><button>Disable</button></form>

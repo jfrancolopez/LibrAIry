@@ -1,6 +1,6 @@
 <div id="review-list" class="review-list">
-  {% if toast %}<p class="status">[OK] {{ toast }}</p>{% endif %}
-  <p class="status">[OK] {{ total }} ITEMS MATCH</p>
+  {% if toast %}<p><span class="badge badge-ok">{{ toast }}</span></p>{% endif %}
+  <p class="muted">{{ total }} item(s) match</p>
   {% if groups %}
     {% for group in groups %}
       <section class="review-group">
@@ -25,7 +25,7 @@
       </section>
     {% endfor %}
   {% else %}
-    <p>[OK] nothing to review yet - drop files into the inbox and wait for the worker to stage proposals.</p>
+    <p class="muted">Nothing to review yet — drop files into the inbox and wait for the worker to stage proposals.</p>
   {% endif %}
   <nav class="pager" aria-label="Review pages">
     {% if has_prev %}<a hx-get="/review/list?page={{ filters.page - 1 }}&state={{ filters.state }}" hx-target="#review-list" hx-swap="outerHTML" href="/review?page={{ filters.page - 1 }}&state={{ filters.state }}">Prev</a>{% endif %}

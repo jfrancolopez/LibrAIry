@@ -1,5 +1,5 @@
 <div id="provider-{{ provider.name }}" class="provider-row">
-  <span>[{% if provider.last_error %}FAIL{% elif provider.last_ok_at %}OK{% elif provider.enabled %}WARN{% else %}WARN{% endif %}] {{ provider.name }} / {{ provider.kind }} / {{ provider.model }}</span>
+  <span>{% set ps = 'FAIL' if provider.last_error else 'OK' if provider.last_ok_at else 'WARN' %}<span class="badge badge-{{ 'ok' if ps=='OK' else 'fail' if ps=='FAIL' else 'warn' }}">{{ ps }}</span> {{ provider.name }} / {{ provider.kind }} / {{ provider.model }}</span>
   <span>{% if provider.last_error %}{{ provider.last_error }}{% elif provider.last_ok_at %}last ok {{ provider.last_ok_at }}{% elif provider.enabled %}not tested yet{% else %}disabled{% endif %}</span>
   <button
     type="button"

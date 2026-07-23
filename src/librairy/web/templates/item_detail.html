@@ -1,26 +1,26 @@
 {% extends "base.html" %}
 {% block content %}
-  <p class="status">[OK] ITEM DETAIL</p>
+  
   <h1>{{ item.relpath }}</h1>
   <p>root: {{ item.root }} / state: {{ item.state }} / size: {{ item.size }}</p>
   <p>copy: {{ host_path }}</p>
   <p class="muted"><a href="/access">Need SMB/FTP/WebDAV access help?</a></p>
-  {% if preview %}{% include "partials/preview_card.html" %}{% elif preview_error %}<p class="status warn">[WARN] preview unavailable: {{ preview_error }}</p>{% endif %}
+  {% if preview %}{% include "partials/preview_card.html" %}{% elif preview_error %}<p class="status warn">Preview unavailable: {{ preview_error }}</p>{% endif %}
   <section class="metric wide">
     <h2>Metadata</h2>
-    {% if proposal %}<span>category: {{ proposal.category }}</span><span>confidence: {{ '%.2f'|format(proposal.confidence) }}</span><span>destination: {{ proposal.dest_root }}/{{ proposal.dest_relpath }}</span>{% else %}<span>[WARN] no proposal metadata</span>{% endif %}
+    {% if proposal %}<span>category: {{ proposal.category }}</span><span>confidence: {{ '%.2f'|format(proposal.confidence) }}</span><span>destination: {{ proposal.dest_root }}/{{ proposal.dest_relpath }}</span>{% else %}<span class="muted">No proposal metadata.</span>{% endif %}
   </section>
   <section class="metric wide">
     <h2>Evidence</h2>
-    {% if evidence_error %}<span>[WARN] evidence unavailable: {{ evidence_error }}</span>{% endif %}
-    {% for entry in evidence %}<span>[{{ entry.source|upper }}] {{ entry.field }} {{ entry.detail }} {{ '%.2f'|format(entry.weight) }}</span>{% else %}<span>[OK] no evidence</span>{% endfor %}
+    {% if evidence_error %}<span class="status warn">Evidence unavailable: {{ evidence_error }}</span>{% endif %}
+    {% for entry in evidence %}<span><span class="badge badge-info">{{ entry.source }}</span> {{ entry.field }} {{ entry.detail }} {{ '%.2f'|format(entry.weight) }}</span>{% else %}<span class="muted">No evidence.</span>{% endfor %}
   </section>
   <section class="metric wide">
     <h2>Siblings</h2>
-    {% for sibling in siblings %}<span><a href="/items/{{ sibling.id }}">{{ sibling.relpath }}</a></span>{% else %}<span>[OK] no siblings</span>{% endfor %}
+    {% for sibling in siblings %}<span><a href="/items/{{ sibling.id }}">{{ sibling.relpath }}</a></span>{% else %}<span class="muted">No siblings.</span>{% endfor %}
   </section>
   <section class="metric wide">
     <h2>History Links</h2>
-    {% for entry in history %}<span><a href="/history/plans/{{ entry.plan_id }}">{{ entry.action }} {{ entry.outcome }}</a></span>{% else %}<span>[OK] no history</span>{% endfor %}
+    {% for entry in history %}<span><a href="/history/plans/{{ entry.plan_id }}">{{ entry.action }} {{ entry.outcome }}</a></span>{% else %}<span class="muted">No history.</span>{% endfor %}
   </section>
 {% endblock %}

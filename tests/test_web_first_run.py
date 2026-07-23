@@ -77,7 +77,7 @@ def test_fresh_install_empty_states_are_purposeful(tmp_path: Path) -> None:
     assert "/mnt/user/dropbox/inbox" in dashboard.text
     assert "drop files into the inbox" in review.text
     assert "Search is ready" in search.text
-    assert "browse is empty" in browse.text
+    assert "Browse is empty" in browse.text
     assert "Quarantine is reversible" in quarantine.text
     assert "Every committed filesystem operation" in history.text
 

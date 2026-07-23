@@ -665,7 +665,9 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
     @app.post("/index/rebuild", response_class=HTMLResponse)
     def index_rebuild(request: Request) -> HTMLResponse:  # noqa: ARG001
         indexed = rebuild_search_index(conn)
-        return HTMLResponse(f'<p id="index-result" class="status">[OK] indexed {indexed}</p>')
+        return HTMLResponse(
+            f'<p id="index-result"><span class="badge badge-ok">Indexed</span> {indexed} items</p>'
+        )
 
     @app.get("/search", response_class=HTMLResponse)
     def search(

@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
-  <p class="status">[OK] FTS SEARCH</p>
+  
   <h1>Search</h1>
   <form class="filter-bar" hx-get="/search/results" hx-target="#search-results" hx-swap="outerHTML" hx-trigger="keyup changed delay:300ms from:input, change from:select, submit">
     <label>Query <input name="q" value="{{ query }}" placeholder="queen night opera"></label>

@@ -135,7 +135,7 @@ def test_settings_hx_post_redirects_without_full_document_swap(tmp_path: Path) -
     assert response.status_code == 204
     assert response.headers["HX-Redirect"] == "/settings?saved=1"
     assert "<html" not in response.text.lower()
-    assert "[OK] SETTINGS SAVED" in saved.text
+    assert "Saved" in saved.text
 
 
 def test_template_style_example_updates_without_saving(tmp_path: Path) -> None:

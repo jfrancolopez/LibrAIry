@@ -1,16 +1,16 @@
 {% extends "base.html" %}
 {% block content %}
-  <p class="status">[{{ summary_status }}] SYSTEM HEALTH</p>
+  <p>System health: <span class="badge badge-{{ 'ok' if summary_status=='OK' else 'fail' if summary_status=='FAIL' else 'warn' }}">{{ summary_status }}</span></p>
   <h1>Health</h1>
   <div class="dashboard-grid">
     <article class="metric wide">
-      <span class="status">[OK] TOOLS</span>
+      <span class="status">Tools</span>
       {% for row in tools %}
         {% include "partials/health_row.html" %}
       {% endfor %}
     </article>
     <article class="metric wide">
-      <span class="status">[OK] AI PROVIDERS</span>
+      <span class="status">AI providers</span>
       {% if providers %}
         <div class="health-table">
           {% for provider in providers %}
@@ -18,28 +18,28 @@
           {% endfor %}
         </div>
       {% else %}
-        <span>[WARN] no provider status recorded - run analysis or test from CLI</span>
+        <span class="muted">No provider status recorded — run analysis or test a provider.</span>
       {% endif %}
     </article>
     <article class="metric wide">
-      <span class="status">[{{ db_status.status }}] DB</span>
+      <span class="status">Database <span class="badge badge-{{ 'ok' if db_status.status=='OK' else 'fail' if db_status.status=='FAIL' else 'warn' }}">{{ db_status.status }}</span></span>
       <span>{{ db_status.detail }}</span>
       {% if db_status.hint %}<span>{{ db_status.hint }}</span>{% endif %}
       <button hx-post="/index/rebuild" hx-target="#index-result" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>Rebuild Search Index</button>
       <div id="index-result"></div>
     </article>
     <article class="metric wide">
-      <span class="status">[{{ worker_status.status }}] WORKER</span>
+      <span class="status">Worker <span class="badge badge-{{ 'ok' if worker_status.status=='OK' else 'fail' if worker_status.status=='FAIL' else 'warn' }}">{{ worker_status.status }}</span></span>
       <span>{{ worker_status.detail }}</span>
       {% if worker_status.hint %}<span>{{ worker_status.hint }}</span>{% endif %}
     </article>
     <article class="metric wide">
-      <span class="status">[{{ backup_status.status }}] BACKUP</span>
+      <span class="status">Backup <span class="badge badge-{{ 'ok' if backup_status.status=='OK' else 'fail' if backup_status.status=='FAIL' else 'warn' }}">{{ backup_status.status }}</span></span>
       <span>{{ backup_status.detail }}</span>
       {% if backup_status.hint %}<span>{{ backup_status.hint }}</span>{% endif %}
     </article>
     <article class="metric wide">
-      <span class="status">[OK] DISK</span>
+      <span class="status">Disk</span>
       {% for row in disk_statuses %}
         {% include "partials/health_row.html" %}
       {% endfor %}

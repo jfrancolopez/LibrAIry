@@ -46,7 +46,7 @@ def test_tool_probes_respect_path_and_render_warn(tmp_path: Path, monkeypatch) -
     response = client.get("/health")
 
     assert response.status_code == 200
-    assert "[WARN] ffprobe - missing" in response.text
+    assert "ffprobe — missing" in response.text
     assert "install ffprobe" in response.text
 
 
@@ -84,7 +84,7 @@ def test_provider_button_runs_health_and_updates_partial(tmp_path: Path, monkeyp
     row = conn.execute("SELECT * FROM provider_status WHERE name='ollama-primary'").fetchone()
 
     assert response.status_code == 200
-    assert "[OK] ollama-primary" in response.text
+    assert "ollama-primary" in response.text
     assert row["last_ok_at"] is not None
     assert row["latency_ms"] == 7
 
@@ -126,7 +126,7 @@ def test_health_summary_all_green_when_dependencies_ok(tmp_path: Path, monkeypat
     response = client.get("/health")
 
     assert response.status_code == 200
-    assert "[OK] SYSTEM HEALTH" in response.text
+    assert "System health" in response.text
 
 
 def test_health_surfaces_backup_status(tmp_path: Path) -> None:
@@ -134,7 +134,7 @@ def test_health_surfaces_backup_status(tmp_path: Path) -> None:
 
     response = client.get("/health")
 
-    assert "[OK] BACKUP" in response.text
+    assert "Backup" in response.text
     assert "disabled" in response.text
 
 
@@ -152,7 +152,9 @@ def test_health_screen_rebuilds_search_index(tmp_path: Path) -> None:
     response = client.post("/index/rebuild", headers={"x-csrf-token": client.cookies["csrf_token"]})
 
     assert "Rebuild Search Index" in page.text
-    assert response.text == '<p id="index-result" class="status">[OK] indexed 1</p>'
+    assert response.text == (
+        '<p id="index-result"><span class="badge badge-ok">Indexed</span> 1 items</p>'
+    )
     assert conn.execute("SELECT item_id FROM search_fts").fetchone()[0] == item_id
 
 

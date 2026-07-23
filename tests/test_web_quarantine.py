@@ -43,7 +43,7 @@ def test_quarantine_restore_round_trips_file_and_journals(tmp_path: Path) -> Non
     )
 
     assert response.status_code == 200
-    assert "[OK] ok -> dupe.txt" in response.text
+    assert "ok</span> → dupe.txt" in response.text
     assert (settings.inbox_dir / "dupe.txt").read_text(encoding="utf-8") == "dupe"
     assert not (settings.quarantine_dir / "2026-07-22/dupe.txt").exists()
     assert (
@@ -61,11 +61,11 @@ def test_quarantine_screen_lists_staged_and_similar_flags_without_delete(tmp_pat
     response = client.get("/quarantine")
 
     assert response.status_code == 200
-    assert "NO REMOVAL CONTROLS" in response.text
-    assert "staged copy.txt" in response.text
+    assert "Quarantine is reversible" in response.text
+    assert "copy.txt" in response.text
     assert "original inbox:dupe.txt" in response.text
     assert "needs human judgment" in response.text
-    assert "image score 0.91" in response.text
+    assert "score 0.91" in response.text
     assert "delete" not in response.text.lower()
 
 

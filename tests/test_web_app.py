@@ -39,7 +39,7 @@ def test_setup_shell_has_theme_no_external_assets_and_status_idiom(tmp_path) -> 
     response = client.get("/setup")
 
     assert response.status_code == 200
-    assert "[OK]" in response.text
+    assert "Create Admin Password" in response.text
     assert "scanlines" in response.text
     assert "http://" not in response.text
     assert "https://" not in response.text
@@ -65,3 +65,13 @@ def test_healthz_is_minimal_json(tmp_path) -> None:
     client = client_for(tmp_path)
 
     assert client.get("/healthz").json() == {"status": "ok"}
+
+
+def test_terminal_idiom_is_gone_from_chrome(tmp_path) -> None:
+    # Phase 16 removed the Pip-Boy [OK]/[WARN]/[FAIL] text chrome. Guard against
+    # it creeping back into any rendered page.
+    client = client_for(tmp_path, auth_required=False)
+    for path in ("/dashboard", "/settings", "/browse", "/review", "/health", "/search"):
+        text = client.get(path).text
+        for token in ("[OK]", "[WARN]", "[FAIL]"):
+            assert token not in text, f"{token} still on {path}"

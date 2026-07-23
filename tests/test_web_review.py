@@ -65,7 +65,7 @@ def test_review_evidence_labels_cloud_marker_and_pending_edit(tmp_path: Path) ->
 
     assert "[HEURISTIC] category unknown item fallback 0.20" in response.text
     assert "[CLOUD AI:openai/gpt-4o-mini/cloud] category" in response.text
-    assert "[WARN] pending destination" in response.text
+    assert "pending destination" in response.text
     assert "Destination" in response.text
 
 
@@ -89,7 +89,7 @@ def test_review_large_seed_is_paginated_and_fast(tmp_path: Path) -> None:
     elapsed = time.perf_counter() - started
 
     assert response.status_code == 200
-    assert "5000 ITEMS MATCH" in response.text
+    assert "5000 item(s) match" in response.text
     assert response.text.count("type=\"checkbox\"") == 50
     assert "Next" in response.text
     assert elapsed < 1.0

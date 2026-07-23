@@ -39,10 +39,10 @@ def test_image_video_audio_and_unsupported_previews_render(tmp_path: Path) -> No
     text_response = client.get(f"/preview/items/{text}")
     thumb_response = client.get(f"/preview/items/{image}/thumb")
 
-    assert "IMAGE PREVIEW" in image_response.text
-    assert "VIDEO PREVIEW" in video_response.text
-    assert "AUDIO PREVIEW" in audio_response.text
-    assert "UNSUPPORTED PREVIEW" in text_response.text
+    assert "Image preview" in image_response.text
+    assert "Video preview" in video_response.text
+    assert "Audio preview" in audio_response.text
+    assert "Unsupported preview" in text_response.text
     assert thumb_response.status_code == 200
     assert thumb_response.headers["content-type"].startswith("image/svg+xml")
 

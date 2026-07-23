@@ -70,7 +70,7 @@ def test_search_first_visit_and_empty_state_are_keyboard_operable(tmp_path: Path
 
     assert "placeholder=\"queen night opera\"" in first.text
     assert "<button type=\"submit\">Search</button>" in first.text
-    assert "[WARN] no matching indexed items" in empty.text
+    assert "No matching indexed items" in empty.text
 
 
 def test_search_content_facet_renders_marker_and_snippet(tmp_path: Path) -> None:
@@ -87,7 +87,7 @@ def test_search_content_facet_renders_marker_and_snippet(tmp_path: Path) -> None
     with_content = client.get("/search/results?q=coding&content=true")
 
     assert "doc_0042.txt" not in without_content.text
-    assert "[CONTENT]" in with_content.text
+    assert "text match" in with_content.text
     assert "<mark>coding</mark>" in with_content.text
 
 

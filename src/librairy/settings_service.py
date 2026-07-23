@@ -74,8 +74,8 @@ def provider_header(conn: sqlite3.Connection, settings: Settings) -> str:
         return "AI: heuristics-only"
     first = chain[0]
     row = conn.execute("SELECT * FROM provider_status WHERE name=?", (first.name,)).fetchone()
-    status = "OK" if row and row["last_ok_at"] and not row["last_error"] else "WARN"
-    return f"AI: {first.name} ({first.model}) [{status}]"
+    status = "online" if row and row["last_ok_at"] and not row["last_error"] else "not tested"
+    return f"AI: {first.name} ({first.model}) — {status}"
 
 
 def add_ollama_endpoint(

@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
-  <p class="status">[OK] SESSION</p>
+  
   <h1>Dashboard</h1>
   <div id="dashboard-stats" hx-get="/dashboard/stats" hx-trigger="every 5s" hx-swap="outerHTML">
     {% include "partials/dashboard_stats.html" %}
