@@ -74,6 +74,27 @@ def test_defaults_cover_documented_env_vars() -> None:
     assert settings.log_backup_count == 5
 
 
+def test_csv_fields_parse_from_real_env_vars(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AI_PROVIDER_ORDER", "ollama,openai")
+    monkeypatch.setenv("IGNORE_PATTERNS", ".DS_Store,Thumbs.db")
+    monkeypatch.setenv("CZKAWKA_EXTENSIONS", "jpg,png")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.ai_provider_order == ["ollama", "openai"]
+    assert settings.ignore_patterns == [".DS_Store", "Thumbs.db"]
+    assert settings.czkawka_extensions == ["jpg", "png"]
+
+
+def test_env_example_values_parse_through_dotenv_source(tmp_path: Path) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text(Settings.env_example_text(), encoding="utf-8")
+
+    settings = Settings(_env_file=env_file)
+
+    assert settings.ai_provider_order == ["ollama", "openai", "anthropic", "gemini"]
+
+
 def test_legacy_ollama_model_alias(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OLLAMA_MODEL", "legacy:model")
     assert Settings(_env_file=None).ollama_model_primary == "legacy:model"

@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Annotated, Any, ClassVar
 
 from pydantic import AliasChoices, Field, SecretStr, ValidationError, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 DEFAULT_CZKAWKA_EXTENSIONS = (
     "jpg,png,jpeg,gif,bmp,heic,avif,mp4,mkv,mov,avi,mp3,flac,wav,ogg,txt,pdf,docx"
@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     acoustid_key: SecretStr = Field(SecretStr(""), alias="ACOUSTID_KEY")
     mb_rate_limit: float = Field(1.1, ge=1.0, alias="MB_RATE_LIMIT")
 
-    ai_provider_order: list[str] = Field(
+    ai_provider_order: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: ["ollama", "openai", "anthropic", "gemini"],
         alias="AI_PROVIDER_ORDER",
     )
@@ -59,8 +59,10 @@ class Settings(BaseSettings):
     ai_timeout: int = Field(120, ge=1, alias="AI_TIMEOUT")
     max_ai_retries: int = Field(2, ge=0, alias="MAX_AI_RETRIES")
     batch_size: int = Field(50, ge=1, alias="BATCH_SIZE")
-    ignore_patterns: list[str] = Field(default_factory=list, alias="IGNORE_PATTERNS")
-    czkawka_extensions: list[str] = Field(
+    ignore_patterns: Annotated[list[str], NoDecode] = Field(
+        default_factory=list, alias="IGNORE_PATTERNS"
+    )
+    czkawka_extensions: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: DEFAULT_CZKAWKA_EXTENSIONS.split(","),
         alias="CZKAWKA_EXTENSIONS",
     )
