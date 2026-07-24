@@ -88,7 +88,13 @@ def classify_item(
         return _with_ai(conn, settings, item, ai_state, heuristic)
     suffix = Path(relpath).suffix.lower()
     if suffix in AUDIO_EXTS:
-        return _with_ai(conn, settings, item, ai_state, classify_music(relpath, settings=settings))
+        return _with_ai(
+            conn,
+            settings,
+            item,
+            ai_state,
+            classify_music(relpath, settings=settings, tags=_audio_tags(path, settings)),
+        )
     if suffix in VIDEO_EXTS:
         return _with_ai(
             conn,
@@ -184,3 +190,18 @@ def _tmdb_lookup(conn, settings):
     from librairy.tools.tmdb import lookup_for_settings
 
     return lookup_for_settings(settings)
+
+
+def _audio_tags(path: Path, settings) -> dict[str, str]:
+    """Embedded ID3/Vorbis tags via ffprobe — keyless, offline, and by far the
+    strongest music signal. Absent/unreadable tags degrade to heuristics."""
+    try:
+        from librairy.tools.ffprobe import probe
+
+        result = probe(path, settings)
+    except Exception:  # noqa: BLE001 - metadata is best-effort
+        return {}
+    if not result.ok or not isinstance(result.data, dict):
+        return {}
+    tags = result.data.get("tags")
+    return {str(k).lower(): str(v) for k, v in tags.items()} if isinstance(tags, dict) else {}
