@@ -10,6 +10,7 @@ from librairy.db import connect
 from librairy.executor import execute_plan
 from librairy.locks import LockHeldError
 from librairy.planner import OperationSpec, approve_plan, create_plan
+from librairy.web.evidence import humanize_evidence
 
 
 @dataclass
@@ -147,8 +148,20 @@ def _plan(conn: sqlite3.Connection, plan_id: str) -> dict[str, Any]:
     return dict(row)
 
 
-def _ops(conn: sqlite3.Connection, plan_id: str) -> list[sqlite3.Row]:
-    return list(conn.execute("SELECT * FROM plan_ops WHERE plan_id=? ORDER BY seq", (plan_id,)))
+def _ops(conn: sqlite3.Connection, plan_id: str) -> list[dict[str, object]]:
+    rows = conn.execute(
+        """
+        SELECT op.*, p.evidence AS evidence, p.confidence AS confidence
+        FROM plan_ops op
+        LEFT JOIN proposals p
+          ON p.item_id = op.item_id AND p.status != 'superseded'
+        WHERE op.plan_id=? ORDER BY op.seq
+        """,
+        (plan_id,),
+    ).fetchall()
+    return [
+        {**dict(row), "evidence_views": humanize_evidence(row["evidence"] or "")} for row in rows
+    ]
 
 
 def summary_dict(obj) -> dict[str, object]:

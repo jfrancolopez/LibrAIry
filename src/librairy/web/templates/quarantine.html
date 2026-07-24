@@ -7,7 +7,7 @@
     {% if staged %}
       {% for proposal in staged %}
         <article class="compare-card">
-          <span><span class="badge badge-warn">staged</span> {{ proposal.item_relpath }} → {{ proposal.dest_root }}/{{ proposal.dest_relpath }}</span>
+          <div class="from-to"><span class="badge badge-warn">staged</span><span class="mono muted">{{ proposal.item_relpath }}</span><span aria-hidden="true">→</span><span class="mono">{{ proposal.dest_root }}/{{ proposal.dest_relpath }}</span></div>{% if proposal.evidence_views %}<details class="why"><summary>Why?</summary><ul class="why-list">{% for view in proposal.evidence_views %}<li><span class="badge {{ 'badge-warn' if view.cloud else 'badge-info' }}">{{ view.label }}</span> {{ view.text }} <span class="muted">{{ view.weight_pct }}%</span></li>{% endfor %}</ul></details>{% endif %}
           <span>reason: {{ proposal.action }} / confidence {{ '%.2f'|format(proposal.confidence) }}</span>
           <button hx-post="/quarantine/staged/{{ proposal.id }}/approve" hx-target="#quarantine-result" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>Approve Stage</button>
           <button hx-post="/quarantine/staged/{{ proposal.id }}/unstage" hx-target="#quarantine-result" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>Un-stage</button>

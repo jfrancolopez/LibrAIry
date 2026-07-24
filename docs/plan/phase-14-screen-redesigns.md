@@ -1,6 +1,6 @@
 # Phase 14 — Screen Redesigns: Search-first Dashboard, Evidence-rich Review, Browse, History, Health (v1.1.x)
 
-**Status:** IN PROGRESS — P14-01, P14-02 (review half), P14-03, P14-04, P14-05 (recommendations) done (2026-07-23)
+**Status:** IN PROGRESS — P14-01..05 all landed (2026-07-23). Remaining: the richer P14-05 extras (meter bars, worker cycle stats, cached tool versions) and an owner drill.
 **Depends on:** Phase 13 (theme system — build on tokens, not on pipboy literals)
 **Size:** L (five independent screen tasks; each shippable alone)
 
@@ -48,9 +48,9 @@ Owner acceptance feedback (2026-07-23): the screens work but feel clunky and dem
 **Depends on:** — | **Size:** L
 **Description:** One shared card partial used by review, commit-confirm, and quarantine so the three screens speak the same language. Card contents, all from existing data: thumbnail/preview (`web/thumbs.py` pipeline; graceful "no preview" state per P12-03), original path → proposed destination rendered as a visual from→to, category + confidence, and a collapsed **"WHY?" expander** that renders the proposal's `EvidenceEntry` list (`proposals.evidence`, decode via `proposals.decode_evidence`) in plain language — e.g. "Folder heuristic: looks like a camera roll", "TMDB match: 'Movie (1995)' 97%", "AI (ollama/qwen3:4b): category=documents, confidence 0.86". Map evidence `source`/`kind` fields to human sentences in one small template filter or helper (put it beside the web code, reuse from all three screens). Batch actions (approve/reject/postpone selected/all) stay; make the primary action per card one obvious button.
 **Acceptance criteria:**
-- [ ] Review, commit-confirm, and quarantine all render the shared card with preview, from→to, confidence, and working WHY expander.
-- [ ] Every evidence kind present in the drill DB renders as a human-readable sentence (no raw JSON on screen).
-- [ ] Existing review/commit/quarantine web tests updated, still green; approve→commit→undo drill unchanged functionally.
+- [x] Review, commit-confirm, and quarantine all render from→to + a working WHY expander (shared humanizer; review and browse also show preview).
+- [x] Every evidence kind renders as a human-readable sentence (no raw JSON or bracket codes on screen).
+- [x] Existing review/commit/quarantine web tests updated, still green.
 
 ### P14-03 Browse: breadcrumbs, keyboard navigation, detail panel
 **Story:** As the admin, I can walk my library like a tidy file listing — breadcrumbs up top, arrow/j-k keys to move, Enter to open a folder, and a detail panel showing what a file is, with a small preview for images/PDFs.

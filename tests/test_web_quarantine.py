@@ -155,3 +155,15 @@ def insert_item(conn, relpath: str, state: str, size: int = 1) -> int:
 
 def proposal_status(conn, proposal_id: int) -> str:
     return conn.execute("SELECT status FROM proposals WHERE id=?", (proposal_id,)).fetchone()[0]
+
+
+def test_quarantine_staged_rows_show_from_to_and_why(tmp_path: Path) -> None:
+    client, conn, _ = client_for(tmp_path)
+    seed_staged_quarantine(conn)
+
+    page = client.get("/quarantine").text
+
+    assert 'class="from-to"' in page
+    assert "Why?" in page
+    # Humanized, not a bracket code.
+    assert "duplicate: same fingerprint" in page

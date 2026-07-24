@@ -7,6 +7,7 @@ from librairy.config import Settings
 from librairy.lifecycle import transition_item
 from librairy.planner import utc_now
 from librairy.quarantine import restore_entry
+from librairy.web.evidence import humanize_evidence
 
 
 def quarantine_data(conn: sqlite3.Connection) -> dict[str, object]:
@@ -49,18 +50,19 @@ def approve_stage(conn: sqlite3.Connection, proposal_id: int) -> None:
     )
 
 
-def _staged(conn: sqlite3.Connection) -> list[sqlite3.Row]:
-    return list(
-        conn.execute(
-            """
-            SELECT p.*, i.relpath AS item_relpath, i.size AS item_size
-            FROM proposals p
-            JOIN items i ON i.id = p.item_id
-            WHERE p.action='quarantine' AND p.status IN ('proposed', 'approved')
-            ORDER BY p.id DESC
-            """
-        )
-    )
+def _staged(conn: sqlite3.Connection) -> list[dict[str, object]]:
+    rows = conn.execute(
+        """
+        SELECT p.*, i.relpath AS item_relpath, i.size AS item_size
+        FROM proposals p
+        JOIN items i ON i.id = p.item_id
+        WHERE p.action='quarantine' AND p.status IN ('proposed', 'approved')
+        ORDER BY p.id DESC
+        """
+    ).fetchall()
+    return [
+        {**dict(row), "evidence_views": humanize_evidence(row["evidence"] or "")} for row in rows
+    ]
 
 
 def _entries(conn: sqlite3.Connection) -> list[sqlite3.Row]:

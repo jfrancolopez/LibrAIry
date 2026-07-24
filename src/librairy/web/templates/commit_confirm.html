@@ -15,9 +15,9 @@
     <button type="submit">Execute Commit</button>
   </form>
   <table>
-    <thead><tr><th scope="col">Seq</th><th scope="col">Source</th><th scope="col">Destination</th><th scope="col">Result</th></tr></thead>
+    <thead><tr><th scope="col">Seq</th><th scope="col">Move</th><th scope="col">Result</th></tr></thead>
     <tbody>
-      {% for op in ops %}<tr><td>{{ op.seq }}</td><td>{{ op.src_root }}/{{ op.src_relpath }}</td><td>{{ op.dest_root }}/{{ op.dest_relpath }}</td><td>{{ op.result or 'pending' }}</td></tr>{% endfor %}
+      {% for op in ops %}<tr><td>{{ op.seq }}</td><td><div class="from-to"><span class="mono muted">{{ op.src_root }}/{{ op.src_relpath }}</span><span aria-hidden="true">→</span><span class="mono">{{ op.dest_root }}/{{ op.dest_relpath }}</span></div>{% if op.evidence_views %}<details class="why"><summary>Why?</summary><ul class="why-list">{% for view in op.evidence_views %}<li><span class="badge {{ 'badge-warn' if view.cloud else 'badge-info' }}">{{ view.label }}</span> {{ view.text }} <span class="muted">{{ view.weight_pct }}%</span></li>{% endfor %}</ul></details>{% endif %}</td><td>{{ op.result or 'pending' }}</td></tr>{% endfor %}
     </tbody>
   </table>
   {% include "partials/commit_progress.html" %}
