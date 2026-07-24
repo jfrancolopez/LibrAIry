@@ -1,6 +1,6 @@
 # Phase 9 — Post-1.0 Fast-Follows: Document Text Search, rclone One-Way Backup
 
-**Status:** DONE — remaining boxes publish-gated, see phase-10
+**Status:** DONE
 **Depends on:** Phase 8 (v1.0 released) DONE
 **Size:** M (two independent features; may be executed as two separate runs, P9-01..02 then P9-03..05)
 
@@ -170,7 +170,7 @@ Two opt-in features that round out the v1 vision: (1) find documents by what's I
 - [x] Both workflows install `poppler-utils` before running tests.
 - [x] The pdf-extractor test is skipif-guarded on `pdftotext` availability.
 - [x] Full suite green locally; the guarded test skips (not fails) when `pdftotext` is absent from PATH.
-- [ ] CI green on GitHub for both matrix legs on the fix commit.
+- [x] CI green on GitHub for both matrix legs on the fix commit.
 **Size:** XS
 
 ## Verification steps
@@ -188,8 +188,8 @@ Two opt-in features that round out the v1 vision: (1) find documents by what's I
 - [x] Backup provably never issues destructive remote verbs (builder test + runtime assertion) and never mutates local state from remote state (test).
 - [x] Backups verify before `done`, retry with backoff, surface give-ups, and never block or alter commits.
 - [x] Both features toggle at runtime without restart; docs drills pass as written.
-- [ ] v1.1 published via the release workflow.
-- [ ] All backlog checkboxes ticked; status DONE.
+- [x] v1.1 published via the release workflow. **Folded into v1.0.0** (P10-06 tag decision): the fast-follow features shipped inside the published v1.0.0 image.
+- [x] All backlog checkboxes ticked; status DONE.
 
 ## Notes for future phases
 

@@ -1,6 +1,6 @@
 # Phase 1 — Core Safety Engine + Project Foundation
 
-**Status:** DONE — remaining boxes publish-gated, see phase-10
+**Status:** DONE
 **Depends on:** none (first phase)
 **Size:** L (largest phase — deliberately: a scaffold-only phase would leave nothing testable as a system)
 
@@ -187,7 +187,7 @@ CREATE TABLE sessions (                     -- used from Phase 5; created now so
 **Acceptance criteria:**
 - [x] `pip install -e ".[dev]"` succeeds on a clean checkout.
 - [x] `pytest` runs and passes; `ruff check src tests` passes.
-- [ ] CI workflow runs both on GitHub Actions and is green.
+- [x] CI workflow runs both on GitHub Actions and is green.
 - [x] `librairy --help` (console script) and `python -m librairy --help` both work.
 **Test notes:** smoke test imports the package and asserts version string.
 **Size:** S
@@ -334,7 +334,7 @@ CREATE TABLE sessions (                     -- used from Phase 5; created now so
 
 ## Exit gate checklist
 
-- [ ] CI green on a clean clone (ruff + pytest, Python 3.11 & 3.12).
+- [x] CI green on a clean clone (ruff + pytest, Python 3.11 & 3.12).
 - [x] A committed plan executes byte-for-byte as approved: plan-hash verified before execution; executor never recomputes destinations.
 - [x] Kill-mid-commit leaves a consistent journal, loses no file, and a re-run completes the plan.
 - [x] Containment property tests pass (hostile-path fuzzing) and containment is re-checked at execution time.
@@ -343,7 +343,7 @@ CREATE TABLE sessions (                     -- used from Phase 5; created now so
 - [x] Every documented env var is honored by `config.py`; regenerated `.env.example` in sync (test-enforced).
 - [x] Lock excludes concurrent mutators across processes.
 - [x] Legacy bash byte-identical; deprecation warning present in README.md and Instructions.md.
-- [ ] All backlog checkboxes above ticked; status line set to DONE.
+- [x] All backlog checkboxes above ticked; status line set to DONE.
 
 ## Notes for future phases
 

@@ -1,6 +1,6 @@
 # Phase 10 — Release Acceptance & v1.0.0 Publish
 
-**Status:** IN PROGRESS — P10-01..05 and P10-07 done; P10-06 blocked on the owner's tag push (O2)
+**Status:** IN PROGRESS — v1.0.0 PUBLISHED and verified 2026-07-23. Only the UNRAID hardware drill (O4) remains.
 **Depends on:** Phase 9 (code complete; CI green after P9-07)
 **Size:** M (mostly verification and packaging; one Dockerfile rework)
 
@@ -83,9 +83,9 @@ Turn the finished codebase into a published, verified v1.0.0: green CI without d
 **Depends on:** —
 **Description:** In both `.github/workflows/ci.yml` and `.github/workflows/release.yml`: bump `actions/checkout@v4` → `@v5` and `actions/setup-python@v5` → `@v6` (the Node-24 drop-in majors; do NOT chase v7 — newer majors change defaults such as credential persistence, unnecessary risk). In `ci.yml`, change the Lint step to `ruff check src tests scripts` to match `release.yml` and README.
 **Acceptance criteria:**
-- [ ] Both workflows reference `checkout@v5` and `setup-python@v6`; CI run shows no `node20` deprecation annotations.
+- [x] Both workflows reference `checkout@v5` and `setup-python@v6`; CI run shows no `node20` deprecation annotations.
 - [x] `ci.yml` lint command includes `scripts`.
-- [ ] Both CI matrix legs green.
+- [x] Both CI matrix legs green.
 **Size:** XS
 
 ### P10-02 Release build: prebuilt czkawka per-arch + workflow hardening
@@ -128,7 +128,7 @@ Turn the finished codebase into a published, verified v1.0.0: green CI without d
 **Description:** Execute the runbook, then commit the box-ticking. From repo root: `docker compose down -v; rm -rf data && mkdir -p data/inbox data/library data/quarantine data/appdata` → `docker compose build --no-cache` (watch the czkawka version print) → `docker compose up -d` → healthy within ~60s → `curl -fsS localhost:8080/healthz` → in-container tool sweep `docker exec librairy sh -c 'librairy --version && czkawka_cli --version && pdftotext -v 2>&1 | head -1 && rclone version | head -1 && rmlint --version 2>&1 | head -1 && ffprobe -version | head -1 && fpcalc -version'` → `docker top librairy` shows no UID-0 app processes → `docker exec librairy sh -c 'id && ls -ln /data/appdata'` shows 99:100 (host-side `ls -ln data/` will show the Mac user — VirtioFS remaps; in-container is the gate; real host ownership is the UNRAID drill). First-run: browser `/setup` → password → dashboard. Full loop: drop a `.txt` in `data/inbox`, wait ~30s, review → approve → commit → execute → file lands under `data/library/Documents/…` → history → undo → file back in inbox. Duplicate leg: two identical files → quarantine proposal → commit → restore. Restart: `docker compose restart librairy` → healthz OK → browser session still valid without re-login. Optional: `docker buildx build --platform linux/arm64 .` cross-build smoke; capture `docs/images/dashboard.png` for the README (P8-05's promised screenshot) — if skipped, log the deferral in phase-8's open questions.
 **Acceptance criteria:**
 - [x] Every runbook step above passes; failures fixed and re-run before ticking.
-- [ ] Closing commit ticks the now-verified docker-gated boxes in phases 4/5/6/8 and removes the Docker-verify bullet from CHANGELOG.
+- [x] Closing commit ticks the now-verified docker-gated boxes in phases 4/5/6/8 and removes the Docker-verify bullet from CHANGELOG.
 **Size:** S (execution-heavy, code-light)
 
 ### P10-06 Tag, publish, and close v1.0.0
@@ -137,8 +137,8 @@ Turn the finished codebase into a published, verified v1.0.0: green CI without d
 **Description:** Final CHANGELOG commit: retitle `## v1.0.0 - pending final acceptance` → `## v1.0.0 - <date>`, delete the "Pending Before Tagging" section (UNRAID drill becomes O4, post-publish). Confirm main is green. Recommended rehearsal: owner pushes `v1.0.0-rc1` → workflow publishes the RC image **without** moving `latest` (P10-02 guard) → pull and boot it once → delete RC release/tag if desired. Then owner pushes `v1.0.0` (O2). Agent verifies: Actions run green end-to-end; `docker pull ghcr.io/jfrancolopez/librairy:v1.0.0` and `:latest`; `docker run --rm ghcr.io/jfrancolopez/librairy:v1.0.0 librairy --version` → `librairy 1.0.0`; GitHub Release exists with CHANGELOG body. If the package is private, O3. After the owner's UNRAID drill (O4): tick phase-8's UNRAID boxes, flip phase-8 and this phase to DONE.
 **Tag strategy (decided):** tag **v1.0.0 only** — the P9 fast-follow features ship inside v1.0.0 since no earlier v1.0 was ever published; a same-commit v1.1.0 tag would be two releases with an empty delta. Phase-9's "v1.1 published" box gets the note "folded into v1.0.0". v1.1.0 is reserved for Phase 11 (TUI).
 **Acceptance criteria:**
-- [ ] `v1.0.0` tag exists; release workflow green; multi-arch image pullable; version prints 1.0.0 from the published image.
-- [ ] GitHub Release page carries the CHANGELOG.
+- [x] `v1.0.0` tag exists; release workflow green; multi-arch image pullable; version prints 1.0.0 from the published image.
+- [x] GitHub Release page carries the CHANGELOG.
 - [ ] UNRAID drill done (O4) and phase-8 closed.
 **Size:** S
 
@@ -160,10 +160,10 @@ Turn the finished codebase into a published, verified v1.0.0: green CI without d
 
 ## Exit gate checklist
 
-- [ ] CI green, warning-free; release workflow proven by an actual published multi-arch image.
-- [ ] Product reports 1.0.0 everywhere; planning docs truthful; CHANGELOG final.
+- [x] CI green, warning-free; release workflow proven by an actual published multi-arch image.
+- [x] Product reports 1.0.0 everywhere; planning docs truthful; CHANGELOG final.
 - [ ] Docker drill and UNRAID drill both done; phase-8 closed as DONE.
-- [ ] `ghcr.io/jfrancolopez/librairy:v1.0.0` + `:latest` public and pullable.
+- [x] `ghcr.io/jfrancolopez/librairy:v1.0.0` + `:latest` public and pullable.
 - [ ] All backlog checkboxes ticked; status DONE.
 
 ## Open questions log
@@ -186,3 +186,6 @@ Turn the finished codebase into a published, verified v1.0.0: green CI without d
 - 2026-07-23: **P10-07 was still broken after its own fix**; verifying against the real binary (rather than mocks) found two further silent no-ops, both now fixed and drilled — czkawka takes one `-x` per extension (a comma-joined list excludes every supported type, aborts the scan, writes `[]`, and exits 0), and it exits non-zero *when it finds matches*, so `-W` is required or every successful detection reads as a tool failure. Two similar JPEGs now return one parsed group from a real run.
 - 2026-07-23: remaining unticked boxes in this phase are blocked on things an agent cannot do from here: GitHub Actions annotations and matrix results (no `gh` auth in this environment — CI parity was instead reproduced locally on Python 3.12: `ruff` clean, 355 tests green), the published GHCR image (needs O2, the owner's tag push), and the UNRAID drill (O4).
 - 2026-07-23: **multi-arch build proven locally.** `docker buildx build --platform linux/amd64,linux/arm64 .` completes on both legs using a `docker-container` driver builder (the default `docker` driver cannot do multi-platform). The runtime stage's verification RUN — `ffprobe`, `fpcalc`, `pdftotext`, `rclone`, `rmlint`, `czkawka_cli --version`, `librairy --help` — executed on amd64 under QEMU as well as native arm64, so the prebuilt czkawka 11.0.1 binaries are good on both. This closes P10-02's per-arch box and phase-8's multi-arch smoke box without needing a published image.
+
+- 2026-07-23: **v1.0.0 published and verified.** Owner pushed the tag; Release workflow succeeded; CI green on both matrix legs (3.11 + 3.12) for the tag. Verified from this machine: `ghcr.io/jfrancolopez/librairy:v1.0.0` pulls **anonymously** (so the package is public — O3 was not needed), the manifest carries linux/amd64 + linux/arm64, `docker run ... librairy --version` prints `librairy 1.0.0`, and the GitHub Release exists (not a draft) with the CHANGELOG as its body. A multi-arch dev image is also on Docker Hub at `jfrancolopez/librairy`. **Only O4 (UNRAID drill on real hardware) is left** before this phase and phase 8 can be closed DONE.
+- 2026-07-23: the owner's portal password was rotated after it was found that the pre-`.gitignore` drill database had committed its scrypt hash to the public repo: the `auth.admin_password` row and all sessions were cleared so a fresh password is set from Settings → Portal Security. The hash remains in git history — a history rewrite was not performed.
