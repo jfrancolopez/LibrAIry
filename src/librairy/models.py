@@ -10,6 +10,7 @@ EvidenceSource = Literal[
     "acoustid",
     "musicbrainz",
     "tmdb",
+    "openlibrary",
     "library-pattern",
     "hashtag",
     "ai",

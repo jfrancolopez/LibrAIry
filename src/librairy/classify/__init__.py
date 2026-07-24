@@ -5,6 +5,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from librairy.ai.orchestrator import AIBatchState, apply_ai_if_needed
+from librairy.catalogs import catalog_enabled
 from librairy.classify.documents import classify_document_like
 from librairy.classify.heuristics import classify_path
 from librairy.classify.music import AUDIO_EXTS, classify_music
@@ -92,7 +93,13 @@ def classify_item(
         return _with_ai(conn, settings, item, ai_state, classify_video(relpath, settings=settings))
     if suffix:
         return _with_ai(
-            conn, settings, item, ai_state, classify_document_like(relpath, settings=settings)
+            conn,
+            settings,
+            item,
+            ai_state,
+            classify_document_like(
+                relpath, settings=settings, book_lookup=_book_lookup(conn)
+            ),
         )
     return _with_ai(conn, settings, item, ai_state, _unknown(relpath))
 
@@ -153,3 +160,12 @@ def _unknown(relpath: str) -> UnknownResult:
         (EvidenceEntry("heuristic", "category", "unknown item fallback", 0.2),),
         {"clean_name": clean_name},
     )
+
+
+def _book_lookup(conn):
+    """Real Open Library lookup, unless the catalog is switched off."""
+    if conn is None or not catalog_enabled(conn, "openlibrary"):
+        return None
+    from librairy.tools.openlibrary import search_book
+
+    return search_book

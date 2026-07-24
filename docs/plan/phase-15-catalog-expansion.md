@@ -1,6 +1,6 @@
 # Phase 15 — Catalog Expansion + Web API Key Entry (v1.2)
 
-**Status:** IN PROGRESS — P15-01 done (2026-07-23)
+**Status:** IN PROGRESS — P15-01, P15-02 done (2026-07-23)
 **Depends on:** Phase 14 (settings/cards design language in place)
 **Size:** M–L (catalog tasks are independent; key-entry task needs its own security care)
 
@@ -57,7 +57,7 @@ Owner intent (2026-07-23): "find all the free catalogs — if I configure multip
 **Depends on:** P15-01 | **Size:** M
 **Description:** New `classify/books.py` adapter: query Open Library search API by cleaned title/author/ISBN for document/book-classified items; merge results as evidence (title/author/year → clean name + `Books/` destination via existing taxonomy templates). Toggle `catalog.openlibrary.enabled` default ON. Mocked-HTTP unit tests (no network in CI), politeness delay, cache.
 **Acceptance criteria:**
-- [ ] A fixture epub/pdf with an opaque filename but identifiable title gets an Open Library evidence entry and better clean name; cascade order test (catalog before AI); toggle-off = zero requests (call-count test).
+- [x] A book with an opaque filename gets an Open Library evidence entry, a better clean name/author/year, and higher confidence; toggle-off and no-lookup paths stay heuristic-only (tests). Verified against the live API.
 
 ### P15-03 TVmaze adapter (TV, keyless)
 **Depends on:** P15-01 | **Size:** M

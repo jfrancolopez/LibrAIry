@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import PurePosixPath
 
 from librairy.config import Settings
 from librairy.models import Category, EvidenceEntry
 from librairy.taxonomy import RenderResult, clean_name_from_title, render_destination
+from librairy.tools.openlibrary import BookMatch
+
+BookLookup = Callable[[str], "BookMatch | None"]
 
 DOCUMENT_EXTS = {".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".txt", ".md", ".rtf"}
 BOOK_EXTS = {".epub", ".mobi", ".azw", ".azw3", ".fb2"}
@@ -32,6 +36,7 @@ def classify_document_like(
     relpath: str,
     *,
     settings: Settings,
+    book_lookup: BookLookup | None = None,
 ) -> ClassificationResult:
     path = PurePosixPath(relpath)
     suffix = path.suffix.lower()
@@ -59,6 +64,18 @@ def classify_document_like(
         evidence.append(
             EvidenceEntry("heuristic", "category", "book-like extension/name", confidence)
         )
+        match = book_lookup(title) if book_lookup else None
+        if match is not None:
+            fields["title"] = match.title
+            if match.author:
+                fields["author"] = match.author
+            if match.year:
+                fields["year"] = match.year
+            fields["clean_name"] = clean_name_from_title(match.title, suffix)
+            clean_name = str(fields["clean_name"])
+            confidence = max(confidence, 0.92)
+            detail = f"{match.title}" + (f" — {match.author}" if match.author else "")
+            evidence.append(EvidenceEntry("openlibrary", "title", detail, 0.92))
     elif suffix in DOCUMENT_EXTS:
         category = "documents"
         confidence = 0.45 if _ambiguous_document(title) else 0.72

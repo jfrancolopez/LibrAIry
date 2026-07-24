@@ -14,6 +14,7 @@ VALID_EVIDENCE_SOURCES = {
     "acoustid",
     "musicbrainz",
     "tmdb",
+    "openlibrary",
     "library-pattern",
     "hashtag",
     "ai",

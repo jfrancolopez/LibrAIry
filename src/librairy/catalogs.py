@@ -92,3 +92,18 @@ def catalog_status(catalog: CatalogInfo, keys: dict[str, str]) -> str:
     if catalog.keyless:
         return "not needed"
     return keys.get(catalog.key_field, "not set")
+
+
+def catalog_enabled(conn, slug: str) -> bool:
+    """Runtime toggle: catalog.<slug>.enabled. Keyless catalogs default ON."""
+    import json as _json
+
+    row = conn.execute(
+        "SELECT value FROM settings WHERE key=?", (f"catalog.{slug}.enabled",)
+    ).fetchone()
+    if row is None:
+        return True
+    try:
+        return bool(_json.loads(row["value"]))
+    except (TypeError, ValueError):
+        return True

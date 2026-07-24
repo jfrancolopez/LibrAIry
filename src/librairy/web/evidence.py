@@ -18,6 +18,7 @@ _SOURCE_LABEL = {
     "acoustid": "Audio fingerprint",
     "musicbrainz": "MusicBrainz",
     "tmdb": "TMDB",
+    "openlibrary": "Open Library",
     "library-pattern": "Your library",
     "hashtag": "Folder hashtag",
     "ai": "AI",
@@ -52,7 +53,7 @@ def humanize_evidence(payload: str) -> list[EvidenceView]:
         label = _SOURCE_LABEL.get(entry.source, entry.source.replace("-", " ").title())
         if entry.source == "heuristic" and entry.field == "category":
             text = f"Looks like {entry.detail}"
-        elif entry.source in {"musicbrainz", "tmdb", "acoustid"}:
+        elif entry.source in {"musicbrainz", "tmdb", "acoustid", "openlibrary"}:
             text = f"Matched {entry.detail}"
         elif entry.source == "hashtag":
             text = f"Tagged #{entry.detail}"
