@@ -156,3 +156,33 @@ def seed_item(conn, settings: Settings, relpath: str, category: str) -> int:
         evidence=[EvidenceEntry("heuristic", "category", category, 0.9)],
     )
     return item_id
+
+
+def test_browse_breadcrumbs_and_parent_link(tmp_path: Path) -> None:
+    client, conn, settings = client_for(tmp_path)
+    seed_item(conn, settings, "Photos/2026/Italy/a.jpg", "photos")
+
+    page = client.get("/browse/photos?folder=2026/Italy").text
+
+    assert 'class="crumbs"' in page
+    assert 'href="/browse"' in page
+    assert 'href="/browse/photos"' in page
+    assert 'href="/browse/photos?folder=2026"' in page
+    # ".." row goes up one level
+    assert 'data-parent="/browse/photos?folder=2026"' in page
+
+
+def test_browse_detail_panel_reuses_item_detail(tmp_path: Path) -> None:
+    client, conn, settings = client_for(tmp_path)
+    item_id = seed_item(conn, settings, "Photos/2026/Italy/a.jpg", "photos")
+
+    listing = client.get("/browse/photos?folder=2026/Italy").text
+    panel = client.get(f"/browse/items/{item_id}/panel")
+
+    assert f'hx-get="/browse/items/{item_id}/panel"' in listing
+    assert panel.status_code == 200
+    assert 'id="browse-panel"' in panel.text
+    assert "a.jpg" in panel.text
+    # Humanized evidence, not raw codes.
+    assert "Looks like photos" in panel.text
+    assert f'href="/items/{item_id}"' in panel.text

@@ -1,6 +1,6 @@
 # Phase 14 — Screen Redesigns: Search-first Dashboard, Evidence-rich Review, Browse, History, Health (v1.1.x)
 
-**Status:** IN PROGRESS — P14-01, P14-02 (review half), P14-04, P14-05 (recommendations) done (2026-07-23)
+**Status:** IN PROGRESS — P14-01, P14-02 (review half), P14-03, P14-04, P14-05 (recommendations) done (2026-07-23)
 **Depends on:** Phase 13 (theme system — build on tokens, not on pipboy literals)
 **Size:** L (five independent screen tasks; each shippable alone)
 
@@ -58,8 +58,8 @@ Owner acceptance feedback (2026-07-23): the screens work but feel clunky and dem
 **Description:** yazi-INSPIRED, read-only (locked: not a file manager). Enhance `browse_category.html` + `web/browse.py` (`browse_home`, `browse_category(conn, category, folder, page)` already do folder walking): (1) breadcrumb trail of the current path, each segment a link; (2) keyboard navigation — a few lines of vanilla JS: j/k or arrows move a highlighted row, Enter follows the row's existing link, Backspace goes up one level; (3) selecting a file row loads a right-side detail panel via htmx (`hx-get` the existing item-detail data as a partial) showing name, size, category, dates, fingerprint, evidence summary, and an image thumbnail or PDF-first-page preview where the preview pipeline supports it (reuse `preview_for_item`/`thumbs.py`; no new preview types). No file opening, no operations.
 **Acceptance criteria:**
 - [ ] Breadcrumbs, keyboard navigation, and detail panel work in the drill container across a nested folder tree.
-- [ ] Detail partial reuses item-detail data (no duplicated query logic); web test for the partial route.
-- [ ] Zero write operations exist on the screen (review check recorded).
+- [x] Detail partial reuses item-detail data (no duplicated query logic); web test for the partial route.
+- [x] Zero write operations exist on the screen (the read-only invariant test still passes: no <form>, hx-post, or <button> in browse markup).
 
 ### P14-04 History as a readable timeline
 **Story:** As the admin, history reads like a `git log` of my library: commits grouped by plan, one line per file, undo right there, and clicking a file jumps me to where it lives in Browse.

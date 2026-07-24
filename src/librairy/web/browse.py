@@ -56,7 +56,30 @@ def browse_category(
         "page": page,
         "has_next": len(rows) == PAGE_SIZE,
         "has_prev": page > 1,
+        "crumbs": _crumbs(category, folder),
+        "parent_href": _parent_href(category, folder),
     }
+
+
+def _crumbs(category: str, folder: str) -> list[dict[str, str]]:
+    """Breadcrumb trail: All → Category → each folder segment."""
+    trail = [
+        {"label": "All", "href": "/browse"},
+        {"label": category.capitalize(), "href": f"/browse/{category}"},
+    ]
+    walked = ""
+    for part in [segment for segment in folder.split("/") if segment]:
+        walked = f"{walked}/{part}" if walked else part
+        trail.append({"label": part, "href": f"/browse/{category}?folder={walked}"})
+    return trail
+
+
+def _parent_href(category: str, folder: str) -> str:
+    parts = [segment for segment in folder.split("/") if segment]
+    if not parts:
+        return "/browse"
+    parent = "/".join(parts[:-1])
+    return f"/browse/{category}?folder={parent}" if parent else f"/browse/{category}"
 
 
 def item_detail(conn: sqlite3.Connection, settings: Settings, item_id: int) -> dict[str, object]:

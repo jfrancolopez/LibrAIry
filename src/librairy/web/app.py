@@ -54,6 +54,7 @@ from librairy.web.commit import (
 )
 from librairy.web.commit import progress_data as commit_progress_data
 from librairy.web.dashboard import dashboard_data
+from librairy.web.evidence import humanize_evidence
 from librairy.web.health import health_data, test_provider
 from librairy.web.history import (
     history_data,
@@ -752,6 +753,23 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             request,
             "browse_category.html",
             {"title": "Browse", **data},
+        )
+
+    @app.get("/browse/items/{item_id}/panel", response_class=HTMLResponse)
+    def browse_item_panel(request: Request, item_id: int) -> HTMLResponse:
+        """Read-only detail panel for Browse; reuses the item-detail data."""
+        try:
+            data = item_detail(conn, settings, item_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        proposal = data.get("proposal")
+        return TEMPLATES.TemplateResponse(
+            request,
+            "partials/item_panel.html",
+            {
+                **data,
+                "evidence_views": humanize_evidence(proposal["evidence"]) if proposal else [],
+            },
         )
 
     @app.get("/items/{item_id}", response_class=HTMLResponse)

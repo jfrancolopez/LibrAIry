@@ -1,13 +1,32 @@
 {% extends "base.html" %}
 {% block content %}
-  <h1>{{ category|capitalize }}</h1>
-  <h1>{{ category }}{% if folder %} / {{ folder }}{% endif %}</h1>
-  <section class="metric wide">
-    <h2>Folders</h2>
-    {% for name, count in folders %}<a href="/browse/{{ category }}?folder={{ folder ~ '/' ~ name if folder else name }}">{{ name }} / {{ count }}</a>{% else %}<span class="muted">No subfolders yet for this category.</span>{% endfor %}
-  </section>
-  <section class="metric wide">
-    <h2>Items</h2>
-    {% for item in items %}<span><a href="/items/{{ item.item_id }}">{{ item.relpath }}</a></span>{% else %}<span class="muted">No items at this level yet.</span>{% endfor %}
-  </section>
+  <nav class="crumbs" aria-label="Breadcrumb">
+    {% for crumb in crumbs %}
+      {% if not loop.last %}<a href="{{ crumb.href }}">{{ crumb.label }}</a><span aria-hidden="true">/</span>{% else %}<span aria-current="page">{{ crumb.label }}</span>{% endif %}
+    {% endfor %}
+  </nav>
+  <h1>{{ category|capitalize }}{% if folder %} <span class="muted mono">{{ folder }}</span>{% endif %}</h1>
+  <p class="muted">Read-only view. Use <kbd>j</kbd>/<kbd>k</kbd> or arrow keys to move, <kbd>Enter</kbd> to open, <kbd>Backspace</kbd> to go up.</p>
+
+  <div class="browse-layout">
+    <div class="browse-list" id="browse-list" data-parent="{{ parent_href }}">
+      {% if folder %}<a class="browse-row is-folder" href="{{ parent_href }}"><span>..</span></a>{% endif %}
+      {% for name, count in folders %}
+        <a class="browse-row is-folder" href="/browse/{{ category }}?folder={{ folder ~ '/' ~ name if folder else name }}">
+          <span>{{ name }}</span><span class="muted">{{ count }}</span>
+        </a>
+      {% endfor %}
+      {% for item in items %}
+        <a class="browse-row is-item" href="/items/{{ item.item_id }}"
+           hx-get="/browse/items/{{ item.item_id }}/panel" hx-target="#browse-panel" hx-swap="outerHTML">
+          <span class="mono">{{ item.relpath.split('/')[-1] }}</span>
+        </a>
+      {% endfor %}
+      {% if not folders and not items %}<span class="muted">Nothing at this level yet.</span>{% endif %}
+    </div>
+    <aside id="browse-panel" class="browse-panel card">
+      <p class="muted">Select a file to see its details here.</p>
+    </aside>
+  </div>
+  <script src="/static/browse.js" defer></script>
 {% endblock %}
