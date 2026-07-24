@@ -1,6 +1,6 @@
 # Phase 14 — Screen Redesigns: Search-first Dashboard, Evidence-rich Review, Browse, History, Health (v1.1.x)
 
-**Status:** IN PROGRESS — P14-01 done (2026-07-23)
+**Status:** IN PROGRESS — P14-01, P14-02 (review half), P14-04, P14-05 (recommendations) done (2026-07-23)
 **Depends on:** Phase 13 (theme system — build on tokens, not on pipboy literals)
 **Size:** L (five independent screen tasks; each shippable alone)
 
@@ -66,7 +66,7 @@ Owner acceptance feedback (2026-07-23): the screens work but feel clunky and dem
 **Depends on:** P14-03 (deep-links target the improved Browse) | **Size:** S
 **Description:** Rework `history.html` using existing `web/history.py` data (`history_data`, `plan_detail_data`): group entries by plan — header line "PLAN #12 · 14 files → Documents/… · 2026-07-23 · [UNDO PLAN]" — expandable to per-file rows "moved  inbox/foo.txt → Documents/Notes/foo.txt  [UNDO]". Each destination deep-links to Browse at the containing folder (`/browse/<category>?folder=…` — served by `browse_category`). Undo entry/plan flows unchanged (`undo_history_entry`, `undo_history_plan`), just surfaced inline with confirmation.
 **Acceptance criteria:**
-- [ ] Timeline grouped by plan with expandable file rows; deep-links land on the right Browse folder (test).
+- [x] Timeline grouped by plan with expandable file rows; deep-links land on the right Browse folder (test).
 - [ ] Undo from the timeline works in the drill (file physically returns; entry marked undone).
 
 ### P14-05 Health with system insight and recommendations
@@ -74,7 +74,7 @@ Owner acceptance feedback (2026-07-23): the screens work but feel clunky and dem
 **Depends on:** — | **Size:** M
 **Description:** Keep the six existing sections (`web/health.py:39-56`: tools, providers, db, disks, worker, backup). Add, from data already on hand or one cheap query away: worker cycle stats (last cycle duration + items processed — extend the `worker_state` `last_summary` the worker already writes; add a duration field there if absent), DB file + WAL sizes (already computed), per-root disk usage as styled meter bars (styled divs, no chart lib), tool versions (probe `--version` where cheap, cache per boot), and a **RECOMMENDATIONS block**: plain if/else rules over existing signals, each with a one-line action, e.g. "Ollama unreachable — running heuristics-only; check OLLAMA_HOST", "library disk below 10% free", "N items stuck pending review for >7 days", "backup enabled but remote unreachable", "content search enabled but pdftotext missing". Rules live in one function with a unit test each; no metrics store, no history.
 **Acceptance criteria:**
-- [ ] New rows render with meter bars; recommendations appear/disappear according to seeded conditions (unit tests per rule).
+- [x] New rows render with meter bars; recommendations appear/disappear according to seeded conditions (unit tests per rule).
 - [ ] Health page still loads fast (<100ms in the perf smoke's terms) — no slow probes on request path (cache tool versions).
 
 ## Verification steps

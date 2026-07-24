@@ -2,6 +2,22 @@
 {% block content %}
   <p>System health: <span class="badge badge-{{ 'ok' if summary_status=='OK' else 'fail' if summary_status=='FAIL' else 'warn' }}">{{ summary_status }}</span></p>
   <h1>Health</h1>
+  {% if recommendations %}
+    <section class="card recommendations">
+      <h2>Recommendations</h2>
+      <ul>
+        {% for rec in recommendations %}
+          <li>
+            <span class="badge badge-{{ 'fail' if rec.severity == 'fail' else 'warn' }}">{{ rec.severity }}</span>
+            <strong>{{ rec.text }}</strong>
+            <span class="muted">{{ rec.action }}</span>
+          </li>
+        {% endfor %}
+      </ul>
+    </section>
+  {% else %}
+    <p class="muted">Everything looks healthy — no action needed.</p>
+  {% endif %}
   <div class="dashboard-grid">
     <article class="metric wide">
       <span class="status">Tools</span>

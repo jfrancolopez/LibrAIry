@@ -336,6 +336,10 @@ tbody tr:hover { background: var(--bg-metric); }
 
 .health-table { display: grid; gap: var(--space-2); }
 
+.recommendations { border-color: var(--accent); }
+.recommendations ul { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-3); }
+.recommendations li { display: grid; gap: var(--space-1); }
+
 .filter-bar,
 .action-bar {
   display: grid;

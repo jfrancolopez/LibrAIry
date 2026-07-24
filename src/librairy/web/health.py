@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import sqlite3
 import subprocess
@@ -53,7 +54,85 @@ def health_data(conn: sqlite3.Connection, settings: Settings) -> dict[str, objec
         "disk_statuses": disks,
         "worker_status": worker,
         "backup_status": backup,
+        "recommendations": recommendations(
+            tools=tools,
+            providers=providers,
+            disks=disks,
+            worker=worker,
+            backup=backup,
+        ),
     }
+
+
+@dataclass(frozen=True)
+class Recommendation:
+    severity: str  # "warn" | "fail"
+    text: str
+    action: str
+
+
+def recommendations(
+    *,
+    tools: list[HealthRow],
+    providers: list,
+    disks: list[HealthRow],
+    worker: HealthRow,
+    backup: HealthRow,
+) -> list[Recommendation]:
+    """Plain rules over the health signals — what's wrong and what to do."""
+    recs: list[Recommendation] = []
+
+    for tool in tools:
+        if tool.status != "OK":
+            recs.append(
+                Recommendation(
+                    "warn" if tool.status == "WARN" else "fail",
+                    f"{tool.name} is unavailable — {tool.detail}.",
+                    tool.hint or f"Install {tool.name} or rebuild the container image.",
+                )
+            )
+
+    reachable = any(row["last_ok_at"] and not row["last_error"] for row in providers)
+    if providers and not reachable:
+        recs.append(
+            Recommendation(
+                "warn",
+                "No AI provider is reachable — organizing runs on heuristics only.",
+                "Check OLLAMA_HOST and your provider settings, then Test from Health.",
+            )
+        )
+
+    for disk in disks:
+        percent = _percent_free(disk.detail)
+        if percent is not None and percent < 10:
+            recs.append(
+                Recommendation(
+                    "warn" if percent >= 5 else "fail",
+                    f"{disk.name} is low on space ({percent}% free).",
+                    "Free up space on that volume before committing more moves.",
+                )
+            )
+
+    if worker.status not in {"OK", ""}:
+        recs.append(
+            Recommendation("warn", f"Worker: {worker.detail}.", worker.hint or "Check the logs."),
+        )
+
+    if backup.status not in {"OK", ""}:
+        recs.append(
+            Recommendation(
+                "warn",
+                f"Backup: {backup.detail}.",
+                backup.hint or "Check the rclone remote and config.",
+            )
+        )
+
+    return recs
+
+
+def _percent_free(detail: str) -> int | None:
+    match = re.search(r"(\d+)%", detail or "")
+    return int(match.group(1)) if match else None
 
 
 def tool_statuses(settings: Settings) -> list[HealthRow]:  # noqa: ARG001
