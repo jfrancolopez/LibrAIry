@@ -90,3 +90,12 @@ Owner acceptance feedback (2026-07-23): the screens work but feel clunky and dem
 ## Open questions log
 
 *(Executing agent: record ambiguities and the safest-default decision taken, then continue.)*
+
+## Open questions log
+
+- 2026-07-23 (execution): P14-01..05 all landed on top of the Phase-16 design system. Notes for whoever continues:
+  - **Shared evidence humanizer** lives in `src/librairy/web/evidence.py` (`humanize_evidence`). Review rows, commit-confirm ops, quarantine staged rows, and the browse detail panel all render it the same way (source badge + plain sentence + confidence %). Add new `EvidenceSource` kinds to `_SOURCE_LABEL` there and they surface everywhere at once.
+  - **P14-02 scope call:** the three screens got from→to + a "Why?" expander rather than a single literal shared card *partial* — review/commit/quarantine keep their table/batch-select structure (converting them to cards would have put the batch-action tests at risk for little user gain). Preview shows on review rows (existing Preview button) and in the browse panel; commit/quarantine rows do not embed a thumbnail. Revisit only if the owner wants literal cards.
+  - **P14-05 partial:** the Recommendations block (the "where is it struggling / what do I do" ask) shipped with one unit test per rule. The doc's other P14-05 extras — disk **meter bars**, worker cycle duration/count stats, cached tool versions — are NOT done.
+  - **P14-03:** breadcrumbs, `..` row, keyboard nav (`static/browse.js`), and an htmx detail panel (`/browse/items/{id}/panel` → `partials/item_panel.html`). The read-only invariant test still passes; keep Browse free of `<form>`, `hx-post`, and `<button>`.
+  - **Drill caveat:** files copied straight into the library mount are not visible in Browse/Search until they are scanned into `items` and indexed into `search_fts` (the worker does this on its cycle; `/index/rebuild` only reindexes what is already in `items`). Seed drills through the inbox, or wait for a worker library scan.
