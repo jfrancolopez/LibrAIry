@@ -1,6 +1,6 @@
 # Phase 15 — Catalog Expansion + Web API Key Entry (v1.2)
 
-**Status:** IN PROGRESS — P15-01, P15-02 done (2026-07-23)
+**Status:** IN PROGRESS — P15-01, P15-02 done; TMDB activated (see log). P15-03/04/05/06/07 remain (2026-07-23)
 **Depends on:** Phase 14 (settings/cards design language in place)
 **Size:** M–L (catalog tasks are independent; key-entry task needs its own security care)
 
@@ -104,3 +104,9 @@ Owner intent (2026-07-23): "find all the free catalogs — if I configure multip
 ## Open questions log
 
 *(Executing agent: record ambiguities and the safest-default decision taken, then continue.)*
+
+## Open questions log
+
+- 2026-07-23 (execution): **Latent gap found while wiring P15-02 — the existing catalogs were dormant in production.** `classify/__init__.py` called `classify_video(relpath, settings=settings)` and `classify_music(relpath, settings=settings)` with no lookup callable, so the `tmdb_lookup` / `acoustid_lookup` / `musicbrainz_lookup` injection points were exercised **only by tests**. A configured `TMDB_KEY` therefore did nothing to real proposals. Fixed for TMDB (new `tools/tmdb.py` + `_tmdb_lookup` wiring, gated by `catalog.tmdb.enabled`). **MusicBrainz and AcoustID are still unwired** — they need an `acoustid_lookup` (fpcalc fingerprint → AcoustID API) and a `musicbrainz_lookup` client, which is the natural next task alongside P15-04. Check for this class of bug when adding any adapter: mocked tests pass whether or not the pipeline actually calls the lookup.
+- 2026-07-23: catalog HTTP clients follow one shape (`tools/openlibrary.py` is the reference): stdlib `urllib` only, explicit timeout, politeness throttle, per-process cache, and a bare `except` that returns `None` so a catalog is always evidence and never a hard dependency. Each is gated by `catalog.<slug>.enabled` (default on) via `catalogs.catalog_enabled`.
+- 2026-07-23: live verification — Open Library confirmed against the real API (`dune` → Dune / Frank Herbert / 1965). TMDB could **not** be live-verified: no `TMDB_KEY` is configured on this machine; the adapter correctly returns `None` in that case. Re-run the live check once a key exists.

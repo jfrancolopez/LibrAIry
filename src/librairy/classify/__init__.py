@@ -90,7 +90,13 @@ def classify_item(
     if suffix in AUDIO_EXTS:
         return _with_ai(conn, settings, item, ai_state, classify_music(relpath, settings=settings))
     if suffix in VIDEO_EXTS:
-        return _with_ai(conn, settings, item, ai_state, classify_video(relpath, settings=settings))
+        return _with_ai(
+            conn,
+            settings,
+            item,
+            ai_state,
+            classify_video(relpath, settings=settings, tmdb_lookup=_tmdb_lookup(conn, settings)),
+        )
     if suffix:
         return _with_ai(
             conn,
@@ -169,3 +175,12 @@ def _book_lookup(conn):
     from librairy.tools.openlibrary import search_book
 
     return search_book
+
+
+def _tmdb_lookup(conn, settings):
+    """Real TMDB lookup when a key is set and the catalog is switched on."""
+    if conn is None or not catalog_enabled(conn, "tmdb"):
+        return None
+    from librairy.tools.tmdb import lookup_for_settings
+
+    return lookup_for_settings(settings)
