@@ -184,10 +184,10 @@ Turn a feature-complete system into something a stranger installs on their UNRAI
 **Depends on:** P8-01..P8-07
 **Description:** Per Design Constraints: release workflow (test → buildx → GHCR push → release notes), `CHANGELOG.md`, version single-sourcing (footer + `--version`), tag `v1.0.0` after the user's final acceptance pass.
 **Acceptance criteria:**
-- [ ] Tagging a release-candidate tag on a branch runs the full workflow and publishes a pullable multi-arch image (dry-run tag acceptable).
-- [ ] `docker run ghcr.io/<owner>/librairy:<rc>` on a clean machine reaches a healthy portal.
+- [x] Tagging a release-candidate tag on a branch runs the full workflow and publishes a pullable multi-arch image (dry-run tag acceptable).
+- [x] `docker run ghcr.io/<owner>/librairy:<rc>` on a clean machine reaches a healthy portal.
 - [x] Changelog honestly states capabilities AND the never-list (no delete, no overwrite, library read-only).
-- [ ] `v1.0.0` tagged only after every item in this phase's exit gate is checked.
+- [ ] `v1.0.0` tagged only after every item in this phase's exit gate is checked. **Not satisfied as written** — the owner tagged v1.0.0 on 2026-07-23 with the UNRAID drill and clean-machine docs drills still outstanding; those are tracked as O4 and the open boxes above.
 **Size:** S
 
 ## Verification steps
@@ -203,13 +203,13 @@ Turn a feature-complete system into something a stranger installs on their UNRAI
 
 - [ ] A stranger can install from docs alone (clean-machine drill passed exactly as written).
 - [ ] UNRAID template drill passed on real UNRAID hardware; files owned by the mapped user; nothing runs as root.
-- [ ] Multi-arch images build, publish, and run; czkawka + all tools present on both arches.
+- [x] Multi-arch images build, publish, and run; czkawka + all tools present on both arches.
 - [ ] Boot-time validation covers the failure classes with plain-language errors.
 - [ ] 50k smoke test passes with documented resource bounds; perf numbers recorded.
 - [ ] Docs complete and sync-tested (config reference, redaction allowlist, no stale references); RAM/ROM migration note published.
 - [ ] Logs structured, rotated, secret-free (test-enforced).
 - [ ] Zero known data-safety bugs open; the full invariant test suite green.
-- [ ] `v1.0.0` tagged; release workflow produced the published image + changelog.
+- [x] `v1.0.0` tagged; release workflow produced the published image + changelog.
 - [ ] All backlog checkboxes ticked; status DONE.
 
 ## Notes for future phases
@@ -227,3 +227,5 @@ Turn a feature-complete system into something a stranger installs on their UNRAI
 - 2026-07-22: P8-06 added `scripts/perf_smoke.py`, reduced smoke coverage in tests, and `docs/performance.md`. The automated reduced run passes locally; full 50k/resource-bound acceptance remains pending until release hardware/Docker is available.
 - 2026-07-22: P8-08 release prep added tag-triggered GHCR multi-arch workflow, changelog, package-metadata version sourcing, and web footer version. Dry-run tag, image publish, clean Docker run, and final `v1.0.0` tag remain blocked until Docker/GitHub release acceptance is available.
 - 2026-07-22: P8-06 source-checkout 50k smoke passed locally: 50,000 scanned/analyzed, 10,000 committed, dashboard 5 ms, search 84 ms, DB 59,129,856 bytes, peak RSS 90 MB. Docker-image repeat remains blocked because the local Docker daemon is unavailable.
+
+- 2026-07-23: **published image verified from a clean pull.** `ghcr.io/jfrancolopez/librairy:v1.0.0` pulled anonymously, booted with fresh empty mounts, and served `/healthz` and `/dashboard` 200; `czkawka_cli 11.0.1`, `fpcalc 1.5.1` and `rclone` all present inside the published image. The manifest carries linux/amd64 + linux/arm64. Remaining open boxes in this phase all need either **real UNRAID hardware** (template drill, Community Apps field rendering, icon/WebUI link) or a **stranger-on-a-clean-machine docs drill** — neither is reproducible from the maintainer's dev box, so they stay open rather than being ticked optimistically.
