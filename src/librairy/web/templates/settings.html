@@ -122,12 +122,37 @@
   <label><input type="checkbox" name="backup_include_db_snapshot" {% if settings_view.backup.include_db_snapshot %}checked{% endif %}> Include SQLite snapshot</label>
   <p class="muted">No credential fields exist here. Configure remotes in appdata/rclone/rclone.conf with rclone itself.</p>
 
-  <h2 id="catalog-keys">Catalog Keys</h2>
-  <p class="muted">Read-only status. Keys come from environment variables and are never rendered here.</p>
+  <h2 id="catalog-keys">Catalogs</h2>
+  <p class="muted">Free metadata sources used to identify your files. Every enabled catalog is consulted before AI — more sources means better names and destinations. Keys come from environment variables and are never shown here.</p>
+  <div class="grid catalog-grid">
+    {% for entry in catalogs %}
+      <section class="card catalog-card">
+        <h3>{{ entry.info.name }}
+          {% if entry.status == 'set' %}<span class="badge badge-ok">key set</span>
+          {% elif entry.status == 'not needed' %}<span class="badge badge-ok">no key needed</span>
+          {% else %}<span class="badge badge-warn">key not set</span>{% endif %}
+        </h3>
+        <p>{{ entry.info.identifies }}</p>
+        <p class="muted"><strong>Cost:</strong> {{ entry.info.cost }}</p>
+        <p class="muted"><strong>Sends:</strong> {{ entry.info.sends }}</p>
+        {% if not entry.info.keyless %}
+          <details class="why">
+            <summary>How to get a key</summary>
+            <ol class="why-list">
+              {% for step in entry.info.steps %}<li>{{ step }}</li>{% endfor %}
+            </ol>
+          </details>
+        {% endif %}
+        <p><a href="{{ entry.info.signup_url }}" target="_blank" rel="noreferrer noopener">{{ entry.info.signup_url }}</a></p>
+      </section>
+    {% endfor %}
+  </div>
+
+  <h3>AI provider keys</h3>
   <table>
     <tbody>
-      {% for name, status in settings_view.keys.items() %}
-        <tr><th>{{ name }}</th><td>{{ status }}</td></tr>
+      {% for name in ['openai', 'anthropic', 'gemini'] %}
+        <tr><th>{{ name }}</th><td>{{ settings_view.keys[name] }}</td></tr>
       {% endfor %}
     </tbody>
   </table>

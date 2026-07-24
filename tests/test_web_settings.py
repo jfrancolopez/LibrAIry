@@ -474,3 +474,22 @@ def test_settings_storage_path_helper_renders(tmp_path: Path) -> None:
     assert 'data-key="HOST_INBOX_DIR"' in page
     assert "/srv/inbox" in page
     assert "docker compose up -d" in page
+
+
+def test_settings_catalog_cards_explain_purpose_cost_and_signup(tmp_path: Path) -> None:
+    client, _, _ = client_for(tmp_path, TMDB_KEY="tmdb-secret")
+
+    page = client.get("/settings").text
+
+    # Every catalog is described, with cost and what leaves the machine.
+    for name in ("MusicBrainz", "AcoustID", "TMDB", "Open Library"):
+        assert name in page
+    assert "Movies and TV shows" in page
+    assert "Books by title, author or ISBN" in page
+    assert "themoviedb.org/settings/api" in page
+    assert "How to get a key" in page
+    assert "Never file paths." in page
+    # Live key status, never the value.
+    assert "key set" in page
+    assert "no key needed" in page
+    assert "tmdb-secret" not in page

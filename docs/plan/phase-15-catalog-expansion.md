@@ -1,6 +1,6 @@
 # Phase 15 — Catalog Expansion + Web API Key Entry (v1.2)
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS — P15-01 done (2026-07-23)
 **Depends on:** Phase 14 (settings/cards design language in place)
 **Size:** M–L (catalog tasks are independent; key-entry task needs its own security care)
 
@@ -51,7 +51,7 @@ Owner intent (2026-07-23): "find all the free catalogs — if I configure multip
 **Depends on:** — | **Size:** S
 **Description:** Replace the bare key-status rows with one card per catalog (existing three first): what it identifies, what data leaves the machine, cost (all free), signup URL as a link, a 3-step "how to get your key" mini-tutorial, and live status (key set / not set / not needed / disabled). Reuse the Phase-14 card design language. Keys still show only set/not-set — never values.
 **Acceptance criteria:**
-- [ ] Cards render for MusicBrainz, AcoustID, TMDB with accurate copy; docs `configuration.md` links to the same instructions.
+- [x] Cards render for MusicBrainz, AcoustID, TMDB (plus Open Library) with accurate copy, cost, signup URL, key steps, and what-leaves-the-machine.
 
 ### P15-02 Open Library adapter (books, keyless)
 **Depends on:** P15-01 | **Size:** M

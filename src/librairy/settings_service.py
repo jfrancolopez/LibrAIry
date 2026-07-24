@@ -15,6 +15,7 @@ from librairy.ai.registry import (
     set_provider_order,
 )
 from librairy.backup import configured_remotes
+from librairy.catalogs import CATALOGS, catalog_status
 from librairy.config import Settings
 from librairy.dedup import DedupConfigError, dedup_options, set_dedup_option
 from librairy.planner import utc_now
@@ -65,6 +66,9 @@ def settings_page_data(conn: sqlite3.Connection, settings: Settings) -> dict[str
         "backup_remotes": configured_remotes(settings),
         "auth_required": settings.auth_required,
         "theme_options": THEME_NAMES,
+        "catalogs": [
+            {"info": catalog, "status": catalog_status(catalog, view.keys)} for catalog in CATALOGS
+        ],
     }
 
 

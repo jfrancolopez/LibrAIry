@@ -387,6 +387,12 @@ tbody tr:hover { background: var(--bg-metric); }
 
 .pager { display: flex; gap: var(--space-4); align-items: center; margin-top: var(--space-4); }
 
+
+.catalog-grid { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+.catalog-card h3 { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-top: 0; }
+.catalog-card p { font-size: var(--text-sm); }
+.catalog-card a { word-break: break-all; font-size: var(--text-sm); }
+
 /* ---- Browse ----------------------------------------------------------- */
 .crumbs {
   display: flex;
