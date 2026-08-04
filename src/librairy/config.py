@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     mb_rate_limit: float = Field(1.1, ge=1.0, alias="MB_RATE_LIMIT")
 
     ai_provider_order: Annotated[list[str], NoDecode] = Field(
-        default_factory=lambda: ["ollama", "openai", "anthropic", "gemini"],
+        default_factory=lambda: ["ollama", "lmstudio", "openai", "anthropic", "gemini"],
         alias="AI_PROVIDER_ORDER",
     )
     confidence_threshold: float = Field(0.80, ge=0.0, le=1.0, alias="CONFIDENCE_THRESHOLD")
@@ -47,6 +47,9 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("OLLAMA_MODEL_PRIMARY", "OLLAMA_MODEL"),
     )
     ollama_model_secondary: str = Field("qwen3:8b", alias="OLLAMA_MODEL_SECONDARY")
+
+    lmstudio_host: str = Field("", alias="LMSTUDIO_HOST")
+    lmstudio_model: str = Field("qwen2.5-7b-instruct", alias="LMSTUDIO_MODEL")
 
     openai_api_key: SecretStr = Field(SecretStr(""), alias="OPENAI_API_KEY")
     openai_model: str = Field("gpt-4o-mini", alias="OPENAI_MODEL")
@@ -143,11 +146,11 @@ class Settings(BaseSettings):
         "# Catalog APIs always run FIRST regardless of this setting.",
         "# AI is only called when catalog lookup fails or confidence is too low.",
         "#",
-        "# Available providers: ollama, openai, anthropic, gemini",
+        "# Available providers: ollama, lmstudio, openai, anthropic, gemini",
         "# Providers without a configured key/host are automatically skipped.",
         "# =============================================================================",
         "",
-        "AI_PROVIDER_ORDER=ollama,openai,anthropic,gemini",
+        "AI_PROVIDER_ORDER=ollama,lmstudio,openai,anthropic,gemini",
         "",
         "# Minimum confidence score to accept an AI result (0.0–1.0)",
         "CONFIDENCE_THRESHOLD=0.80",
@@ -166,6 +169,18 @@ class Settings(BaseSettings):
         "OLLAMA_HOST=http://host.docker.internal:11434",
         "OLLAMA_MODEL_PRIMARY=qwen3:4b",
         "OLLAMA_MODEL_SECONDARY=qwen3:8b",
+        "",
+        "",
+        "# =============================================================================",
+        "# LM STUDIO  (local, another machine on your LAN — no API key, nothing leaves)",
+        "# =============================================================================",
+        "# Enter the IP of the machine running LM Studio; http:// and :1234 are",
+        "# filled in automatically. Start LM Studio's server and enable network",
+        "# access (Developer tab -> Serve on Local Network).",
+        "# =============================================================================",
+        "",
+        "LMSTUDIO_HOST=",
+        "LMSTUDIO_MODEL=qwen2.5-7b-instruct",
         "",
         "",
         "# =============================================================================",
@@ -293,7 +308,7 @@ class Settings(BaseSettings):
     @field_validator("ai_provider_order")
     @classmethod
     def validate_provider_order(cls, value: list[str]) -> list[str]:
-        allowed = {"ollama", "openai", "anthropic", "gemini"}
+        allowed = {"ollama", "lmstudio", "openai", "anthropic", "gemini"}
         invalid = [provider for provider in value if provider not in allowed]
         if invalid:
             raise ValueError(f"unknown providers: {', '.join(invalid)}")

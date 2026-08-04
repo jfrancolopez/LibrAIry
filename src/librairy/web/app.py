@@ -26,6 +26,7 @@ from librairy.settings_service import (
     provider_header,
     remove_ollama_endpoint,
     reorder_providers,
+    save_lmstudio,
     save_settings,
     set_ollama_enabled,
     settings_page_data,
@@ -327,6 +328,19 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
                     template_style_value=str(form.get(f"template_{category}", "conventional")),
                 )
         except (ValueError, DedupConfigError, SettingsValidationError) as exc:
+            return _settings_error(request, str(exc))
+        return _settings_redirect(request)
+
+    @app.post("/settings/providers/lmstudio", response_class=HTMLResponse)
+    async def settings_lmstudio(request: Request) -> Response:
+        form = await _request_form(request)
+        try:
+            save_lmstudio(
+                conn,
+                host=str(form.get("lmstudio_host", "")),
+                model=str(form.get("lmstudio_model", "")),
+            )
+        except SettingsValidationError as exc:
             return _settings_error(request, str(exc))
         return _settings_redirect(request)
 

@@ -24,6 +24,8 @@ Configuration has two layers. Boot-time environment variables define paths, port
 | `OLLAMA_MODEL` | Legacy alias for `OLLAMA_MODEL_PRIMARY`. |
 | `OLLAMA_MODEL_PRIMARY` | Default primary Ollama model. |
 | `OLLAMA_MODEL_SECONDARY` | Default secondary Ollama model. |
+| `LMSTUDIO_HOST` | IP or URL of a machine running LM Studio on your LAN. An IP is enough — `http://` and `:1234` are filled in. Empty disables it. |
+| `LMSTUDIO_MODEL` | Model identifier as shown in LM Studio (e.g. `qwen2.5-7b-instruct`). |
 | `OPENAI_API_KEY` | Optional OpenAI key. Never rendered in HTML. |
 | `OPENAI_MODEL` | OpenAI model name. |
 | `ANTHROPIC_API_KEY` | Optional Anthropic key. Never rendered in HTML. |

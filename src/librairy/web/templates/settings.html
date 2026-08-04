@@ -202,6 +202,16 @@
   <button type="submit">Reorder</button>
 </form>
 
+<h3>LM Studio (local, on your LAN)</h3>
+<p class="muted">Running LM Studio on another machine? Type its IP — <code>http://</code> and <code>:1234</code> are filled in for you. No API key, nothing leaves your network. In LM Studio: <strong>Developer</strong> tab → start the server → enable <strong>Serve on Local Network</strong>.</p>
+<form method="post" action="/settings/providers/lmstudio" hx-post="/settings/providers/lmstudio" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label>IP or URL <input name="lmstudio_host" value="{{ lmstudio.host }}" placeholder="192.168.1.50"></label>
+  <label>Model <input name="lmstudio_model" value="{{ lmstudio.model }}" placeholder="qwen2.5-7b-instruct"></label>
+  <button type="submit" class="btn-primary">Save LM Studio</button>
+</form>
+<p class="muted">After saving, use the <strong>Test</strong> button on the <a href="/health">Health</a> page to confirm the connection and see which models are loaded.</p>
+
 <h3>Ollama Endpoints</h3>
 <table>
   <thead><tr><th>Name</th><th>Endpoint</th><th>Model</th><th>Status</th><th>Actions</th></tr></thead>

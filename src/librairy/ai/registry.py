@@ -43,7 +43,7 @@ def provider_order(conn: sqlite3.Connection, settings: Settings) -> list[str]:
 
 
 def set_provider_order(conn: sqlite3.Connection, order: list[str]) -> None:
-    valid = {"ollama", "openai", "anthropic", "gemini"}
+    valid = {"ollama", "lmstudio", "openai", "anthropic", "gemini"}
     clean = [kind for kind in order if kind in valid]
     clean.extend(kind for kind in valid if kind not in clean)
     conn.execute(
@@ -77,7 +77,30 @@ def _configured_providers(conn: sqlite3.Connection, settings: Settings) -> list[
         ),
         _cloud(conn, "gemini", settings.gemini_api_key.get_secret_value(), settings.gemini_model),
     ]
-    return [*ollama, *clouds]
+    lmstudio = _lmstudio_configs(conn, settings)
+    return [*ollama, *lmstudio, *clouds]
+
+
+def _lmstudio_configs(conn: sqlite3.Connection, settings: Settings) -> list[ProviderConfig]:
+    """LM Studio is a local OpenAI-compatible server: no key, no cloud opt-in."""
+    # DB value wins so the host can be set from Settings without a restart.
+    stored_host = _setting_json(conn, "ai.lmstudio.host")
+    host = str(stored_host or settings.lmstudio_host).strip()
+    if not host:
+        return []
+    stored_model = _setting_json(conn, "ai.lmstudio.model")
+    model = str(stored_model or settings.lmstudio_model).strip()
+    enabled = _setting_json(conn, "ai.lmstudio.enabled")
+    return [
+        ProviderConfig(
+            name="lmstudio",
+            kind="lmstudio",
+            endpoint=host,
+            model=model,
+            enabled=True if enabled is None else bool(enabled),
+            is_local=True,
+        )
+    ]
 
 
 def _ollama_configs(conn: sqlite3.Connection, settings: Settings) -> list[ProviderConfig]:
@@ -141,3 +164,17 @@ def _setting_json(conn: sqlite3.Connection, key: str):
     if row is None:
         return None
     return json.loads(row["value"])
+
+
+def set_lmstudio(conn: sqlite3.Connection, *, host: str, model: str) -> None:
+    """Persist the LM Studio host/model typed in Settings (an IP is enough)."""
+    from librairy.ai.lmstudio import normalize_host
+
+    conn.execute(
+        "INSERT OR REPLACE INTO settings(key, value) VALUES (?, ?)",
+        ("ai.lmstudio.host", json.dumps(normalize_host(host))),
+    )
+    conn.execute(
+        "INSERT OR REPLACE INTO settings(key, value) VALUES (?, ?)",
+        ("ai.lmstudio.model", json.dumps(model.strip())),
+    )

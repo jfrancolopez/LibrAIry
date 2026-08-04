@@ -27,6 +27,7 @@ Open `http://localhost:8080` and drop files into `data/inbox`. No password is re
 - [Docker install](docs/install-docker.md)
 - [UNRAID install](docs/install-unraid.md)
 - [Configuration](docs/configuration.md)
+- [LM Studio on your LAN](docs/lm-studio.md)
 - [Using LibrAIry](docs/using-librairy.md)
 - [Troubleshooting](docs/troubleshooting.md)
 - [Security](docs/security.md)

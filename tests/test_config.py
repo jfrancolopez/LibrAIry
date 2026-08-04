@@ -59,7 +59,7 @@ def test_defaults_cover_documented_env_vars() -> None:
     assert settings.host_inbox_dir == Path("/mnt/nas/inbox")
     assert settings.host_appdata_dir == Path("/mnt/nas/appdata")
     assert settings.appdata_dir == Path("/data/appdata")
-    assert settings.ai_provider_order == ["ollama", "openai", "anthropic", "gemini"]
+    assert settings.ai_provider_order == ["ollama", "lmstudio", "openai", "anthropic", "gemini"]
     assert settings.confidence_threshold == 0.80
     assert settings.use_multi_ai is True
     assert settings.ollama_host == "http://host.docker.internal:11434"
@@ -92,7 +92,7 @@ def test_env_example_values_parse_through_dotenv_source(tmp_path: Path) -> None:
 
     settings = Settings(_env_file=env_file)
 
-    assert settings.ai_provider_order == ["ollama", "openai", "anthropic", "gemini"]
+    assert settings.ai_provider_order == ["ollama", "lmstudio", "openai", "anthropic", "gemini"]
 
 
 def test_legacy_ollama_model_alias(monkeypatch: pytest.MonkeyPatch) -> None:

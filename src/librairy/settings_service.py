@@ -5,11 +5,13 @@ import sqlite3
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
+from librairy.ai.lmstudio import normalize_host
 from librairy.ai.registry import (
     configured_providers,
     ollama_endpoints,
     provider_chain,
     provider_order,
+    set_lmstudio,
     set_ollama_endpoints,
     set_provider_enabled,
     set_provider_order,
@@ -65,6 +67,7 @@ def settings_page_data(conn: sqlite3.Connection, settings: Settings) -> dict[str
         "cloud_providers": CLOUD_PROVIDERS,
         "backup_remotes": configured_remotes(settings),
         "auth_required": settings.auth_required,
+        "lmstudio": lmstudio_view(conn, settings),
         "theme_options": THEME_NAMES,
         "catalogs": [
             {"info": catalog, "status": catalog_status(catalog, view.keys)} for catalog in CATALOGS
@@ -354,3 +357,16 @@ def _journal(conn: sqlite3.Connection, key: str, old, new) -> None:
 
 def _safe_value(value) -> str:
     return str(value)[:80]
+
+
+def lmstudio_view(conn: sqlite3.Connection, settings: Settings) -> dict[str, str]:
+    """Current LM Studio host/model (DB override wins over the env default)."""
+    host = _setting_value(conn, "ai.lmstudio.host", "") or settings.lmstudio_host
+    model = _setting_value(conn, "ai.lmstudio.model", "") or settings.lmstudio_model
+    return {"host": str(host), "model": str(model)}
+
+
+def save_lmstudio(conn: sqlite3.Connection, *, host: str, model: str) -> None:
+    if host.strip() and not normalize_host(host):
+        raise SettingsValidationError("enter an IP or URL for LM Studio")
+    set_lmstudio(conn, host=host, model=model)

@@ -8,6 +8,7 @@ from pathlib import PurePosixPath
 
 from librairy.ai.base import AIAnswer, HealthResult, Provider, ProviderConfig
 from librairy.ai.cloud import AnthropicProvider, GeminiProvider, OpenAIProvider
+from librairy.ai.lmstudio import LMStudioProvider
 from librairy.ai.ollama import OllamaProvider
 from librairy.ai.redact import build_view
 from librairy.ai.registry import provider_chain
@@ -89,6 +90,8 @@ def _providers(conn: sqlite3.Connection, settings: Settings) -> list[Provider]:
 def provider_for_config(config: ProviderConfig, settings: Settings) -> Provider:
     if config.kind == "ollama":
         return OllamaProvider(config, retries=settings.max_ai_retries)
+    if config.kind == "lmstudio":
+        return LMStudioProvider(config, retries=settings.max_ai_retries)
     if config.kind == "openai":
         return OpenAIProvider(config, settings.openai_api_key.get_secret_value())
     if config.kind == "anthropic":
