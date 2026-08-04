@@ -1,6 +1,6 @@
 # Phase 17 — Adaptive Dashboard UI: Responsive Shell, Explorer Browse, Decision-First Review
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS — P17-01/02/04 landed (2026-07-24); P17-03 (explorer browse) + P17-05 next
 **Depends on:** Phase 16 (design system) and Phase 14 (screen content) — this reshapes *layout and density*, not the data.
 **Size:** L
 
@@ -44,15 +44,15 @@ Layout/shell responsiveness across four breakpoints; a widget-based dashboard; a
 
 ### P17-01 Fluid responsive shell + density scale
 **Depends on:** — | **Size:** M
-- [ ] Four named breakpoints implemented; `.shell` fluid with a text-measure cap; no horizontal scroll at 320px or 2560px.
+- [x] Four named breakpoints implemented; `.shell` fluid with a text-measure cap; no horizontal scroll at 320px or 2560px.
 - [ ] Header/nav collapse cleanly on `compact` (CSS-only) and spread out on `ultra`.
-- [ ] Density scale applied to tables/lists so `ultra` shows more rows, not just more padding.
+- [x] Density scale applied to tables/lists so `ultra` shows more rows, not just more padding.
 
 ### P17-02 Widget dashboard
 **Depends on:** P17-01 | **Size:** M
-- [ ] Dashboard renders as a reflowing widget grid with search hero first and the review queue prominent.
+- [x] Dashboard renders as a reflowing widget grid with search hero first and the review queue prominent.
 - [ ] Widget order/priority verified at all four breakpoints; the most important widgets come first on `compact`.
-- [ ] Existing `dashboard_data` reused unchanged; auto-refresh still works.
+- [x] Existing `dashboard_data` reused unchanged; auto-refresh still works.
 
 ### P17-03 Explorer Browse (Miller columns)
 **Depends on:** P17-01 | **Size:** L
@@ -62,9 +62,9 @@ Layout/shell responsiveness across four breakpoints; a widget-based dashboard; a
 
 ### P17-04 Decision-first Review
 **Depends on:** P17-01 | **Size:** M
-- [ ] Confidence colour band + text label per row; per-row Approve/Reject alongside the batch bar.
+- [x] Confidence colour band + text label per row; per-row Approve/Reject alongside the batch bar.
 - [ ] Filter/sort by confidence; "approve everything above X" flow works in one action.
-- [ ] Contrast test green; no state signalled by colour alone.
+- [x] Contrast test green; no state signalled by colour alone.
 
 ### P17-05 Screenshot + polish pass
 **Depends on:** P17-02, P17-03, P17-04 | **Size:** S

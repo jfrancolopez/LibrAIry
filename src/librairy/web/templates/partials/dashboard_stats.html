@@ -1,50 +1,88 @@
-<div id="dashboard-stats" class="dashboard-grid">
-  <article class="metric centerpiece">
-    <span class="status">Awaiting review</span>
-    <strong>{{ proposal_count }}</strong>
-    <span>proposals staged</span>
+<div id="dashboard-stats" class="widget-grid">
+  <article class="widget card centerpiece">
+    <h3>Awaiting review</h3>
+    <p class="big">{{ proposal_count }}</p>
+    <p class="muted">proposals staged</p>
+    {% if proposal_count %}<p><a class="btn btn-primary" href="/review">Review now</a></p>{% endif %}
   </article>
-  <article class="metric">
-    <span class="status">Worker</span>
-    <strong>{{ current_phase }}</strong>
-    <span>{{ worker_state.get('last_cycle_at', 'no heartbeat yet') }}</span>
+
+  <article class="widget card">
+    <h3>Worker</h3>
+    <p class="big">{{ current_phase }}</p>
+    <p class="muted">{{ worker_state.get('last_cycle_at', 'no heartbeat yet') }}</p>
   </article>
-  <article class="metric">
-    <span class="status">Lifecycle</span>
+
+  <article class="widget card">
+    <h3>Lifecycle</h3>
     {% if counts %}
-      {% for state, count in counts.items() %}<span>{{ state }}: {{ count }}</span>{% endfor %}
+      <ul>
+        {% for state, count in counts.items() %}
+          <li><span>{{ state }}</span><strong>{{ count }}</strong></li>
+        {% endfor %}
+      </ul>
     {% else %}
-      <span>inbox clear - drop files to begin at {{ host_inbox_dir }}.</span>
+      <p class="muted">Inbox clear — drop files at <span class="mono">{{ host_inbox_dir }}</span>.</p>
     {% endif %}
   </article>
-  <article class="metric wide">
-    <span class="status">Providers</span>
+
+  <article class="widget card">
+    <h3>Disk</h3>
+    {% if disks %}
+      <ul>
+        {% for disk in disks %}
+          <li>
+            <span>{{ disk.root }}</span>
+            <span class="{{ 'status warn' if disk.percent_free < 10 else 'muted' }}">{{ disk.free_gb }}GB free · {{ disk.percent_free }}%</span>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="muted">No volumes reported.</p>
+    {% endif %}
+  </article>
+
+  <article class="widget card">
+    <h3>AI providers</h3>
     {% if providers %}
-      {% for provider in providers %}<span>{{ provider.name }}: {{ provider.kind }} / {{ provider.enabled }}</span>{% endfor %}
+      <ul>
+        {% for provider in providers %}
+          <li>
+            <span>{{ provider.name }}</span>
+            <span class="badge {{ 'badge-ok' if provider.enabled else 'badge-warn' }}">{{ provider.kind }}</span>
+          </li>
+        {% endfor %}
+      </ul>
     {% else %}
-      <span>No provider status yet. Local heuristics still run; configure Ollama in Settings when ready.</span>
+      <p class="muted">Heuristics only — add Ollama or LM Studio in Settings.</p>
     {% endif %}
   </article>
-  <article class="metric wide">
-    <span class="status">Backup</span>
+
+  <article class="widget card">
+    <h3>Backup</h3>
     {% if backup_counts %}
-      {% for state, count in backup_counts.items() %}<span>{{ state }}: {{ count }}</span>{% endfor %}
+      <ul>
+        {% for state, count in backup_counts.items() %}
+          <li><span>{{ state }}</span><strong>{{ count }}</strong></li>
+        {% endfor %}
+      </ul>
     {% else %}
-      <span>No backup work queued.</span>
+      <p class="muted">No backup work queued.</p>
     {% endif %}
   </article>
-  <article class="metric wide">
-    <span class="status">Disk</span>
-    {% for disk in disks %}
-      <span>{{ disk.root }}: {{ disk.free_gb }}GB free / {{ disk.total_gb }}GB [{{ disk.percent_free }}%]</span>
-    {% endfor %}
-  </article>
-  <article class="metric wide">
-    <span class="status">Recent ops</span>
+
+  <article class="widget card widget-wide widget-wide-2">
+    <h3>Recent operations</h3>
     {% if recent_history %}
-      {% for row in recent_history %}<span>{{ row.action }} {{ row.outcome }} {{ row.dest_relpath }}</span>{% endfor %}
+      <ul>
+        {% for row in recent_history %}
+          <li>
+            <span class="badge {{ 'badge-ok' if row.outcome == 'ok' else 'badge-warn' }}">{{ row.action }}</span>
+            <span class="mono muted">{{ row.dest_relpath }}</span>
+          </li>
+        {% endfor %}
+      </ul>
     {% else %}
-      <span>No committed operations yet. Approve proposals in Review, then commit them safely.</span>
+      <p class="muted">No committed operations yet. Approve proposals in Review, then commit them.</p>
     {% endif %}
   </article>
 </div>

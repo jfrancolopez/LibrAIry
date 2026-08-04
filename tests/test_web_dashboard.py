@@ -39,8 +39,8 @@ def test_dashboard_counts_update_via_partial(tmp_path: Path) -> None:
     transition_item(conn, item_id, "pending")
     second = client.get("/dashboard/stats")
 
-    assert "inbox clear" in first.text
-    assert "pending: 1" in second.text
+    assert "Inbox clear" in first.text
+    assert "<span>pending</span><strong>1</strong>" in second.text
 
 
 def test_dashboard_reads_existing_tables_without_engine_mutation(tmp_path: Path) -> None:
@@ -61,9 +61,10 @@ def test_dashboard_empty_state_and_disk_rows_render(tmp_path: Path) -> None:
 
     response = client.get("/dashboard")
 
-    assert "drop files to begin" in response.text
-    assert "inbox:" in response.text
-    assert "appdata:" in response.text
+    assert "drop files at" in response.text
+    assert "<span>inbox</span>" in response.text
+    assert "<span>appdata</span>" in response.text
+    assert "GB free" in response.text
 
 
 def test_dashboard_surfaces_backup_queue_counts(tmp_path: Path) -> None:
@@ -86,7 +87,7 @@ def test_dashboard_surfaces_backup_queue_counts(tmp_path: Path) -> None:
     response = client.get("/dashboard/stats")
 
     assert "Backup" in response.text
-    assert "queued: 1" in response.text
+    assert "<span>queued</span><strong>1</strong>" in response.text
 
 
 def _counts(conn) -> dict[str, int]:

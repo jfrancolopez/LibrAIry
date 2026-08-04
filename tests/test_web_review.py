@@ -294,3 +294,30 @@ def item_state(conn, proposal_id: int) -> str:
         """,
         (proposal_id,),
     ).fetchone()[0]
+
+
+def test_review_rows_carry_confidence_bands_and_row_actions(tmp_path: Path) -> None:
+    client, conn = client_for(tmp_path)
+    high = insert_item(conn, "sure.mp3")
+    low = insert_item(conn, "unsure.bin")
+    upsert_proposal(
+        conn, item_id=high, category="music", clean_name="sure.mp3",
+        dest_relpath="Music/A/B/sure.mp3", confidence=0.95,
+        evidence=[EvidenceEntry("tags", "metadata", "embedded audio tags", 0.95)],
+    )
+    upsert_proposal(
+        conn, item_id=low, category="misc", clean_name="unsure.bin",
+        dest_relpath=None, confidence=0.3,
+        evidence=[EvidenceEntry("heuristic", "category", "unknown", 0.3)],
+    )
+
+    page = client.get("/review").text
+
+    # Colour band is paired with a text label, never colour alone.
+    assert "conf-high" in page
+    assert "confident" in page
+    assert "conf-low" in page
+    assert "needs a look" in page
+    # Per-row decisions, CSP-safe (htmx attributes, no inline handlers).
+    assert 'hx-vals=\'{"action": "approve"' in page
+    assert "onclick=" not in page

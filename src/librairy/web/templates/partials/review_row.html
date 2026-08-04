@@ -1,5 +1,7 @@
-<tr id="proposal-{{ proposal.id }}">
-  <td><input form="review-actions" name="proposal_id" type="checkbox" aria-label="select {{ proposal.item_relpath }}" value="{{ proposal.id }}"></td>
+{% set conf = proposal.confidence %}
+{% set band = 'conf-high' if conf >= 0.85 and proposal.dest_relpath else ('conf-low' if conf < 0.6 or not proposal.dest_relpath else 'conf-mid') %}
+<tr id="proposal-{{ proposal.id }}" class="{{ band }}">
+  <td><input form="review-actions" id="row-{{ proposal.id }}" name="proposal_id" type="checkbox" aria-label="select {{ proposal.item_relpath }}" value="{{ proposal.id }}"></td>
   <td>{{ proposal.item_relpath }}</td>
   <td>
     <div class="from-to">
@@ -9,7 +11,10 @@
     </div>
     {% if warning %}<span class="badge badge-warn">{{ warning }}</span>{% endif %}
   </td>
-  <td><span class="confidence" style="--score: {{ (proposal.confidence * 100)|round|int }}%">{{ '%.2f'|format(proposal.confidence) }}</span></td>
+  <td>
+    <span class="confidence" style="--score: {{ (conf * 100)|round|int }}%">{{ '%.2f'|format(conf) }}</span>
+    <span class="badge {{ 'badge-ok' if band == 'conf-high' else ('badge-fail' if band == 'conf-low' else 'badge-warn') }}">{{ 'confident' if band == 'conf-high' else ('needs a look' if band == 'conf-low' else 'probable') }}</span>
+  </td>
   <td>
     <details class="why">
       <summary>Why?</summary>
@@ -33,7 +38,21 @@
       hx-target="#preview-{{ proposal.id }}"
       hx-swap="innerHTML"
     >Preview</button>
+    <div class="row-actions">
+      <button type="button" class="btn-primary"
+        hx-post="/review/action"
+        hx-vals='{"action": "approve", "proposal_id": "{{ proposal.id }}", "state": "{{ proposal.status }}"}'
+        hx-target="#review-list" hx-swap="outerHTML"
+        hx-headers='{"x-csrf-token":"{{ request.state.session.csrf_token }}"}'>Approve</button>
+      <button type="button"
+        hx-post="/review/action"
+        hx-vals='{"action": "reject", "proposal_id": "{{ proposal.id }}", "state": "{{ proposal.status }}"}'
+        hx-target="#review-list" hx-swap="outerHTML"
+        hx-headers='{"x-csrf-token":"{{ request.state.session.csrf_token }}"}'>Reject</button>
+    </div>
     <div id="preview-{{ proposal.id }}"></div>
+    <details class="edit-toggle">
+      <summary>Edit</summary>
     <form
       class="edit-form"
       hx-post="/review/proposals/{{ proposal.id }}/edit"
@@ -46,5 +65,6 @@
       <label>Destination <input name="dest_relpath" value="{{ proposal.dest_relpath or '' }}"></label>
       <button type="submit">Save</button>
     </form>
+    </details>
   </td>
 </tr>
