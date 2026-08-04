@@ -1,6 +1,6 @@
 # Phase 17 — Adaptive Dashboard UI: Responsive Shell, Explorer Browse, Decision-First Review
 
-**Status:** IN PROGRESS — P17-01/02/04 landed (2026-07-24); P17-03 (explorer browse) + P17-05 next
+**Status:** IN PROGRESS — P17-01/02/03/04 landed (2026-07-24); P17-05 (polish + screenshots) next
 **Depends on:** Phase 16 (design system) and Phase 14 (screen content) — this reshapes *layout and density*, not the data.
 **Size:** L
 
@@ -56,9 +56,9 @@ Layout/shell responsiveness across four breakpoints; a widget-based dashboard; a
 
 ### P17-03 Explorer Browse (Miller columns)
 **Depends on:** P17-01 | **Size:** L
-- [ ] Multi-pane explorer on `wide`/`ultra`, single pane + breadcrumbs on smaller; the Phase-14 detail panel is the last pane.
-- [ ] Arrow keys move within a pane, Left/Right across panes, Enter opens, Backspace up; visible focus throughout.
-- [ ] Read-only invariant test still passes (no `<form>`, `hx-post`, or `<button>` in browse markup).
+- [x] Multi-pane explorer on `wide`/`ultra`, single pane + breadcrumbs on smaller; the Phase-14 detail panel is the last pane.
+- [x] Arrow keys move within a pane, Left/Right across panes, Enter opens, Backspace up; visible focus throughout.
+- [x] Read-only invariant test still passes (no `<form>`, `hx-post`, or `<button>` in browse markup).
 
 ### P17-04 Decision-first Review
 **Depends on:** P17-01 | **Size:** M
@@ -87,3 +87,6 @@ Layout/shell responsiveness across four breakpoints; a widget-based dashboard; a
 
 *(Executing agent: record ambiguities and the safest-default decision taken, then continue.)*
 - 2026-07-24: created from owner feedback. Glance is a **reference for density and layout ideas only** — no code, markup, or CSS is taken from it, and LibrAIry does not gain a YAML widget config.
+
+- 2026-07-24: **P17-03 exposed a real Browse bug.** The category counts came from `search_fts` over *all* items, but the panes only list committed **library** files — so the owner's inbox of 174 items showed "music 48" next to "No files at this level". `browse_home` and `browse_category` now both filter `items.root = 'library'`, so counts match what Browse can actually show (all zeros until a commit). Regression test: `test_browse_counts_only_committed_library_files`.
+- 2026-07-24: the explorer starts focus on the **Folders** pane rather than Categories, since that is where navigation usually begins; the Categories pane is hidden between 1024–1599px to give folders/files/details room, and returns at `ultra`.

@@ -496,6 +496,56 @@ tbody tr:hover { background: var(--bg-metric); }
 }
 @media (max-width: 840px) { .browse-layout { grid-template-columns: 1fr; } }
 
+/* ---- Explorer: Miller-style panes (Phase 17) -------------------------- */
+/* compact/medium stack the panes; wide shows folders+files+details; ultra
+   adds the category pane so the whole tree is visible at once. */
+.explorer {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-3);
+  align-items: start;
+}
+.explorer-pane {
+  min-width: 0;
+  background: var(--bg-metric);
+  border: var(--border-thin) solid var(--border);
+  border-radius: var(--radius-ui);
+  padding: var(--space-3);
+}
+.explorer-pane h3 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+  border-bottom: var(--border-thin) solid var(--border);
+  padding-bottom: var(--space-1);
+}
+.pane-list {
+  display: grid;
+  gap: 1px;
+  max-height: 62vh;
+  overflow-y: auto;
+}
+.browse-row.is-current { background: var(--bg-input); font-weight: 700; }
+
+@media (min-width: 640px) {
+  .explorer { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+}
+@media (min-width: 1024px) {
+  /* folders | files | details — categories fold into the breadcrumb */
+  .explorer { grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) minmax(0, 1.3fr); }
+  .explorer-pane[data-pane="0"] { display: none; }
+}
+@media (min-width: 1600px) {
+  /* the full tree: categories | folders | files | details */
+  .explorer {
+    grid-template-columns: minmax(0, 0.7fr) minmax(0, 1fr) minmax(0, 1.2fr) minmax(0, 1.4fr);
+  }
+  .explorer-pane[data-pane="0"] { display: block; }
+  .pane-list { max-height: 70vh; }
+}
+
 .browse-list { display: grid; gap: var(--space-1); }
 .browse-row {
   display: flex;

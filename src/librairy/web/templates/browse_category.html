@@ -5,27 +5,59 @@
       {% if not loop.last %}<a href="{{ crumb.href }}">{{ crumb.label }}</a><span aria-hidden="true">/</span>{% else %}<span aria-current="page">{{ crumb.label }}</span>{% endif %}
     {% endfor %}
   </nav>
-  <h1>{{ category|capitalize }}{% if folder %} <span class="muted mono">{{ folder }}</span>{% endif %}</h1>
-  <p class="muted">Read-only view. Use <kbd>j</kbd>/<kbd>k</kbd> or arrow keys to move, <kbd>Enter</kbd> to open, <kbd>Backspace</kbd> to go up.</p>
+  <p class="muted">Read-only. <kbd>↑</kbd><kbd>↓</kbd> move · <kbd>←</kbd><kbd>→</kbd> change column · <kbd>Enter</kbd> open · <kbd>Backspace</kbd> up</p>
 
-  <div class="browse-layout">
-    <div class="browse-list" id="browse-list" data-parent="{{ parent_href }}">
-      {% if folder %}<a class="browse-row is-folder" href="{{ parent_href }}"><span>..</span></a>{% endif %}
-      {% for name, count in folders %}
-        <a class="browse-row is-folder" href="/browse/{{ category }}?folder={{ folder ~ '/' ~ name if folder else name }}">
-          <span>{{ name }}</span><span class="muted">{{ count }}</span>
-        </a>
-      {% endfor %}
-      {% for item in items %}
-        <a class="browse-row is-item" href="/items/{{ item.item_id }}"
-           hx-get="/browse/items/{{ item.item_id }}/panel" hx-target="#browse-panel" hx-swap="outerHTML">
-          <span class="mono">{{ item.relpath.split('/')[-1] }}</span>
-        </a>
-      {% endfor %}
-      {% if not folders and not items %}<span class="muted">Nothing at this level yet.</span>{% endif %}
-    </div>
-    <aside id="browse-panel" class="browse-panel card">
-      <p class="muted">Select a file to see its details here.</p>
+  <div class="explorer" id="explorer">
+    <section class="explorer-pane" data-pane="0" aria-label="Categories">
+      <h3>Library</h3>
+      <div class="pane-list">
+        {% for name, count in categories %}
+          <a class="browse-row{% if name == category %} is-current{% endif %}" href="/browse/{{ name }}">
+            <span>{{ name }}</span><span class="muted">{{ count }}</span>
+          </a>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="explorer-pane" data-pane="1" aria-label="Folders">
+      <h3>Folders</h3>
+      <div class="pane-list" data-parent="{{ parent_href }}">
+        {% if folder %}<a class="browse-row is-folder" href="{{ parent_href }}"><span>..</span></a>{% endif %}
+        {% for name, count in folders %}
+          <a class="browse-row is-folder" href="/browse/{{ category }}?folder={{ folder ~ '/' ~ name if folder else name }}">
+            <span>{{ name }}</span><span class="muted">{{ count }}</span>
+          </a>
+        {% else %}
+          <p class="muted">No subfolders here.</p>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="explorer-pane" data-pane="2" aria-label="Files">
+      <h3>Files</h3>
+      <div class="pane-list">
+        {% for item in items %}
+          <a class="browse-row is-item" href="/items/{{ item.item_id }}"
+             hx-get="/browse/items/{{ item.item_id }}/panel" hx-target="#browse-panel" hx-swap="outerHTML"
+             hx-trigger="click, focus">
+            <span class="mono">{{ item.relpath.split('/')[-1] }}</span>
+          </a>
+        {% else %}
+          <p class="muted">No files at this level.</p>
+        {% endfor %}
+      </div>
+      {% if has_prev or has_next %}
+        <nav class="pager" aria-label="Pages">
+          {% if has_prev %}<a href="/browse/{{ category }}?folder={{ folder }}&page={{ page - 1 }}">Prev</a>{% endif %}
+          <span class="muted">page {{ page }}</span>
+          {% if has_next %}<a href="/browse/{{ category }}?folder={{ folder }}&page={{ page + 1 }}">Next</a>{% endif %}
+        </nav>
+      {% endif %}
+    </section>
+
+    <aside id="browse-panel" class="browse-panel card explorer-pane" aria-label="Details">
+      <h3>Details</h3>
+      <p class="muted">Select a file to see it here.</p>
     </aside>
   </div>
   <script src="/static/browse.js" defer></script>

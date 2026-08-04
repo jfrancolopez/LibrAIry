@@ -13,10 +13,18 @@ PAGE_SIZE = 50
 
 
 def browse_home(conn: sqlite3.Connection) -> dict[str, object]:
+    # Count only what Browse can actually show: committed library files. Items
+    # still sitting in the inbox are indexed and searchable, but they are not
+    # browsable yet, and counting them made the panes look broken.
     counts = {
         row["category"] or "misc": row["count"]
         for row in conn.execute(
-            "SELECT category, COUNT(*) AS count FROM search_fts GROUP BY category"
+            """
+            SELECT s.category, COUNT(*) AS count
+            FROM search_fts s JOIN items i ON i.id = s.item_id
+            WHERE i.root = 'library'
+            GROUP BY s.category
+            """
         )
     }
     return {"categories": [(category, counts.get(category, 0)) for category in CATEGORIES]}
@@ -33,7 +41,7 @@ def browse_category(
         SELECT search_fts.item_id, i.relpath, search_fts.category
         FROM search_fts
         JOIN items i ON i.id = search_fts.item_id
-        WHERE search_fts.category=? AND i.relpath >= ? AND i.relpath < ?
+        WHERE search_fts.category=? AND i.root='library' AND i.relpath >= ? AND i.relpath < ?
         ORDER BY i.relpath
         LIMIT ? OFFSET ?
         """,
@@ -58,6 +66,9 @@ def browse_category(
         "has_prev": page > 1,
         "crumbs": _crumbs(category, folder),
         "parent_href": _parent_href(category, folder),
+        # Pane 1 of the explorer: every category, so you can switch without
+        # bouncing through /browse.
+        **browse_home(conn),
     }
 
 

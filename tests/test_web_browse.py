@@ -186,3 +186,40 @@ def test_browse_detail_panel_reuses_item_detail(tmp_path: Path) -> None:
     # Humanized evidence, not raw codes.
     assert "Looks like photos" in panel.text
     assert f'href="/items/{item_id}"' in panel.text
+
+
+def test_browse_counts_only_committed_library_files(tmp_path: Path) -> None:
+    """Inbox items are searchable but not browsable — they must not be counted."""
+    client, conn, settings = client_for(tmp_path)
+    # A committed library file...
+    seed_item(conn, settings, "Music/Queen/Opera/song.flac", "music")
+    # ...and an inbox item that is indexed but not yet committed.
+    inbox_file = settings.inbox_dir / "loose.flac"
+    inbox_file.write_text("x", encoding="utf-8")
+    scan_root(conn, "inbox", settings.inbox_dir, settings)
+    item_id = conn.execute("SELECT id FROM items WHERE root='inbox'").fetchone()[0]
+    upsert_proposal(
+        conn, item_id=item_id, category="music", clean_name="loose.flac",
+        dest_relpath="Music/loose.flac", confidence=0.9,
+        evidence=[EvidenceEntry("heuristic", "category", "music", 0.9)],
+    )
+
+    home = client.get("/browse").text
+
+    # One browsable music file, not two.
+    assert "<strong>1</strong><span>music</span>" in home
+
+
+def test_explorer_renders_four_panes(tmp_path: Path) -> None:
+    client, conn, settings = client_for(tmp_path)
+    seed_item(conn, settings, "Photos/2026/Italy/a.jpg", "photos")
+
+    page = client.get("/browse/photos").text
+
+    assert 'id="explorer"' in page
+    for pane in ("0", "1", "2"):
+        assert f'data-pane="{pane}"' in page
+    assert 'id="browse-panel"' in page
+    # Category pane lets you switch library sections without leaving the page.
+    assert 'href="/browse/music"' in page
+    assert "/static/browse.js" in page
