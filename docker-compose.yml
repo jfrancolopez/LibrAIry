@@ -5,6 +5,12 @@ services:
       dockerfile: Dockerfile
     image: librairy:latest
     container_name: librairy
+    # The image itself defaults to the non-root `librairy` user (uid 1000).
+    # Compose starts as root so the entrypoint can remap to PUID/PGID and chown
+    # the bind mounts — it still drops privileges before running anything.
+    # Set LIBRAIRY_USER=1000:1000 to keep the image default and skip remapping;
+    # the host directories then have to be owned by that uid.
+    user: "${LIBRAIRY_USER:-0:0}"
     env_file:
       - path: .env
         required: false

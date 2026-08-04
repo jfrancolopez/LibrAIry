@@ -37,7 +37,9 @@ Open the WebUI at `http://<unraid-ip>:8080` and drop files into the inbox. The p
 
 ## Ownership
 
-The container starts as root only long enough to map the internal `librairy` user to `PUID:PGID`, fix mounted directory ownership, and drop privileges. Files created in the library should be owned by the mapped UNRAID user/group.
+The image itself defaults to the unprivileged `librairy` user (uid 1000). UNRAID's template runs it with `--user 0:0` so the container can start as root just long enough to map the internal `librairy` user to `PUID:PGID`, fix mounted directory ownership, and drop privileges with `setpriv`. Files created in the library should be owned by the mapped UNRAID user/group.
+
+If you drop the `--user 0:0` flag, `PUID`/`PGID` are ignored and the shares have to be owned by uid 1000 instead; the container will stop with a message naming the directory it cannot write.
 
 ## Health Check
 

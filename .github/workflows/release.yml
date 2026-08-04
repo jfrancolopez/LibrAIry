@@ -8,10 +8,16 @@ on:
 permissions:
   contents: write
   packages: write
+  id-token: write
+  attestations: write
 
 jobs:
   release:
     runs-on: ubuntu-latest
+    env:
+      # Empty unless the repo has Docker Hub credentials; the push step is
+      # skipped when it is, so releases still work on a fork without secrets.
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -45,11 +51,20 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Login to Docker Hub
+        if: ${{ env.DOCKERHUB_USERNAME != '' }}
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       - name: Docker metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/librairy
+          images: |
+            ghcr.io/${{ github.repository_owner }}/librairy
+            ${{ env.DOCKERHUB_USERNAME != '' && format('{0}/librairy', env.DOCKERHUB_USERNAME) || '' }}
           tags: |
             type=ref,event=tag
             type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
@@ -64,6 +79,11 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          # Docker Scout's "required supply chain attestations" policy wants both,
+          # and max-mode provenance is what lets it detect the base image exactly
+          # instead of guessing.
+          provenance: mode=max
+          sbom: true
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2

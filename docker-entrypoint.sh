@@ -1,15 +1,30 @@
 #!/bin/sh
 set -eu
 
-if [ "$(id -u)" != "0" ]; then
-  exec "$@"
-fi
-
 PUID="${PUID:-99}"
 PGID="${PGID:-100}"
 APP_USER="librairy"
 APP_GROUP="librairy"
 
+# The image defaults to USER librairy (uid 1000), so this is the normal path.
+# Nothing to remap and nothing to chown — we only check that the mounts are
+# actually writable, because a silent permission error here looks like a bug in
+# LibrAIry rather than a bind-mount ownership problem on the host.
+if [ "$(id -u)" != "0" ]; then
+  for dir in /data/inbox /data/library /data/quarantine /data/appdata; do
+    mkdir -p "${dir}" 2>/dev/null || true
+    if [ ! -w "${dir}" ]; then
+      echo "librairy: ${dir} is not writable by uid $(id -u)." >&2
+      echo "librairy: either chown the host directory to $(id -u):$(id -g), or run the" >&2
+      echo "librairy: container with user: \"0:0\" so PUID/PGID remapping can do it." >&2
+      exit 1
+    fi
+  done
+  exec "$@"
+fi
+
+# Root path: kept for hosts that map storage to a fixed uid/gid (UNRAID uses
+# 99:100). Run the container with user: "0:0" to get here.
 if getent group "${PGID}" >/dev/null 2>&1; then
   APP_GROUP="$(getent group "${PGID}" | cut -d: -f1)"
 else
@@ -33,4 +48,6 @@ chown -R "${PUID}:${PGID}" /data/inbox /data/library /data/quarantine /data/appd
   chown -R "${PUID}:${PGID}" /data/appdata
 ) &
 
-exec gosu "${PUID}:${PGID}" "$@"
+# setpriv replaces gosu: same exec-and-drop behaviour, but it comes from
+# util-linux instead of a Go binary Debian builds against an ancient toolchain.
+exec setpriv --reuid="${PUID}" --regid="${PGID}" --init-groups -- "$@"

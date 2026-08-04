@@ -13,7 +13,7 @@
   <WebUI>http://[IP]:[PORT:8080]</WebUI>
   <TemplateURL>https://raw.githubusercontent.com/jfrancolopez/LibrAIry/main/packaging/unraid/librairy.xml</TemplateURL>
   <Icon>https://raw.githubusercontent.com/jfrancolopez/LibrAIry/main/packaging/unraid/icon.svg</Icon>
-  <ExtraParams>--add-host=host.docker.internal:host-gateway</ExtraParams>
+  <ExtraParams>--add-host=host.docker.internal:host-gateway --user 0:0</ExtraParams>
   <PostArgs></PostArgs>
   <CPUset></CPUset>
   <DateInstalled></DateInstalled>

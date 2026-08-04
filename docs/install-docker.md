@@ -56,11 +56,18 @@ Apply the new bind mounts with `docker compose up -d --build`. Docker Desktop mu
 
 ## Plain Docker Run
 
+The image runs as the unprivileged `librairy` user (uid 1000) by default. `PUID`/`PGID`
+remapping needs root to chown the mounts, so pass `--user 0:0` when you want it — the
+entrypoint still drops to `PUID:PGID` before starting anything. Without `--user 0:0`,
+make sure the host directories are owned by uid 1000, or the container stops with a
+message naming the directory it cannot write.
+
 ```bash
 docker run -d --name librairy \
   --restart unless-stopped \
   --add-host=host.docker.internal:host-gateway \
   -p 8080:8080 \
+  --user 0:0 \
   -e PUID=99 \
   -e PGID=100 \
   -e OLLAMA_HOST=http://host.docker.internal:11434 \
