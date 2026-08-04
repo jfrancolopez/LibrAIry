@@ -103,3 +103,8 @@ def test_release_workflow_publishes_supply_chain_attestations() -> None:
     assert "sbom: true" in release
     assert "id-token: write" in release
     assert "attestations: write" in release
+    # BuildKit only emits SLSA v0.2; Scout's policy requires v1, which this
+    # action attaches separately. It needs the digest from the build step.
+    assert "actions/attest-build-provenance@v2" in release
+    assert "subject-digest: ${{ steps.build.outputs.digest }}" in release
+    assert "id: build" in release

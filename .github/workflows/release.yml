@@ -70,6 +70,7 @@ jobs:
             type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
 
       - name: Build and push multi-arch image
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -84,6 +85,24 @@ jobs:
           # instead of guessing.
           provenance: mode=max
           sbom: true
+
+      # BuildKit's own provenance is SLSA v0.2, and Docker Scout's supply-chain
+      # policy only accepts v1. There is no buildx flag for the predicate
+      # version, so the v1 statement is attached separately.
+      - name: Attest build provenance (SLSA v1) on GHCR
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ghcr.io/${{ github.repository_owner }}/librairy
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+      - name: Attest build provenance (SLSA v1) on Docker Hub
+        if: ${{ env.DOCKERHUB_USERNAME != '' }}
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: docker.io/${{ env.DOCKERHUB_USERNAME }}/librairy
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2

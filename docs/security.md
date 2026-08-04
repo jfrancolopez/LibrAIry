@@ -34,7 +34,11 @@ What changed:
   are writable and stops with a message naming the directory rather than failing later
   with an opaque permission error.
 - **Supply-chain attestations.** Release builds publish max-mode SLSA provenance and an
-  SBOM, so scanners identify the base image exactly instead of guessing.
+  SBOM, so scanners identify the base image exactly instead of guessing. BuildKit's own
+  provenance statement is SLSA v0.2 and Scout's policy only accepts v1, so the release
+  workflow attaches a v1 statement with `actions/attest-build-provenance`. An image built
+  by hand with `docker buildx --provenance=mode=max` therefore still reports one
+  attestation deviation; only the CI-built image clears the policy.
 - **`apt-get upgrade` in both stages**, picking up security updates published after the
   base image was cut.
 
