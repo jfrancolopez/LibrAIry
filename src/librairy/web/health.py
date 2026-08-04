@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import re
 import shutil
 import sqlite3
 import subprocess
@@ -41,6 +40,7 @@ def health_data(conn: sqlite3.Connection, settings: Settings) -> dict[str, objec
     providers = list(conn.execute("SELECT * FROM provider_status ORDER BY name"))
     tools = tool_statuses(settings)
     db = db_status(settings)
+    disk_stats = _disk_stats(settings)
     disks = disk_statuses(settings)
     worker = worker_status(conn)
     backup = backup_health(settings)
@@ -57,7 +57,7 @@ def health_data(conn: sqlite3.Connection, settings: Settings) -> dict[str, objec
         "recommendations": recommendations(
             tools=tools,
             providers=providers,
-            disks=disks,
+            disks=disk_stats,
             worker=worker,
             backup=backup,
         ),
@@ -75,7 +75,7 @@ def recommendations(
     *,
     tools: list[HealthRow],
     providers: list,
-    disks: list[HealthRow],
+    disks: list,  # DiskStat — carries percent_free and the volume it lives on
     worker: HealthRow,
     backup: HealthRow,
 ) -> list[Recommendation]:
@@ -102,16 +102,7 @@ def recommendations(
             )
         )
 
-    for disk in disks:
-        percent = _percent_free(disk.detail)
-        if percent is not None and percent < 10:
-            recs.append(
-                Recommendation(
-                    "warn" if percent >= 5 else "fail",
-                    f"{disk.name} is low on space ({percent}% free).",
-                    "Free up space on that volume before committing more moves.",
-                )
-            )
+    recs.extend(_disk_recommendations(disks))
 
     if worker.status not in {"OK", ""}:
         recs.append(
@@ -130,9 +121,33 @@ def recommendations(
     return recs
 
 
-def _percent_free(detail: str) -> int | None:
-    match = re.search(r"(\d+)%", detail or "")
-    return int(match.group(1)) if match else None
+def _disk_recommendations(disks: list) -> list[Recommendation]:
+    """One warning per volume, not per root.
+
+    inbox/library/quarantine/appdata usually share a single filesystem — on a
+    laptop they always do — and emitting the same "low on space" four times
+    reads as four separate problems when there is one disk to clear.
+    """
+    by_device: dict[object, list] = {}
+    for disk in disks:
+        percent = getattr(disk, "percent_free", None)
+        if percent is None or percent >= 10:
+            continue
+        by_device.setdefault(getattr(disk, "device", 0) or disk.root, []).append(disk)
+
+    recs: list[Recommendation] = []
+    for group in by_device.values():
+        worst = min(group, key=lambda d: d.percent_free)
+        roots = ", ".join(sorted(d.root for d in group))
+        subject = f"{roots} share a volume that is" if len(group) > 1 else f"{worst.root} is"
+        recs.append(
+            Recommendation(
+                "warn" if worst.percent_free >= 5 else "fail",
+                f"{subject} low on space ({worst.percent_free}% free).",
+                "Free up space on that volume before committing more moves.",
+            )
+        )
+    return recs
 
 
 def tool_statuses(settings: Settings) -> list[HealthRow]:  # noqa: ARG001

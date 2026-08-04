@@ -16,6 +16,9 @@ class DiskStat:
     free_gb: float
     total_gb: float
     percent_free: int
+    # st_dev of the filesystem this root sits on. On a laptop all four roots are
+    # usually one volume, and reporting it four times reads as four problems.
+    device: int = 0
 
 
 def dashboard_data(conn: sqlite3.Connection, settings: Settings) -> dict[str, object]:
@@ -68,11 +71,18 @@ def _disk_stats(settings: Settings) -> list[DiskStat]:
     }
     stats: list[DiskStat] = []
     for name, path in roots.items():
-        usage = shutil.disk_usage(_existing_path(path))
+        resolved = _existing_path(path)
+        usage = shutil.disk_usage(resolved)
         free_gb = usage.free / 1024**3
         total_gb = usage.total / 1024**3
         percent_free = round((usage.free / usage.total) * 100) if usage.total else 0
-        stats.append(DiskStat(name, round(free_gb, 1), round(total_gb, 1), percent_free))
+        try:
+            device = resolved.stat().st_dev
+        except OSError:
+            device = 0
+        stats.append(
+            DiskStat(name, round(free_gb, 1), round(total_gb, 1), percent_free, device)
+        )
     return stats
 
 

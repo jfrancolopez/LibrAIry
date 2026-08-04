@@ -6,6 +6,13 @@ Container hardening release. `docker scout quickview` goes from 7C/36H/55M/143L 
 health score of E (2 of 7 policies) to 2C/4H/12M/117L and B (5 of 7). Also closes the
 last v1.0.0 known gap.
 
+### Fixed
+
+- Health reported "low on space" once per storage root, so a single full disk shared by
+  inbox/library/quarantine/appdata looked like four separate problems. Warnings are now
+  grouped by the underlying volume and name the tightest reading; roots on genuinely
+  separate volumes (a NAS with the library on its own array) still warn independently.
+
 ### Catalogs
 
 - **AcoustID and MusicBrainz are wired into the analyze pipeline.** Both were injection
