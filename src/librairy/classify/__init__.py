@@ -93,7 +93,13 @@ def classify_item(
             settings,
             item,
             ai_state,
-            classify_music(relpath, settings=settings, tags=_audio_tags(path, settings)),
+            classify_music(
+                relpath,
+                settings=settings,
+                tags=_audio_tags(path, settings),
+                acoustid_lookup=_acoustid_lookup(conn, settings),
+                musicbrainz_lookup=_musicbrainz_lookup(conn, settings),
+            ),
         )
     if suffix in VIDEO_EXTS:
         return _with_ai(
@@ -188,6 +194,28 @@ def _tmdb_lookup(conn, settings):
     if conn is None or not catalog_enabled(conn, "tmdb"):
         return None
     from librairy.tools.tmdb import lookup_for_settings
+
+    return lookup_for_settings(settings)
+
+
+def _acoustid_lookup(conn, settings):
+    """Real AcoustID lookup when a key is set and the catalog is switched on.
+
+    `classify_music` only calls this for audio with no usable embedded tags, so
+    the expensive part (running fpcalc) stays off the common path.
+    """
+    if conn is None or not catalog_enabled(conn, "acoustid"):
+        return None
+    from librairy.tools.acoustid import lookup_for_settings
+
+    return lookup_for_settings(settings)
+
+
+def _musicbrainz_lookup(conn, settings):
+    """Real MusicBrainz lookup — keyless, so only the toggle gates it."""
+    if conn is None or not catalog_enabled(conn, "musicbrainz"):
+        return None
+    from librairy.tools.musicbrainz import lookup_for_settings
 
     return lookup_for_settings(settings)
 

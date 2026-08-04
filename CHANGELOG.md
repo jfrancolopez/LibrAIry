@@ -3,7 +3,19 @@
 ## v1.2.0 - 2026-08-04
 
 Container hardening release. `docker scout quickview` goes from 7C/36H/55M/143L and a
-health score of E (2 of 7 policies) to 2C/4H/12M/117L and B (5 of 7).
+health score of E (2 of 7 policies) to 2C/4H/12M/117L and B (5 of 7). Also closes the
+last v1.0.0 known gap.
+
+### Catalogs
+
+- **AcoustID and MusicBrainz are wired into the analyze pipeline.** Both were injection
+  points that only tests ever passed, so a configured `ACOUSTID_KEY` did nothing to real
+  proposals. Audio with no usable embedded tags is now fingerprinted with fpcalc, matched
+  through AcoustID, and named from the MusicBrainz recording. Files that *do* carry tags
+  are unaffected — tags remain the first and strongest signal, and nothing is
+  fingerprinted without a key or with the catalog toggled off.
+- When a recording appears on several releases, the earliest dated one is chosen, so a
+  track lands under the original album rather than a later compilation.
 
 ### Security
 

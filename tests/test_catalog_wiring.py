@@ -89,3 +89,110 @@ def test_pipeline_calls_tmdb_when_a_key_is_configured(tmp_path: Path, monkeypatc
     assert seen, "pipeline never called TMDB despite a configured key"
     assert result.category == "movies"
     assert "tmdb" in [entry.source for entry in result.evidence]
+
+
+def test_pipeline_fingerprints_tagless_audio_and_resolves_it(tmp_path: Path, monkeypatch) -> None:
+    """AcoustID + MusicBrainz were injection points no production code passed.
+
+    The file has no embedded tags, so this is the only path that can name it.
+    """
+    from librairy.db import connect
+    from librairy.tools import acoustid, musicbrainz
+
+    acoustid.reset_cache()
+    musicbrainz.reset_cache()
+    fingerprinted: list[Path] = []
+    resolved: list[str] = []
+
+    monkeypatch.setattr(
+        "librairy.tools.ffprobe.probe",
+        lambda path, settings: ToolResult(True, data={"tags": {}}),  # noqa: ARG005
+    )
+
+    def fake_fpcalc(path, settings):  # noqa: ANN001, ARG001
+        fingerprinted.append(path)
+        return ToolResult(True, data={"duration": 355, "fingerprint": "AQADtEmi"})
+
+    def fake_acoustid_lookup(fingerprint, duration, **kwargs):  # noqa: ANN001, ARG001
+        return {"score": 0.98, "recording_id": "b1a9c0e9-d987-4042-ae91-78d6a3267d69"}
+
+    def fake_mb(mbid, **kwargs):  # noqa: ANN001, ARG001
+        resolved.append(mbid)
+        return {
+            "artist": "Queen",
+            "album": "A Night at the Opera",
+            "title": "Bohemian Rhapsody",
+            "year": 1975,
+            "track": 0,
+        }
+
+    monkeypatch.setattr("librairy.tools.fpcalc.fingerprint", fake_fpcalc)
+    monkeypatch.setattr("librairy.tools.acoustid.lookup", fake_acoustid_lookup)
+    monkeypatch.setattr("librairy.tools.musicbrainz.lookup_recording", fake_mb)
+
+    settings = _settings(tmp_path, ACOUSTID_KEY="secret", INBOX_DIR=tmp_path)
+    conn = connect(settings)
+    audio = tmp_path / "track01.flac"
+    audio.write_bytes(b"audio")
+
+    result = classify_item(audio, "track01.flac", settings, conn=conn)
+
+    assert fingerprinted, "pipeline never fingerprinted tagless audio"
+    assert resolved == ["b1a9c0e9-d987-4042-ae91-78d6a3267d69"]
+    assert result.fields["artist"] == "Queen"
+    assert result.fields["title"] == "Bohemian Rhapsody"
+    sources = [entry.source for entry in result.evidence]
+    assert "acoustid" in sources
+    assert "musicbrainz" in sources
+    assert result.confidence >= 0.9
+
+
+def test_no_acoustid_key_means_no_fingerprinting(tmp_path: Path, monkeypatch) -> None:
+    """fpcalc over a whole inbox is expensive and useless without somewhere to send it."""
+    from librairy.db import connect
+
+    monkeypatch.setattr(
+        "librairy.tools.ffprobe.probe",
+        lambda path, settings: ToolResult(True, data={"tags": {}}),  # noqa: ARG005
+    )
+
+    def forbidden(path, settings):  # noqa: ANN001, ARG001
+        raise AssertionError("fingerprinted audio without an AcoustID key")
+
+    monkeypatch.setattr("librairy.tools.fpcalc.fingerprint", forbidden)
+
+    settings = _settings(tmp_path, INBOX_DIR=tmp_path)
+    conn = connect(settings)
+    audio = tmp_path / "track02.flac"
+    audio.write_bytes(b"audio")
+
+    result = classify_item(audio, "track02.flac", settings, conn=conn)
+
+    assert result.category == "music"
+    assert "heuristic" in [entry.source for entry in result.evidence]
+
+
+def test_disabled_catalog_toggle_skips_the_lookup(tmp_path: Path, monkeypatch) -> None:
+    from librairy.db import connect
+
+    monkeypatch.setattr(
+        "librairy.tools.ffprobe.probe",
+        lambda path, settings: ToolResult(True, data={"tags": {}}),  # noqa: ARG005
+    )
+
+    def forbidden(path, settings):  # noqa: ANN001, ARG001
+        raise AssertionError("fingerprinted audio with the acoustid catalog disabled")
+
+    monkeypatch.setattr("librairy.tools.fpcalc.fingerprint", forbidden)
+
+    settings = _settings(tmp_path, ACOUSTID_KEY="secret", INBOX_DIR=tmp_path)
+    conn = connect(settings)
+    conn.execute(
+        "INSERT INTO settings(key, value) VALUES ('catalog.acoustid.enabled', 'false')"
+    )
+    audio = tmp_path / "track03.flac"
+    audio.write_bytes(b"audio")
+
+    result = classify_item(audio, "track03.flac", settings, conn=conn)
+
+    assert "heuristic" in [entry.source for entry in result.evidence]
