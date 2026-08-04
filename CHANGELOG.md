@@ -6,6 +6,20 @@ Container hardening release. `docker scout quickview` goes from 7C/36H/55M/143L 
 health score of E (2 of 7 policies) to 2C/4H/12M/117L and B (5 of 7). Also closes the
 last v1.0.0 known gap.
 
+### Fixed — index corruption on FUSE and network storage
+
+- **SQLite's journal mode is now chosen from the filesystem holding appdata.** WAL
+  synchronises processes through an `mmap`'d shared-memory file; on FUSE and network
+  filesystems each process gets its own view of it, so the web process and the worker
+  both believed they owned the write-ahead log and the index rotted. This reproduced on
+  Docker Desktop for macOS within a single analyze run, twice, and UNRAID's `/mnt/user`
+  shares are the same class of filesystem. WAL is kept on recognised local disks
+  (ext4/xfs/btrfs/zfs/overlay/…) and DELETE is used everywhere else — an allowlist,
+  because Docker Desktop reports its bind mounts as `fakeowner`, a name no blocklist
+  would have anticipated. Override with `SQLITE_JOURNAL_MODE`.
+  See `docs/troubleshooting.md` for how to repair an already-corrupted index; no user
+  files are ever at risk, the index is rebuildable by rescanning.
+
 ### Added
 
 - `librairy analyze --reanalyze` re-proposes items already sitting in the review queue.

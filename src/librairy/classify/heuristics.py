@@ -51,6 +51,22 @@ ARTWORK_COMPANION_EXTS = {
     ".mkv", ".mp4", ".avi", ".mov", ".m4v", ".vob",
     ".epub", ".mobi", ".azw3", ".pdf",
 }
+# Files that only mean anything next to the media they describe: subtitles,
+# playlists, checksums, scene info. Filing one on its own separates it from the
+# thing it belongs to, which is worse than leaving it for the owner to decide.
+COMPANION_EXTS = {
+    ".cue",
+    ".idx",
+    ".m3u",
+    ".m3u8",
+    ".md5",
+    ".nfo",
+    ".sfv",
+    ".srt",
+    ".ssa",
+    ".sub",
+    ".vtt",
+}
 # Folders that say "images live here", not "these images are one event".
 GENERIC_IMAGE_PARENTS = {
     "camera",
@@ -127,6 +143,27 @@ def _classify_file(path: Path, settings: Settings) -> HeuristicResult | None:
         )
     if suffix in IMAGE_EXTS:
         return _image_file(path, settings, suffix, stem)
+    if suffix in COMPANION_EXTS and _has_media_sibling(path):
+        # Below the threshold on purpose: v1 moves files one at a time, so
+        # filing a subtitle on its own would strand it away from its video.
+        return _result(
+            "misc",
+            clean_name_from_title(stem, suffix),
+            0.4,
+            {"clean_name": clean_name_from_title(stem, suffix)},
+            settings,
+            f"companion file for the media beside it ({path.parent.name})",
+        )
+    if suffix in MODEL_EXTS | PRINT_EXTS:
+        project = _project_name_for(path, settings, stem)
+        return _result(
+            "projects",
+            clean_name_from_title(stem, suffix),
+            0.86,
+            {"project": project, "clean_name": clean_name_from_title(stem, suffix)},
+            settings,
+            "3D model / print file",
+        )
     if suffix in EBOOK_EXTS:
         return _result(
             "books",
@@ -196,6 +233,10 @@ def _is_artwork_sidecar(path: Path, stem: str) -> bool:
     """cover.jpg is artwork only when there is something for it to be art *of*."""
     if stem.strip().lower().replace("_", " ").replace("-", " ") not in ARTWORK_STEMS:
         return False
+    return _has_media_sibling(path)
+
+
+def _has_media_sibling(path: Path) -> bool:
     try:
         siblings = list(path.parent.iterdir())
     except OSError:
@@ -203,6 +244,17 @@ def _is_artwork_sidecar(path: Path, stem: str) -> bool:
     return any(
         entry.is_file() and entry.suffix.lower() in ARTWORK_COMPANION_EXTS for entry in siblings
     )
+
+
+def _project_name_for(path: Path, settings: Settings, stem: str) -> str:
+    """The containing folder is the project, unless the file sits loose."""
+    parent = path.parent
+    try:
+        if parent.resolve() == Path(settings.inbox_dir).resolve():
+            return _clean(stem)
+    except OSError:
+        pass
+    return _clean(parent.name) if parent.name else _clean(stem)
 
 
 def _event_from_parent(path: Path, settings: Settings) -> str:

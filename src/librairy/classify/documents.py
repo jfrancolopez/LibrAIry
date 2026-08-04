@@ -12,7 +12,23 @@ from librairy.tools.openlibrary import BookMatch
 
 BookLookup = Callable[[str], "BookMatch | None"]
 
-DOCUMENT_EXTS = {".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".txt", ".md", ".rtf"}
+DOCUMENT_EXTS = {
+    ".csv",
+    ".doc",
+    ".docx",
+    ".md",
+    ".odp",
+    ".ods",
+    ".odt",
+    ".pdf",
+    ".ppt",
+    ".pptx",
+    ".rtf",
+    ".tsv",
+    ".txt",
+    ".xls",
+    ".xlsx",
+}
 BOOK_EXTS = {".epub", ".mobi", ".azw", ".azw3", ".fb2"}
 ARCHIVE_EXTS = {".zip", ".tar", ".gz", ".bz2", ".xz", ".7z", ".rar"}
 RELEASE_JUNK = re.compile(

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sqlite3
 from pathlib import Path
 
@@ -246,6 +247,40 @@ def database_path(settings: Settings) -> Path:
     return settings.appdata_dir / "librairy.db"
 
 
+# WAL coordinates readers and writers through a shared-memory file that SQLite
+# maps with mmap. That only works when every process sees the same bytes. On a
+# network or FUSE filesystem the -shm mapping is effectively per-process, so the
+# web process and the worker each believe they own the WAL and the index rots.
+#
+# This is not theoretical: Docker Desktop for macOS corrupted LibrAIry's index
+# within a single analyze run, twice, and UNRAID's /mnt/user shares are the same
+# class of filesystem.
+#
+# This is an allowlist rather than a blocklist on purpose. Docker Desktop
+# reports its bind mounts as "fakeowner", which no blocklist would have
+# anticipated, and the next runtime will invent another name. An unrecognised
+# filesystem is far more likely to be exotic than to be a plain local disk, and
+# the two ways of being wrong are not symmetric: guessing DELETE costs some
+# write throughput, guessing WAL costs the index.
+WAL_SAFE_FSTYPES = frozenset(
+    {
+        "btrfs",
+        "exfat",
+        "ext2",
+        "ext3",
+        "ext4",
+        "f2fs",
+        "jfs",
+        "overlay",  # the container's own writable layer, always local
+        "reiserfs",
+        "tmpfs",
+        "vfat",
+        "xfs",
+        "zfs",
+    }
+)
+
+
 def connect(settings: Settings | None = None, path: Path | None = None) -> sqlite3.Connection:
     if settings is None:
         settings = Settings()
@@ -253,15 +288,69 @@ def connect(settings: Settings | None = None, path: Path | None = None) -> sqlit
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(db_path, timeout=5.0, isolation_level=None, check_same_thread=False)
     conn.row_factory = sqlite3.Row
-    apply_pragmas(conn)
+    apply_pragmas(conn, journal_mode=journal_mode_for(db_path))
     migrate(conn)
     return conn
 
 
-def apply_pragmas(conn: sqlite3.Connection) -> None:
-    conn.execute("PRAGMA journal_mode=WAL")
+def apply_pragmas(conn: sqlite3.Connection, journal_mode: str = "WAL") -> None:
+    conn.execute(f"PRAGMA journal_mode={journal_mode}")
     conn.execute("PRAGMA foreign_keys=ON")
     conn.execute("PRAGMA busy_timeout=5000")
+
+
+def journal_mode_for(db_path: Path) -> str:
+    """WAL on a local disk, DELETE where its shared memory cannot be trusted.
+
+    DELETE is slower under write load but uses only POSIX advisory locks, which
+    these filesystems do implement correctly. Losing some throughput on a
+    network share is a fair trade for an index that survives the night.
+
+    Off Linux there is no /proc/self/mountinfo to consult; that is the developer
+    path, one process at a time, so WAL stands.
+    """
+    override = os.environ.get("SQLITE_JOURNAL_MODE", "").strip().upper()
+    if override in {"WAL", "DELETE", "TRUNCATE", "PERSIST"}:
+        return override
+    fstype = filesystem_type(db_path)
+    if fstype is None:
+        return "WAL"
+    return "WAL" if fstype in WAL_SAFE_FSTYPES else "DELETE"
+
+
+def filesystem_type(target: Path) -> str | None:
+    """Filesystem backing `target`, from /proc/self/mountinfo. None off Linux.
+
+    Returns the type of the *longest* matching mount point, so a bind mount at
+    /data/appdata wins over the / it sits inside.
+    """
+    try:
+        mountinfo = Path("/proc/self/mountinfo").read_text(encoding="utf-8")
+    except OSError:
+        return None
+    try:
+        resolved = target.resolve()
+    except OSError:
+        resolved = target
+
+    best: tuple[int, str] | None = None
+    for line in mountinfo.splitlines():
+        head, _, tail = line.partition(" - ")
+        fields = head.split()
+        details = tail.split()
+        if len(fields) < 5 or not details:
+            continue
+        mount_point, fstype = fields[4], details[0]
+        try:
+            mount_path = Path(mount_point)
+            if resolved != mount_path and mount_path not in resolved.parents:
+                continue
+        except (OSError, ValueError):
+            continue
+        depth = len(mount_path.parts)
+        if best is None or depth > best[0]:
+            best = (depth, fstype)
+    return best[1] if best else None
 
 
 def user_version(conn: sqlite3.Connection) -> int:

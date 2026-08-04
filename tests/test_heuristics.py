@@ -228,3 +228,67 @@ def test_screenshot_without_a_date_is_not_filed_under_year_zero(tmp_path: Path) 
     assert result is not None
     assert result.fields["year"] == "Unknown"
     assert "Photos/0/" not in (result.dest_relpath or "")
+
+
+def test_subtitle_beside_its_video_waits_for_a_human(tmp_path: Path) -> None:
+    """v1 moves files one at a time, so filing a .srt on its own would strand
+    it away from the video it belongs to."""
+    folder = tmp_path / "An American Carol (2008)"
+    folder.mkdir()
+    (folder / "An.American.Carol.2008.mkv").write_text("fake", encoding="utf-8")
+    subtitle = folder / "An.American.Carol.2008.srt"
+    subtitle.write_text("fake", encoding="utf-8")
+
+    result = classify_path(subtitle, settings_for(tmp_path))
+
+    assert result is not None
+    assert result.category == "misc"
+    assert result.dest_relpath is None
+    assert "companion file" in result.evidence[0].detail
+
+
+def test_orphan_subtitle_is_not_treated_as_a_companion(tmp_path: Path) -> None:
+    """Nothing to be a companion to — it falls through to the normal path."""
+    folder = tmp_path / "Loose"
+    folder.mkdir()
+    subtitle = folder / "something.srt"
+    subtitle.write_text("fake", encoding="utf-8")
+
+    result = classify_path(subtitle, settings_for(tmp_path))
+
+    assert result is None, "no media beside it, so no companion rule applies"
+
+
+def test_print_files_become_projects_named_after_their_folder(tmp_path: Path) -> None:
+    folder = tmp_path / "Dice Prints"
+    folder.mkdir()
+    gcode = folder / "test-glass_dice_1_pla_17m5s.gcode"
+    gcode.write_text("fake", encoding="utf-8")
+
+    result = classify_path(gcode, settings_for(tmp_path))
+
+    assert result is not None
+    assert result.category == "projects"
+    assert result.confidence >= 0.8
+    assert result.fields["project"] == "Dice Prints"
+    assert (result.dest_relpath or "").startswith("Projects/Dice Prints/")
+
+
+def test_loose_print_file_uses_its_own_name_as_the_project(tmp_path: Path) -> None:
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    settings = Settings(
+        LIBRARY_DIR=tmp_path / "library",
+        INBOX_DIR=inbox,
+        CONFIDENCE_THRESHOLD=0.8,
+        _env_file=None,
+    )
+    settings.library_dir.mkdir(exist_ok=True)
+    model = inbox / "bracket_v2.stl"
+    model.write_text("fake", encoding="utf-8")
+
+    result = classify_path(model, settings)
+
+    assert result is not None
+    assert result.category == "projects"
+    assert result.fields["project"] == "bracket v2"
