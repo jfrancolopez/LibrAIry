@@ -21,6 +21,19 @@
     </label>
     <button type="submit">Filter</button>
   </form>
+  <div class="quick-approve card">
+    <p class="muted">Clear the easy wins first, then decide the rest one by one.</p>
+    <button class="btn-primary"
+      hx-post="/review/action"
+      hx-vals='{"action": "approve", "all_matching": "true", "state": "{{ filters.state }}", "min_confidence": "0.85"}'
+      hx-target="#review-list" hx-swap="outerHTML"
+      hx-confirm="Approve every proposal at 0.85 confidence or higher? Nothing moves until you commit."
+      hx-headers='{"x-csrf-token":"{{ request.state.session.csrf_token }}"}'>
+      Approve all confident (≥ 0.85)
+    </button>
+    <a class="btn" href="/review?max_confidence=0.85">Show only the ones needing a look</a>
+  </div>
+
   <form
     id="review-actions"
     class="action-bar"

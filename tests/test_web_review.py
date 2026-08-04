@@ -321,3 +321,26 @@ def test_review_rows_carry_confidence_bands_and_row_actions(tmp_path: Path) -> N
     # Per-row decisions, CSP-safe (htmx attributes, no inline handlers).
     assert 'hx-vals=\'{"action": "approve"' in page
     assert "onclick=" not in page
+
+
+def test_quick_approve_confident_only_touches_high_confidence(tmp_path: Path) -> None:
+    client, conn = client_for(tmp_path)
+    sure = seed_proposal(conn, "sure.flac", "music", "Music/sure.flac", 0.95, None)
+    unsure = seed_proposal(conn, "unsure.bin", "misc", "Misc/unsure.bin", 0.4, None)
+
+    page = client.get("/review").text
+    response = client.post(
+        "/review/action",
+        data={
+            "action": "approve",
+            "all_matching": "true",
+            "state": "proposed",
+            "min_confidence": "0.85",
+        },
+        headers={"x-csrf-token": client.cookies["csrf_token"]},
+    )
+
+    assert "Approve all confident" in page
+    assert response.status_code == 200
+    assert proposal_status(conn, sure) == "approved"
+    assert proposal_status(conn, unsure) == "proposed"

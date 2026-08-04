@@ -63,7 +63,7 @@ Layout/shell responsiveness across four breakpoints; a widget-based dashboard; a
 ### P17-04 Decision-first Review
 **Depends on:** P17-01 | **Size:** M
 - [x] Confidence colour band + text label per row; per-row Approve/Reject alongside the batch bar.
-- [ ] Filter/sort by confidence; "approve everything above X" flow works in one action.
+- [x] Filter/sort by confidence; "approve everything above X" works in one action (Approve all confident ≥0.85, with a confirm), plus a "show only the ones needing a look" filter link.
 - [x] Contrast test green; no state signalled by colour alone.
 
 ### P17-05 Screenshot + polish pass
