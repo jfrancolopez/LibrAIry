@@ -30,6 +30,43 @@ SCREENSHOT_RE = re.compile(
     r"^(screenshot|screen shot|screengrab|capture|vlcsnap|snap|scr[-_])", re.I
 )
 CAMERA_RE = re.compile(r"^(IMG|DSC|DSCN|DSCF|PIC|PICT|GOPR|DJI|MVIMG)", re.I)
+# Artwork that belongs to the album/film sitting beside it, not in Photos/.
+ARTWORK_STEMS = {
+    "albumart",
+    "artwork",
+    "back",
+    "banner",
+    "cd",
+    "cover",
+    "disc",
+    "fanart",
+    "folder",
+    "front",
+    "poster",
+    "thumb",
+    "thumbnail",
+}
+ARTWORK_COMPANION_EXTS = {
+    ".mp3", ".flac", ".m4a", ".aac", ".ogg", ".wav",
+    ".mkv", ".mp4", ".avi", ".mov", ".m4v", ".vob",
+    ".epub", ".mobi", ".azw3", ".pdf",
+}
+# Folders that say "images live here", not "these images are one event".
+GENERIC_IMAGE_PARENTS = {
+    "camera",
+    "camera roll",
+    "dcim",
+    "desktop",
+    "downloads",
+    "images",
+    "img",
+    "media",
+    "photos",
+    "pics",
+    "pictures",
+}
+_YMD_RE = re.compile(r"(?<!\d)(19\d{2}|20\d{2})(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])(?!\d)")
+_YEAR_RE = re.compile(r"(?<!\d)(19\d{2}|20\d{2})(?!\d)")
 BACKUP_RE = re.compile(r"backup|time.machine|system.?backup|incremental|carbon.?copy", re.I)
 SEASON_RE = re.compile(r"\bS(?:eason)?\s*0*(\d+)\b", re.I)
 
@@ -73,15 +110,23 @@ def _classify_file(path: Path, settings: Settings) -> HeuristicResult | None:
     suffix = path.suffix.lower()
     stem = path.stem[1:] if path.name.startswith(".") else path.stem
     if suffix in IMAGE_EXTS and SCREENSHOT_RE.match(stem):
+        # "Screenshot 2022-03-01 093819.png" carries its own date. Hardcoding 0
+        # here filed every screenshot ever taken under a literal Photos/0/.
         return _result(
             "photos",
             "Screenshots",
             0.88,
-            {"year": 0, "event": "Screenshots", "clean_name": clean_name_from_title(stem, suffix)},
+            {
+                "year": _year_from_name(stem) or "Unknown",
+                "event": "Screenshots",
+                "clean_name": clean_name_from_title(stem, suffix),
+            },
             settings,
             "filename matches screenshot pattern",
             hidden=path.name[1:] if path.name.startswith(".") else None,
         )
+    if suffix in IMAGE_EXTS:
+        return _image_file(path, settings, suffix, stem)
     if suffix in EBOOK_EXTS:
         return _result(
             "books",
@@ -106,6 +151,81 @@ def _classify_file(path: Path, settings: Settings) -> HeuristicResult | None:
             "font extension",
         )
     return None
+
+
+def _image_file(
+    path: Path, settings: Settings, suffix: str, stem: str
+) -> HeuristicResult | None:
+    """A loose image file. Photos/ unless it is artwork for the media beside it.
+
+    Without this, an image that is not a screenshot fell through every check
+    here and landed in the document classifier's unknown-extension branch:
+    misc at 0.30, below the threshold, so it never even got a destination.
+    """
+    if _is_artwork_sidecar(path, stem):
+        # Deliberately below the threshold: this file belongs with its album or
+        # film, and v1 has no way to move a sidecar along with its media. Left
+        # pending so the decision stays with the owner rather than filing the
+        # cover of an album under Photos/.
+        return _result(
+            "misc",
+            clean_name_from_title(stem, suffix),
+            0.4,
+            {"clean_name": clean_name_from_title(stem, suffix)},
+            settings,
+            f"artwork for the media beside it ({path.parent.name})",
+        )
+
+    year = _year_from_name(stem) or _year_from_name(path.parent.name) or "Unknown"
+    event = _event_from_parent(path, settings)
+    if CAMERA_RE.match(stem):
+        confidence, detail = 0.88, "camera filename pattern"
+    else:
+        confidence, detail = 0.85, "image extension"
+    return _result(
+        "photos",
+        clean_name_from_title(stem, suffix),
+        confidence,
+        {"year": year, "event": event, "clean_name": clean_name_from_title(stem, suffix)},
+        settings,
+        detail,
+    )
+
+
+def _is_artwork_sidecar(path: Path, stem: str) -> bool:
+    """cover.jpg is artwork only when there is something for it to be art *of*."""
+    if stem.strip().lower().replace("_", " ").replace("-", " ") not in ARTWORK_STEMS:
+        return False
+    try:
+        siblings = list(path.parent.iterdir())
+    except OSError:
+        return False
+    return any(
+        entry.is_file() and entry.suffix.lower() in ARTWORK_COMPANION_EXTS for entry in siblings
+    )
+
+
+def _event_from_parent(path: Path, settings: Settings) -> str:
+    """Keep the owner's own grouping: the containing folder is the event.
+
+    A generic dumping ground ("Pictures", "DCIM") says nothing, and neither
+    does the inbox root itself, so those become Unsorted.
+    """
+    parent = path.parent
+    try:
+        if parent.resolve() == Path(settings.inbox_dir).resolve():
+            return "Unsorted"
+    except OSError:
+        pass
+    name = parent.name.strip()
+    if not name or name.lower() in GENERIC_IMAGE_PARENTS:
+        return "Unsorted"
+    return _clean(name)
+
+
+def _year_from_name(name: str) -> int | None:
+    match = _YMD_RE.search(name) or _YEAR_RE.search(name)
+    return int(match.group(1)) if match else None
 
 
 def _project(path: Path, settings: Settings, markers: set[str]) -> HeuristicResult | None:

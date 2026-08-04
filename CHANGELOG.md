@@ -6,8 +6,29 @@ Container hardening release. `docker scout quickview` goes from 7C/36H/55M/143L 
 health score of E (2 of 7 policies) to 2C/4H/12M/117L and B (5 of 7). Also closes the
 last v1.0.0 known gap.
 
+### Added
+
+- `librairy analyze --reanalyze` re-proposes items already sitting in the review queue.
+  Analysis only ever ran on newly discovered items, so a newly configured AI provider, a
+  catalog key added after the first scan, or an upgrade with better classification never
+  reached anything already proposed — the queue kept its first answer forever. Approved,
+  committed, and quarantined items are never touched.
+
 ### Fixed
 
+- **Loose image files were never classified as photos.** Only images matching the
+  screenshot pattern had a rule; every other `.jpg`/`.png` fell through to the document
+  classifier's unknown-extension branch and landed in `misc` at 0.30 — below the
+  confidence threshold, so it never even got a destination. Images now file under
+  `Photos/{year}/{event}/`, taking the year from a date in the filename and the event
+  from the folder they came from, so your own grouping survives. Generic containers
+  (`Pictures`, `DCIM`, `Downloads`) become `Unsorted` rather than pretending to be events.
+- **Album art is no longer filed as a photo.** `cover.jpg` beside an album or film is
+  recognised as artwork and deliberately held below the threshold, because v1 cannot move
+  a sidecar along with its media. The name alone is not enough — there has to be media
+  beside it, so a genuine photo called `cover.jpg` is still a photo.
+- **Screenshots no longer land in a literal `Photos/0/` folder.** The year was hardcoded
+  to `0`; it is now read from the filename, falling back to `Unknown`.
 - Health reported "low on space" once per storage root, so a single full disk shared by
   inbox/library/quarantine/appdata looked like four separate problems. Warnings are now
   grouped by the underlying volume and name the tightest reading; roots on genuinely

@@ -48,6 +48,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     analyze = subparsers.add_parser("analyze", help="Analyze ready inbox items into proposals")
     analyze.add_argument("--limit", type=int)
+    analyze.add_argument(
+        "--reanalyze",
+        action="store_true",
+        help=(
+            "Re-propose items already in the review queue. Use after configuring an "
+            "AI provider or catalog key, or after upgrading. Approved, committed, and "
+            "quarantined items are never touched."
+        ),
+    )
 
     plan = subparsers.add_parser("plan", help="Create, inspect, and approve plans")
     plan_subparsers = plan.add_subparsers(dest="plan_command")
@@ -151,7 +160,7 @@ def _dispatch(args: argparse.Namespace, conn: sqlite3.Connection, settings: Sett
         summary = scan_root(conn, args.root, root_path, settings)
         return asdict(summary)
     if args.command == "analyze":
-        return asdict(analyze_items(conn, settings, args.limit))
+        return asdict(analyze_items(conn, settings, args.limit, reanalyze=args.reanalyze))
     if args.command == "plan":
         return _plan_command(args, conn, settings)
     if args.command == "commit":

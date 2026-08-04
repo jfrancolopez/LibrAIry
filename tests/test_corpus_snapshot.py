@@ -27,6 +27,7 @@ def test_golden_corpus_snapshot_all_categories(tmp_path: Path) -> None:
         "The.Matrix.1999.mkv",
         "example.show.s02e05.mkv",
         "Screenshot 2026.png",
+        "Trip to Lisbon/IMG_4821.jpg",
         "scan001.pdf",
         "Dune.epub",
         "Demo_Project/package.json",

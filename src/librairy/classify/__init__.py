@@ -33,12 +33,43 @@ class AnalyzeSummary:
     analyzed: int
     proposed: int
     pending: int
+    requeued: int = 0
+
+
+# Undecided: the owner has not acted on these, so re-proposing costs them
+# nothing. Anything approved, committed, or quarantined is a decision already
+# made and is never touched.
+REANALYZABLE_STATES = ("proposed", "pending", "postponed")
+
+
+def requeue_for_analysis(conn: sqlite3.Connection, root: str = "inbox") -> int:
+    """Send undecided items back to 'discovered' so they get fresh proposals.
+
+    Analysis only ever runs on newly discovered items, which means a better
+    classifier, a newly configured AI provider, or a catalog key added after
+    the first scan never reached anything already sitting in the review queue.
+    Returns how many items were requeued.
+    """
+    placeholders = ",".join("?" for _ in REANALYZABLE_STATES)
+    rows = conn.execute(
+        f"SELECT id FROM items WHERE root=? AND missing_since IS NULL "  # noqa: S608
+        f"AND state IN ({placeholders})",
+        (root, *REANALYZABLE_STATES),
+    ).fetchall()
+    for row in rows:
+        transition_item(conn, row["id"], "discovered")
+    return len(rows)
 
 
 def analyze_items(
-    conn: sqlite3.Connection, settings: Settings, limit: int | None = None
+    conn: sqlite3.Connection,
+    settings: Settings,
+    limit: int | None = None,
+    *,
+    reanalyze: bool = False,
 ) -> AnalyzeSummary:
     settings = effective_settings(conn, settings)
+    requeued = requeue_for_analysis(conn) if reanalyze else 0
     items = ready_items(conn, "inbox")
     if limit is not None:
         items = items[:limit]
@@ -71,7 +102,7 @@ def analyze_items(
             pending += 1
             transition_item(conn, item["id"], "pending")
         conn.execute("UPDATE proposals SET updated_at=updated_at WHERE id=?", (proposal_id,))
-    return AnalyzeSummary(len(items), proposed, pending)
+    return AnalyzeSummary(len(items), proposed, pending, requeued)
 
 
 def classify_item(

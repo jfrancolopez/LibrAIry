@@ -46,7 +46,7 @@ def test_analyze_propose_plan_commit_flow_keeps_pending_in_inbox(tmp_path: Path)
 
     assert json.loads(run_cli(tmp_path, "scan").stdout)["hashed"] == 2
     summary = json.loads(run_cli(tmp_path, "analyze").stdout)
-    assert summary == {"analyzed": 2, "pending": 1, "proposed": 1}
+    assert summary == {"analyzed": 2, "pending": 1, "proposed": 1, "requeued": 0}
     proposals = json.loads(run_cli(tmp_path, "proposals", "list").stdout)["proposals"]
     assert len(proposals) == 2
     confident = [proposal for proposal in proposals if proposal["dest_relpath"]]
