@@ -31,6 +31,7 @@ This directory contains the complete, phased backlog to take LibrAIry from its c
 | 14 | [phase-14-screen-redesigns.md](phase-14-screen-redesigns.md) | Screen redesigns: dashboard/review/browse/history/health | 13, 16 | IN PROGRESS — P14-01..05 landed |
 | 15 | [phase-15-catalog-expansion.md](phase-15-catalog-expansion.md) | Catalog expansion + web API key entry (v1.2) | 14 | NOT STARTED |
 | 16 | [phase-16-design-system.md](phase-16-design-system.md) | De-Pip-Boy: friendly UI foundation & design system | 13 | IN PROGRESS — P16-01/02/03/05/06 done |
+| 17 | [phase-17-adaptive-dashboard.md](phase-17-adaptive-dashboard.md) | Adaptive dashboard: responsive shell, explorer browse, decision-first review | 16, 14 | NOT STARTED |
 
 Dependency shape: linear 1 → … → 9 for the original v1.0 build (phases 1–4 headless, 5–7 web, 8 packages, 9 fast-follows). Post-completion order (owner-decided 2026-07-23, revised same day): **P10-01..05 → phase 12 (defect fixes) → P10-06 (tag v1.0.0) → 13 (theme, v1.1; P13-01/02/03 done) → 16 (design system: remove Pip-Boy, friendly components) → 14 (screen redesigns, inheriting the new components) → 15 (catalogs, v1.2) → 11 (TUI last, so it inherits the final design language).** Phase 16 is numbered after 15 but **executes before 14** — the screen redesigns depend on its component library.
 
