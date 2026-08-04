@@ -3,6 +3,8 @@ from __future__ import annotations
 import html
 import json
 import logging
+import shutil
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -14,6 +16,13 @@ LOGGER = logging.getLogger(__name__)
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".heic", ".avif", ".webp"}
 VIDEO_EXTENSIONS = {".mp4", ".mkv", ".mov", ".avi", ".webm", ".m4v"}
 AUDIO_EXTENSIONS = {".mp3", ".flac", ".wav", ".ogg", ".m4a", ".aac"}
+# Anything librairy.content.extract can pull text out of.
+DOCUMENT_EXTENSIONS = {".pdf", ".txt", ".md", ".csv", ".tsv", ".log", ".docx", ".epub"}
+
+
+PREVIEW_TEXT_CHARS = 700
+THUMBNAIL_WIDTH = 320
+THUMBNAIL_TIMEOUT_SECONDS = 20
 
 
 @dataclass(frozen=True)
@@ -22,6 +31,9 @@ class Preview:
     title: str
     thumb_url: str | None
     facts: tuple[str, ...]
+    # First few hundred characters of a document, so "is this the right file?"
+    # can be answered without leaving the page.
+    body: str | None = None
 
 
 class PreviewError(RuntimeError):
@@ -52,8 +64,61 @@ def preview_for_item(conn, settings: Settings, item_id: int) -> Preview:
         facts = (f"type: {kind}", f"size: {row['size']} bytes")
         return Preview(kind, title, f"/preview/items/{item_id}/thumb", facts)
     if kind == "audio":
-        return Preview(kind, title, None, ("type: audio", f"size: {row['size']} bytes"))
-    return Preview("unsupported", title, None, ("type: unsupported",))
+        return Preview(kind, title, None, ("type: audio", _size_fact(row["size"])))
+    if kind == "document":
+        return Preview(
+            kind,
+            title,
+            None,
+            (f"type: {path.suffix.lstrip('.') or 'document'}", _size_fact(row["size"])),
+            body=_text_snippet(path),
+        )
+    return Preview(
+        "unsupported",
+        title,
+        None,
+        (f"type: {path.suffix.lstrip('.') or 'no extension'}", _size_fact(row["size"])),
+    )
+
+
+def _size_fact(size: int | None) -> str:
+    return f"size: {human_bytes(size)}"
+
+
+def human_bytes(size: int | None) -> str:
+    if not size or size < 0:
+        return "unknown"
+    value = float(size)
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if value < 1024 or unit == "TB":
+            return f"{value:.0f} {unit}" if unit == "B" else f"{value:.1f} {unit}"
+        value /= 1024
+    return "unknown"
+
+
+def _text_snippet(path: Path) -> str | None:
+    """Opening lines of a document. None when it cannot be read.
+
+    Extraction shells out to pdftotext for PDFs, so any failure here — missing
+    binary, encrypted file, scanned pages with no text layer — degrades to no
+    snippet rather than breaking the page.
+    """
+    from librairy.content.extract import extract_text, extractor_name
+
+    extractor = extractor_name(path)
+    if extractor is None:
+        return None
+    try:
+        text = extract_text(path, extractor)
+    except Exception as exc:  # noqa: BLE001 - a preview is never worth an error page
+        LOGGER.debug("preview text extraction failed for %s: %s", path, exc)
+        return None
+    collapsed = " ".join(text.split())
+    if not collapsed:
+        return None
+    if len(collapsed) <= PREVIEW_TEXT_CHARS:
+        return collapsed
+    return collapsed[:PREVIEW_TEXT_CHARS].rstrip() + "…"
 
 
 def thumbnail_for_item(conn, settings: Settings, item_id: int) -> Path:
@@ -81,13 +146,62 @@ def get_thumbnail(
 ) -> Path:
     thumbs = settings.appdata_dir / "thumbs"
     thumbs.mkdir(parents=True, exist_ok=True)
-    # The theme is part of the cache key: switching palettes must repaint the
-    # placeholder rather than serve a thumbnail in the previous theme's colors.
+    stem = _safe_fingerprint(fingerprint)
+
+    # A real picture of the file, rendered by ffmpeg. This is what makes Browse
+    # usable for photos — a placeholder that says "IMAGE PREVIEW" tells you
+    # nothing a filename did not already.
+    raster = thumbs / f"{stem}-{kind}.jpg"
+    if raster.exists():
+        return raster
+    if _render_thumbnail(source, raster, kind, settings):
+        return raster
+
+    # No ffmpeg, or a file it cannot decode. The drawn placeholder is themed, so
+    # the palette is part of its cache key.
     name = normalize_theme(theme)
-    target = thumbs / f"{_safe_fingerprint(fingerprint)}-{kind}-{name}.svg"
+    target = thumbs / f"{stem}-{kind}-{name}.svg"
     if not target.exists():
         _write_svg_thumbnail(target, source.name, kind, swatch_for(name))
     return target
+
+
+def thumbnail_media_type(path: Path) -> str:
+    return "image/jpeg" if path.suffix.lower() == ".jpg" else "image/svg+xml"
+
+
+def _render_thumbnail(source: Path, target: Path, kind: str, settings: Settings) -> bool:
+    """Scale `source` down into `target` with ffmpeg. False if that is not possible.
+
+    Never upscales, and keeps dimensions even so the JPEG encoder is happy.
+    Writes to a temporary file first, so a killed ffmpeg cannot leave a
+    half-written thumbnail in the cache to be served forever.
+    """
+    if shutil.which("ffmpeg") is None:
+        return False
+    scale = f"scale='min({THUMBNAIL_WIDTH},iw)':-2"
+    command = ["ffmpeg", "-y", "-loglevel", "error"]
+    if kind == "video":
+        # A frame from a little way in; frame zero is often black.
+        command += ["-ss", "3"]
+    command += ["-i", str(source), "-vf", scale, "-frames:v", "1", "-f", "image2"]
+    partial = target.with_suffix(".jpg.part")
+    try:
+        result = subprocess.run(  # noqa: S603 - fixed argv, no shell
+            [*command, str(partial)],
+            capture_output=True,
+            timeout=THUMBNAIL_TIMEOUT_SECONDS,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        LOGGER.debug("thumbnail render failed for %s: %s", source, exc)
+        partial.unlink(missing_ok=True)
+        return False
+    if result.returncode != 0 or not partial.exists() or partial.stat().st_size == 0:
+        partial.unlink(missing_ok=True)
+        return False
+    partial.replace(target)
+    return True
 
 
 def _active_theme(conn) -> str:
@@ -137,6 +251,8 @@ def _kind(path: Path) -> str:
         return "video"
     if suffix in AUDIO_EXTENSIONS:
         return "audio"
+    if suffix in DOCUMENT_EXTENSIONS:
+        return "document"
     return "unsupported"
 
 

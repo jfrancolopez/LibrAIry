@@ -70,7 +70,12 @@ from librairy.web.quarantine import (
     unstage_proposal,
 )
 from librairy.web.review import apply_review_action, edit_proposal, filters_from_query, review_data
-from librairy.web.thumbs import PreviewError, preview_for_item, thumbnail_for_item
+from librairy.web.thumbs import (
+    PreviewError,
+    preview_for_item,
+    thumbnail_for_item,
+    thumbnail_media_type,
+)
 
 PACKAGE_DIR = Path(__file__).parent
 TEMPLATES = Jinja2Templates(directory=PACKAGE_DIR / "templates")
@@ -530,7 +535,7 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
         return FileResponse(
             path,
-            media_type="image/svg+xml",
+            media_type=thumbnail_media_type(path),
             headers={"Cache-Control": "public, max-age=31536000, immutable"},
         )
 

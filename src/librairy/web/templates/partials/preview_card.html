@@ -2,5 +2,6 @@
   <p class="muted">{{ preview.kind|capitalize }} preview</p>
   <h3>{{ preview.title }}</h3>
   {% if preview.thumb_url %}<img src="{{ preview.thumb_url }}" alt="Preview for {{ preview.title }}">{% endif %}
+  {% if preview.body %}<p class="preview-text">{{ preview.body }}</p>{% endif %}
   {% for fact in preview.facts %}<span>{{ fact }}</span>{% endfor %}
 </aside>

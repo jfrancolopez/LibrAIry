@@ -223,3 +223,68 @@ def test_explorer_renders_four_panes(tmp_path: Path) -> None:
     # Category pane lets you switch library sections without leaving the page.
     assert 'href="/browse/music"' in page
     assert "/static/browse.js" in page
+
+
+def test_file_rows_carry_a_thumbnail_and_size(tmp_path: Path) -> None:
+    """A photo library listed as bare filenames is not browsable."""
+    client, conn, settings = client_for(tmp_path)
+    seed_item(conn, settings, "Photos/2026/Italy/a.jpg", "photos")
+
+    page = client.get("/browse/photos?folder=2026/Italy").text
+
+    assert 'class="row-thumb"' in page
+    assert "/preview/items/" in page and "/thumb" in page
+    assert 'class="row-size muted"' in page
+    assert 'loading="lazy"' in page, "50 thumbnails must not all load at once"
+
+
+def test_rows_without_a_thumbnail_get_a_placeholder(tmp_path: Path) -> None:
+    """Otherwise names jump left and right depending on the file type."""
+    client, conn, settings = client_for(tmp_path)
+    seed_item(conn, settings, "Documents/notes.txt", "documents")
+
+    page = client.get("/browse/documents").text
+
+    assert "row-thumb is-placeholder" in page
+    assert "/thumb" not in page, "a text file has no thumbnail to request"
+
+
+def test_details_pane_loads_the_first_file_on_arrival(tmp_path: Path) -> None:
+    client, conn, settings = client_for(tmp_path)
+    item_id = seed_item(conn, settings, "Photos/2026/Italy/a.jpg", "photos")
+
+    page = client.get("/browse/photos?folder=2026/Italy").text
+
+    assert f'hx-get="/browse/items/{item_id}/panel"' in page
+    assert 'hx-trigger="load"' in page
+    assert "Select a file to see it here." not in page
+
+
+def test_empty_folder_pane_collapses_at_the_top_level(tmp_path: Path) -> None:
+    """A category with no subfolders should not reserve a third of the screen."""
+    client, conn, settings = client_for(tmp_path)
+    seed_item(conn, settings, "Documents/notes.txt", "documents")
+
+    page = client.get("/browse/documents").text
+
+    assert 'class="explorer-pane is-empty" data-pane="1"' in page
+
+
+def test_folder_pane_stays_when_it_holds_the_parent_link(tmp_path: Path) -> None:
+    client, conn, settings = client_for(tmp_path)
+    seed_item(conn, settings, "Photos/2026/Italy/a.jpg", "photos")
+
+    page = client.get("/browse/photos?folder=2026/Italy").text
+
+    assert 'class="explorer-pane" data-pane="1"' in page
+    assert 'data-parent="/browse/photos?folder=2026"' in page
+
+
+def test_human_size_formatting() -> None:
+    from librairy.web.browse import human_size
+
+    assert human_size(0) == ""
+    assert human_size(None) == ""
+    assert human_size(900) == "900 B"
+    assert human_size(1536) == "1.5 KB"
+    assert human_size(25_904_964) == "24.7 MB"

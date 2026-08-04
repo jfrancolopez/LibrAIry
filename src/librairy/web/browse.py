@@ -6,7 +6,12 @@ from pathlib import PurePosixPath
 from librairy.config import Settings
 from librairy.proposals import decode_evidence
 from librairy.search import host_path
-from librairy.web.thumbs import PreviewError, preview_for_item
+from librairy.web.thumbs import (
+    IMAGE_EXTENSIONS,
+    VIDEO_EXTENSIONS,
+    PreviewError,
+    preview_for_item,
+)
 
 CATEGORIES = ("music", "movies", "shows", "photos", "documents", "books", "projects", "misc")
 PAGE_SIZE = 50
@@ -38,7 +43,7 @@ def browse_category(
     prefix = _category_prefix(category, folder)
     rows = conn.execute(
         """
-        SELECT search_fts.item_id, i.relpath, search_fts.category
+        SELECT search_fts.item_id, i.relpath, i.size, search_fts.category
         FROM search_fts
         JOIN items i ON i.id = search_fts.item_id
         WHERE search_fts.category=? AND i.root='library' AND i.relpath >= ? AND i.relpath < ?
@@ -55,12 +60,26 @@ def browse_category(
         if len(parts) > 1:
             folders[parts[0]] = folders.get(parts[0], 0) + 1
         else:
-            items.append(row)
+            name = parts[0] if parts else row["relpath"]
+            items.append(
+                {
+                    "item_id": row["item_id"],
+                    "relpath": row["relpath"],
+                    "name": name,
+                    "size": human_size(row["size"]),
+                    # Only images and video have a thumbnail; asking for one on
+                    # anything else just renders a broken-image icon.
+                    "thumb": has_thumbnail(name),
+                }
+            )
     return {
         "category": category,
         "folder": folder,
         "folders": sorted(folders.items()),
         "items": items,
+        # Load the first file into the details pane straight away, so arriving
+        # at a folder shows something instead of "select a file".
+        "first_item_id": items[0]["item_id"] if items else None,
         "page": page,
         "has_next": len(rows) == PAGE_SIZE,
         "has_prev": page > 1,
@@ -70,6 +89,22 @@ def browse_category(
         # bouncing through /browse.
         **browse_home(conn),
     }
+
+
+def has_thumbnail(name: str) -> bool:
+    return PurePosixPath(name).suffix.lower() in IMAGE_EXTENSIONS | VIDEO_EXTENSIONS
+
+
+def human_size(size: int | None) -> str:
+    """Bytes as something a person can read at a glance in a file list."""
+    if not size or size < 0:
+        return ""
+    value = float(size)
+    for unit in ("B", "KB", "MB", "GB"):
+        if value < 1024 or unit == "GB":
+            return f"{value:.0f} {unit}" if unit == "B" else f"{value:.1f} {unit}"
+        value /= 1024
+    return ""
 
 
 def _crumbs(category: str, folder: str) -> list[dict[str, str]]:

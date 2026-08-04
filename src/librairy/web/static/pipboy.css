@@ -574,7 +574,46 @@ tbody tr:hover { background: var(--bg-metric); }
 .browse-row.is-folder span:first-child::before { content: "▸ "; color: var(--accent); }
 .browse-row.is-active.is-folder span:first-child::before { color: inherit; }
 
+/* File rows: thumbnail, name, size — a name that wraps to two lines turns the
+   list into a wall of text you cannot scan, so it truncates instead. */
+.browse-row.is-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+}
+.row-thumb {
+  width: 2.5rem;
+  height: 2.5rem;
+  object-fit: cover;
+  border-radius: calc(var(--radius-ui) / 2);
+  background: var(--bg-metric);
+  flex: none;
+}
+/* Keeps names aligned whether or not a row has a picture. */
+.row-thumb.is-placeholder { display: block; }
+.row-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.row-size { font-size: var(--text-sm); white-space: nowrap; }
+
+/* A leaf folder has no subfolders to list; without this the pane sits there as
+   an empty third of the screen. */
+.explorer-pane.is-empty { display: none; }
+
 .browse-panel { position: sticky; top: var(--space-4); }
+.preview-text {
+  margin: var(--space-2) 0;
+  padding: var(--space-3);
+  background: var(--bg-input);
+  border-radius: var(--radius-ui);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  max-height: 12rem;
+  overflow-y: auto;
+}
 .panel-facts { list-style: none; margin: var(--space-2) 0; padding: 0; display: grid; gap: var(--space-1); font-size: var(--text-sm); }
 
 kbd {

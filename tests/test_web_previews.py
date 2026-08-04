@@ -42,7 +42,10 @@ def test_image_video_audio_and_unsupported_previews_render(tmp_path: Path) -> No
     assert "Image preview" in image_response.text
     assert "Video preview" in video_response.text
     assert "Audio preview" in audio_response.text
-    assert "Unsupported preview" in text_response.text
+    # A text file is previewable: the point of a preview is answering "is this
+    # the right file?", and for a document that means seeing what is in it.
+    assert "Document preview" in text_response.text
+    assert "hello" in text_response.text
     assert thumb_response.status_code == 200
     assert thumb_response.headers["content-type"].startswith("image/svg+xml")
 
@@ -114,3 +117,140 @@ def insert_file(conn, settings: Settings, relpath: str, content: bytes) -> int:
         (relpath, len(content), relpath.replace("/", "-")),
     )
     return int(cursor.lastrowid)
+
+
+def test_document_preview_truncates_long_text(tmp_path: Path) -> None:
+    from librairy.web.thumbs import PREVIEW_TEXT_CHARS
+
+    client, conn, settings = client_for(tmp_path)
+    long_text = ("lorem ipsum dolor sit amet " * 200).encode()
+    item = insert_file(conn, settings, "long.txt", long_text)
+
+    response = client.get(f"/preview/items/{item}")
+
+    assert "Document preview" in response.text
+    assert "…" in response.text
+    assert len(response.text) < PREVIEW_TEXT_CHARS * 3, "the whole file must not be inlined"
+
+
+def test_document_preview_collapses_whitespace(tmp_path: Path) -> None:
+    client, conn, settings = client_for(tmp_path)
+    item = insert_file(conn, settings, "spaced.txt", b"first\n\n\n     second\t\tthird")
+
+    response = client.get(f"/preview/items/{item}")
+
+    assert "first second third" in response.text
+
+
+def test_unreadable_document_degrades_to_no_snippet(tmp_path: Path, monkeypatch) -> None:
+    """pdftotext can be missing, or a PDF can be scanned images with no text."""
+    client, conn, settings = client_for(tmp_path)
+    item = insert_file(conn, settings, "scan.pdf", b"%PDF-1.4 not really")
+
+    def broken(path, extractor):  # noqa: ANN001, ARG001
+        raise OSError("pdftotext exploded")
+
+    monkeypatch.setattr("librairy.content.extract.extract_text", broken)
+
+    response = client.get(f"/preview/items/{item}")
+
+    assert response.status_code == 200
+    assert "Document preview" in response.text
+    assert "preview-text" not in response.text
+
+
+def test_binary_file_still_reports_its_type_and_size(tmp_path: Path) -> None:
+    """Even with nothing to show, "unsupported" alone told you nothing."""
+    client, conn, settings = client_for(tmp_path)
+    item = insert_file(conn, settings, "installer.dmg", b"\x00\x01\x02\x03")
+
+    response = client.get(f"/preview/items/{item}")
+
+    assert "type: dmg" in response.text
+    assert "size: 4 B" in response.text
+
+
+def test_sizes_are_human_readable() -> None:
+    from librairy.web.thumbs import human_bytes
+
+    assert human_bytes(0) == "unknown"
+    assert human_bytes(512) == "512 B"
+    assert human_bytes(2048) == "2.0 KB"
+    assert human_bytes(25_904_964) == "24.7 MB"
+
+
+def _real_png(path: Path) -> bool:
+    """A genuine 64x64 image via ffmpeg, or False when ffmpeg is unavailable."""
+    import shutil as _shutil
+    import subprocess as _subprocess
+
+    if _shutil.which("ffmpeg") is None:
+        return False
+    result = _subprocess.run(
+        ["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi",
+         "-i", "testsrc=size=64x64:duration=1", "-frames:v", "1", str(path)],
+        capture_output=True,
+        check=False,
+    )
+    return result.returncode == 0 and path.exists()
+
+
+def test_real_images_get_a_real_thumbnail_not_a_placeholder(tmp_path: Path) -> None:
+    """A placeholder reading "IMAGE PREVIEW" tells you nothing the filename didn't."""
+    import pytest
+
+    client, conn, settings = client_for(tmp_path)
+    source = tmp_path / "source.png"
+    if not _real_png(source):
+        pytest.skip("ffmpeg unavailable")
+    item = insert_file(conn, settings, "real.png", source.read_bytes())
+
+    response = client.get(f"/preview/items/{item}/thumb")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("image/jpeg")
+    assert response.content[:2] == b"\xff\xd8", "not a JPEG"
+
+
+def test_undecodable_image_falls_back_to_the_drawn_placeholder(tmp_path: Path) -> None:
+    """Corrupt files must still render something rather than break the page."""
+    client, conn, settings = client_for(tmp_path)
+    item = insert_file(conn, settings, "broken.jpg", b"definitely not an image")
+
+    response = client.get(f"/preview/items/{item}/thumb")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("image/svg+xml")
+
+
+def test_missing_ffmpeg_falls_back_without_erroring(tmp_path: Path, monkeypatch) -> None:
+    client, conn, settings = client_for(tmp_path)
+    monkeypatch.setattr("librairy.web.thumbs.shutil.which", lambda name: None)  # noqa: ARG005
+    item = insert_file(conn, settings, "photo.jpg", b"bytes")
+
+    response = client.get(f"/preview/items/{item}/thumb")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("image/svg+xml")
+
+
+def test_a_killed_render_leaves_no_half_written_thumbnail(tmp_path: Path, monkeypatch) -> None:
+    """A truncated JPEG in the cache would be served as valid forever."""
+    from librairy.web import thumbs as thumbs_module
+
+    client, conn, settings = client_for(tmp_path)
+
+    def half_write(command, **kwargs):  # noqa: ANN001, ANN003, ARG001
+        Path(command[-1]).write_bytes(b"")  # empty: the timeout case
+        raise TimeoutError("ffmpeg hung")
+
+    monkeypatch.setattr(thumbs_module.shutil, "which", lambda name: "/usr/bin/ffmpeg")  # noqa: ARG005
+    monkeypatch.setattr(thumbs_module.subprocess, "run", half_write)
+    item = insert_file(conn, settings, "slow.jpg", b"bytes")
+
+    response = client.get(f"/preview/items/{item}/thumb")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("image/svg+xml")
+    leftovers = list((settings.appdata_dir / "thumbs").glob("*.part"))
+    assert leftovers == []
