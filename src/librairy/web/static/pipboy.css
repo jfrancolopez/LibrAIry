@@ -627,6 +627,26 @@ tbody tr:hover { background: var(--bg-metric); }
 
 .load-more { margin-top: var(--space-2); }
 
+/* ---- Advisory flags ---------------------------------------------------- */
+/* Wallets, hidden files, possible adult content. Advisories, not verdicts —
+   styled to be noticed in a scan without shouting over the decision buttons. */
+.flag-list { list-style: none; margin: var(--space-2) 0 0; padding: 0; display: grid; gap: var(--space-1); }
+.flag {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  padding: var(--space-2);
+  border-left: 3px solid var(--border);
+  background: var(--bg-input);
+  border-radius: calc(var(--radius-ui) / 2);
+}
+.flag-crypto { border-left-color: var(--fail); }
+.flag-hidden { border-left-color: var(--accent); }
+.flag-adult { border-left-color: var(--warn); }
+.btn-unhide { font-size: var(--text-sm); min-height: 2rem; padding: var(--space-1) var(--space-2); }
+
 /* ---- Search results ---------------------------------------------------- */
 /* A result is a card, not a table row: the facts that answer "is this the file
    I meant?" need room to sit together, and a preview has to expand in place. */

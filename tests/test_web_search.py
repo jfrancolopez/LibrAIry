@@ -160,3 +160,34 @@ def test_search_size_formatting() -> None:
     assert human_size(0) == ""
     assert human_size(900) == "900 B"
     assert human_size(1536) == "1.5 KB"
+
+
+def test_destination_is_hidden_once_the_file_is_already_there(tmp_path: Path) -> None:
+    """A committed item would otherwise show "goes to" pointing at its own path."""
+    client, conn, settings = client_for(tmp_path)
+    seed_library(conn, settings, "Music/song.flac", "music")
+
+    page = client.get("/search?q=song").text
+
+    assert "goes to" not in page
+
+
+def test_destination_is_shown_while_a_file_is_still_in_the_inbox(tmp_path: Path) -> None:
+    client, conn, settings = client_for(tmp_path)
+    (settings.inbox_dir / "loose.flac").write_text("x", encoding="utf-8")
+    scan_root(conn, "inbox", settings.inbox_dir, settings)
+    item_id = conn.execute("SELECT id FROM items WHERE root='inbox'").fetchone()[0]
+    upsert_proposal(
+        conn,
+        item_id=item_id,
+        category="music",
+        clean_name="loose.flac",
+        dest_relpath="Music/loose.flac",
+        confidence=0.9,
+        evidence=[EvidenceEntry("heuristic", "category", "music", 0.9)],
+    )
+
+    page = client.get("/search?q=loose").text
+
+    assert "goes to" in page
+    assert "library/Music/loose.flac" in page

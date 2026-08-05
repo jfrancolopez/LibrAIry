@@ -10,6 +10,24 @@
       {% if proposal.dest_relpath %}<span class="mono">{{ proposal.dest_root }}/{{ proposal.dest_relpath }}</span>{% else %}<span class="badge badge-warn">pending destination</span>{% endif %}
     </div>
     {% if warning %}<span class="badge badge-warn">{{ warning }}</span>{% endif %}
+    {% if proposal.flags %}
+      <ul class="flag-list">
+        {% for flag in proposal.flags %}
+          <li class="flag flag-{{ flag.kind }}">
+            <span class="badge {{ 'badge-warn' if flag.severity == 'warn' else 'badge-info' }}">{{ flag.label }}</span>
+            <span class="muted">{{ flag.detail }}</span>
+            {% if flag.kind == 'hidden' %}
+              <button type="button" class="btn-unhide"
+                hx-post="/review/proposals/{{ proposal.id }}/edit"
+                hx-vals='{"category": "{{ proposal.category }}", "clean_name": "{{ proposal.unhidden_name }}", "dest_relpath": "{{ proposal.dest_relpath or '' }}"}'
+                hx-target="#proposal-{{ proposal.id }}" hx-swap="outerHTML"
+                hx-headers='{"x-csrf-token":"{{ request.state.session.csrf_token }}"}'
+              >Rename to {{ proposal.unhidden_name }}</button>
+            {% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+    {% endif %}
   </td>
   <td>
     <span class="confidence" style="--score: {{ (conf * 100)|round|int }}%">{{ '%.2f'|format(conf) }}</span>

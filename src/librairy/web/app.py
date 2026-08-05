@@ -31,6 +31,7 @@ from librairy.settings_service import (
     set_ollama_enabled,
     settings_page_data,
 )
+from librairy.web.access import access_data
 from librairy.web.auth import (
     SESSION_COOKIE,
     LoginRateLimiter,
@@ -755,6 +756,7 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
                 "host_library_dir": settings.host_library_dir,
                 "host_inbox_dir": settings.host_inbox_dir,
                 "host_quarantine_dir": settings.host_quarantine_dir,
+                **access_data(conn, settings),
             },
         )
 

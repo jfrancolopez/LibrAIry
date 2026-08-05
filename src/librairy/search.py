@@ -194,9 +194,13 @@ def _result_details(conn: sqlite3.Connection, row: dict[str, object]) -> dict[st
         "has_thumbnail": suffix in THUMBNAILABLE,
         "confidence": proposal["confidence"] if proposal else None,
         "proposal_status": proposal["status"] if proposal else None,
+        # Suppressed once the file is already there — a committed item would
+        # otherwise show "goes to" pointing at the path printed just above it.
         "destination": (
             f"{proposal['dest_root']}/{proposal['dest_relpath']}"
-            if proposal and proposal["dest_relpath"]
+            if proposal
+            and proposal["dest_relpath"]
+            and (proposal["dest_root"], proposal["dest_relpath"]) != (row["root"], row["relpath"])
             else ""
         ),
     }

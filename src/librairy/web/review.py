@@ -6,6 +6,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from librairy.config import Settings
+from librairy.flags import flags_for, unhidden_name
 from librairy.lifecycle import transition_item
 from librairy.paths import PathValidationError, sanitize_component, validate_dest
 from librairy.planner import utc_now
@@ -192,6 +193,10 @@ def _proposal_rows(
             **dict(row),
             "evidence_lines": evidence_lines(row["evidence"]),
             "evidence_views": humanize_evidence(row["evidence"]),
+            # Advisories, not classification: a wallet or a hidden file should
+            # not disappear into a bulk approve unnoticed.
+            "flags": flags_for(row["item_relpath"]),
+            "unhidden_name": unhidden_name(row["item_relpath"]),
         }
         for row in rows
     ]

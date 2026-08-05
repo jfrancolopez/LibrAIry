@@ -344,3 +344,44 @@ def test_quick_approve_confident_only_touches_high_confidence(tmp_path: Path) ->
     assert response.status_code == 200
     assert proposal_status(conn, sure) == "approved"
     assert proposal_status(conn, unsure) == "proposed"
+
+
+def test_wallet_files_are_flagged_in_the_queue(tmp_path: Path) -> None:
+    """A wallet must not vanish into a bulk approve unnoticed."""
+    client, conn = client_for(tmp_path)
+    seed_proposal(conn, "backup/wallet.dat", "misc", "Misc/wallet.dat", 0.9, None)
+
+    page = client.get("/review").text
+
+    assert "possible wallet" in page
+    assert "flag-crypto" in page
+    assert "not a backed-up file" in page
+
+
+def test_hidden_files_offer_a_rename_that_unhides_them(tmp_path: Path) -> None:
+    client, conn = client_for(tmp_path)
+    seed_proposal(conn, ".env", "documents", "Documents/env", 0.9, None)
+
+    page = client.get("/review").text
+
+    assert "flag-hidden" in page
+    assert "Rename to env" in page
+
+
+def test_possible_adult_content_is_marked_as_a_guess(tmp_path: Path) -> None:
+    client, conn = client_for(tmp_path)
+    seed_proposal(conn, "downloads/clip.XXX.1080p.mp4", "movies", "Movies/clip.mp4", 0.9, None)
+
+    page = client.get("/review").text
+
+    assert "possibly adult" in page
+    assert "guess from the filename" in page
+
+
+def test_ordinary_files_carry_no_flag_markup(tmp_path: Path) -> None:
+    client, conn = client_for(tmp_path)
+    seed_proposal(conn, "Music/song.flac", "music", "Music/song.flac", 0.9, None)
+
+    page = client.get("/review").text
+
+    assert "flag-list" not in page

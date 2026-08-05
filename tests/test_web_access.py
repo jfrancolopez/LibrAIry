@@ -33,9 +33,74 @@ def test_access_page_substitutes_host_path_and_disclaims_protocols(tmp_path: Pat
 
     assert response.status_code == 200
     assert "/mnt/user/media/library" in response.text
-    assert "LibrAIry does not serve SMB, FTP, WebDAV" in response.text
-    assert "\\\\TOWER\\library" in response.text
-    assert "smb://TOWER/library" in response.text
+    assert "serves no file-sharing protocol of its own" in response.text
+    # Per-OS instructions with the real path already filled in, so nobody has
+    # to retype it from a screenshot.
+    for system in ("UNRAID", "Linux (Samba)", "macOS", "Windows"):
+        assert system in response.text
+    assert "smb://" in response.text
+    assert "net use" in response.text
+
+
+def test_access_distinguishes_host_paths_from_container_paths(tmp_path: Path) -> None:
+    """Pointing Samba at /data/library is the most common setup mistake."""
+    client, _, settings = client_for(tmp_path)
+
+    page = client.get("/access").text
+
+    assert "/mnt/user/media/library" in page
+    assert str(settings.library_dir) in page
+    assert "Host path (use this)" in page
+    assert "only exists inside LibrAIry" in page
+
+
+def test_access_reports_contents_and_which_roots_to_share(tmp_path: Path) -> None:
+    client, conn, _ = client_for(tmp_path)
+    conn.execute(
+        """
+        INSERT INTO items(root, relpath, size, mtime_ns, fingerprint, state,
+                          first_seen_at, last_seen_at)
+        VALUES ('library', 'a.txt', 2048, 1, 'fp', 'discovered', 'now', 'now')
+        """
+    )
+
+    page = client.get("/access").text
+
+    assert "1 file(s)" in page
+    assert "2.0 KB" in page
+    assert "shareable" in page
+    # appdata holds the database; sharing it is a bad idea.
+    assert "keep private" in page
+    assert "do not share it" in page
+
+
+def test_access_reports_the_portal_security_state(tmp_path: Path) -> None:
+    client, _, _ = client_for(tmp_path)
+
+    page = client.get("/access").text
+
+    # client_for sets a password during setup.
+    assert "Portal password" in page
+    assert "PUID:PGID" in page
+
+
+def test_access_warns_when_the_portal_is_open(tmp_path: Path) -> None:
+    from librairy.web.auth import clear_admin_password
+
+    client, conn, _ = client_for(tmp_path)
+    clear_admin_password(conn)
+
+    page = client.get("/access").text
+
+    assert "anyone on this network can use the portal" in page
+
+
+def test_access_size_formatting() -> None:
+    from librairy.web.access import human_bytes
+
+    assert human_bytes(0) == "0 B"
+    assert human_bytes(900) == "900 B"
+    assert human_bytes(1536) == "1.5 KB"
 
 
 def test_access_page_is_linked_from_browse(tmp_path: Path) -> None:
