@@ -50,6 +50,7 @@ from librairy.web.browse import browse_category, browse_home, item_detail
 from librairy.web.commit import (
     CommitState,
     commit_confirm_data,
+    commit_overview,
     create_commit_plan,
     start_execution,
 )
@@ -580,15 +581,12 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
 
     @app.get("/commit", response_class=HTMLResponse)
     def commit_home(request: Request) -> HTMLResponse:
-        approved = conn.execute(
-            "SELECT COUNT(*) FROM proposals WHERE status='approved' AND dest_relpath IS NOT NULL"
-        ).fetchone()[0]
         return TEMPLATES.TemplateResponse(
             request,
             "commit.html",
             {
+                **commit_overview(conn),
                 "title": "Commit",
-                "approved_count": approved,
                 "csrf_token": request.state.session["csrf_token"],
             },
         )

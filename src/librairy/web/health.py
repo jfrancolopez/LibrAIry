@@ -6,7 +6,7 @@ import sqlite3
 import subprocess
 import time
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from librairy.ai.orchestrator import provider_for_config
@@ -61,6 +61,7 @@ def health_data(conn: sqlite3.Connection, settings: Settings) -> dict[str, objec
             worker=worker,
             backup=backup,
         ),
+        **health_metrics(conn, settings),
     }
 
 
@@ -69,6 +70,160 @@ class Recommendation:
     severity: str  # "warn" | "fail"
     text: str
     action: str
+
+
+@dataclass(frozen=True)
+class Bar:
+    """One bar in a chart. `pct` is width, `tone` picks the colour."""
+
+    label: str
+    value: int
+    pct: int
+    tone: str = "accent"  # accent | ok | warn | fail
+    caption: str = ""
+
+
+GROWTH_DAYS = 14
+# Anything below the confidence threshold needs a human; the bands split the
+# queue into "just approve it", "glance at it", and "this one needs thought".
+CONFIDENCE_BANDS = (
+    ("high", 0.85, 1.01, "ok"),
+    ("medium", 0.70, 0.85, "warn"),
+    ("low", 0.0, 0.70, "fail"),
+)
+
+
+def health_metrics(conn: sqlite3.Connection, settings: Settings) -> dict[str, object]:
+    """Numbers worth watching, shaped for bar charts.
+
+    Rendered server-side as sized divs rather than a charting library: the
+    portal ships no JavaScript build step, and its CSP blocks anything inline.
+    """
+    return {
+        "growth": _library_growth(conn),
+        "pipeline": _pipeline(conn),
+        "confidence": _confidence(conn),
+        "disk_meters": _disk_meters(settings),
+        "totals": _totals(conn),
+    }
+
+
+def _library_growth(conn: sqlite3.Connection) -> list[Bar]:
+    """Files committed per day. The one number that shows LibrAIry working."""
+    today = datetime.now(UTC).date()
+    counts = {
+        str(row["day"]): row["count"]
+        for row in conn.execute(
+            """
+            SELECT substr(ts, 1, 10) AS day, COUNT(*) AS count
+            FROM history
+            WHERE action='move' AND outcome='ok'
+            GROUP BY day
+            """
+        )
+    }
+    days = [today - timedelta(days=offset) for offset in range(GROWTH_DAYS - 1, -1, -1)]
+    values = [counts.get(day.isoformat(), 0) for day in days]
+    peak = max(values) or 1
+    return [
+        Bar(
+            label=day.strftime("%d %b"),
+            value=value,
+            pct=round(value / peak * 100),
+            tone="accent",
+            caption=f"{value} file(s) on {day.isoformat()}",
+        )
+        for day, value in zip(days, values, strict=True)
+    ]
+
+
+def _pipeline(conn: sqlite3.Connection) -> list[Bar]:
+    """Where everything currently sits, inbox through committed."""
+    tones = {
+        "discovered": "accent",
+        "proposed": "ok",
+        "pending": "warn",
+        "postponed": "warn",
+        "approved": "ok",
+        "committed": "ok",
+        "quarantined": "fail",
+        "unstable": "warn",
+    }
+    rows = list(
+        conn.execute(
+            "SELECT state, COUNT(*) AS count FROM items GROUP BY state ORDER BY count DESC"
+        )
+    )
+    total = sum(row["count"] for row in rows) or 1
+    return [
+        Bar(
+            label=row["state"],
+            value=row["count"],
+            pct=round(row["count"] / total * 100),
+            tone=tones.get(row["state"], "accent"),
+            caption=f"{row['count']} of {total} items",
+        )
+        for row in rows
+    ]
+
+
+def _confidence(conn: sqlite3.Connection) -> list[Bar]:
+    """How sure LibrAIry is about what is still waiting for a decision."""
+    rows = list(
+        conn.execute(
+            "SELECT confidence FROM proposals WHERE status IN ('proposed', 'approved')"
+        )
+    )
+    total = len(rows) or 1
+    bars = []
+    for label, low, high, tone in CONFIDENCE_BANDS:
+        count = sum(1 for row in rows if low <= (row["confidence"] or 0) < high)
+        bars.append(
+            Bar(
+                label=label,
+                value=count,
+                pct=round(count / total * 100),
+                tone=tone,
+                caption=f"{count} proposal(s) at {int(low * 100)}–{int(min(high, 1) * 100)}%",
+            )
+        )
+    return bars
+
+
+def _disk_meters(settings: Settings) -> list[Bar]:
+    """Space *used*, so a long bar means trouble the way people expect."""
+    seen: set[object] = set()
+    meters = []
+    for stat in _disk_stats(settings):
+        # One bar per volume: four roots on one laptop disk is one bar.
+        key = stat.device or stat.root
+        if key in seen:
+            continue
+        seen.add(key)
+        used = 100 - stat.percent_free
+        tone = "ok" if stat.percent_free >= 20 else "warn" if stat.percent_free >= 10 else "fail"
+        meters.append(
+            Bar(
+                label=stat.root,
+                value=used,
+                pct=used,
+                tone=tone,
+                caption=f"{stat.free_gb}GB free of {stat.total_gb}GB",
+            )
+        )
+    return meters
+
+
+def _totals(conn: sqlite3.Connection) -> dict[str, int]:
+    def count(sql: str) -> int:
+        return int(conn.execute(sql).fetchone()[0])
+
+    return {
+        "library_files": count("SELECT COUNT(*) FROM items WHERE root='library'"),
+        "inbox_files": count("SELECT COUNT(*) FROM items WHERE root='inbox'"),
+        "moves_all_time": count("SELECT COUNT(*) FROM history WHERE action='move'"),
+        "quarantined": count("SELECT COUNT(*) FROM quarantine_entries"),
+    }
 
 
 def recommendations(

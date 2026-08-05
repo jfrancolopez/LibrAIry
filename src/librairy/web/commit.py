@@ -20,6 +20,85 @@ class CommitState:
     lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
 
+def commit_overview(conn: sqlite3.Connection) -> dict[str, Any]:
+    """What a commit would actually do, before anyone presses the button.
+
+    The page used to say "N approved proposal(s) ready" and nothing else, which
+    is the one screen in LibrAIry that moves files — you could not see what was
+    about to move, how much of it there was, or where it was going.
+    """
+    rows = list(
+        conn.execute(
+            """
+            SELECT p.category, COUNT(*) AS count, COALESCE(SUM(i.size), 0) AS bytes
+            FROM proposals p
+            JOIN items i ON i.id = p.item_id
+            WHERE p.status='approved' AND p.dest_relpath IS NOT NULL
+            GROUP BY p.category
+            ORDER BY count DESC
+            """
+        )
+    )
+    approved = sum(row["count"] for row in rows)
+    total_bytes = sum(row["bytes"] for row in rows)
+    sample = list(
+        conn.execute(
+            """
+            SELECT i.relpath AS src, p.dest_relpath AS dest
+            FROM proposals p
+            JOIN items i ON i.id = p.item_id
+            WHERE p.status='approved' AND p.dest_relpath IS NOT NULL
+            ORDER BY p.id LIMIT 5
+            """
+        )
+    )
+    return {
+        "approved_count": approved,
+        "total_bytes": human_bytes(total_bytes),
+        "by_category": [
+            {
+                "category": row["category"] or "misc",
+                "count": row["count"],
+                "size": human_bytes(row["bytes"]),
+            }
+            for row in rows
+        ],
+        "sample": sample,
+        "unfinished": _unfinished_plans(conn),
+        "waiting_review": conn.execute(
+            "SELECT COUNT(*) FROM proposals WHERE status='proposed' AND dest_relpath IS NOT NULL"
+        ).fetchone()[0],
+        "last_plan": conn.execute(
+            "SELECT * FROM plans WHERE status='done' ORDER BY finished_at DESC LIMIT 1"
+        ).fetchone(),
+    }
+
+
+def _unfinished_plans(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    """Plans created but never executed — otherwise they are invisible forever."""
+    return list(
+        conn.execute(
+            """
+            SELECT p.*, (SELECT COUNT(*) FROM plan_ops WHERE plan_id = p.id) AS op_count
+            FROM plans p
+            WHERE p.status IN ('draft', 'approved')
+            ORDER BY p.created_at DESC LIMIT 5
+            """
+        )
+    )
+
+
+def human_bytes(size: int | None) -> str:
+    if not size or size < 0:
+        return "0 B"
+    value = float(size)
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if value < 1024 or unit == "TB":
+            return f"{value:.0f} {unit}" if unit == "B" else f"{value:.1f} {unit}"
+        value /= 1024
+    return "0 B"
+
+
 def create_commit_plan(conn: sqlite3.Connection, settings: Settings) -> str:
     specs = [
         OperationSpec(row["action"], row["src_relpath"], row["dest_root"], row["dest_relpath"])

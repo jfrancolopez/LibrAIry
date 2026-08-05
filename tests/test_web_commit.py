@@ -202,3 +202,67 @@ def wait_for_plan(conn, plan_id: str) -> None:
             return
         time.sleep(0.02)
     raise AssertionError("plan did not finish")
+
+
+def test_commit_page_shows_what_would_move_before_anything_moves(tmp_path: Path) -> None:
+    """This is the one screen that moves files; a bare count was not enough."""
+    client, conn, settings = client_for(tmp_path)
+    seed_approved(conn, settings, "a.txt", "Documents/2026/a.txt")
+    seed_approved(conn, settings, "b.txt", "Documents/2026/b.txt")
+
+    page = client.get("/commit").text
+
+    assert "Ready to move" in page
+    assert "What moves" in page
+    assert "documents" in page
+    # A sample of the actual destinations, not just a total.
+    assert "Documents/2026/a.txt" in page
+    assert "Review the exact plan" in page
+    assert "can be undone from History" in page
+
+
+def test_commit_page_with_nothing_approved_points_at_review(tmp_path: Path) -> None:
+    """The old page offered a button that built an empty plan and said nothing."""
+    client, conn, settings = client_for(tmp_path)
+    seed_proposal_only(conn, settings, "c.txt", "Documents/2026/c.txt", status="proposed")
+
+    page = client.get("/commit").text
+
+    assert "Nothing is approved yet" in page
+    assert "waiting for you in Review" in page
+    assert 'href="/review"' in page
+    assert "Review the exact plan" not in page, "no button when there is nothing to commit"
+
+
+def test_commit_page_with_an_empty_system_does_not_send_you_to_review(tmp_path: Path) -> None:
+    client, _, _ = client_for(tmp_path)
+
+    page = client.get("/commit").text
+
+    assert "Nothing is approved yet" in page
+    assert "Drop files into your inbox" in page
+
+
+def test_unexecuted_plans_are_surfaced_instead_of_vanishing(tmp_path: Path) -> None:
+    client, conn, settings = client_for(tmp_path)
+    seed_approved(conn, settings, "d.txt", "Documents/2026/d.txt")
+    client.post("/commit/create", data={"csrf_token": client.cookies["csrf_token"]})
+
+    page = client.get("/commit").text
+
+    assert "Plans not yet run" in page
+    assert "Nothing has moved for these." in page
+
+
+def test_overview_totals_are_human_readable(tmp_path: Path) -> None:
+    from librairy.web.commit import commit_overview, human_bytes
+
+    client, conn, settings = client_for(tmp_path)
+    seed_approved(conn, settings, "e.txt", "Documents/2026/e.txt")
+
+    data = commit_overview(conn)
+
+    assert data["approved_count"] == 1
+    assert data["total_bytes"].endswith(("B", "KB", "MB"))
+    assert human_bytes(0) == "0 B"
+    assert human_bytes(1536) == "1.5 KB"

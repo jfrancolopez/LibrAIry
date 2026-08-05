@@ -1,10 +1,77 @@
 {% extends "base.html" %}
 {% block content %}
-  <p class="status warn">Commit moves files — review before you run.</p>
   <h1>Commit</h1>
-  <p>{{ approved_count }} approved proposal(s) ready.</p>
-  <form method="post" action="/commit/create">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <button type="submit">Create Commit Plan</button>
-  </form>
+
+  {% if approved_count %}
+    <p class="status warn">Commit moves files. Nothing is ever deleted, and every move can be undone from History.</p>
+
+    <div class="widget-grid">
+      <section class="widget card centerpiece">
+        <h3>Ready to move</h3>
+        <p class="big">{{ approved_count }}</p>
+        <p class="muted">{{ total_bytes }} across {{ by_category|length }} categor{{ 'y' if by_category|length == 1 else 'ies' }}</p>
+        <form method="post" action="/commit/create">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button type="submit">Review the exact plan</button>
+        </form>
+        <p class="muted">You will see every move and confirm again before anything happens.</p>
+      </section>
+
+      <section class="widget card">
+        <h3>What moves</h3>
+        <ul>
+          {% for row in by_category %}
+            <li><span>{{ row.category }}</span><span><strong>{{ row.count }}</strong> <span class="muted">{{ row.size }}</span></span></li>
+          {% endfor %}
+        </ul>
+      </section>
+
+      <section class="widget card widget-wide">
+        <h3>First few moves</h3>
+        <ul class="sample-moves">
+          {% for row in sample %}
+            <li class="from-to">
+              <span class="mono muted">{{ row.src }}</span>
+              <span aria-hidden="true">→</span>
+              <span class="mono">{{ row.dest }}</span>
+            </li>
+          {% endfor %}
+        </ul>
+        {% if approved_count > sample|length %}
+          <p class="muted">…and {{ approved_count - sample|length }} more on the next screen.</p>
+        {% endif %}
+      </section>
+    </div>
+  {% else %}
+    <section class="card empty-state">
+      <h3>Nothing is approved yet</h3>
+      {% if waiting_review %}
+        <p>{{ waiting_review }} proposal(s) are waiting for you in Review. Approve the ones you want, then come back here to move them.</p>
+        <p><a href="/review">Go to Review</a></p>
+      {% else %}
+        <p>Nothing is waiting for review either. Drop files into your inbox and LibrAIry will propose where they belong.</p>
+        <p><a href="/dashboard">Back to dashboard</a></p>
+      {% endif %}
+    </section>
+  {% endif %}
+
+  {% if unfinished %}
+    <section class="card">
+      <h3>Plans not yet run</h3>
+      <p class="muted">Created but never executed. Nothing has moved for these.</p>
+      <ul class="plan-list">
+        {% for plan in unfinished %}
+          <li>
+            <span class="badge {{ 'badge-warn' if plan.status == 'draft' else 'badge-info' }}">{{ plan.status }}</span>
+            <a href="/history/plans/{{ plan.id }}" class="mono">{{ plan.id[:8] }}</a>
+            <span class="muted">{{ plan.op_count }} operation(s) · {{ plan.created_at }}</span>
+          </li>
+        {% endfor %}
+      </ul>
+    </section>
+  {% endif %}
+
+  {% if last_plan %}
+    <p class="muted">Last commit: <a href="/history/plans/{{ last_plan.id }}" class="mono">{{ last_plan.id[:8] }}</a> finished {{ last_plan.finished_at }}.</p>
+  {% endif %}
 {% endblock %}

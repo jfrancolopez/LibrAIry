@@ -603,6 +603,65 @@ tbody tr:hover { background: var(--bg-metric); }
    an empty third of the screen. */
 .explorer-pane.is-empty { display: none; }
 
+/* ---- Health charts ----------------------------------------------------- */
+/* Server-rendered bars rather than a charting library: the portal has no JS
+   build step, and its CSP blocks inline script. Width/height come through the
+   style attribute, which the CSP does allow. */
+.tone-ok { background: var(--ok, var(--accent)); }
+.tone-warn { background: var(--warn, var(--accent)); }
+.tone-fail { background: var(--fail, var(--accent)); }
+.tone-accent { background: var(--accent); }
+
+.meter { margin-bottom: var(--space-3); }
+.meter-head {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  margin-bottom: var(--space-1);
+}
+.meter-track {
+  height: 0.6rem;
+  background: var(--bg-input);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.meter-fill { height: 100%; border-radius: 999px; min-width: 2px; }
+.meter p { margin: var(--space-1) 0 0; font-size: var(--text-sm); }
+
+.spark {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-1);
+  height: 8rem;
+  padding-top: var(--space-2);
+  overflow-x: auto;
+}
+.spark-col {
+  flex: 1 1 0;
+  min-width: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  height: 100%;
+  gap: var(--space-1);
+}
+.spark-bar {
+  width: 100%;
+  background: var(--accent);
+  border-radius: calc(var(--radius-ui) / 2) calc(var(--radius-ui) / 2) 0 0;
+  min-height: 2px;
+}
+/* A day with nothing committed still gets a visible baseline, so the axis
+   reads as a timeline rather than a gap. */
+.spark-bar.is-zero { background: var(--border); }
+.spark-label {
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
 .browse-panel { position: sticky; top: var(--space-4); }
 .preview-text {
   margin: var(--space-2) 0;

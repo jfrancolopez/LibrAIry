@@ -18,6 +18,69 @@
   {% else %}
     <p class="muted">Everything looks healthy — no action needed.</p>
   {% endif %}
+  <div class="widget-grid">
+    <section class="widget card">
+      <h3>Library</h3>
+      <p class="big">{{ totals.library_files }}</p>
+      <ul>
+        <li><span>in the inbox</span><span><strong>{{ totals.inbox_files }}</strong></span></li>
+        <li><span>moves all time</span><span><strong>{{ totals.moves_all_time }}</strong></span></li>
+        <li><span>quarantined</span><span><strong>{{ totals.quarantined }}</strong></span></li>
+      </ul>
+    </section>
+
+    <section class="widget card">
+      <h3>Disk used</h3>
+      {% for bar in disk_meters %}
+        <div class="meter" title="{{ bar.caption }}">
+          <div class="meter-head"><span>{{ bar.label }}</span><span class="muted">{{ bar.value }}% used</span></div>
+          <div class="meter-track"><div class="meter-fill tone-{{ bar.tone }}" style="width: {{ bar.pct }}%"></div></div>
+          <p class="muted">{{ bar.caption }}</p>
+        </div>
+      {% else %}
+        <p class="muted">No storage roots reporting.</p>
+      {% endfor %}
+    </section>
+
+    <section class="widget card">
+      <h3>Confidence of the queue</h3>
+      {% for bar in confidence %}
+        <div class="meter" title="{{ bar.caption }}">
+          <div class="meter-head"><span>{{ bar.label }}</span><span class="muted">{{ bar.value }}</span></div>
+          <div class="meter-track"><div class="meter-fill tone-{{ bar.tone }}" style="width: {{ bar.pct }}%"></div></div>
+        </div>
+      {% endfor %}
+      <p class="muted">Green needs no thought; red is where your attention is worth most.</p>
+    </section>
+
+    <section class="widget card">
+      <h3>Pipeline</h3>
+      {% for bar in pipeline %}
+        <div class="meter" title="{{ bar.caption }}">
+          <div class="meter-head"><span>{{ bar.label }}</span><span class="muted">{{ bar.value }}</span></div>
+          <div class="meter-track"><div class="meter-fill tone-{{ bar.tone }}" style="width: {{ bar.pct }}%"></div></div>
+        </div>
+      {% else %}
+        <p class="muted">Nothing indexed yet.</p>
+      {% endfor %}
+    </section>
+
+    <section class="widget card widget-wide">
+      <h3>Files committed — last {{ growth|length }} days</h3>
+      <div class="spark" role="img" aria-label="Files committed per day over the last {{ growth|length }} days">
+        {% for bar in growth %}
+          <div class="spark-col" title="{{ bar.caption }}">
+            <div class="spark-bar{% if not bar.value %} is-zero{% endif %}" style="height: {{ bar.pct if bar.pct else 2 }}%"></div>
+            <span class="spark-label">{{ bar.label }}</span>
+          </div>
+        {% endfor %}
+      </div>
+      {% if growth|sum(attribute='value') == 0 %}
+        <p class="muted">No files committed in this window yet.</p>
+      {% endif %}
+    </section>
+  </div>
+
   <div class="dashboard-grid">
     <article class="metric wide">
       <span class="status">Tools</span>
