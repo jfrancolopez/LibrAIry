@@ -148,3 +148,68 @@ def test_totals_separate_library_from_inbox(tmp_path: Path) -> None:
     assert totals["inbox_files"] == 1
     assert totals["moves_all_time"] == 1
     assert totals["quarantined"] == 0
+
+
+def _provider_row(name: str, model: str, available: list[str]) -> dict:
+    import json as _json
+
+    return {"name": name, "model": model, "available_models": _json.dumps(available)}
+
+
+def test_a_configured_model_that_is_not_installed_is_flagged() -> None:
+    """The server reports healthy and every call still burns a full timeout,
+    so the only symptom is analysis mysteriously grinding to a halt."""
+    from librairy.web.health import HealthRow, recommendations
+
+    recs = recommendations(
+        tools=[HealthRow("ffprobe", "OK", "5.1")],
+        providers=[
+            {"last_ok_at": "now", "last_error": None, **_provider_row(
+                "ollama-secondary", "qwen3:8b", ["qwen3:4b"]
+            )}
+        ],
+        disks=[],
+        worker=HealthRow("Worker", "OK", "idle"),
+        backup=HealthRow("Backup", "OK", "disabled"),
+    )
+
+    missing = [r for r in recs if "not installed" in r.text]
+    assert len(missing) == 1
+    assert "qwen3:8b" in missing[0].text
+    assert "ollama pull qwen3:8b" in missing[0].action
+    assert "qwen3:4b" in missing[0].action
+
+
+def test_an_installed_model_is_not_flagged() -> None:
+    from librairy.web.health import HealthRow, recommendations
+
+    recs = recommendations(
+        tools=[HealthRow("ffprobe", "OK", "5.1")],
+        providers=[
+            {"last_ok_at": "now", "last_error": None, **_provider_row(
+                "ollama-primary", "qwen3:4b", ["qwen3:4b", "llama3.2"]
+            )}
+        ],
+        disks=[],
+        worker=HealthRow("Worker", "OK", "idle"),
+        backup=HealthRow("Backup", "OK", "disabled"),
+    )
+
+    assert not [r for r in recs if "not installed" in r.text]
+
+
+def test_an_unprobed_provider_is_not_accused() -> None:
+    """No model list means it was never probed — absence is not evidence."""
+    from librairy.web.health import HealthRow, recommendations
+
+    recs = recommendations(
+        tools=[HealthRow("ffprobe", "OK", "5.1")],
+        providers=[
+            {"last_ok_at": None, "last_error": None, **_provider_row("openai", "gpt-4o-mini", [])}
+        ],
+        disks=[],
+        worker=HealthRow("Worker", "OK", "idle"),
+        backup=HealthRow("Backup", "OK", "disabled"),
+    )
+
+    assert not [r for r in recs if "not installed" in r.text]

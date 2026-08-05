@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import sqlite3
@@ -257,6 +258,7 @@ def recommendations(
             )
         )
 
+    recs.extend(_missing_model_recommendations(providers))
     recs.extend(_disk_recommendations(disks))
 
     if worker.status not in {"OK", ""}:
@@ -274,6 +276,50 @@ def recommendations(
         )
 
     return recs
+
+
+def _missing_model_recommendations(providers: list) -> list[Recommendation]:
+    """A reachable server that does not have the configured model.
+
+    This costs a full timeout on every single item and produces nothing, while
+    the server itself reports healthy — so the only visible symptom is that
+    analysis has become mysteriously slow.
+    """
+    recs = []
+    for row in providers:
+        model = _row_value(row, "model")
+        available = _available_models(row)
+        # No list means the provider was never probed; absence is not evidence.
+        if not model or not available or model in available:
+            continue
+        name = _row_value(row, "name") or "provider"
+        recs.append(
+            Recommendation(
+                "warn",
+                f"{name} is set to \"{model}\", which is not installed on that server.",
+                f"Install it (ollama pull {model}) or pick one of: {', '.join(available[:4])}.",
+            )
+        )
+    return recs
+
+
+def _row_value(row: object, key: str) -> str:
+    try:
+        value = row[key]  # type: ignore[index]
+    except (KeyError, IndexError, TypeError):
+        return ""
+    return str(value or "")
+
+
+def _available_models(row: object) -> list[str]:
+    raw = _row_value(row, "available_models")
+    if not raw:
+        return []
+    try:
+        models = json.loads(raw)
+    except ValueError:
+        return []
+    return [str(model) for model in models] if isinstance(models, list) else []
 
 
 def _disk_recommendations(disks: list) -> list[Recommendation]:
