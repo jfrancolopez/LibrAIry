@@ -15,6 +15,8 @@ class RedactionFilter(logging.Filter):
         secrets = [
             settings.tmdb_key.get_secret_value(),
             settings.acoustid_key.get_secret_value(),
+            settings.discogs_token.get_secret_value(),
+            settings.lastfm_key.get_secret_value(),
             settings.openai_api_key.get_secret_value(),
             settings.anthropic_api_key.get_secret_value(),
             settings.gemini_api_key.get_secret_value(),

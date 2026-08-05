@@ -28,6 +28,8 @@ from librairy.config import Settings
 MANAGED_KEYS: dict[str, str] = {
     "tmdb": "tmdb_key",
     "acoustid": "acoustid_key",
+    "discogs": "discogs_token",
+    "lastfm": "lastfm_key",
     "openai": "openai_api_key",
     "anthropic": "anthropic_api_key",
     "gemini": "gemini_api_key",

@@ -16,6 +16,8 @@ Configuration has two layers. Boot-time environment variables define paths, port
 | `APPDATA_DIR` | Container path for appdata, normally `/data/appdata`. |
 | `TMDB_KEY` | Optional TMDB key for movie/TV metadata. |
 | `ACOUSTID_KEY` | Optional AcoustID key for audio fingerprint lookup. |
+| `DISCOGS_TOKEN` | Optional Discogs personal token; names untagged audio from its filename. |
+| `LASTFM_KEY` | Optional Last.fm key; supplies a genre when the file has none. |
 | `MB_RATE_LIMIT` | Minimum seconds between MusicBrainz requests. |
 | `AI_PROVIDER_ORDER` | Default AI provider kind order. |
 | `CONFIDENCE_THRESHOLD` | Default proposal confidence threshold. DB setting can override. |
@@ -80,7 +82,7 @@ These are stored in SQLite and apply without rebuilding the container:
 | `backup.include_db_snapshot` | Include a SQLite snapshot in backups. |
 | `appearance.theme` | Colour preset for the portal. |
 | `appearance.background` | Optional background colour override; empty means the theme's own. |
-| `catalog.<slug>.enabled` | Per-catalog on/off switch. Slugs: musicbrainz, acoustid, tmdb, tvmaze, openlibrary. A catalog that is off makes no requests. |
+| `catalog.<slug>.enabled` | Per-catalog on/off switch. Slugs: musicbrainz, acoustid, tmdb, discogs, lastfm, tvmaze, openlibrary. A catalog that is off makes no requests. |
 
 API keys can be set from the Settings page or from the environment. **The environment
 always wins** — a variable in your compose file or UNRAID template is deliberate
@@ -100,6 +102,8 @@ silently to the next evidence source.
 | AcoustID | Music by audio fingerprint | `ACOUSTID_KEY` | A fingerprint and duration, not the audio |
 | TMDB | Movies and TV shows | `TMDB_KEY` | Cleaned title guesses and years |
 | TVmaze | TV shows, and each episode's title | none | Cleaned show titles, season and episode numbers |
+| Discogs | Music releases, including vinyl and rare pressings | `DISCOGS_TOKEN` | A cleaned artist/title guess, for files with no readable tags |
+| Last.fm | Genres for music that has none | `LASTFM_KEY` | Artist and album names |
 | Open Library | Books by title, author or ISBN | none | Cleaned title and author guesses |
 
 No catalog is ever sent a file path.
@@ -111,3 +115,16 @@ episode's own title, which turns `S03E09.mkv` into
 `S03E09 - The Rains of Castamere.mkv`. When both name the same show, confidence rises
 above what either source earns alone. TVmaze also stands in for TMDB entirely when TMDB
 is unkeyed, switched off, or draws a blank.
+
+**How music evidence is ordered.** Strongest first: embedded tags, then an AcoustID
+fingerprint resolved through MusicBrainz, then — with nothing left but the filename — a
+Discogs text search. Discogs is only asked when the filename actually names something
+beyond the track (`Radiohead - Karma Police.mp3`, not `track01.mp3`), and its answer is
+**verified**: the artist it returns must appear in the text that was searched for. An
+unverified text hit would confidently rename a file to whatever Discogs listed first,
+which is worse than admitting the file is unknown.
+
+Last.fm sits outside that cascade. It never identifies anything; it fills in the genre
+once the release is known, and only when the file itself does not say. Genre is the
+first path component under the genre-first template, so without it a perfectly
+identified album still lands in `Music/General/`.

@@ -32,6 +32,8 @@ class Settings(BaseSettings):
 
     tmdb_key: SecretStr = Field(SecretStr(""), alias="TMDB_KEY")
     acoustid_key: SecretStr = Field(SecretStr(""), alias="ACOUSTID_KEY")
+    discogs_token: SecretStr = Field(SecretStr(""), alias="DISCOGS_TOKEN")
+    lastfm_key: SecretStr = Field(SecretStr(""), alias="LASTFM_KEY")
     mb_rate_limit: float = Field(1.1, ge=1.0, alias="MB_RATE_LIMIT")
 
     ai_provider_order: Annotated[list[str], NoDecode] = Field(
@@ -134,6 +136,17 @@ class Settings(BaseSettings):
         "# AcoustID — audio fingerprint lookup → MusicBrainz",
         "# Register free at: https://acoustid.org/login  (choose \"Register application\")",
         "ACOUSTID_KEY=",
+        "",
+        "# Discogs — names untagged audio from its filename, as a last resort",
+        "# Free personal token: https://www.discogs.com/settings/developers",
+        "DISCOGS_TOKEN=",
+        "",
+        "# Last.fm — fills in the genre for music whose tags leave it blank",
+        "# Free API account: https://www.last.fm/api/account/create",
+        "LASTFM_KEY=",
+        "",
+        "# TVmaze (TV shows and episode titles) and Open Library (books) need no key",
+        "# and are on by default. Every catalog can be switched off in Settings.",
         "",
         "# MusicBrainz rate limit (seconds between requests — do not set below 1.0)",
         "MB_RATE_LIMIT=1.1",

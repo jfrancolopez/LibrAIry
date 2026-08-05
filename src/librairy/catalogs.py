@@ -115,6 +115,64 @@ CATALOGS: tuple[CatalogInfo, ...] = (
         sends="Cleaned title guesses and years. Never file paths.",
     ),
     CatalogInfo(
+        slug="discogs",
+        name="Discogs",
+        identifies="Music releases, including vinyl and rare pressings",
+        key_field="discogs",
+        cost="Free",
+        signup_url="https://www.discogs.com/settings/developers",
+        env_var="DISCOGS_TOKEN",
+        steps=(
+            Step(
+                "Create a free Discogs account.",
+                "https://www.discogs.com/users/create",
+                "Create an account",
+            ),
+            Step(
+                'Open the developer settings and press "Generate new token" under '
+                "Personal access token. That token is the whole setup — you do not "
+                "need to register an application.",
+                "https://www.discogs.com/settings/developers",
+                "Generate a token",
+            ),
+            Step("Paste it into the box below, or set DISCOGS_TOKEN in your .env file."),
+        ),
+        sends=(
+            "A cleaned guess at the artist and title, for files with no readable tags. "
+            "Never file paths."
+        ),
+    ),
+    CatalogInfo(
+        slug="lastfm",
+        name="Last.fm",
+        identifies="Genres for music that has none",
+        key_field="lastfm",
+        cost="Free",
+        signup_url="https://www.last.fm/api/account/create",
+        env_var="LASTFM_KEY",
+        steps=(
+            Step(
+                "Create a free Last.fm account.",
+                "https://www.last.fm/join",
+                "Create an account",
+            ),
+            Step(
+                'Fill in the API account form. Any application name will do — pick '
+                '"LibrAIry" — and the callback URL can be left empty.',
+                "https://www.last.fm/api/account/create",
+                "Request an API account",
+            ),
+            Step(
+                'Copy the value shown as "API key". The shared secret is for signed '
+                "requests and LibrAIry never makes any, so you can ignore it.",
+                "https://www.last.fm/api/accounts",
+                "See your API accounts",
+            ),
+            Step("Paste it into the box below, or set LASTFM_KEY in your .env file."),
+        ),
+        sends="Artist and album names. Never file paths.",
+    ),
+    CatalogInfo(
         slug="tvmaze",
         name="TVmaze",
         identifies="TV shows, and the title of each individual episode",

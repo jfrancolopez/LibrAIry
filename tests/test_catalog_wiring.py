@@ -239,3 +239,139 @@ def test_ai_result_can_be_rerendered_the_way_analyze_does(tmp_path: Path) -> Non
 
     assert replaced.dest_relpath is None
     assert replaced.reason == "below threshold"
+
+
+def test_pipeline_calls_tvmaze_for_episodes(tmp_path: Path, monkeypatch) -> None:
+    from librairy.db import connect
+    from librairy.tools import tvmaze
+
+    tvmaze.reset_cache()
+    seen: list[str] = []
+
+    def fake_search(query, **kwargs):  # noqa: ANN001, ARG001
+        seen.append(query)
+        return {
+            "name": "Breaking Bad",
+            "genres": ["Drama"],
+            "first_air_date": "2008-01-20",
+            "episode_name": "Ozymandias",
+        }
+
+    monkeypatch.setattr("librairy.tools.tvmaze.search_show", fake_search)
+    settings = _settings(tmp_path)
+    conn = connect(settings)
+    video = tmp_path / "breaking.bad.s05e14.mkv"
+    video.write_bytes(b"video")
+
+    result = classify_item(video, "breaking.bad.s05e14.mkv", settings, conn=conn)
+
+    assert seen, "pipeline never called TVmaze — it needs no key, so nothing else gates it"
+    assert result.clean_name == "S05E14 - Ozymandias.mkv"
+    assert "tvmaze" in [entry.source for entry in result.evidence]
+
+
+def test_pipeline_calls_discogs_for_untagged_audio(tmp_path: Path, monkeypatch) -> None:
+    from librairy.db import connect
+    from librairy.tools import discogs
+
+    discogs.reset_cache()
+    seen: list[str] = []
+
+    monkeypatch.setattr(
+        "librairy.tools.ffprobe.probe",
+        lambda path, settings: ToolResult(True, data={"tags": {}}),  # noqa: ARG005
+    )
+
+    def fake_search(query, **kwargs):  # noqa: ANN001, ARG001
+        seen.append(query)
+        return {"artist": "Radiohead", "album": "OK Computer", "year": 1997, "genre": "Rock"}
+
+    monkeypatch.setattr("librairy.tools.discogs.search_release", fake_search)
+    settings = _settings(tmp_path, DISCOGS_TOKEN="tok", INBOX_DIR=tmp_path)
+    conn = connect(settings)
+    audio = tmp_path / "Radiohead - Karma Police.mp3"
+    audio.write_bytes(b"audio")
+
+    result = classify_item(audio, "Radiohead - Karma Police.mp3", settings, conn=conn)
+
+    assert seen == ["Radiohead - Karma Police"]
+    assert result.fields["album"] == "OK Computer"
+    assert "discogs" in [entry.source for entry in result.evidence]
+
+
+def test_no_discogs_token_means_no_search(tmp_path: Path, monkeypatch) -> None:
+    from librairy.db import connect
+
+    monkeypatch.setattr(
+        "librairy.tools.ffprobe.probe",
+        lambda path, settings: ToolResult(True, data={"tags": {}}),  # noqa: ARG005
+    )
+
+    def forbidden(query, **kwargs):  # noqa: ANN001, ARG001
+        raise AssertionError("searched Discogs without a token")
+
+    monkeypatch.setattr("librairy.tools.discogs.search_release", forbidden)
+    settings = _settings(tmp_path, INBOX_DIR=tmp_path)
+    conn = connect(settings)
+    audio = tmp_path / "Radiohead - Karma Police.mp3"
+    audio.write_bytes(b"audio")
+
+    result = classify_item(audio, "Radiohead - Karma Police.mp3", settings, conn=conn)
+
+    assert "heuristic" in [entry.source for entry in result.evidence]
+
+
+def test_pipeline_asks_lastfm_for_a_missing_genre(tmp_path: Path, monkeypatch) -> None:
+    from librairy.db import connect
+    from librairy.tools import lastfm
+
+    lastfm.reset_cache()
+    seen: list[tuple[str, str]] = []
+
+    monkeypatch.setattr(
+        "librairy.tools.ffprobe.probe",
+        lambda path, settings: ToolResult(  # noqa: ARG005
+            True, data={"tags": {"artist": "Slowdive", "album": "Souvlaki", "title": "Alison"}}
+        ),
+    )
+
+    def fake_genre(artist, *, album="", **kwargs):  # noqa: ANN001, ARG001
+        seen.append((artist, album))
+        return "Shoegaze"
+
+    monkeypatch.setattr("librairy.tools.lastfm.top_genre", fake_genre)
+    settings = _settings(tmp_path, LASTFM_KEY="k", INBOX_DIR=tmp_path)
+    conn = connect(settings)
+    audio = tmp_path / "01 Alison.flac"
+    audio.write_bytes(b"audio")
+
+    result = classify_item(audio, "01 Alison.flac", settings, conn=conn)
+
+    assert seen == [("Slowdive", "Souvlaki")]
+    assert result.fields["genre"] == "Shoegaze"
+    assert result.dest_relpath == "Music/Shoegaze/Slowdive/Souvlaki/Alison.flac"
+
+
+def test_disabled_lastfm_toggle_skips_the_genre_lookup(tmp_path: Path, monkeypatch) -> None:
+    from librairy.db import connect
+
+    monkeypatch.setattr(
+        "librairy.tools.ffprobe.probe",
+        lambda path, settings: ToolResult(  # noqa: ARG005
+            True, data={"tags": {"artist": "Slowdive", "album": "Souvlaki"}}
+        ),
+    )
+
+    def forbidden(artist, **kwargs):  # noqa: ANN001, ARG001
+        raise AssertionError("asked Last.fm with the catalog disabled")
+
+    monkeypatch.setattr("librairy.tools.lastfm.top_genre", forbidden)
+    settings = _settings(tmp_path, LASTFM_KEY="k", INBOX_DIR=tmp_path)
+    conn = connect(settings)
+    conn.execute("INSERT INTO settings(key, value) VALUES ('catalog.lastfm.enabled', 'false')")
+    audio = tmp_path / "02 Machine Gun.flac"
+    audio.write_bytes(b"audio")
+
+    result = classify_item(audio, "02 Machine Gun.flac", settings, conn=conn)
+
+    assert result.fields["genre"] == "General"

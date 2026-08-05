@@ -130,6 +130,8 @@ def classify_item(
                 tags=_audio_tags(path, settings),
                 acoustid_lookup=_acoustid_lookup(conn, settings),
                 musicbrainz_lookup=_musicbrainz_lookup(conn, settings),
+                discogs_lookup=_discogs_lookup(conn, settings),
+                genre_lookup=_lastfm_lookup(conn, settings),
             ),
         )
     if suffix in VIDEO_EXTS:
@@ -262,6 +264,24 @@ def _musicbrainz_lookup(conn, settings):
     if conn is None or not catalog_enabled(conn, "musicbrainz"):
         return None
     from librairy.tools.musicbrainz import lookup_for_settings
+
+    return lookup_for_settings(settings)
+
+
+def _discogs_lookup(conn, settings):
+    """Real Discogs lookup when a token is set and the catalog is switched on."""
+    if conn is None or not catalog_enabled(conn, "discogs"):
+        return None
+    from librairy.tools.discogs import lookup_for_settings
+
+    return lookup_for_settings(settings)
+
+
+def _lastfm_lookup(conn, settings):
+    """Real Last.fm genre lookup when a key is set and the catalog is switched on."""
+    if conn is None or not catalog_enabled(conn, "lastfm"):
+        return None
+    from librairy.tools.lastfm import lookup_for_settings
 
     return lookup_for_settings(settings)
 

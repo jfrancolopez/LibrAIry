@@ -1,6 +1,6 @@
 # Phase 15 — Catalog Expansion + Web API Key Entry (v1.2)
 
-**Status:** IN PROGRESS — P15-01, P15-02, P15-03, P15-06 done; TMDB/AcoustID/MusicBrainz activated (see log). P15-04/05/07 remain (2026-08-05)
+**Status:** IN PROGRESS — P15-01/02/03/04/06 done; every catalog wired and individually switchable. P15-05/07 remain (2026-08-05)
 **Depends on:** Phase 14 (settings/cards design language in place)
 **Size:** M–L (catalog tasks are independent; key-entry task needs its own security care)
 
@@ -69,7 +69,7 @@ Owner intent (2026-07-23): "find all the free catalogs — if I configure multip
 **Depends on:** P15-01 | **Size:** M
 **Description:** Two small adapters in/beside `classify/music.py`: Discogs release search (personal token) as fallback evidence when MusicBrainz confidence is low; Last.fm `tag.getTopTags`/track tags (API key) feeding genre evidence for the genre-first templates. Both default OFF until a key exists. Mocked tests; per-catalog toggles.
 **Acceptance criteria:**
-- [ ] With keys set, adapters contribute evidence (tests); without keys, zero requests and no errors.
+- [x] With keys set, adapters contribute evidence (tests); without keys, zero requests and no errors. Live-verified only for the unconfigured path — see log.
 
 ### P15-05 Cover Art Archive (art evidence, keyless)
 **Depends on:** P15-04 (uses MusicBrainz release IDs already in evidence) | **Size:** S
@@ -119,3 +119,9 @@ Owner intent (2026-07-23): "find all the free catalogs — if I configure multip
 - 2026-08-05: an empty field value is **omitted** from a classification's `fields`, never set blank. `paths.sanitize_component` rejects the empty string, so a blank `episode_title` made `render_destination` fail closed and every episode lost its destination — caught immediately by an existing test, but worth stating: fields are path-component candidates, not a display bag.
 - 2026-08-05: **P15-06's key entry was broken in a real browser and the tests could not see it.** The key forms were nested inside `#settings-form`, and HTML has no nested forms — Chrome discarded the inner `<form>` start tags and reparented their fields onto the outer form, so "Save key" posted the whole settings page to `/settings` and stored nothing. The AcoustID form vanished from `document.forms` entirely. Route tests POSTed straight to `/settings/keys/<slug>` and passed throughout. Fixed by lifting the whole Catalogs section out of `#settings-form`; `tests/test_templates.py::test_no_nested_forms` now lints every template for the shape. This is the third bug in this family (CSP-blocked inline handlers, `hx-target="body"`, nested forms): **a correct response body is not a working page** — verify interactive changes against a real browser DOM, not just the rendered HTML.
 - 2026-08-05: per-catalog toggles are now reachable from the portal (they existed in the DB and in `catalog_enabled` since P15-02, but nothing rendered them). Each card owns a small POST form, matching the existing Ollama-endpoint toggle idiom, rather than riding the big settings form.
+- 2026-08-05: **P15-04 done.** `tools/discogs.py` and `tools/lastfm.py`, both gated on their toggles and both no-ops without a key. Two decisions worth keeping:
+  - **Discogs verifies its own hit.** It is reached only when a file has no tags and no fingerprint, so all that is left is the filename — a text search, far weaker evidence than anything above it. The artist Discogs returns must appear in the text that was searched for, and a stem with no separator (`track01.mp3`) is never searched at all. Without that check the catalog would rename unknown files to whatever Discogs happened to list first, which is worse than leaving them unknown. Verified matches get 0.8, below what tags (0.9) or a fingerprint (0.9) earn.
+  - **Last.fm is not in the cascade.** It identifies nothing; it fills the `genre` field once the release is known, and only when the file itself is silent. Genre is the *first* path component under the genre-first template, so a missing one sends a perfectly identified album to `Music/General/`. Community tags are noisy, so listener tags ("seen live", "albums i own"), the artist's own name, decades, and anything over three words are discarded.
+- 2026-08-05: **the two Last.fm endpoints do not return the same shape.** `artist.gettoptags` carries a `count` per tag; `album.getinfo` returns the album's tags already ordered by relevance with **no counts at all**. A flat popularity floor would therefore reject every album tag and silently fall through to the vaguer artist-level answer — the floor now applies only when counts are actually present. Caught by reasoning about the API rather than by a test, because the fixtures were written from the same wrong assumption as the code; the test came after.
+- 2026-08-05: Discogs and Last.fm could **not** be live-verified — no `DISCOGS_TOKEN` or `LASTFM_KEY` on this machine. Both correctly return `None` when unconfigured *and* when handed an invalid credential (checked against the live hosts). Re-run the success path once keys exist; same standing open item as TMDB and AcoustID.
+- 2026-08-05: the Discogs token travels in an `Authorization: Discogs token=…` header, never the query string. Query strings reach logs, proxies and referrers; `tests/test_discogs_client.py` asserts the token is absent from the URL.
