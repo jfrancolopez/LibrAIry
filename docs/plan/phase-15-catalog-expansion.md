@@ -1,6 +1,6 @@
 # Phase 15 — Catalog Expansion + Web API Key Entry (v1.2)
 
-**Status:** IN PROGRESS — P15-01/02/03/04/05/06 done; every catalog wired and individually switchable. P15-07 remains (2026-08-05)
+**Status:** DONE — all seven backlog items complete; eight catalogs and three cloud providers, each individually switchable (2026-08-05)
 **Depends on:** Phase 14 (settings/cards design language in place)
 **Size:** M–L (catalog tasks are independent; key-entry task needs its own security care)
 
@@ -81,13 +81,13 @@ Owner intent (2026-07-23): "find all the free catalogs — if I configure multip
 **Depends on:** P15-01 | **Size:** M
 **Description:** The v1-deferred item, now with its security review baked in: masked `type="password"` inputs on the catalog/provider cards for TMDB, AcoustID, Discogs, Last.fm, OpenAI, Anthropic, Gemini; POST over the existing CSRF-protected settings flow; stored in the settings DB; **never rendered back** (placeholder shows "•••• set — [replace] [clear]"); `logging.RedactionFilter` covers the new values (test); `effective_settings` merge gives **env-var precedence over DB** (test + docs); per-provider/catalog TEST button reusing the `ai test` / catalog-probe machinery, returning ok/fail inline. Threat-model note in the doc: single-admin LAN app, CSRF + session auth guard the endpoint; DB file permissions are the at-rest boundary (same as session tokens today) — no new crypto invented.
 **Acceptance criteria:**
-- [ ] Keys settable/replaceable/clearable from the web; never appear in any response body or log (tests); env precedence test; TEST buttons work against mocks.
+- [x] Keys settable/replaceable/clearable from the web; never appear in any response body or log (tests); env precedence test; TEST buttons work against mocks.
 
 ### P15-07 OpenAI browser sign-in — honest scoping
 **Depends on:** P15-06 | **Size:** XS
 **Description:** Owner asked for "authenticate with OpenAI via browser." As of 2026-07, OpenAI offers **no public OAuth flow that issues API keys to third-party self-hosted apps** — do NOT fake one or embed anyone else's client credentials. Ship instead: the OpenAI card deep-links to platform.openai.com/api-keys with a 3-step tutorial, web key entry (P15-06), and TEST button. Record in this doc's open-questions log: "browser OAuth revisited if OpenAI opens a public program." If at implementation time OpenAI HAS opened such a program, stop and ask the owner before adding an OAuth dependency.
 **Acceptance criteria:**
-- [ ] OpenAI card ships link+tutorial+key-entry+test; no OAuth code exists; decision logged.
+- [x] OpenAI card ships link+tutorial+key-entry+test; no OAuth code exists; decision logged.
 
 ## Verification steps
 
@@ -97,9 +97,9 @@ Owner intent (2026-07-23): "find all the free catalogs — if I configure multip
 
 ## Exit gate checklist
 
-- [ ] All enabled catalogs contribute merged evidence before AI; every one individually toggleable; keyless ones work with zero configuration.
-- [ ] Web key entry secure per P15-06 criteria; no secret ever rendered or logged.
-- [ ] No new Python dependencies; privacy notes accurate per catalog.
+- [x] All enabled catalogs contribute merged evidence before AI; every one individually toggleable; keyless ones work with zero configuration.
+- [x] Web key entry secure per P15-06 criteria; no secret ever rendered or logged.
+- [x] No new Python dependencies; privacy notes accurate per catalog.
 
 ## Open questions log
 
@@ -129,3 +129,6 @@ Owner intent (2026-07-23): "find all the free catalogs — if I configure multip
 - 2026-08-05: **the live check found two bugs the mocked tests could not.** Running two searches back to back earned a `503` from MusicBrainz — `search_release` had no throttle, because the module docstring says callers bring their own and its caller (the preview page) has none. Worse, the bare `except` cached that 503 as a permanent "no such album", so a transient rate-limit would hide a findable release for the life of the process. Both fixed: `search_release` throttles itself (and the docstring now explains why the two entry points differ), and both it and `coverart` only cache a negative result when the answer is *final* — a 4xx, not a 5xx or a timeout. Mocked openers raise whatever the test author picks, so "which failures are permanent" is a question only real traffic asks.
 - 2026-08-05: cover MBIDs are validated against a UUID pattern rather than escaped. The value goes into both a URL and a filename, and validation fails closed where escaping has to be right twice.
 - 2026-08-05: live-verified — Queen / *A Night at the Opera* and Radiohead / *OK Computer* both return real JPEGs (13.6 KB and 24.9 KB, `ffd8ff` magic). Slowdive / *Souvlaki* resolves to a release with no front art, which is the normal negative case and degrades to no thumbnail.
+- 2026-08-05: **P15-07 done, and the answer is still no.** As of 2026-08 OpenAI offers no public OAuth program that issues API keys to third-party self-hosted applications. The two ways to fake one — embedding another application's client credentials, or driving a login page on the user's behalf — are respectively dishonest and a good way to get an account suspended. The OpenAI card now says so in as many words, next to a three-step link-out, a key box and a Test button. `tests/test_web_settings.py` asserts both halves: the explanation is on the page, and no OAuth machinery exists anywhere in `src/` (the guard looks for `client_secret`, `authorization_code`, `/authorize` and friends rather than the word "OAuth", since signup.py mentions it precisely to rule it out). **Revisit if OpenAI opens a public program.**
+- 2026-08-05: Anthropic and Gemini got the same card treatment rather than being left as a bare `set / not set` table — the asymmetry would have been arbitrary, and Gemini's free tier makes it the cheapest way to try cloud AI at all. Cards state plainly that all three bill you directly and that LibrAIry resells nothing.
+- 2026-08-05: **phase closed.** Eight catalogs (MusicBrainz, AcoustID, TMDB, Discogs, Last.fm, Cover Art Archive, TVmaze, Open Library) and three cloud providers, every one switchable from the portal, none requiring a restart, no new Python dependencies. Standing open item across the whole phase: TMDB, AcoustID, Discogs and Last.fm have never been live-verified on a *success* path because no keys exist on this machine — all four are confirmed to degrade silently when unconfigured and when handed an invalid credential.

@@ -123,15 +123,6 @@
   <label><input type="checkbox" name="backup_include_db_snapshot" {% if settings_view.backup.include_db_snapshot %}checked{% endif %}> Include SQLite snapshot</label>
   <p class="muted">No credential fields exist here. Configure remotes in appdata/rclone/rclone.conf with rclone itself.</p>
 
-  <h3>AI provider keys</h3>
-  <table>
-    <tbody>
-      {% for name in ['openai', 'anthropic', 'gemini'] %}
-        <tr><th>{{ name }}</th><td>{{ settings_view.keys[name] }}</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
-
   <div id="settings-save-bar" class="save-bar" hidden>
     <span>Unsaved changes</span>
     <button type="submit" class="btn-primary">Save settings</button>
@@ -293,28 +284,78 @@
 </form>
 
 <h3>Cloud Providers</h3>
-<table>
-  <tbody>
-    {% for provider in providers if provider.kind in cloud_providers %}
-      <tr>
-        <th>{{ provider.name }}</th>
-        <td>{{ provider.model }}</td>
-        <td>[CLOUD - data leaves this machine] keys: {{ settings_view.keys[provider.kind] }}</td>
-        <td>{% if provider.enabled %}<span class="badge badge-ok">enabled</span>{% else %}<span class="badge badge-warn">disabled</span>{% endif %}</td>
-        <td>
-          {% if provider.enabled %}
-            <form hx-post="/settings/providers/cloud/{{ provider.kind }}/disable" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'><button>Disable</button></form>
-          {% else %}
-            <form hx-post="/settings/providers/cloud/{{ provider.kind }}/enable" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>
-              <input name="confirm" placeholder="type CLOUD">
-              <button>Enable</button>
-            </form>
+<p class="muted">Optional, and off until you deliberately turn one on. A cloud provider is only asked about files the local models could not place, and it receives the same redacted description they do — filenames, sizes and durations, never the file itself and never its path. All three charge for use; LibrAIry does not resell anything, you are billed by them directly.</p>
+<div class="grid catalog-grid">
+  {% for info in ai_providers %}
+    {% set provider = (providers | selectattr('kind', 'equalto', info.kind) | list | first) %}
+    {% set state = key_states[info.key_field] %}
+    <section class="card catalog-card{% if not (provider and provider.enabled) %} is-off{% endif %}">
+      <h3>{{ info.name }}
+        {% if provider and provider.enabled %}<span class="badge badge-ok">enabled</span>
+        {% elif state.is_set %}<span class="badge badge-warn">key set, not enabled</span>
+        {% else %}<span class="badge">off</span>{% endif %}
+      </h3>
+      <p>{{ info.summary }}</p>
+      <p class="muted"><strong>Cost:</strong> {{ info.cost }}</p>
+      {% if provider %}<p class="muted"><strong>Model:</strong> {{ provider.model }}</p>{% endif %}
+      {% if info.caveat %}<p class="status warn">{{ info.caveat }}</p>{% endif %}
+
+      <details class="setup-steps" {% if not state.is_set %}open{% endif %}>
+        <summary>How to get a key ({{ info.steps|length }} steps)</summary>
+        <ol class="steps">
+          {% for step in info.steps %}
+            <li>
+              <span>{{ step.text }}</span>
+              {% if step.url %}
+                <a class="btn step-link" href="{{ step.url }}" target="_blank" rel="noreferrer noopener">{{ step.url_label or 'Open' }} ↗</a>
+              {% endif %}
+            </li>
+          {% endfor %}
+        </ol>
+      </details>
+
+      <form class="key-form" method="post" action="/settings/keys/{{ info.key_field }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label>{{ 'Replace key' if state.is_set else 'Paste your key here' }}
+          <input type="password" name="api_key" autocomplete="off" spellcheck="false"
+                 placeholder="{{ '••••••••  (a key is already set)' if state.is_set else 'paste and save — no restart needed' }}">
+        </label>
+        <div class="button-row">
+          <button type="submit" class="btn-primary">Save key</button>
+          {% if state.stored_in_web %}
+            <button type="submit" name="api_key" value="" class="btn-danger">Clear</button>
           {% endif %}
-        </td>
-      </tr>
-    {% endfor %}
-  </tbody>
-</table>
+        </div>
+        {% if state.shadowed %}
+          <p class="status warn">A key is also set in the environment as
+            <code>{{ info.env_var }}</code>, and that one wins. Remove it from your
+            environment if you want the key saved here to be used.</p>
+        {% else %}
+          <p class="muted">Saved in LibrAIry's database. Setting
+            <code>{{ info.env_var }}</code> in the environment overrides it.</p>
+        {% endif %}
+      </form>
+
+      {% if provider %}
+        {% include "partials/provider_row.html" %}
+      {% endif %}
+
+      {% if provider and provider.enabled %}
+        <form class="catalog-toggle" hx-post="/settings/providers/cloud/{{ info.kind }}/disable" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>
+          <button type="submit" class="btn-danger">Disable</button>
+          <span class="muted">Consulted when local AI is not confident enough.</span>
+        </form>
+      {% else %}
+        <form class="catalog-toggle" hx-post="/settings/providers/cloud/{{ info.kind }}/enable" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>
+          <label>Type <code>CLOUD</code> to confirm
+            <input name="confirm" placeholder="CLOUD" autocomplete="off">
+          </label>
+          <button type="submit">Enable</button>
+        </form>
+      {% endif %}
+    </section>
+  {% endfor %}
+</div>
 
 <script src="/static/settings.js" defer></script>
 {% endblock %}

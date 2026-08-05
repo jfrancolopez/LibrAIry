@@ -16,6 +16,7 @@ from librairy.ai.registry import (
     set_provider_enabled,
     set_provider_order,
 )
+from librairy.ai.signup import AI_PROVIDERS
 from librairy.backup import configured_remotes
 from librairy.catalogs import CATALOGS, CATALOGS_BY_SLUG, catalog_enabled, catalog_status
 from librairy.config import Settings
@@ -84,6 +85,7 @@ def settings_page_data(conn: sqlite3.Connection, settings: Settings) -> dict[str
             for catalog in CATALOGS
         ],
         "key_states": all_key_states(conn, settings),
+        "ai_providers": AI_PROVIDERS,
     }
 
 

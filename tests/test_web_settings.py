@@ -681,3 +681,66 @@ def test_every_catalog_card_renders_with_its_own_toggle(tmp_path: Path) -> None:
     for catalog in CATALOGS:
         assert catalog.name in page
         assert f"/settings/catalogs/{catalog.slug}/toggle" in page
+
+
+def test_cloud_provider_cards_ship_signup_steps_and_key_entry(tmp_path: Path) -> None:
+    from librairy.ai.signup import AI_PROVIDERS
+
+    client, _, _ = client_for(tmp_path)
+    page = client.get("/settings").text
+
+    for info in AI_PROVIDERS:
+        assert info.name in page
+        assert info.signup_url in page
+        assert f"/settings/keys/{info.key_field}" in page
+        assert f"/settings/providers/cloud/{info.kind}/enable" in page
+        for step in info.steps:
+            if step.url:
+                assert step.url in page
+
+
+def test_openai_card_says_why_there_is_no_browser_sign_in(tmp_path: Path) -> None:
+    """P15-07: the owner asked for browser auth; no such public flow exists.
+
+    Saying so on the card is the deliverable. Faking one would mean borrowing
+    another application's credentials or driving a login page on the user's
+    behalf.
+    """
+    client, _, _ = client_for(tmp_path)
+    page = client.get("/settings").text
+
+    assert "no public sign-in flow that issues API keys" in page
+    assert "oauth" not in page.lower()
+
+
+def test_no_oauth_implementation_exists_anywhere() -> None:
+    """The other half of P15-07: the decision has to hold in the code too.
+
+    Looks for what an OAuth flow would actually need rather than the word
+    itself — signup.py mentions OAuth precisely to explain that there is none.
+    """
+    import re
+
+    markers = re.compile(
+        r"client_secret|authorization_code|oauth2|/authorize\b|token_endpoint", re.I
+    )
+    offenders = [
+        str(path)
+        for path in Path("src/librairy").rglob("*.py")
+        if markers.search(path.read_text(encoding="utf-8"))
+    ]
+
+    assert offenders == []
+
+
+def test_cloud_provider_key_can_be_saved_and_is_never_echoed(tmp_path: Path) -> None:
+    client, conn, settings = client_for(tmp_path)
+    csrf = client.cookies["csrf_token"]
+
+    client.post(
+        "/settings/keys/openai", headers={"x-csrf-token": csrf}, data={"api_key": "sk-typed-here"}
+    )
+    page = client.get("/settings").text
+
+    assert runtime_settings(conn, settings).keys["openai"] == "set"
+    assert "sk-typed-here" not in page
