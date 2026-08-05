@@ -4,21 +4,26 @@ import json
 import sqlite3
 from dataclasses import asdict
 
+from librairy.catalogs import CATALOGS
 from librairy.models import Category, EvidenceEntry, Proposal
 from librairy.planner import utc_now
 from librairy.search import sync_search_item
 
-VALID_EVIDENCE_SOURCES = {
-    "heuristic",
-    "tags",
-    "acoustid",
-    "musicbrainz",
-    "tmdb",
-    "openlibrary",
-    "library-pattern",
-    "hashtag",
-    "ai",
-}
+# Sources that are not catalogs: local signals, and the AI fallback.
+LOCAL_EVIDENCE_SOURCES = frozenset(
+    {
+        "heuristic",
+        "tags",
+        "library-pattern",
+        "hashtag",
+        "ai",
+    }
+)
+# Every catalog is a legal evidence source by definition, derived from the
+# registry rather than restated here. Listing them twice is how adding a
+# catalog turns into a ProposalError that aborts the whole analyze batch the
+# first time that catalog actually matches something.
+VALID_EVIDENCE_SOURCES = LOCAL_EVIDENCE_SOURCES | {catalog.slug for catalog in CATALOGS}
 
 
 class ProposalError(RuntimeError):

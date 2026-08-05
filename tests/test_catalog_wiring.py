@@ -375,3 +375,50 @@ def test_disabled_lastfm_toggle_skips_the_genre_lookup(tmp_path: Path, monkeypat
     result = classify_item(audio, "02 Machine Gun.flac", settings, conn=conn)
 
     assert result.fields["genre"] == "General"
+
+
+def test_every_catalog_is_an_accepted_evidence_source() -> None:
+    """A catalog whose evidence `upsert_proposal` rejects aborts the batch.
+
+    Classifier tests never persist, so a missing source stays invisible until a
+    real file matches that catalog in production and the analyze run dies.
+    """
+    from librairy.catalogs import CATALOGS
+    from librairy.proposals import VALID_EVIDENCE_SOURCES
+
+    missing = {c.slug for c in CATALOGS} - VALID_EVIDENCE_SOURCES
+    assert not missing, f"catalogs cannot record evidence: {sorted(missing)}"
+
+
+def test_catalog_evidence_survives_being_written_to_a_proposal(tmp_path: Path) -> None:
+    """The end of the pipeline, which the lookup tests above stop short of."""
+    from librairy.db import connect
+    from librairy.models import EvidenceEntry
+    from librairy.proposals import upsert_proposal
+
+    settings = _settings(tmp_path, INBOX_DIR=tmp_path)
+    conn = connect(settings)
+    conn.execute(
+        """
+        INSERT INTO items(
+          id, root, relpath, size, mtime_ns, fingerprint, first_seen_at, last_seen_at
+        )
+        VALUES (1, 'inbox', 'song.mp3', 1, 1, 'fp', 'now', 'now')
+        """
+    )
+
+    proposal_id = upsert_proposal(
+        conn,
+        item_id=1,
+        category="music",
+        clean_name="song.mp3",
+        dest_relpath="Music/Rock/A/B/song.mp3",
+        confidence=0.8,
+        evidence=[
+            EvidenceEntry("tvmaze", "show", "Breaking Bad", 0.82),
+            EvidenceEntry("discogs", "release", "OK Computer", 0.8),
+            EvidenceEntry("lastfm", "genre", "Shoegaze", 0.7),
+        ],
+    )
+
+    assert proposal_id
