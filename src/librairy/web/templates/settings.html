@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 <h1>Settings</h1>
-<p class="muted">Runtime settings are stored in the LibrAIry database and apply to the next analysis batch. Paths and API keys stay in environment variables.</p>
+<p class="muted">Runtime settings are stored in the LibrAIry database and apply to the next analysis batch. Folder paths are fixed when the container starts. API keys can be set here or in the environment — the environment always wins.</p>
 
 <nav class="settings-nav" aria-label="Settings sections">
   <a href="#portal-security">Portal security</a>
@@ -123,13 +123,34 @@
   <label><input type="checkbox" name="backup_include_db_snapshot" {% if settings_view.backup.include_db_snapshot %}checked{% endif %}> Include SQLite snapshot</label>
   <p class="muted">No credential fields exist here. Configure remotes in appdata/rclone/rclone.conf with rclone itself.</p>
 
+  <h3>AI provider keys</h3>
+  <table>
+    <tbody>
+      {% for name in ['openai', 'anthropic', 'gemini'] %}
+        <tr><th>{{ name }}</th><td>{{ settings_view.keys[name] }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <div id="settings-save-bar" class="save-bar" hidden>
+    <span>Unsaved changes</span>
+    <button type="submit" class="btn-primary">Save settings</button>
+    <button type="button" id="settings-discard">discard</button>
+  </div>
+</form>
+
+{# Outside #settings-form on purpose: each card owns a key form and a toggle
+   form, and HTML has no nested forms — a browser silently discards the inner
+   one and posts its fields to the outer form instead. #}
+<section class="metric wide">
   <h2 id="catalog-keys">Catalogs</h2>
-  <p class="muted">Free metadata sources used to identify your files. Every enabled catalog is consulted before AI — more sources means better names and destinations. Keys come from environment variables and are never shown here.</p>
+  <p class="muted">Free metadata sources used to identify your files. Every enabled catalog is consulted before AI — more sources means better names and destinations. Keys are stored write-only: you can replace or clear one, but no key is ever shown back to you.</p>
   <div class="grid catalog-grid">
     {% for entry in catalogs %}
-      <section class="card catalog-card">
+      <section class="card catalog-card{% if not entry.enabled %} is-off{% endif %}">
         <h3>{{ entry.info.name }}
-          {% if entry.status == 'set' %}<span class="badge badge-ok">key set</span>
+          {% if not entry.enabled %}<span class="badge">off</span>
+          {% elif entry.status == 'set' %}<span class="badge badge-ok">key set</span>
           {% elif entry.status == 'not needed' %}<span class="badge badge-ok">no key needed</span>
           {% else %}<span class="badge badge-warn">key not set</span>{% endif %}
         </h3>
@@ -179,25 +200,17 @@
             {% endif %}
           </form>
         {% endif %}
+
+        <form class="catalog-toggle" method="post"
+              action="/settings/catalogs/{{ entry.info.slug }}/toggle">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button type="submit" class="btn">{{ 'Turn off' if entry.enabled else 'Turn on' }}</button>
+          <span class="muted">{{ 'Consulted during analysis.' if entry.enabled else 'Skipped — no requests are made.' }}</span>
+        </form>
       </section>
     {% endfor %}
   </div>
-
-  <h3>AI provider keys</h3>
-  <table>
-    <tbody>
-      {% for name in ['openai', 'anthropic', 'gemini'] %}
-        <tr><th>{{ name }}</th><td>{{ settings_view.keys[name] }}</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
-
-  <div id="settings-save-bar" class="save-bar" hidden>
-    <span>Unsaved changes</span>
-    <button type="submit" class="btn-primary">Save settings</button>
-    <button type="button" id="settings-discard">discard</button>
-  </div>
-</form>
+</section>
 
 <section class="metric wide">
   <h2 id="storage">Storage Paths</h2>

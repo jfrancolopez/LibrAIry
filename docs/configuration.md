@@ -78,5 +78,36 @@ These are stored in SQLite and apply without rebuilding the container:
 | `backup.bandwidth_limit` | Optional rclone bandwidth limit. |
 | `backup.schedule` | Backup schedule mode. |
 | `backup.include_db_snapshot` | Include a SQLite snapshot in backups. |
+| `appearance.theme` | Colour preset for the portal. |
+| `appearance.background` | Optional background colour override; empty means the theme's own. |
+| `catalog.<slug>.enabled` | Per-catalog on/off switch. Slugs: musicbrainz, acoustid, tmdb, tvmaze, openlibrary. A catalog that is off makes no requests. |
 
-API keys are environment-only in v1. The settings page shows only `set` or `not set`.
+API keys can be set from the Settings page or from the environment. **The environment
+always wins** — a variable in your compose file or UNRAID template is deliberate
+configuration, so a key saved in the portal is kept but unused while the variable is
+set, and the card says so. Keys are write-only either way: the page reports `set` or
+`not set` and never shows a value back.
+
+## Catalogs
+
+Metadata sources consulted **before** AI. Each one is individually switchable on the
+Settings page. A catalog that is unreachable, unconfigured, or switched off degrades
+silently to the next evidence source.
+
+| Catalog | Identifies | Key | Sends |
+| --- | --- | --- | --- |
+| MusicBrainz | Music releases, artists, albums | none | Track/album titles, artist names, durations |
+| AcoustID | Music by audio fingerprint | `ACOUSTID_KEY` | A fingerprint and duration, not the audio |
+| TMDB | Movies and TV shows | `TMDB_KEY` | Cleaned title guesses and years |
+| TVmaze | TV shows, and each episode's title | none | Cleaned show titles, season and episode numbers |
+| Open Library | Books by title, author or ISBN | none | Cleaned title and author guesses |
+
+No catalog is ever sent a file path.
+
+**TMDB and TVmaze together.** TMDB is asked first — it needs a key, so having one is a
+deliberate choice — and its show name wins any disagreement. TVmaze is also asked, for
+episodes only, because it answers something TMDB's search endpoint does not: the
+episode's own title, which turns `S03E09.mkv` into
+`S03E09 - The Rains of Castamere.mkv`. When both name the same show, confidence rises
+above what either source earns alone. TVmaze also stands in for TMDB entirely when TMDB
+is unkeyed, switched off, or draws a blank.

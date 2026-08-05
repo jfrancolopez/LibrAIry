@@ -115,6 +115,16 @@ CATALOGS: tuple[CatalogInfo, ...] = (
         sends="Cleaned title guesses and years. Never file paths.",
     ),
     CatalogInfo(
+        slug="tvmaze",
+        name="TVmaze",
+        identifies="TV shows, and the title of each individual episode",
+        key_field=KEYLESS,
+        cost="Free — no account needed",
+        signup_url="https://www.tvmaze.com/api",
+        steps=(Step("Nothing to do — it works out of the box."),),
+        sends="Cleaned show-title guesses, plus season and episode numbers. Never file paths.",
+    ),
+    CatalogInfo(
         slug="openlibrary",
         name="Open Library",
         identifies="Books by title, author or ISBN",

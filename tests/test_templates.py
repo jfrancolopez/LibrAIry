@@ -59,3 +59,31 @@ def test_no_full_page_swaps_into_body(page: Path) -> None:
         f"{page}: swapping a full page into <body> blanks the document. "
         f"Use a normal link/form action for navigation, or target a fragment."
     )
+
+
+FORM_TAG = re.compile(r"<form\b|</form>", re.IGNORECASE)
+
+
+@pytest.mark.parametrize("page", PAGES, ids=lambda p: p.name)
+def test_no_nested_forms(page: Path) -> None:
+    """A third silent-in-the-browser bug (found live in settings.html).
+
+    HTML has no nested forms. The parser drops the inner `<form>` start tag and
+    reparents its fields onto the outer form, so "Save key" posted the whole
+    settings page to /settings and the key was never stored. Both forms render
+    fine in the response body, which is why route tests missed it.
+
+    Template control flow means an exact depth count is not always possible, so
+    this tracks the source order of the tags — enough to catch a `<form>` opened
+    while another is unmistakably still open.
+    """
+    depth = 0
+    for match in FORM_TAG.finditer(page.read_text(encoding="utf-8")):
+        if match.group().lower().startswith("</"):
+            depth = max(0, depth - 1)
+            continue
+        assert depth == 0, (
+            f"{page}: <form> at offset {match.start()} opens inside another form. "
+            f"Browsers discard it and post its fields to the outer form instead."
+        )
+        depth += 1

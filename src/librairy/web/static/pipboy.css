@@ -507,6 +507,20 @@ tbody tr:hover { background: var(--bg-metric); }
 .catalog-card h3 { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-top: 0; }
 .catalog-card p { font-size: var(--text-sm); }
 .catalog-card a { word-break: break-all; font-size: var(--text-sm); }
+/* A card is a column so the toggle can sit at the bottom of every card in the
+   row, however tall the setup steps above it make each one. */
+.catalog-card { display: flex; flex-direction: column; }
+.catalog-card > :last-child { margin-top: auto; }
+.catalog-card.is-off { opacity: 0.72; }
+.catalog-toggle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+  font-size: var(--text-sm);
+}
 
 /* ---- Browse ----------------------------------------------------------- */
 .crumbs {

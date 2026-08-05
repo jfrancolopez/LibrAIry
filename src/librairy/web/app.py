@@ -11,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from librairy import __version__
+from librairy.catalogs import catalog_enabled
 from librairy.config import Settings
 from librairy.db import connect
 from librairy.dedup import DedupConfigError
@@ -367,6 +368,20 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         try:
             save_key(conn, slug, str(form.get("api_key", "")))
         except ValueError as exc:
+            return _settings_error(request, str(exc))
+        return _settings_redirect(request)
+
+    @app.post("/settings/catalogs/{slug}/toggle", response_class=HTMLResponse)
+    async def settings_catalog_toggle(request: Request, slug: str) -> Response:
+        """Flip one catalog on or off. A catalog that is off makes no requests."""
+        await _request_form(request)
+        try:
+            save_settings(
+                conn,
+                settings,
+                catalog_values={slug: not catalog_enabled(conn, slug)},
+            )
+        except SettingsValidationError as exc:
             return _settings_error(request, str(exc))
         return _settings_redirect(request)
 

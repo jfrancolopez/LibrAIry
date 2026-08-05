@@ -638,3 +638,46 @@ def test_an_unknown_key_slug_is_refused(tmp_path: Path) -> None:
     )
 
     assert response.status_code == 422
+
+
+def test_catalog_toggle_flips_and_reports_state(tmp_path: Path) -> None:
+    from librairy.catalogs import catalog_enabled
+
+    client, conn, _ = client_for(tmp_path)
+    csrf = client.cookies["csrf_token"]
+
+    assert catalog_enabled(conn, "tvmaze") is True
+    client.post("/settings/catalogs/tvmaze/toggle", headers={"x-csrf-token": csrf})
+    assert catalog_enabled(conn, "tvmaze") is False
+
+    page = client.get("/settings").text
+    assert "Skipped — no requests are made." in page
+    assert "Turn on" in page
+
+    client.post("/settings/catalogs/tvmaze/toggle", headers={"x-csrf-token": csrf})
+    assert catalog_enabled(conn, "tvmaze") is True
+
+
+def test_unknown_catalog_slug_is_rejected(tmp_path: Path) -> None:
+    client, conn, _ = client_for(tmp_path)
+    csrf = client.cookies["csrf_token"]
+
+    response = client.post(
+        "/settings/catalogs/not-a-catalog/toggle", headers={"x-csrf-token": csrf}
+    )
+
+    assert "unknown catalog" in response.text
+    assert conn.execute(
+        "SELECT COUNT(*) c FROM settings WHERE key LIKE 'catalog.not-a-catalog%'"
+    ).fetchone()["c"] == 0
+
+
+def test_every_catalog_card_renders_with_its_own_toggle(tmp_path: Path) -> None:
+    from librairy.catalogs import CATALOGS
+
+    client, _, _ = client_for(tmp_path)
+    page = client.get("/settings").text
+
+    for catalog in CATALOGS:
+        assert catalog.name in page
+        assert f"/settings/catalogs/{catalog.slug}/toggle" in page

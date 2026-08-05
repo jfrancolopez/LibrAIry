@@ -138,7 +138,12 @@ def classify_item(
             settings,
             item,
             ai_state,
-            classify_video(relpath, settings=settings, tmdb_lookup=_tmdb_lookup(conn, settings)),
+            classify_video(
+                relpath,
+                settings=settings,
+                tmdb_lookup=_tmdb_lookup(conn, settings),
+                tvmaze_lookup=_tvmaze_lookup(conn, settings),
+            ),
         )
     if suffix:
         return _with_ai(
@@ -226,6 +231,15 @@ def _tmdb_lookup(conn, settings):
     if conn is None or not catalog_enabled(conn, "tmdb"):
         return None
     from librairy.tools.tmdb import lookup_for_settings
+
+    return lookup_for_settings(settings)
+
+
+def _tvmaze_lookup(conn, settings):
+    """Real TVmaze lookup — keyless, so only the toggle gates it."""
+    if conn is None or not catalog_enabled(conn, "tvmaze"):
+        return None
+    from librairy.tools.tvmaze import lookup_for_settings
 
     return lookup_for_settings(settings)
 

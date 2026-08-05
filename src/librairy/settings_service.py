@@ -17,7 +17,7 @@ from librairy.ai.registry import (
     set_provider_order,
 )
 from librairy.backup import configured_remotes
-from librairy.catalogs import CATALOGS, catalog_status
+from librairy.catalogs import CATALOGS, CATALOGS_BY_SLUG, catalog_enabled, catalog_status
 from librairy.config import Settings
 from librairy.dedup import DedupConfigError, dedup_options, set_dedup_option
 from librairy.planner import utc_now
@@ -76,7 +76,12 @@ def settings_page_data(conn: sqlite3.Connection, settings: Settings) -> dict[str
         "lmstudio": lmstudio_view(conn, settings),
         "theme_options": THEME_NAMES,
         "catalogs": [
-            {"info": catalog, "status": catalog_status(catalog, view.keys)} for catalog in CATALOGS
+            {
+                "info": catalog,
+                "status": catalog_status(catalog, view.keys),
+                "enabled": catalog_enabled(conn, catalog.slug),
+            }
+            for catalog in CATALOGS
         ],
         "key_states": all_key_states(conn, settings),
     }
@@ -242,6 +247,7 @@ def save_settings(
     content_search_enabled: bool | None = None,
     backup_values: dict[str, object] | None = None,
     appearance_values: dict[str, str] | None = None,
+    catalog_values: dict[str, bool] | None = None,
 ) -> None:
     if confidence_threshold is not None and not 0 <= confidence_threshold <= 1:
         raise SettingsValidationError("confidence threshold must be between 0 and 1")
@@ -276,6 +282,14 @@ def save_settings(
             old = _setting_value(conn, setting_key, getattr(settings, f"backup_{key}"))
             _set_json(conn, setting_key, value)
             _journal_if_changed(conn, setting_key, old, value)
+    if catalog_values:
+        for slug, enabled in catalog_values.items():
+            if slug not in CATALOGS_BY_SLUG:
+                raise SettingsValidationError(f"unknown catalog: {slug}")
+            setting_key = f"catalog.{slug}.enabled"
+            old = catalog_enabled(conn, slug)
+            _set_json(conn, setting_key, enabled)
+            _journal_if_changed(conn, setting_key, old, enabled)
     if appearance_values:
         for key, raw in appearance_values.items():
             if key == "theme":

@@ -45,6 +45,7 @@ class VideoClassification:
 
 
 TmdbLookup = Callable[[ParsedVideoName, Settings], dict[str, Any] | None]
+TvmazeLookup = Callable[[ParsedVideoName, Settings], dict[str, Any] | None]
 
 
 def parse_video_name(relpath: str) -> ParsedVideoName:
@@ -73,7 +74,17 @@ def classify_video(
     *,
     settings: Settings,
     tmdb_lookup: TmdbLookup | None = None,
+    tvmaze_lookup: TvmazeLookup | None = None,
 ) -> VideoClassification:
+    """Identify a video file.
+
+    Catalog ordering when both TV catalogs are enabled: TMDB is asked first —
+    it needs a key, so having one is a deliberate choice — and its show name
+    wins any disagreement. TVmaze is asked as well, for episodes only, because
+    it answers a question TMDB's search endpoint does not: the episode's title.
+    It also stands in for TMDB entirely when TMDB is unkeyed, switched off, or
+    draws a blank.
+    """
     parsed = parse_video_name(relpath)
     evidence: list[EvidenceEntry] = [EvidenceEntry("heuristic", "title", parsed.title, 0.55)]
     tmdb = None
@@ -81,7 +92,8 @@ def classify_video(
         tmdb = tmdb_lookup(parsed, settings)
 
     if parsed.is_episode:
-        return _classify_episode(parsed, settings, tmdb, evidence)
+        tvmaze = tvmaze_lookup(parsed, settings) if tvmaze_lookup is not None else None
+        return _classify_episode(parsed, settings, tmdb, tvmaze, evidence)
     return _classify_movie(parsed, settings, tmdb, evidence)
 
 
@@ -120,14 +132,23 @@ def _classify_episode(
     parsed: ParsedVideoName,
     settings: Settings,
     tmdb: dict[str, Any] | None,
+    tvmaze: dict[str, Any] | None,
     evidence: list[EvidenceEntry],
 ) -> VideoClassification:
-    show = str(tmdb.get("name") if tmdb else parsed.title)
-    genre = _genre_from_tmdb(tmdb) or "General"
-    confidence = 0.84 if tmdb else 0.62
+    show = str((tmdb or tvmaze or {}).get("name") or parsed.title)
+    genre = _genre_from_tmdb(tmdb) or _genre_from_tmdb(tvmaze) or "General"
+    confidence = _episode_confidence(tmdb, tvmaze, show)
     if tmdb:
         evidence.append(EvidenceEntry("tmdb", "show", show, 0.84))
-    clean_name = clean_name_from_title(f"S{parsed.season:02d}E{parsed.episode:02d}", parsed.ext)
+    if tvmaze:
+        evidence.append(EvidenceEntry("tvmaze", "show", str(tvmaze.get("name") or show), 0.82))
+
+    episode_title = str((tvmaze or {}).get("episode_name") or "").strip()
+    numbering = f"S{parsed.season:02d}E{parsed.episode:02d}"
+    if episode_title:
+        evidence.append(EvidenceEntry("tvmaze", "episode_title", episode_title, 0.82))
+    title = f"{numbering} - {episode_title}" if episode_title else numbering
+    clean_name = clean_name_from_title(title, parsed.ext)
     fields: dict[str, object] = {
         "show": show,
         "season": parsed.season,
@@ -135,6 +156,10 @@ def _classify_episode(
         "genre": genre,
         "clean_name": clean_name,
     }
+    # Every field value becomes a path component candidate, and an empty one is
+    # rejected as unsafe — so an unknown episode title is absent, not blank.
+    if episode_title:
+        fields["episode_title"] = episode_title
     rendered = _render_if_confident("shows", fields, confidence, settings)
     group_key = f"show:{show}:s{parsed.season:02d}"
     return VideoClassification(
@@ -147,6 +172,19 @@ def _classify_episode(
         group_key,
         rendered.reason,
     )
+
+
+def _episode_confidence(
+    tmdb: dict[str, Any] | None, tvmaze: dict[str, Any] | None, show: str
+) -> float:
+    """Two catalogs naming the same show is worth more than either alone."""
+    if tmdb and tvmaze and str(tvmaze.get("name") or "").casefold() == show.casefold():
+        return 0.9
+    if tmdb:
+        return 0.84
+    if tvmaze:
+        return 0.82
+    return 0.62
 
 
 def _render_if_confident(
