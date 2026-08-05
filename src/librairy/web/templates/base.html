@@ -29,6 +29,9 @@
         {% endfor %}
       </nav>
       <div class="app-account">
+        {% if request.state.session %}
+          {% with activity = activity_view() %}{% include "partials/activity_pill.html" %}{% endwith %}
+        {% endif %}
         <a class="provider-pill" href="/settings" title="AI provider status">{{ provider_header() }}</a>
         <a href="/settings">Settings</a>
         {% if request.state.session and portal_password_set() %}

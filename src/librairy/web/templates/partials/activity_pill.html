@@ -1,0 +1,19 @@
+{# Polls itself, so it keeps updating wherever it is placed. #}
+<span id="activity-pill"
+      class="activity-pill{% if activity.busy %} is-busy{% elif activity.stalled %} is-stalled{% endif %}"
+      hx-get="/activity"
+      hx-trigger="every 3s"
+      hx-swap="outerHTML">
+  {% if activity.stalled %}
+    <span class="badge badge-warn">worker stopped</span>
+    <span>{{ activity.queued }} file{{ '' if activity.queued == 1 else 's' }} waiting, nothing running</span>
+  {% elif activity.busy %}
+    <span class="spinner" aria-hidden="true"></span>
+    <span>{{ activity.label }}{% if activity.queued %} — {{ activity.queued }} to go{% endif %}</span>
+  {% elif activity.queued %}
+    <span class="spinner" aria-hidden="true"></span>
+    <span>{{ activity.queued }} new file{{ '' if activity.queued == 1 else 's' }} found</span>
+  {% else %}
+    {# Idle and empty: take up no room, but keep polling. #}
+  {% endif %}
+</span>

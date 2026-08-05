@@ -14,6 +14,8 @@ SHOW = {
     "premiered": "2011-04-17",
 }
 EPISODE = {"name": "The Rains of Castamere", "season": 3, "number": 9}
+# /search/shows wraps each hit in a relevance score.
+FOUND = [{"score": 1.18, "show": SHOW}]
 
 
 class _Fake:
@@ -61,7 +63,7 @@ def setup_function() -> None:
 
 def test_search_returns_show_and_episode_title() -> None:
     calls: list[str] = []
-    opener = _opener({"singlesearch": SHOW, "episodebynumber": EPISODE}, calls)
+    opener = _opener({"search/shows": FOUND, "episodebynumber": EPISODE}, calls)
 
     match = tvmaze.search_show(
         "Game of Thrones", season=3, episode=9, opener=opener, sleeper=lambda s: None
@@ -70,14 +72,14 @@ def test_search_returns_show_and_episode_title() -> None:
     assert match["name"] == "Game of Thrones"
     assert match["episode_name"] == "The Rains of Castamere"
     assert match["genres"] == ["Drama", "Fantasy"]
-    assert "q=Game+of+Thrones" in calls[0]
+    assert "search/shows?q=Game+of+Thrones" in calls[0]
     assert "shows/82/episodebynumber?season=3&number=9" in calls[1]
 
 
 def test_a_missing_episode_still_yields_the_show() -> None:
     """Releases renumber episodes; a 404 there must not discard the show match."""
     calls: list[str] = []
-    opener = _opener({"singlesearch": SHOW, "episodebynumber": None}, calls)
+    opener = _opener({"search/shows": FOUND, "episodebynumber": None}, calls)
 
     match = tvmaze.search_show(
         "Game of Thrones", season=9, episode=99, opener=opener, sleeper=lambda s: None
@@ -89,14 +91,14 @@ def test_a_missing_episode_still_yields_the_show() -> None:
 
 def test_unknown_show_returns_none() -> None:
     calls: list[str] = []
-    opener = _opener({"singlesearch": None}, calls)
+    opener = _opener({"search/shows": []}, calls)
 
     assert tvmaze.search_show("Nonexistent", opener=opener, sleeper=lambda s: None) is None
 
 
 def test_repeated_queries_hit_the_cache_once() -> None:
     calls: list[str] = []
-    opener = _opener({"singlesearch": SHOW}, calls)
+    opener = _opener({"search/shows": FOUND}, calls)
 
     tvmaze.search_show("Game of Thrones", opener=opener, sleeper=lambda s: None)
     tvmaze.search_show("game of thrones", opener=opener, sleeper=lambda s: None)
@@ -176,3 +178,32 @@ def test_tvmaze_is_not_consulted_for_movies(tmp_path: Path) -> None:
     )
 
     assert result.category == "movies"
+
+
+def test_a_weak_match_is_rejected_rather_than_guessed_at() -> None:
+    """Found live: a made-up "Test Show" resolved to a real series, "Best Shot".
+
+    singlesearch/shows returns the top hit with its score hidden, so it always
+    says yes. Real titles score 0.89 and up; that one scored 0.41. Renaming a
+    file after a show it has nothing to do with is worse than leaving it alone.
+    """
+    calls: list[str] = []
+    weak = [{"score": 0.409, "show": {"id": 1, "name": "Best Shot", "genres": ["Sports"]}}]
+
+    match = tvmaze.search_show(
+        "Test Show", season=1, episode=1, opener=_opener({"search/shows": weak}, calls)
+    )
+
+    assert match is None
+    # Rejected on the search response — no episode request was ever made.
+    assert len(calls) == 1
+
+
+def test_a_lower_scored_but_valid_match_is_still_accepted() -> None:
+    """A one-word title like "Chernobyl" scores 0.890, the measured floor."""
+    calls: list[str] = []
+    ok = [{"score": 0.890, "show": {"id": 2, "name": "Chernobyl", "genres": ["Drama"]}}]
+
+    match = tvmaze.search_show("Chernobyl", opener=_opener({"search/shows": ok}, calls))
+
+    assert match["name"] == "Chernobyl"

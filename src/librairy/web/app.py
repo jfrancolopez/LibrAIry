@@ -38,6 +38,7 @@ from librairy.settings_service import (
     settings_page_data,
 )
 from librairy.web.access import access_data
+from librairy.web.activity import activity
 from librairy.web.auth import (
     SESSION_COOKIE,
     LoginRateLimiter,
@@ -108,6 +109,7 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
     )
     TEMPLATES.env.globals["portal_password_set"] = lambda: has_admin_password(conn)
     TEMPLATES.env.globals["appearance_view"] = lambda: appearance_settings(conn)
+    TEMPLATES.env.globals["activity_view"] = lambda: activity(conn)
     app.middleware("http")(_auth_and_security(conn, settings))
 
     @app.get("/", include_in_schema=False)
@@ -592,6 +594,15 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             request,
             "partials/review_row.html",
             {"proposal": proposal, "warning": warning},
+        )
+
+    @app.get("/activity", response_class=HTMLResponse)
+    def activity_fragment(request: Request) -> HTMLResponse:
+        """The header pill, polled from every open tab — keep it cheap."""
+        return TEMPLATES.TemplateResponse(
+            request,
+            "partials/activity_pill.html",
+            {"activity": activity(conn)},
         )
 
     @app.get("/preview/items/{item_id}", response_class=HTMLResponse)

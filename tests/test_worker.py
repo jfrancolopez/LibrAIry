@@ -153,3 +153,56 @@ def test_worker_cli_once(tmp_path: Path) -> None:
 
     assert result.returncode == 0
     assert json.loads(result.stdout)["analyzed"] == 1
+
+
+def test_inbox_signature_changes_when_a_file_is_dropped(tmp_path: Path) -> None:
+    from librairy.worker import inbox_signature
+
+    inbox = tmp_path / "inbox"
+    (inbox / "nested").mkdir(parents=True)
+    before = inbox_signature(inbox)
+
+    (inbox / "nested" / "dropped.mkv").write_bytes(b"x")
+    after = inbox_signature(inbox)
+
+    assert before != after
+    assert inbox_signature(inbox) == after  # stable when nothing moves
+
+
+def test_inbox_signature_survives_a_missing_inbox(tmp_path: Path) -> None:
+    from librairy.worker import inbox_signature
+
+    assert inbox_signature(tmp_path / "not-there") == ""
+
+
+def test_idle_sleep_ends_early_when_the_inbox_changes(tmp_path: Path, monkeypatch) -> None:
+    """The idle backoff climbs to a minute. Waiting that long for a file you
+    just dropped in is the difference between "it works" and "is it broken?"."""
+    import librairy.worker as worker_module
+
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    settings = Settings(
+        INBOX_DIR=inbox,
+        LIBRARY_DIR=tmp_path / "lib",
+        QUARANTINE_DIR=tmp_path / "q",
+        APPDATA_DIR=tmp_path / "appdata",
+        _env_file=None,
+    )
+    worker = worker_module.Worker(connect(settings), settings)
+    monkeypatch.setattr(worker_module, "INBOX_POLL_SECONDS", 0.0)
+
+    slept = 0.0
+    signatures = iter(["baseline", "baseline", "changed"])
+
+    def fake_sleep(seconds):
+        nonlocal slept
+        slept += seconds
+
+    monkeypatch.setattr(worker_module.time, "sleep", fake_sleep)
+    monkeypatch.setattr(worker_module, "inbox_signature", lambda _dir: next(signatures, "changed"))
+
+    worker_module._sleep_interruptibly(60.0, worker)
+
+    # Returned on the changed signature rather than serving the full minute.
+    assert slept < 60.0

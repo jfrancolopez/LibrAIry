@@ -22,11 +22,13 @@ from typing import Any
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
-SEARCH_URL = "https://api.tvmaze.com/singlesearch/shows"
+SEARCH_URL = "https://api.tvmaze.com/search/shows"
 EPISODE_URL = "https://api.tvmaze.com/shows/{show_id}/episodebynumber"
 USER_AGENT = "LibrAIry/1.0 (+https://github.com/jfrancolopez/LibrAIry)"
 MIN_INTERVAL_SECONDS = 0.5
 TIMEOUT_SECONDS = 8
+# Between the worst real match measured (0.890) and the best junk one (0.531).
+MIN_SCORE = 0.7
 
 _CACHE: dict[str, dict[str, Any] | None] = {}
 _LAST_CALL = 0.0
@@ -52,8 +54,9 @@ def search_show(
     if cache_key in _CACHE:
         return _CACHE[cache_key]
 
-    show = _get(f"{SEARCH_URL}?{urlencode({'q': query})}", opener, sleeper)
-    if not isinstance(show, dict) or not show.get("name"):
+    results = _get(f"{SEARCH_URL}?{urlencode({'q': query})}", opener, sleeper)
+    show = _best_show(results)
+    if show is None:
         _CACHE[cache_key] = None
         return None
 
@@ -82,6 +85,32 @@ def lookup_for_settings(_settings) -> Any:
         return search_show(parsed.title, season=parsed.season, episode=parsed.episode)
 
     return lookup
+
+
+def _best_show(results: Any) -> dict[str, Any] | None:
+    """Top hit, but only if it is actually a match.
+
+    `/search/shows` returns a relevance score; `singlesearch/shows` returns the
+    same top hit with the score hidden, and therefore always says yes. Measured
+    against real filenames, genuine titles score 0.89 and up (a bare
+    "Chernobyl" is the floor) while junk lands at 0.53 and below — a made-up
+    "Test Show" confidently resolved to a real series called "Best Shot" at
+    0.41. Renaming a file after a show it has nothing to do with is worse than
+    leaving it alone.
+    """
+    if not isinstance(results, list):
+        return None
+    for result in results:
+        if not isinstance(result, dict):
+            continue
+        show = result.get("show")
+        try:
+            score = float(result.get("score") or 0.0)
+        except (TypeError, ValueError):
+            continue
+        if score >= MIN_SCORE and isinstance(show, dict) and show.get("name"):
+            return show
+    return None
 
 
 def _get(url: str, opener, sleeper) -> Any:

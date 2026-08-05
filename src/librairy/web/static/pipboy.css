@@ -512,6 +512,37 @@ tbody tr:hover { background: var(--bg-metric); }
 .catalog-card { display: flex; flex-direction: column; }
 .catalog-card > :last-child { margin-top: auto; }
 .catalog-card.is-off { opacity: 0.72; }
+/* ---- Worker activity pill --------------------------------------------- */
+.activity-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--text-dim);
+}
+/* Empty when idle: no border, no padding, no gap in the header. */
+.activity-pill.is-busy,
+.activity-pill.is-stalled {
+  padding: 0.15rem var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+.activity-pill.is-busy { color: var(--text); }
+.spinner {
+  width: 0.7em;
+  height: 0.7em;
+  border: 2px solid var(--accent-soft);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+/* Respect a stated preference for less motion: the text still says what is
+   happening, so the spin is decoration and safe to drop. */
+@media (prefers-reduced-motion: reduce) {
+  .spinner { animation: none; opacity: 0.6; }
+}
+
 .preview-bar {
   margin: var(--space-3) 0;
   padding: var(--space-2) var(--space-3);

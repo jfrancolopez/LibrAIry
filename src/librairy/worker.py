@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import os
 import signal
 import sqlite3
 import time
+from contextlib import suppress
 from dataclasses import asdict, dataclass
+from pathlib import Path
 
 from librairy.backup import run_backup_once
 from librairy.classify import analyze_items
@@ -29,6 +33,8 @@ from librairy.settings_service import effective_settings
 IDLE_SLEEP_SECONDS = 5.0
 BUSY_SLEEP_SECONDS = 0.5
 MAX_SLEEP_SECONDS = 60.0
+# How often, while idle, to check whether the inbox changed under us.
+INBOX_POLL_SECONDS = 2.0
 
 
 @dataclass(frozen=True)
@@ -146,10 +152,47 @@ def next_sleep(previous: float, work_found: bool) -> float:
     return min(max(previous * 2, IDLE_SLEEP_SECONDS), MAX_SLEEP_SECONDS)
 
 
+def inbox_signature(inbox_dir: Path) -> str:
+    """A cheap fingerprint that changes when anything is added to the inbox.
+
+    Creating, renaming or deleting a file bumps the mtime of the directory
+    holding it, so walking directory mtimes catches a drop without stat-ing
+    every file. The inbox is a staging area, not a library — this stays small
+    and fast even when the library it feeds is enormous.
+    """
+    # os.walk swallows its own errors, so a missing inbox would otherwise hash
+    # to a perfectly stable "empty tree" and look like a healthy quiet one. An
+    # absent inbox is the scanner's problem to report; here it is just "nothing
+    # to wake up for".
+    if not inbox_dir.is_dir():
+        return ""
+    hasher = hashlib.blake2b(digest_size=16)
+    for root, dirnames, _ in os.walk(inbox_dir):
+        # Deterministic order, or the same tree hashes differently each pass.
+        dirnames.sort()
+        with suppress(OSError):
+            hasher.update(f"{root}:{os.stat(root).st_mtime_ns}".encode())
+    return hasher.hexdigest()
+
+
 def _sleep_interruptibly(seconds: float, worker: Worker) -> None:
+    """Sleep, but cut it short the moment something lands in the inbox.
+
+    The idle backoff climbs to a minute, which is fine for a quiet system and
+    far too long to wait for a file you just dropped in. Polling one cheap
+    fingerprint every couple of seconds turns "up to 60s" into "about 2s"
+    without a filesystem-watching dependency.
+    """
     deadline = time.monotonic() + seconds
+    baseline = inbox_signature(worker.settings.inbox_dir)
+    next_check = time.monotonic() + INBOX_POLL_SECONDS
     while not worker.stop_requested and time.monotonic() < deadline:
         time.sleep(min(0.1, deadline - time.monotonic()))
+        if time.monotonic() < next_check:
+            continue
+        next_check = time.monotonic() + INBOX_POLL_SECONDS
+        if inbox_signature(worker.settings.inbox_dir) != baseline:
+            return
 
 
 def _set_worker_state(conn: sqlite3.Connection, key: str, value) -> None:
