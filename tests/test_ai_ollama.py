@@ -170,3 +170,69 @@ def test_first_down_endpoint_falls_back_to_second() -> None:
     used, answer = result
     assert used.name == "up"
     assert answer.category == "documents"
+
+
+def test_reasoning_models_answer_in_the_thinking_field() -> None:
+    """qwen3 and deepseek-r1 leave `response` empty and put the JSON in
+    `thinking`. Reading only `response` turned a healthy, responding Ollama
+    into every file classifying as "partial"."""
+    from librairy.ai.ollama import _answer_from_payload
+
+    answer = _answer_from_payload(
+        {
+            "response": "",
+            "thinking": '{"category": "music", "confidence": 0.9, "rationale": "tags"}',
+            "done": True,
+        }
+    )
+
+    assert answer is not None
+    assert answer.category == "music"
+
+
+def test_response_wins_when_both_fields_are_present() -> None:
+    from librairy.ai.ollama import _answer_from_payload
+
+    answer = _answer_from_payload(
+        {
+            "response": '{"category": "photos", "confidence": 0.8, "rationale": "exif"}',
+            "thinking": '{"category": "music", "confidence": 0.1, "rationale": "guess"}',
+        }
+    )
+
+    assert answer is not None
+    assert answer.category == "photos"
+
+
+def test_inline_think_blocks_are_stripped() -> None:
+    from librairy.ai.ollama import _answer_from_payload
+
+    answer = _answer_from_payload(
+        {
+            "response": (
+                "<think>The extension is .flac so this is probably audio.</think>"
+                '{"category": "music", "confidence": 0.88, "rationale": "flac"}'
+            )
+        }
+    )
+
+    assert answer is not None
+    assert answer.category == "music"
+
+
+def test_unclosed_think_block_keeps_what_follows_it() -> None:
+    """A truncated thought must not hand the parser the raw tag."""
+    from librairy.ai.ollama import _answer_from_payload
+
+    answer = _answer_from_payload(
+        {"response": '<think>hmm {"category": "documents", "confidence": 0.7, "rationale": "pdf"}'}
+    )
+
+    assert answer is not None
+    assert answer.category == "documents"
+
+
+def test_an_entirely_empty_payload_is_still_no_answer() -> None:
+    from librairy.ai.ollama import _answer_from_payload
+
+    assert _answer_from_payload({"response": "", "thinking": "   "}) is None

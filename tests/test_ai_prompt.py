@@ -109,3 +109,77 @@ def test_validated_answer_fields_render_inside_library(
     rendered = render_destination(category, render_fields, library_root=tmp_path / "library")
 
     assert rendered.relpath is not None
+
+
+def test_json_is_found_inside_surrounding_prose() -> None:
+    """Local models are far less disciplined than hosted ones about replying
+    with nothing but JSON, and a stray sentence threw the whole answer away."""
+    result = validate_ai_response(
+        'Sure, here you go:\n{"category": "music", "confidence": 0.9, "rationale": "flac"}\n'
+        "Let me know if you need anything else."
+    )
+
+    assert result.answer is not None
+    assert result.answer.category == "music"
+
+
+def test_nested_objects_are_not_cut_short() -> None:
+    result = validate_ai_response(
+        'note: {"category": "music", "name_fields": {"artist": "Queen"}, '
+        '"confidence": 0.9, "rationale": "tags"} done'
+    )
+
+    assert result.answer is not None
+    assert result.answer.name_fields["artist"] == "Queen"
+
+
+def test_braces_inside_strings_do_not_end_the_object() -> None:
+    result = validate_ai_response(
+        '{"category": "misc", "confidence": 0.5, "rationale": "name has a } in it"}'
+    )
+
+    assert result.answer is not None
+    assert "}" in result.answer.rationale
+
+
+def test_prose_with_no_json_at_all_is_still_rejected() -> None:
+    result = validate_ai_response("I am not able to classify this file.")
+
+    assert result.answer is None
+    assert result.reason == "invalid-json"
+
+
+def test_an_unterminated_object_is_rejected() -> None:
+    result = validate_ai_response('{"category": "music", "confidence": 0.9')
+
+    assert result.answer is None
+
+
+def test_every_provider_actually_sends_the_instructions() -> None:
+    """SYSTEM_PROMPT existed, was tested, and no provider ever sent it.
+
+    Each of ollama.py, cloud.py and lmstudio.py had its own _prompt_text that
+    returned the bare redacted view, so every model was handed an anonymous
+    JSON blob with no task attached. The local ones echoed it straight back.
+    """
+    import inspect
+
+    from librairy.ai import cloud, lmstudio, ollama
+
+    for module in (ollama, cloud, lmstudio):
+        source = inspect.getsource(module)
+        assert "prompt_for(view)" in source, f"{module.__name__} builds its own prompt"
+        assert "def _prompt_text" not in source, f"{module.__name__} still has a private copy"
+
+
+def test_prompt_carries_the_task_and_an_example_of_the_answer() -> None:
+    from librairy.ai.prompt import prompt_for
+
+    text = prompt_for({"file_name": "unknown.mp3"})
+
+    assert "You classify files for LibrAIry." in text
+    # A prose schema is enough for hosted models and not for a 4B local one;
+    # without a worked example small models mirror the input structure back.
+    assert '"category": "music"' in text
+    assert "never repeat the input fields back" in text
+    assert "unknown.mp3" in text

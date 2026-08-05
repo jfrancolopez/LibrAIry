@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 from dataclasses import dataclass
 from typing import Any
 from urllib import error, request
 
 from librairy.ai.base import AIAnswer, HealthResult, ProviderConfig
-from librairy.ai.prompt import validate_ai_response
+from librairy.ai.prompt import prompt_for, validate_ai_response
 
 
 @dataclass
@@ -27,10 +28,15 @@ class OllamaProvider:
         return HealthResult(True, latency_ms=_latency_ms(started), models=models)
 
     def classify(self, view: Any, timeout: int) -> AIAnswer | None:
+        # No "format": "json". Ollama applies that grammar to the *reasoning*
+        # stream as well, and a reasoning model given a JSON input under a JSON
+        # constraint mirrors the input schema straight back instead of
+        # answering — qwen3:4b did exactly that, every time. Unconstrained, the
+        # same model answers correctly; the prompt asks for a single JSON
+        # object and _answer_from_payload digs it out of whatever surrounds it.
         body = {
             "model": self.config.model,
-            "prompt": _prompt_text(view),
-            "format": "json",
+            "prompt": prompt_for(view),
             "stream": False,
         }
         for attempt in range(self.retries + 1):
@@ -65,16 +71,38 @@ def _json_request(
 
 
 def _answer_from_payload(payload: dict[str, Any]) -> AIAnswer | None:
-    raw = payload.get("response", payload)
+    raw = _response_text(payload)
     if isinstance(raw, str):
-        return validate_ai_response(raw).answer
+        return validate_ai_response(_strip_reasoning(raw)).answer
     return validate_ai_response(json.dumps(raw)).answer
 
 
-def _prompt_text(view: Any) -> str:
-    if hasattr(view, "model_dump_json"):
-        return str(view.model_dump_json())
-    return json.dumps(view, sort_keys=True)
+def _response_text(payload: dict[str, Any]) -> Any:
+    """The model's actual output, wherever this model happened to put it.
+
+    Reasoning models (qwen3, deepseek-r1) return their answer in `thinking` and
+    leave `response` an empty string, so reading `response` alone silently
+    produced nothing at all — a configured, healthy, responding Ollama that
+    classified every file as "partial".
+    """
+    response = payload.get("response")
+    if isinstance(response, str) and response.strip():
+        return response
+    thinking = payload.get("thinking")
+    if isinstance(thinking, str) and thinking.strip():
+        return thinking
+    return response if response is not None else payload
+
+
+def _strip_reasoning(text: str) -> str:
+    """Drop <think>…</think> for models that inline it instead of splitting it out."""
+    without = re.sub(r"<think>.*?</think>", " ", text, flags=re.DOTALL | re.IGNORECASE)
+    # An unclosed block means the model was cut off mid-thought; keep what
+    # follows the opening tag rather than handing the parser the tag itself.
+    without = re.sub(r"^.*?<think>", " ", without, flags=re.DOTALL | re.IGNORECASE)
+    return without.strip() or text
+
+
 
 
 def _url(config: ProviderConfig, path: str) -> str:

@@ -18,7 +18,7 @@ from typing import Any
 from urllib import request
 
 from librairy.ai.base import AIAnswer, HealthResult, ProviderConfig
-from librairy.ai.prompt import validate_ai_response
+from librairy.ai.prompt import prompt_for, validate_ai_response
 
 DEFAULT_PORT = 1234
 
@@ -59,7 +59,7 @@ class LMStudioProvider:
         body = {
             "model": self.config.model,
             "response_format": {"type": "json_object"},
-            "messages": [{"role": "user", "content": _prompt_text(view)}],
+            "messages": [{"role": "user", "content": prompt_for(view)}],
         }
         for attempt in range(self.retries + 1):
             try:
@@ -90,10 +90,6 @@ def _request(method: str, url: str, body: dict | None, timeout: int) -> dict:
         return json.loads(response.read().decode("utf-8"))
 
 
-def _prompt_text(view: Any) -> str:
-    if hasattr(view, "model_dump_json"):
-        return str(view.model_dump_json())
-    return json.dumps(view, sort_keys=True)
 
 
 def _error_message(exc: OSError) -> str:

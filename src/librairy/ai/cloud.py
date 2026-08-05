@@ -6,7 +6,7 @@ from typing import Any
 from urllib import parse, request
 
 from librairy.ai.base import AIAnswer, HealthResult, ProviderConfig
-from librairy.ai.prompt import validate_ai_response
+from librairy.ai.prompt import prompt_for, validate_ai_response
 
 OPENAI_ENDPOINT = "https://api.openai.com"
 ANTHROPIC_ENDPOINT = "https://api.anthropic.com"
@@ -27,7 +27,7 @@ class OpenAIProvider:
         body = {
             "model": self.config.model,
             "response_format": {"type": "json_object"},
-            "messages": [{"role": "user", "content": _prompt_text(view)}],
+            "messages": [{"role": "user", "content": prompt_for(view)}],
         }
         payload = _post_json(
             _url(self.config, OPENAI_ENDPOINT, "/v1/chat/completions"),
@@ -53,7 +53,7 @@ class AnthropicProvider:
         body = {
             "model": self.config.model,
             "max_tokens": 512,
-            "messages": [{"role": "user", "content": _prompt_text(view)}],
+            "messages": [{"role": "user", "content": prompt_for(view)}],
         }
         payload = _post_json(
             _url(self.config, ANTHROPIC_ENDPOINT, "/v1/messages"),
@@ -78,7 +78,7 @@ class GeminiProvider:
             return None
         model = parse.quote(self.config.model, safe="")
         path = f"/v1beta/models/{model}:generateContent?key={parse.quote(self.api_key, safe='')}"
-        body = {"contents": [{"parts": [{"text": _prompt_text(view)}]}]}
+        body = {"contents": [{"parts": [{"text": prompt_for(view)}]}]}
         payload = _post_json(_url(self.config, GEMINI_ENDPOINT, path), body, timeout, {})
         content = (
             payload.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text")
@@ -109,10 +109,6 @@ def _answer_from_text(content: object) -> AIAnswer | None:
     return validate_ai_response(content).answer
 
 
-def _prompt_text(view: Any) -> str:
-    if hasattr(view, "model_dump_json"):
-        return str(view.model_dump_json())
-    return json.dumps(view, sort_keys=True)
 
 
 def _url(config: ProviderConfig, default_endpoint: str, path: str) -> str:
