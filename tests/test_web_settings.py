@@ -541,3 +541,65 @@ def test_tmdb_steps_warn_about_the_v4_token(tmp_path: Path) -> None:
     page = client.get("/settings").text
 
     assert "API Key (v3 auth)" in page
+
+
+def test_a_key_can_be_saved_from_the_portal_without_a_restart(tmp_path: Path) -> None:
+    """The instructions used to end with "edit .env and restart the container"."""
+    client, conn, settings = client_for(tmp_path)
+
+    response = client.post(
+        "/settings/keys/tmdb",
+        data={"api_key": "typed-in-key", "csrf_token": client.cookies["csrf_token"]},
+        follow_redirects=False,
+    )
+
+    assert response.status_code in (302, 204)
+    from librairy.secrets_store import resolve_key
+
+    assert resolve_key(conn, settings, "tmdb") == "typed-in-key"
+
+
+def test_a_saved_key_is_never_rendered_back(tmp_path: Path) -> None:
+    client, conn, _ = client_for(tmp_path)
+    client.post(
+        "/settings/keys/tmdb",
+        data={"api_key": "never-show-me", "csrf_token": client.cookies["csrf_token"]},
+    )
+
+    page = client.get("/settings").text
+
+    assert "never-show-me" not in page
+    assert "a key is already set" in page
+
+
+def test_key_inputs_are_masked(tmp_path: Path) -> None:
+    client, _, _ = client_for(tmp_path)
+
+    page = client.get("/settings").text
+
+    assert 'type="password" name="api_key"' in page
+    assert 'autocomplete="off"' in page
+
+
+def test_the_page_says_when_the_environment_is_overriding_a_saved_key(tmp_path: Path) -> None:
+    client, conn, _ = client_for(tmp_path, TMDB_KEY="env-wins")
+    client.post(
+        "/settings/keys/tmdb",
+        data={"api_key": "web-loses", "csrf_token": client.cookies["csrf_token"]},
+    )
+
+    page = client.get("/settings").text
+
+    assert "that one wins" in page
+    assert "web-loses" not in page
+
+
+def test_an_unknown_key_slug_is_refused(tmp_path: Path) -> None:
+    client, _, _ = client_for(tmp_path)
+
+    response = client.post(
+        "/settings/keys/evil",
+        data={"api_key": "x", "csrf_token": client.cookies["csrf_token"]},
+    )
+
+    assert response.status_code == 422

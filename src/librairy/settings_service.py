@@ -21,6 +21,12 @@ from librairy.catalogs import CATALOGS, catalog_status
 from librairy.config import Settings
 from librairy.dedup import DedupConfigError, dedup_options, set_dedup_option
 from librairy.planner import utc_now
+from librairy.secrets_store import (
+    MANAGED_KEYS,
+    all_key_states,
+    resolve_key,
+    settings_with_stored_keys,
+)
 from librairy.taxonomy import (
     CATEGORIES,
     TEMPLATES,
@@ -72,6 +78,7 @@ def settings_page_data(conn: sqlite3.Connection, settings: Settings) -> dict[str
         "catalogs": [
             {"info": catalog, "status": catalog_status(catalog, view.keys)} for catalog in CATALOGS
         ],
+        "key_states": all_key_states(conn, settings),
     }
 
 
@@ -166,12 +173,10 @@ def runtime_settings(conn: sqlite3.Connection, settings: Settings) -> RuntimeSet
             "use_rmlint": options.use_rmlint,
             "use_czkawka": options.use_czkawka,
         },
+        # Through the store, so a key typed into the portal reads as "set"
+        # rather than the page insisting it is missing.
         keys={
-            "openai": _key_status(settings.openai_api_key.get_secret_value()),
-            "anthropic": _key_status(settings.anthropic_api_key.get_secret_value()),
-            "gemini": _key_status(settings.gemini_api_key.get_secret_value()),
-            "tmdb": _key_status(settings.tmdb_key.get_secret_value()),
-            "acoustid": _key_status(settings.acoustid_key.get_secret_value()),
+            slug: _key_status(resolve_key(conn, settings, slug)) for slug in MANAGED_KEYS
         },
         content_search_enabled=_setting_bool(
             conn,
@@ -207,6 +212,10 @@ def appearance_settings(conn: sqlite3.Connection) -> dict[str, str]:
 
 def effective_settings(conn: sqlite3.Connection, settings: Settings) -> Settings:
     view = runtime_settings(conn, settings)
+    # Keys saved from the portal fold in here, so every catalog and provider
+    # downstream reads them off Settings without caring where they came from.
+    # Environment values are left alone — see librairy/secrets_store.py.
+    settings = settings_with_stored_keys(conn, settings)
     return settings.model_copy(
         update={
             "confidence_threshold": view.confidence_threshold,

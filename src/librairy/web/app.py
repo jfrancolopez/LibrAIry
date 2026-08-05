@@ -16,6 +16,7 @@ from librairy.db import connect
 from librairy.dedup import DedupConfigError
 from librairy.logging import configure_logging
 from librairy.search import SearchFilters, rebuild_search_index, search_data
+from librairy.secrets_store import save_key
 from librairy.settings_service import (
     SettingsValidationError,
     add_ollama_endpoint,
@@ -86,8 +87,8 @@ EXEMPT_PATHS = {"/", "/login", "/setup", "/healthz"}
 
 def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None = None) -> FastAPI:
     settings = settings or Settings()
-    configure_logging(settings, component="web")
     conn = conn or connect(settings)
+    configure_logging(settings, component="web", conn=conn)
     limiter = LoginRateLimiter()
     commit_state = CommitState()
     app = FastAPI(title="LibrAIry", docs_url=None, redoc_url=None)
@@ -348,6 +349,21 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
                 model=str(form.get("lmstudio_model", "")),
             )
         except SettingsValidationError as exc:
+            return _settings_error(request, str(exc))
+        return _settings_redirect(request)
+
+    @app.post("/settings/keys/{slug}", response_class=HTMLResponse)
+    async def settings_save_key(request: Request, slug: str) -> Response:
+        """Store an API key typed into the portal, or clear it when blank.
+
+        The value is never echoed back — the page only ever reports whether a
+        key exists. See librairy/secrets_store.py for why the environment still
+        wins over anything saved here.
+        """
+        form = await _request_form(request)
+        try:
+            save_key(conn, slug, str(form.get("api_key", "")))
+        except ValueError as exc:
             return _settings_error(request, str(exc))
         return _settings_redirect(request)
 

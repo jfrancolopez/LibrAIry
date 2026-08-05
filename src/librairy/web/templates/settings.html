@@ -153,10 +153,30 @@
                 </li>
               {% endfor %}
             </ol>
-            {% if entry.info.env_var %}
-              <p class="muted">Environment variable: <code>{{ entry.info.env_var }}</code></p>
-            {% endif %}
           </details>
+
+          {% set state = key_states[entry.info.key_field] %}
+          <form class="key-form" method="post" action="/settings/keys/{{ entry.info.key_field }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <label>{{ 'Replace key' if state.is_set else 'Paste your key here' }}
+              <input type="password" name="api_key" autocomplete="off" spellcheck="false"
+                     placeholder="{{ '••••••••  (a key is already set)' if state.is_set else 'paste and save — no restart needed' }}">
+            </label>
+            <div class="button-row">
+              <button type="submit" class="btn-primary">Save key</button>
+              {% if state.stored_in_web %}
+                <button type="submit" name="api_key" value="" class="btn-danger">Clear</button>
+              {% endif %}
+            </div>
+            {% if state.shadowed %}
+              <p class="status warn">A key is also set in the environment as
+                <code>{{ entry.info.env_var }}</code>, and that one wins. Remove it from your
+                environment if you want the key saved here to be used.</p>
+            {% elif entry.info.env_var %}
+              <p class="muted">Saved in LibrAIry's database. Setting
+                <code>{{ entry.info.env_var }}</code> in the environment overrides it.</p>
+            {% endif %}
+          </form>
         {% endif %}
       </section>
     {% endfor %}

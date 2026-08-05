@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import logging
 import re
 import sys
@@ -19,10 +20,18 @@ class RedactionFilter(logging.Filter):
             settings.gemini_api_key.get_secret_value(),
         ]
         self.secrets = [secret for secret in secrets if secret]
+        # Keys saved from the portal live in the database, not the environment,
+        # and a key is no less secret for having been typed into a web form.
+        self.extra_secrets: list[str] = []
+
+    def add_secrets(self, values: list[str]) -> None:
+        for value in values:
+            if value and value not in self.secrets and value not in self.extra_secrets:
+                self.extra_secrets.append(value)
 
     def filter(self, record: logging.LogRecord) -> bool:
         message = record.getMessage()
-        for secret in self.secrets:
+        for secret in (*self.secrets, *self.extra_secrets):
             message = message.replace(secret, "[REDACTED]")
         message = re.sub(r"(librairy_session=)[^;\s]+", r"\1[REDACTED]", message)
         record.msg = message
@@ -30,7 +39,14 @@ class RedactionFilter(logging.Filter):
         return True
 
 
-def configure_logging(settings: Settings, *, component: str = "app", stream=None) -> None:
+def configure_logging(
+    settings: Settings,
+    *,
+    component: str = "app",
+    stream=None,
+    conn=None,
+) -> None:
+    """Set up logging. Pass `conn` so portal-saved API keys are redacted too."""
     logger = logging.getLogger()
     for handler in list(logger.handlers):
         if getattr(handler, "_librairy_handler", False):
@@ -44,6 +60,13 @@ def configure_logging(settings: Settings, *, component: str = "app", stream=None
         datefmt="%Y-%m-%dT%H:%M:%S%z",
     )
     redaction = RedactionFilter(settings)
+    if conn is not None:
+        from librairy.secrets_store import all_secret_values
+
+        # Logging has to come up even if the database will not; losing a
+        # redaction pattern is bad, losing all logs is worse.
+        with contextlib.suppress(Exception):
+            redaction.add_secrets(all_secret_values(conn, settings))
     logs_dir = settings.appdata_dir / "logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
     handlers: list[logging.Handler] = [
