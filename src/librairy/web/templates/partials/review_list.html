@@ -1,10 +1,13 @@
 <div id="review-list" class="review-list">
   {% if toast %}<p><span class="badge badge-ok">{{ toast }}</span></p>{% endif %}
-  <p class="muted">{{ total }} item(s) match</p>
   {% if groups %}
     {% for group in groups %}
       <section class="review-group">
-        <h2>{{ group.kind }} / {{ group.label }} / {{ group.rows|length }} shown</h2>
+        {# "ungrouped / Ungrouped / 50 shown" read like a debug dump. #}
+        <h2>
+          {% if group.kind == 'ungrouped' %}Individual files{% else %}{{ group.label }}{% endif %}
+          <span class="muted">{{ group.rows|length }} shown</span>
+        </h2>
         <table>
           <thead>
             <tr>

@@ -1,70 +1,80 @@
 {% extends "base.html" %}
 {% block content %}
-  
-  <h1>Review</h1>
+  {# Three stacked bars, not six. Filters are the question, the toolbar is the
+     answer, and the list follows immediately. #}
+  <header class="page-head">
+    <div>
+      <h1>Review</h1>
+      {# The match count lives in the pager, inside the swapped fragment.
+         Repeating it here would go stale the moment you filter. #}
+      <p class="muted">Nothing moves until you approve it and commit.</p>
+    </div>
+    <div class="button-row">
+      <button class="btn-primary"
+        hx-post="/review/action"
+        hx-vals='{"action": "approve", "all_matching": "true", "state": "{{ filters.state }}", "min_confidence": "0.85"}'
+        hx-target="#review-list" hx-swap="outerHTML"
+        hx-confirm="Approve every proposal at 0.85 confidence or higher? Nothing moves until you commit."
+        hx-headers='{"x-csrf-token":"{{ request.state.session.csrf_token }}"}'>
+        Approve all confident
+      </button>
+      <a class="btn" href="/review?max_confidence=0.85">Only the doubtful ones</a>
+    </div>
+  </header>
+
   <form
-    class="filter-bar"
+    class="filter-bar filter-grid"
     hx-get="/review/list"
     hx-target="#review-list"
     hx-swap="outerHTML"
   >
-    <label>Category <input name="category" value="{{ filters.category or '' }}"></label>
-    <label>State <input name="state" value="{{ filters.state }}"></label>
-    <label>Min <input name="min_confidence" type="number" step="0.01" min="0" max="1"></label>
-    <label>Max <input name="max_confidence" type="number" step="0.01" min="0" max="1"></label>
-    <label>Destination
+    <label class="field">Category <input name="category" value="{{ filters.category or '' }}" placeholder="any"></label>
+    <label class="field">State <input name="state" value="{{ filters.state }}"></label>
+    <label class="field field-narrow">Confidence from
+      <input name="min_confidence" type="number" step="0.05" min="0" max="1" placeholder="0.00"></label>
+    <label class="field field-narrow">to
+      <input name="max_confidence" type="number" step="0.05" min="0" max="1" placeholder="1.00"></label>
+    <label class="field field-narrow">Destination
       <select name="has_destination">
         <option value="">any</option>
-        <option value="yes">yes</option>
-        <option value="no">no</option>
+        <option value="yes">has one</option>
+        <option value="no">missing</option>
       </select>
     </label>
     <button type="submit">Filter</button>
   </form>
-  <div class="quick-approve card">
-    <p class="muted">Clear the easy wins first, then decide the rest one by one.</p>
-    <div class="button-row">
-    <button class="btn-primary"
+
+  {# One toolbar for everything you do to a selection, sticky so it stays with
+     you instead of scrolling away forty rows up. #}
+  <div class="review-toolbar" data-preview-bar>
+    <form
+      id="review-actions"
       hx-post="/review/action"
-      hx-vals='{"action": "approve", "all_matching": "true", "state": "{{ filters.state }}", "min_confidence": "0.85"}'
-      hx-target="#review-list" hx-swap="outerHTML"
-      hx-confirm="Approve every proposal at 0.85 confidence or higher? Nothing moves until you commit."
-      hx-headers='{"x-csrf-token":"{{ request.state.session.csrf_token }}"}'>
-      Approve all confident (≥ 0.85)
-    </button>
-    <a class="btn" href="/review?max_confidence=0.85">Show only the ones needing a look</a>
+      hx-target="#review-list"
+      hx-swap="outerHTML"
+      hx-headers='{"x-csrf-token":"{{ request.state.session.csrf_token }}"}'
+    >
+      <input type="hidden" name="state" value="{{ filters.state }}">
+      <input type="hidden" name="category" value="{{ filters.category or '' }}">
+      <input type="hidden" name="min_confidence" value="{{ filters.min_confidence or '' }}">
+      <input type="hidden" name="max_confidence" value="{{ filters.max_confidence or '' }}">
+      <input type="hidden" name="has_destination" value="{% if filters.has_destination is sameas true %}yes{% elif filters.has_destination is sameas false %}no{% endif %}">
+      <input type="hidden" name="page" value="{{ filters.page }}">
+      <div class="toolbar-group">
+        <button type="submit" name="action" value="approve" class="btn-primary" data-needs-selection>Approve</button>
+        <button type="submit" name="action" value="reject" data-needs-selection>Reject</button>
+        <button type="submit" name="action" value="postpone" data-needs-selection>Postpone</button>
+        <strong class="selected-count" data-selected-count></strong>
+      </div>
+      <label class="all-matching"><input type="checkbox" name="all_matching" value="true"> every match, not just this page</label>
+    </form>
+    <div class="toolbar-group toolbar-secondary">
+      <button type="button" data-preview-all="expand">Expand previews</button>
+      <button type="button" data-preview-all="collapse">Collapse</button>
+      <span class="muted" data-preview-status></span>
     </div>
   </div>
 
-  <form
-    id="review-actions"
-    class="action-bar"
-    hx-post="/review/action"
-    hx-target="#review-list"
-    hx-swap="outerHTML"
-    hx-headers='{"x-csrf-token":"{{ request.state.session.csrf_token }}"}'
-  >
-    <input type="hidden" name="state" value="{{ filters.state }}">
-    <input type="hidden" name="category" value="{{ filters.category or '' }}">
-    <input type="hidden" name="min_confidence" value="{{ filters.min_confidence or '' }}">
-    <input type="hidden" name="max_confidence" value="{{ filters.max_confidence or '' }}">
-    <input type="hidden" name="has_destination" value="{% if filters.has_destination is sameas true %}yes{% elif filters.has_destination is sameas false %}no{% endif %}">
-    <input type="hidden" name="page" value="{{ filters.page }}">
-    <div class="button-row">
-      <button type="submit" name="action" value="approve" class="btn-primary" data-needs-selection>Approve</button>
-      <button type="submit" name="action" value="reject" data-needs-selection>Reject</button>
-      <button type="submit" name="action" value="postpone" data-needs-selection>Postpone</button>
-      <strong class="selected-count" data-selected-count></strong>
-      <span class="spacer"></span>
-      <label class="all-matching"><input type="checkbox" name="all_matching" value="true"> apply to every match, not just this page</label>
-    </div>
-  </form>
-
-  <div class="button-row preview-bar" data-preview-bar>
-    <button type="button" data-preview-all="expand">Expand all previews</button>
-    <button type="button" data-preview-all="collapse">Collapse all</button>
-    <span class="muted" data-preview-status></span>
-  </div>
   {% include "partials/review_list.html" %}
   <script src="/static/previews.js" defer></script>
   <script src="/static/review.js" defer></script>

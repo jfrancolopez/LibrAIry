@@ -38,8 +38,9 @@ def test_review_renders_groups_filters_and_htmx_pagination(tmp_path: Path) -> No
     page = client.get("/review")
     filtered = client.get("/review/list?category=music")
 
-    assert "album / Kind of Blue / 1 shown" in page.text
-    assert "photo_event / Italy / 1 shown" in page.text
+    assert "Kind of Blue" in page.text
+    assert "1 shown" in page.text
+    assert "Italy" in page.text
     assert "hx-get=\"/review/list\"" in page.text
     assert "music/a.flac" in filtered.text
     assert "photos/a.jpg" not in filtered.text
@@ -91,7 +92,7 @@ def test_review_large_seed_is_paginated_and_fast(tmp_path: Path) -> None:
     elapsed = time.perf_counter() - started
 
     assert response.status_code == 200
-    assert "5000 item(s) match" in response.text
+    assert "of <strong>5000</strong>" in response.text
     # Row checkboxes only — the header select-all is a checkbox too.
     assert response.text.count('name="proposal_id" type="checkbox"') == 50
     assert "Page <strong>1</strong> of <strong>100</strong>" in response.text

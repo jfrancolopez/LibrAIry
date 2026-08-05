@@ -455,6 +455,18 @@ tbody tr:hover { background: var(--bg-metric); }
 .row-actions { display: flex; gap: var(--space-1); flex-wrap: wrap; }
 .row-actions button { padding: var(--space-1) var(--space-3); min-height: 2rem; }
 
+/* Column widths, or the browser gives Destination everything and squeezes the
+   actions into a one-button-wide column that stacks three buttons vertically
+   and triples the height of every row. */
+.review-group table { table-layout: fixed; width: 100%; }
+.review-group th:nth-child(1), .review-group td:nth-child(1) { width: 2.5rem; }
+.review-group th:nth-child(2), .review-group td:nth-child(2) { width: 22%; }
+.review-group th:nth-child(4), .review-group td:nth-child(4) { width: 7rem; }
+.review-group th:nth-child(5), .review-group td:nth-child(5) { width: 5rem; }
+.review-group th:nth-child(6), .review-group td:nth-child(6) { width: 15rem; }
+/* Long paths must wrap inside their cell rather than widening the table. */
+.review-group td { overflow-wrap: anywhere; vertical-align: top; }
+
 .edit-toggle summary {
   cursor: pointer;
   color: var(--accent);
@@ -512,6 +524,87 @@ tbody tr:hover { background: var(--bg-metric); }
 .catalog-card { display: flex; flex-direction: column; }
 .catalog-card > :last-child { margin-top: auto; }
 .catalog-card.is-off { opacity: 0.72; }
+/* ---- Page header ------------------------------------------------------ */
+/* Title and the one or two things you most often want, on the same line, so
+   the content starts near the top of the screen instead of below a stack. */
+.page-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+.page-head h1 { margin: 0; }
+.page-head p { margin: var(--space-1) 0 0; }
+
+/* ---- Filter bar ------------------------------------------------------- */
+/* Fields sized to their content instead of every one stretching to fill the
+   row: a confidence box does not need the width of a category name. */
+.filter-grid {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-metric);
+}
+.filter-grid .field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+  color: var(--text-dim);
+}
+.filter-grid .field input,
+.filter-grid .field select { width: 12rem; }
+.filter-grid .field-narrow input,
+.filter-grid .field-narrow select { width: 7rem; }
+
+/* ---- Review toolbar --------------------------------------------------- */
+/* Sticky: the actions belong with the rows you are reading, not forty rows
+   above them. */
+.review-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+  backdrop-filter: blur(6px);
+}
+.review-toolbar form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin: 0;
+}
+.toolbar-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.toolbar-secondary { font-size: var(--text-sm); }
+.review-group h2 {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-size: var(--text-lg);
+}
+.review-group h2 .muted { font-size: var(--text-sm); font-weight: normal; }
+
 /* ---- Settings tabs ---------------------------------------------------- */
 .settings-tabs {
   display: flex;
