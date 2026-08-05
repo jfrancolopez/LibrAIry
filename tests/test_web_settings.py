@@ -485,16 +485,51 @@ def test_settings_sections_render_in_order_with_save_bar(tmp_path: Path) -> None
 
 
 
-def test_settings_has_section_nav_with_working_anchors(tmp_path: Path) -> None:
+def test_settings_is_grouped_into_tabs_without_breaking_deep_links(tmp_path: Path) -> None:
+    """Fourteen sections in one scroll meant hunting for anything.
+
+    The section ids stay, so existing #anchor links still work — the tab script
+    opens whichever panel the target lives in.
+    """
     client, _, _ = client_for(tmp_path)
 
     page = client.get("/settings").text
 
-    assert 'class="settings-nav"' in page
+    assert 'data-settings-tabs' in page
+    for tab in ("library", "ai", "catalogs", "appearance", "system"):
+        assert f'data-tab="{tab}"' in page
+        assert f'data-tab-panel="{tab}"' in page
     for anchor in ("appearance", "analysis", "organization", "duplicates",
                    "content-search", "backup", "catalog-keys", "storage", "providers"):
-        assert f'href="#{anchor}"' in page
         assert f'id="{anchor}"' in page
+
+
+def test_every_settings_section_lives_inside_a_tab_panel(tmp_path: Path) -> None:
+    """A section outside every panel is invisible once the tabs take over."""
+    import re
+
+    client, _, _ = client_for(tmp_path)
+    body = client.get("/settings").text
+    # Everything between the tab bar and the closing scripts must be covered.
+    region = body.split("data-settings-tabs", 1)[1]
+    # Every <div> counts, not just the panels: nested markup closes too.
+    depth = 0
+    inside_panel = 0
+    uncovered = []
+    for match in re.finditer(r'<div\b[^>]*>|</div>|<h2[^>]*id="([^"]+)"', region):
+        token = match.group(0)
+        if token.startswith("<div"):
+            depth += 1
+            if "tab-panel" in token:
+                inside_panel = depth
+        elif token == "</div>":
+            if inside_panel and depth == inside_panel:
+                inside_panel = 0
+            depth = max(0, depth - 1)
+        elif not inside_panel:
+            uncovered.append(match.group(1))
+
+    assert uncovered == []
 
 
 def test_settings_storage_path_helper_renders(tmp_path: Path) -> None:

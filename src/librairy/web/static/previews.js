@@ -3,7 +3,14 @@
 // Reviewing a page of proposals one Preview click at a time is the slow way to
 // answer "which of these is actually wrong". Delegated from the document so it
 // keeps working after htmx swaps the list.
+//
+// This deliberately does NOT use htmx.ajax in a loop: htmx maintains its own
+// request queue and silently drops concurrent calls, so asking it to expand
+// fifty rows produced one or two. Plain fetch, with a small concurrency limit,
+// is both correct and kinder to a server backed by one SQLite connection.
 (function () {
+  var MAX_IN_FLIGHT = 4;
+
   // Read the per-row Preview buttons rather than duplicating their URLs into
   // data attributes: one source of truth, and the row keeps working on its own.
   function toggles() {
@@ -17,23 +24,58 @@
   }
 
   function expandAll(bar) {
-    var pending = toggles().filter(function (button) {
+    var queue = toggles().filter(function (button) {
       var target = targetOf(button);
       return target && !target.hasChildNodes();
     });
-    if (!pending.length) return;
+    var total = queue.length;
+    if (!total) return;
 
     var done = 0;
-    setStatus(bar, "loading " + pending.length + "…");
-    pending.forEach(function (button) {
+    var failed = 0;
+    report();
+
+    function report() {
+      var left = total - done;
+      if (left > 0) {
+        setStatus(bar, "loading " + left + " of " + total + "…");
+      } else {
+        setStatus(bar, failed ? failed + " could not be previewed" : "");
+      }
+    }
+
+    function next() {
+      var button = queue.shift();
+      if (!button) return;
       var target = targetOf(button);
       // bulk=1 tells the server not to go looking up album art it does not
       // already have — see preview_for_item.
-      window.htmx.ajax("GET", button.getAttribute("hx-get") + "?bulk=1", target).then(function () {
-        done += 1;
-        setStatus(bar, done < pending.length ? "loading " + (pending.length - done) + "…" : "");
-      });
-    });
+      fetch(button.getAttribute("hx-get") + "?bulk=1", {
+        headers: { "HX-Request": "true" },
+        credentials: "same-origin"
+      })
+        .then(function (response) {
+          if (!response.ok) throw new Error(response.status);
+          return response.text();
+        })
+        .then(function (html) {
+          target.innerHTML = html;
+        })
+        .catch(function () {
+          failed += 1;
+          // Say so in the row itself. A preview that silently stays blank
+          // looks like the button is broken.
+          target.innerHTML =
+            '<p class="muted preview-failed">Preview unavailable — the file may have moved.</p>';
+        })
+        .then(function () {
+          done += 1;
+          report();
+          next();
+        });
+    }
+
+    for (var i = 0; i < Math.min(MAX_IN_FLIGHT, total); i++) next();
   }
 
   function collapseAll(bar) {

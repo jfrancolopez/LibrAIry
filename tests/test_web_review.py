@@ -92,7 +92,9 @@ def test_review_large_seed_is_paginated_and_fast(tmp_path: Path) -> None:
 
     assert response.status_code == 200
     assert "5000 item(s) match" in response.text
-    assert response.text.count("type=\"checkbox\"") == 50
+    # Row checkboxes only — the header select-all is a checkbox too.
+    assert response.text.count('name="proposal_id" type="checkbox"') == 50
+    assert "Page <strong>1</strong> of <strong>100</strong>" in response.text
     assert "Next" in response.text
     assert elapsed < 1.0
 
@@ -152,7 +154,7 @@ def test_review_actions_are_csrf_protected_and_keyboard_controls_render(tmp_path
 
     assert blocked.status_code == 403
     assert proposal_status(conn, proposal_id) == "proposed"
-    assert "Approve Selected" in page.text
+    assert "value=\"approve\"" in page.text
     assert "aria-label=\"select a.txt\"" in page.text
 
 
@@ -385,3 +387,42 @@ def test_ordinary_files_carry_no_flag_markup(tmp_path: Path) -> None:
     page = client.get("/review").text
 
     assert "flag-list" not in page
+
+
+def test_pager_says_how_much_there_is_not_just_the_page_number(tmp_path: Path) -> None:
+    """"page 3" alone tells you nothing about how much is left to get through."""
+    client, conn = client_for(tmp_path)
+    for index in range(120):
+        seed_proposal(conn, f"inbox/file-{index}.mkv", "movies", f"Movies/f{index}.mkv", 0.9, None)
+
+    first = client.get("/review/list").text
+    middle = client.get("/review/list?page=2").text
+
+    assert "Showing <strong>1–50</strong> of <strong>120</strong>" in first
+    assert "Page <strong>1</strong> of <strong>3</strong>" in first
+    assert "First" not in first  # already there
+    assert "Showing <strong>51–100</strong> of <strong>120</strong>" in middle
+    assert "« First" in middle
+    assert "Last »" in middle
+
+
+def test_pager_is_quiet_when_everything_fits_on_one_page(tmp_path: Path) -> None:
+    client, conn = client_for(tmp_path)
+    seed_proposal(conn, "inbox/only.mkv", "movies", "Movies/only.mkv", 0.9, None)
+
+    body = client.get("/review/list").text
+
+    assert "Showing <strong>1–1</strong> of <strong>1</strong>" in body
+    assert "Page <strong>1</strong> of" not in body
+
+
+def test_each_group_offers_a_select_all_box(tmp_path: Path) -> None:
+    """Bulk actions used to need every row ticked by hand; the only shortcut
+    was "every match", which is a far bigger commitment than "these ones"."""
+    client, conn = client_for(tmp_path)
+    for index in range(3):
+        seed_proposal(conn, f"inbox/file-{index}.mkv", "movies", f"Movies/f{index}.mkv", 0.9, None)
+
+    body = client.get("/review/list").text
+
+    assert 'class="select-all"' in body

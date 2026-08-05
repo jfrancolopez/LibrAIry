@@ -3,22 +3,20 @@
 <h1>Settings</h1>
 <p class="muted">Runtime settings are stored in the LibrAIry database and apply to the next analysis batch. Folder paths are fixed when the container starts. API keys can be set here or in the environment — the environment always wins.</p>
 
-<nav class="settings-nav" aria-label="Settings sections">
-  <a href="#portal-security">Portal security</a>
-  <a href="#appearance">Appearance</a>
-  <a href="#analysis">Analysis</a>
-  <a href="#organization">Organization</a>
-  <a href="#duplicates">Duplicates</a>
-  <a href="#content-search">Content search</a>
-  <a href="#backup">Backup</a>
-  <a href="#providers">AI providers</a>
-  <a href="#catalog-keys">Catalog keys</a>
-  <a href="#storage">Storage paths</a>
+{# Fourteen sections in one scroll was a wall. Grouped by the question being
+   asked, one group at a time — the tab choice is remembered per browser. #}
+<nav class="settings-tabs" role="tablist" aria-label="Settings sections" data-settings-tabs>
+  <button type="button" role="tab" data-tab="library">Library</button>
+  <button type="button" role="tab" data-tab="ai">AI</button>
+  <button type="button" role="tab" data-tab="catalogs">Catalogs</button>
+  <button type="button" role="tab" data-tab="appearance">Appearance</button>
+  <button type="button" role="tab" data-tab="system">System</button>
 </nav>
 
 {% if saved %}<p id="settings-result"><span class="badge badge-ok">Saved</span> Your settings have been applied.</p>{% endif %}
 {% if error %}<p class="status warn" id="settings-error">{{ error }}</p>{% endif %}
 
+<div class="tab-panel" data-tab-panel="system">
 <section class="metric wide" id="portal-security">
   <h2>Portal Security</h2>
   {% if portal_password_set() %}
@@ -51,7 +49,10 @@
   {% endif %}
 </section>
 
+</div>
+
 <form id="settings-form" method="post" action="/settings" hx-post="/settings" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>
+  <div class="tab-panel" data-tab-panel="appearance">
   <h2 id="appearance">Appearance</h2>
   <p class="muted">Pick a retro palette. Saving reloads the page, so you see it straight away.</p>
   <label>Theme
@@ -68,6 +69,9 @@
   </label>
   <p class="muted">Unticked, each theme uses its own background — that is what the contrast checks cover. A custom colour is applied as-is and is not checked against the theme's text colour.</p>
 
+  </div>
+
+  <div class="tab-panel" data-tab-panel="library">
   <h2 id="analysis">Analysis</h2>
   <p class="muted">How confident a proposal must be, and how many files each worker pass handles.</p>
   <label>Confidence threshold
@@ -107,6 +111,9 @@
   <label><input type="checkbox" name="content_search_enabled" {% if settings_view.content_search_enabled %}checked{% endif %}> Extract text from committed documents for local-only search</label>
   <p class="muted">Applies on the next worker cycle. Extracted text stays in SQLite and is never sent to AI providers.</p>
 
+  </div>
+
+  <div class="tab-panel" data-tab-panel="system">
   <h2 id="backup">One-Way Backup</h2>
   <label><input type="checkbox" name="backup_enabled" {% if settings_view.backup.enabled %}checked{% endif %}> Enable rclone copy-out backup</label>
   <label>Remote <input name="backup_remote" value="{{ settings_view.backup.remote }}" placeholder="b2:librairy-backup" list="backup-remotes"></label>
@@ -123,6 +130,8 @@
   <label><input type="checkbox" name="backup_include_db_snapshot" {% if settings_view.backup.include_db_snapshot %}checked{% endif %}> Include SQLite snapshot</label>
   <p class="muted">No credential fields exist here. Configure remotes in appdata/rclone/rclone.conf with rclone itself.</p>
 
+  </div>
+
   <div id="settings-save-bar" class="save-bar" hidden>
     <span>Unsaved changes</span>
     <button type="submit" class="btn-primary">Save settings</button>
@@ -133,6 +142,7 @@
 {# Outside #settings-form on purpose: each card owns a key form and a toggle
    form, and HTML has no nested forms — a browser silently discards the inner
    one and posts its fields to the outer form instead. #}
+<div class="tab-panel" data-tab-panel="catalogs">
 <section class="metric wide">
   <h2 id="catalog-keys">Catalogs</h2>
   <p class="muted">Free metadata sources used to identify your files. Every enabled catalog is consulted before AI — more sources means better names and destinations. Keys are stored write-only: you can replace or clear one, but no key is ever shown back to you.</p>
@@ -203,6 +213,9 @@
   </div>
 </section>
 
+</div>
+
+<div class="tab-panel" data-tab-panel="system">
 <section class="metric wide">
   <h2 id="storage">Storage Paths</h2>
   <p class="muted">These are set when the container starts and can't be changed while it runs (Docker mounts are fixed at launch). Use the generator below to build a <code>.env</code>, then run <code>docker compose up -d</code> to recreate the container with the new folders.</p>
@@ -232,6 +245,9 @@
 </section>
 <script src="/static/path-helper.js" defer></script>
 
+</div>
+
+<div class="tab-panel" data-tab-panel="ai">
 <h2 id="providers">AI Provider Selector</h2>
 <p class="muted">{{ provider_header() }}. Changes apply to the next analysis batch.</p>
 <form method="post" action="/settings/providers/order" hx-post="/settings/providers/order" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>
@@ -372,5 +388,8 @@
   {% endfor %}
 </div>
 
+</div>
+
 <script src="/static/settings.js" defer></script>
+<script src="/static/settings-tabs.js" defer></script>
 {% endblock %}

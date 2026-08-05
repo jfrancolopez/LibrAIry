@@ -48,6 +48,10 @@ def review_data(conn: sqlite3.Connection, filters: ReviewFilters) -> dict[str, o
         "page_size": PAGE_SIZE,
         "has_next": filters.page * PAGE_SIZE < total,
         "has_prev": filters.page > 1,
+        # "page 3" alone tells you nothing about how much is left.
+        "page_count": max(1, -(-total // PAGE_SIZE)),
+        "range_start": 0 if not total else (filters.page - 1) * PAGE_SIZE + 1,
+        "range_end": min(filters.page * PAGE_SIZE, total),
     }
 
 

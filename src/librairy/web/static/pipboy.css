@@ -512,6 +512,60 @@ tbody tr:hover { background: var(--bg-metric); }
 .catalog-card { display: flex; flex-direction: column; }
 .catalog-card > :last-child { margin-top: auto; }
 .catalog-card.is-off { opacity: 0.72; }
+/* ---- Settings tabs ---------------------------------------------------- */
+.settings-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin: var(--space-4) 0;
+  border-bottom: 1px solid var(--border);
+}
+.settings-tabs button {
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: var(--radius) var(--radius) 0 0;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: var(--text-base);
+  cursor: pointer;
+}
+.settings-tabs button:hover { color: var(--text); }
+.settings-tabs button.is-active {
+  border-color: var(--border);
+  background: var(--bg-panel);
+  color: var(--accent);
+  /* Sit on top of the container's border so the tab joins its panel. */
+  margin-bottom: -1px;
+  padding-bottom: calc(var(--space-2) + 1px);
+}
+/* Without a min-height the page jumps as you move between a short tab and a
+   long one, which reads as the layout breaking. */
+.tab-panel:not([hidden]) { min-height: 18rem; }
+/* No JS: show everything rather than nothing. */
+.tab-panel[hidden] { display: none; }
+
+/* ---- Pager ------------------------------------------------------------ */
+.pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+  font-size: var(--text-sm);
+}
+.pager-count { color: var(--text-dim); }
+.pager-links { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.pager-position { padding: 0 var(--space-2); color: var(--text-dim); white-space: nowrap; }
+
+/* A disabled bulk action reads as "pick something first", which is kinder
+   than letting the click through and reporting that nothing was selected. */
+[data-needs-selection][disabled] { opacity: 0.45; cursor: not-allowed; }
+.selected-count { color: var(--accent); white-space: nowrap; }
+.all-matching { font-size: var(--text-sm); }
+
 /* ---- Worker activity pill --------------------------------------------- */
 .activity-pill {
   display: inline-flex;

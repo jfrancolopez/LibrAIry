@@ -8,7 +8,9 @@
         <table>
           <thead>
             <tr>
-              <th scope="col">Select</th>
+              <th scope="col">
+                <input type="checkbox" class="select-all" aria-label="Select every row in {{ group.label }}">
+              </th>
               <th scope="col">Source</th>
               <th scope="col">Destination</th>
               <th scope="col">Confidence</th>
@@ -27,9 +29,26 @@
   {% else %}
     <p class="muted">Nothing to review yet — drop files into the inbox and wait for the worker to stage proposals.</p>
   {% endif %}
-  <nav class="pager" aria-label="Review pages">
-    {% if has_prev %}<a hx-get="/review/list?page={{ filters.page - 1 }}&state={{ filters.state }}" hx-target="#review-list" hx-swap="outerHTML" href="/review?page={{ filters.page - 1 }}&state={{ filters.state }}">Prev</a>{% endif %}
-    <span>page {{ filters.page }}</span>
-    {% if has_next %}<a hx-get="/review/list?page={{ filters.page + 1 }}&state={{ filters.state }}" hx-target="#review-list" hx-swap="outerHTML" href="/review?page={{ filters.page + 1 }}&state={{ filters.state }}">Next</a>{% endif %}
-  </nav>
+  {% if page_count > 1 or total %}
+    {% set qs = 'state=' ~ filters.state ~ '&category=' ~ (filters.category or '') %}
+    <nav class="pager" aria-label="Review pages">
+      <span class="pager-count">
+        {% if total %}Showing <strong>{{ range_start }}–{{ range_end }}</strong> of <strong>{{ total }}</strong>{% else %}No matches{% endif %}
+      </span>
+      {% if page_count > 1 %}
+        <span class="spacer"></span>
+        <span class="pager-links">
+          {% if has_prev %}
+            <a class="btn" hx-get="/review/list?page=1&{{ qs }}" hx-target="#review-list" hx-swap="outerHTML" href="/review?page=1&{{ qs }}" aria-label="First page">« First</a>
+            <a class="btn" hx-get="/review/list?page={{ filters.page - 1 }}&{{ qs }}" hx-target="#review-list" hx-swap="outerHTML" href="/review?page={{ filters.page - 1 }}&{{ qs }}">‹ Prev</a>
+          {% endif %}
+          <span class="pager-position">Page <strong>{{ filters.page }}</strong> of <strong>{{ page_count }}</strong></span>
+          {% if has_next %}
+            <a class="btn" hx-get="/review/list?page={{ filters.page + 1 }}&{{ qs }}" hx-target="#review-list" hx-swap="outerHTML" href="/review?page={{ filters.page + 1 }}&{{ qs }}">Next ›</a>
+            <a class="btn" hx-get="/review/list?page={{ page_count }}&{{ qs }}" hx-target="#review-list" hx-swap="outerHTML" href="/review?page={{ page_count }}&{{ qs }}" aria-label="Last page">Last »</a>
+          {% endif %}
+        </span>
+      {% endif %}
+    </nav>
+  {% endif %}
 </div>
