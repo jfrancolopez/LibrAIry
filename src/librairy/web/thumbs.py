@@ -49,7 +49,14 @@ class PreviewForbidden(PreviewError):
     status_code = 403
 
 
-def preview_for_item(conn, settings: Settings, item_id: int) -> Preview:
+def preview_for_item(conn, settings: Settings, item_id: int, *, bulk: bool = False) -> Preview:
+    """One item's preview. `bulk` means "expand all" asked for this, not a person.
+
+    In bulk, album art is only used when it is already on disk. Finding a cover
+    for an unknown album costs a throttled MusicBrainz search, and a page of
+    twenty-five tracks would serialise twenty-five of them — half a minute of
+    the whole app waiting, to decorate rows nobody has looked at yet.
+    """
     row = _item_row(conn, item_id)
     path = resolve_item_path(settings, row["root"], row["relpath"])
     kind = _kind(path)
@@ -65,7 +72,7 @@ def preview_for_item(conn, settings: Settings, item_id: int) -> Preview:
         facts = (f"type: {kind}", f"size: {row['size']} bytes")
         return Preview(kind, title, f"/preview/items/{item_id}/thumb", facts)
     if kind == "audio":
-        cover = _cover_for_audio(conn, settings, item_id, path)
+        cover = _cover_for_audio(conn, settings, item_id, path, allow_search=not bulk)
         thumb_url = f"/preview/items/{item_id}/thumb" if cover else None
         return Preview(kind, title, thumb_url, ("type: audio", _size_fact(row["size"])))
     if kind == "document":
@@ -124,7 +131,9 @@ def _text_snippet(path: Path) -> str | None:
     return collapsed[:PREVIEW_TEXT_CHARS].rstrip() + "…"
 
 
-def _cover_for_audio(conn, settings: Settings, item_id: int, path: Path) -> Path | None:
+def _cover_for_audio(
+    conn, settings: Settings, item_id: int, path: Path, *, allow_search: bool = True
+) -> Path | None:
     """Album art for one track, or None. Never raises — a cover is a nicety.
 
     Deliberately lazy: this runs when someone opens a preview, not during
@@ -135,18 +144,23 @@ def _cover_for_audio(conn, settings: Settings, item_id: int, path: Path) -> Path
     try:
         if not catalog_enabled(conn, "coverart"):
             return None
-        release_id = _release_mbid(conn, settings, item_id, path)
+        release_id = _release_mbid(conn, settings, item_id, path, allow_search=allow_search)
         if not release_id:
             return None
         from librairy.tools.coverart import cover_path
 
+        cached = settings.appdata_dir / "thumbs" / f"cover-{release_id.lower()}.jpg"
+        if not allow_search and not cached.exists():
+            return None
         return cover_path(settings.appdata_dir, release_id)
     except Exception as exc:  # noqa: BLE001 - never break a page over album art
         LOGGER.debug("cover art lookup failed for item %s: %s", item_id, exc)
         return None
 
 
-def _release_mbid(conn, settings: Settings, item_id: int, path: Path) -> str:
+def _release_mbid(
+    conn, settings: Settings, item_id: int, path: Path, *, allow_search: bool = True
+) -> str:
     """The release MBID from evidence, else searched for from the file's tags.
 
     Only the AcoustID fingerprint path records a release MBID, and most music
@@ -164,7 +178,7 @@ def _release_mbid(conn, settings: Settings, item_id: int, path: Path) -> str:
             if entry.source == "musicbrainz" and entry.field == "release_id" and entry.detail:
                 return str(entry.detail)
 
-    if not catalog_enabled(conn, "musicbrainz"):
+    if not allow_search or not catalog_enabled(conn, "musicbrainz"):
         return ""
     tags = _audio_tags(path, settings)
     from librairy.tools.musicbrainz import search_release

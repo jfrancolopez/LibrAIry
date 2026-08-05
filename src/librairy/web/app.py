@@ -12,8 +12,9 @@ from fastapi.templating import Jinja2Templates
 
 from librairy import __version__
 from librairy.ai.lmstudio import diagnose as lmstudio_diagnose
-from librairy.ai.lmstudio import normalize_host
+from librairy.ai.lmstudio import is_chat_model, normalize_host
 from librairy.ai.lmstudio import probe as lmstudio_probe
+from librairy.ai.lmstudio import try_classify as lmstudio_try_classify
 from librairy.catalogs import catalog_enabled
 from librairy.config import Settings
 from librairy.db import connect
@@ -371,6 +372,14 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         host = str(form.get("lmstudio_host", "")).strip()
         model = str(form.get("lmstudio_model", "")).strip()
         health = lmstudio_probe(host, settings.ai_timeout)
+        chat_models = [m for m in health.models if is_chat_model(m)]
+        # Listing models is not proof the thing answers. Only run the round
+        # trip when there is a chat model worth asking.
+        chat_error = (
+            lmstudio_try_classify(host, model, settings.ai_timeout)
+            if health.ok and model and model in chat_models
+            else ""
+        )
         return TEMPLATES.TemplateResponse(
             request,
             "partials/lmstudio_test.html",
@@ -380,9 +389,12 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
                     "endpoint": normalize_host(host),
                     "latency_ms": health.latency_ms,
                     "models": health.models,
+                    "chat_models": chat_models,
+                    "other_models": [m for m in health.models if not is_chat_model(m)],
                     "model": model,
                     "error": health.error,
                     "hint": "" if health.ok else lmstudio_diagnose(health.error or ""),
+                    "chat_error": chat_error,
                 }
             },
         )
@@ -583,9 +595,9 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         )
 
     @app.get("/preview/items/{item_id}", response_class=HTMLResponse)
-    def preview(request: Request, item_id: int) -> HTMLResponse:
+    def preview(request: Request, item_id: int, bulk: bool = False) -> HTMLResponse:
         try:
-            preview_data = preview_for_item(conn, settings, item_id)
+            preview_data = preview_for_item(conn, settings, item_id, bulk=bulk)
         except PreviewError as exc:
             raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
         return TEMPLATES.TemplateResponse(

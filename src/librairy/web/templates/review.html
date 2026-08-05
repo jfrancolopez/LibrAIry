@@ -58,5 +58,14 @@
       <label><input type="checkbox" name="all_matching" value="true"> select all matching current filter</label>
     </div>
   </form>
+
+  <div class="button-row preview-bar" data-preview-bar>
+    <button type="button" data-preview-all="expand">Expand all previews</button>
+    <button type="button" data-preview-all="collapse">Collapse all</button>
+    <span class="muted" data-preview-status></span>
+    <span class="spacer"></span>
+    <span class="muted">Previews on this page only.</span>
+  </div>
   {% include "partials/review_list.html" %}
+  <script src="/static/previews.js" defer></script>
 {% endblock %}

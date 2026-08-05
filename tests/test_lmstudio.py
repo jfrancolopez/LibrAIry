@@ -154,3 +154,17 @@ def test_probe_with_no_address_does_not_reach_the_network(monkeypatch) -> None:
 
     assert result.ok is False
     assert "No address" in (result.error or "")
+
+
+def test_embedding_models_are_not_offered_as_chat_models() -> None:
+    """LM Studio serves embedding models from /v1/models alongside chat ones.
+
+    They cannot answer /v1/chat/completions at all, so offering one as a choice
+    is offering a broken configuration.
+    """
+    from librairy.ai.lmstudio import is_chat_model
+
+    assert is_chat_model("google/gemma-4-e4b") is True
+    assert is_chat_model("qwen/qwen3.5-9b") is True
+    assert is_chat_model("text-embedding-nomic-embed-text-v1.5") is False
+    assert is_chat_model("bge-reranker-v2-m3") is False

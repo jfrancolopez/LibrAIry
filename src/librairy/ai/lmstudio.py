@@ -12,15 +12,19 @@ enough (`http://` and `:1234` are filled in when omitted).
 from __future__ import annotations
 
 import json
+import logging
 import time
 from dataclasses import dataclass
 from typing import Any
 from urllib import request
+from urllib.error import HTTPError
 
 from librairy.ai.base import AIAnswer, HealthResult, ProviderConfig
 from librairy.ai.prompt import prompt_for, validate_ai_response
 
 DEFAULT_PORT = 1234
+LOGGER = logging.getLogger(__name__)
+ERROR_SNIPPET_CHARS = 300
 
 
 def normalize_host(value: str) -> str:
@@ -56,16 +60,34 @@ class LMStudioProvider:
     def classify(self, view: Any, timeout: int) -> AIAnswer | None:
         if not self.config.enabled:
             return None
+        # No "response_format". LM Studio's OpenAI shim does not accept
+        # {"type": "json_object"} — current builds answer 400 with
+        # "'response_format.type' must be 'json_schema' or 'text'" — and the
+        # exact accepted set varies by build and by engine. The prompt already
+        # demands a single JSON object and validate_ai_response digs it out of
+        # whatever surrounds it, so asking the server to enforce it buys
+        # nothing and breaks outright on the servers that disagree.
         body = {
             "model": self.config.model,
-            "response_format": {"type": "json_object"},
             "messages": [{"role": "user", "content": prompt_for(view)}],
         }
         for attempt in range(self.retries + 1):
             try:
                 payload = _request("POST", self._url("/v1/chat/completions"), body, timeout)
-            except OSError:
+            except HTTPError as exc:
+                # A 4xx is a configuration mistake — wrong model name, a
+                # rejected field — and it will fail identically forever. It
+                # used to be swallowed into a silent None, so the only symptom
+                # was AI mysteriously doing nothing.
+                LOGGER.warning(
+                    "LM Studio rejected the request (HTTP %s): %s",
+                    exc.code,
+                    _body_snippet(exc),
+                )
+                return None
+            except OSError as exc:
                 if attempt >= self.retries:
+                    LOGGER.warning("LM Studio unreachable: %s", _error_message(exc))
                     return None
                 continue
             content = (payload.get("choices") or [{}])[0].get("message", {}).get("content")
@@ -92,6 +114,14 @@ def _request(method: str, url: str, body: dict | None, timeout: int) -> dict:
 
 
 
+def _body_snippet(exc: HTTPError) -> str:
+    """The server's own explanation, which is where the useful part lives."""
+    try:
+        return exc.read().decode("utf-8", "replace")[:ERROR_SNIPPET_CHARS]
+    except Exception:  # noqa: BLE001 - a failed error report is still an error
+        return exc.reason or str(exc.code)
+
+
 def _error_message(exc: OSError) -> str:
     return str(getattr(exc, "reason", exc)) or exc.__class__.__name__
 
@@ -102,19 +132,80 @@ def probe(host: str, timeout: int = 8) -> HealthResult:
     The settings page tests what you have typed, before you commit to it.
     Making someone save a wrong IP in order to discover it is wrong is a
     strange way to run a form.
+
+    This only lists models. `try_classify` is the part that proves the thing
+    actually works — see why below.
     """
     endpoint = normalize_host(host)
     if not endpoint:
         return HealthResult(False, error="No address given.")
-    config = ProviderConfig(
+    return LMStudioProvider(_probe_config(endpoint, "")).health(timeout)
+
+
+def try_classify(host: str, model: str, timeout: int = 60) -> str:
+    """Run one real classification. Empty string means it worked.
+
+    Listing models proves the server is up, not that it can answer. A server
+    can list a model perfectly and still reject every chat request — this
+    build rejects `response_format: json_object` with a 400, and a model that
+    fails to load answers 400 too. Both look healthy on `/v1/models` while
+    classification silently produced nothing, which is the single most
+    confusing state this provider can be in.
+    """
+    endpoint = normalize_host(host)
+    if not endpoint or not model:
+        return "No address or model given."
+    view = _probe_view()
+    provider = LMStudioProvider(_probe_config(endpoint, model), retries=0)
+    try:
+        answer = provider.classify(view, timeout)
+    except Exception as exc:  # noqa: BLE001 - a test button never raises
+        return _error_message(exc) if isinstance(exc, OSError) else str(exc)
+    if answer is None:
+        return (
+            "The server accepted the connection but did not return a usable "
+            "answer. Check the LibrAIry logs for the server's own explanation, "
+            "and confirm the model is a chat model that is fully loaded."
+        )
+    return ""
+
+
+def _probe_view():
+    """A fabricated, obviously-fake item. Nothing real is sent to test a box."""
+    from librairy.ai.redact import RedactedItemView
+
+    return RedactedItemView(
+        display_path="inbox/Example.Movie.2001.1080p.mkv",
+        file_name="Example.Movie.2001.1080p.mkv",
+        extension=".mkv",
+        size_bucket="1-5GB",
+        media_kind="video",
+        duration_seconds=5400,
+        resolution="1920x1080",
+    )
+
+
+def _probe_config(endpoint: str, model: str) -> ProviderConfig:
+    return ProviderConfig(
         name="lmstudio",
         kind="lmstudio",
         endpoint=endpoint,
-        model="",
+        model=model,
         enabled=True,
         is_local=True,
     )
-    return LMStudioProvider(config).health(timeout)
+
+
+def is_chat_model(model_id: str) -> bool:
+    """Whether this looks like something that can answer `/v1/chat/completions`.
+
+    LM Studio happily serves embedding models from `/v1/models` alongside chat
+    ones, and they cannot answer a chat request at all. Offering one as a
+    choice is offering a broken configuration, so they are listed but not
+    presented as usable. The name is all `/v1/models` gives us to go on.
+    """
+    lowered = model_id.casefold()
+    return not any(marker in lowered for marker in ("embed", "reranker", "rerank"))
 
 
 def diagnose(error: str) -> str:

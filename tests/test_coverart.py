@@ -250,3 +250,75 @@ def _no_tags(path, settings):  # noqa: ANN001, ARG001
     from librairy.tools.common import ToolResult
 
     return ToolResult(True, data={"tags": {}})
+
+
+def test_bulk_preview_never_starts_a_throttled_lookup(tmp_path: Path, monkeypatch) -> None:
+    """"Expand all" on a page of 25 tracks must not serialise 25 MusicBrainz
+    searches at 1.1s each — half a minute of the whole app waiting, to decorate
+    rows nobody has looked at yet."""
+    settings = settings_for(tmp_path)
+    conn = connect(settings)
+    (settings.inbox_dir / "song.mp3").write_bytes(b"audio")
+    conn.execute(
+        """
+        INSERT INTO items(
+          id, root, relpath, size, mtime_ns, fingerprint, first_seen_at, last_seen_at
+        )
+        VALUES (1, 'inbox', 'song.mp3', 5, 1, 'fp', 'now', 'now')
+        """
+    )
+
+    def forbidden(*args, **kwargs):  # noqa: ANN002, ANN003, ARG001
+        raise AssertionError("bulk preview searched MusicBrainz")
+
+    monkeypatch.setattr("librairy.tools.musicbrainz.search_release", forbidden)
+    monkeypatch.setattr("librairy.tools.ffprobe.probe", _tagged)
+
+    client = TestClient(create_app(settings, conn))
+    client.post("/setup", data={"password": "correct horse battery"})
+    bulk = client.get("/preview/items/1?bulk=1")
+
+    assert bulk.status_code == 200
+    assert "/thumb" not in bulk.text
+
+
+def test_bulk_preview_still_shows_a_cover_already_on_disk(tmp_path: Path, monkeypatch) -> None:
+    """Skipping the lookup must not mean skipping art we already fetched."""
+    settings = settings_for(tmp_path)
+    conn = connect(settings)
+    (settings.inbox_dir / "song.mp3").write_bytes(b"audio")
+    conn.execute(
+        """
+        INSERT INTO items(
+          id, root, relpath, size, mtime_ns, fingerprint, first_seen_at, last_seen_at
+        )
+        VALUES (1, 'inbox', 'song.mp3', 5, 1, 'fp', 'now', 'now')
+        """
+    )
+    upsert_proposal(
+        conn,
+        item_id=1,
+        category="music",
+        clean_name="song.mp3",
+        dest_relpath="Music/Rock/A/B/song.mp3",
+        confidence=0.9,
+        evidence=[EvidenceEntry("musicbrainz", "release_id", RELEASE_MBID, 0.9)],
+    )
+    _written_cover(settings.appdata_dir, RELEASE_MBID)
+
+    def forbidden(*args, **kwargs):  # noqa: ANN002, ANN003, ARG001
+        raise AssertionError("refetched a cover already in the cache")
+
+    monkeypatch.setattr("librairy.tools.coverart._fetch", forbidden)
+
+    client = TestClient(create_app(settings, conn))
+    client.post("/setup", data={"password": "correct horse battery"})
+    bulk = client.get("/preview/items/1?bulk=1")
+
+    assert "/preview/items/1/thumb" in bulk.text
+
+
+def _tagged(path, settings):  # noqa: ANN001, ARG001
+    from librairy.tools.common import ToolResult
+
+    return ToolResult(True, data={"tags": {"artist": "Slowdive", "album": "Souvlaki"}})

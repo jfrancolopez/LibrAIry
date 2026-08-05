@@ -820,3 +820,93 @@ def test_lmstudio_test_explains_an_unreachable_host(tmp_path: Path, monkeypatch)
 
     assert "unreachable" in response.text
     assert "Serve on Local Network" in response.text
+
+
+def test_lmstudio_test_separates_chat_models_from_embedding_models(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from librairy.ai.base import HealthResult
+
+    monkeypatch.setattr(
+        "librairy.web.app.lmstudio_probe",
+        lambda host, timeout: HealthResult(  # noqa: ARG005
+            True,
+            latency_ms=120,
+            models=("google/gemma-4-e4b", "text-embedding-nomic-embed-text-v1.5"),
+        ),
+    )
+    client, _, _ = client_for(tmp_path)
+
+    response = client.post(
+        "/settings/providers/lmstudio/test",
+        headers={"x-csrf-token": client.cookies["csrf_token"]},
+        data={"lmstudio_host": "192.168.145.36", "lmstudio_model": "google/gemma-4-e4b"},
+    )
+    picks = response.text.split('class="btn model-pick')
+
+    assert "classified a sample file" in response.text
+    assert "not usable here" in response.text
+    # The embedding model is named, but never as something you can pick.
+    assert len(picks) == 2
+    assert "text-embedding-nomic-embed-text-v1.5" in response.text
+
+
+def test_lmstudio_test_runs_a_real_classification_not_just_a_model_list(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """A server can list a model perfectly and reject every chat request.
+
+    That is exactly what happened live: LM Studio answered /v1/models fine and
+    400'd every classification, so the provider looked healthy while doing
+    nothing at all.
+    """
+    from librairy.ai.base import HealthResult
+
+    monkeypatch.setattr(
+        "librairy.web.app.lmstudio_probe",
+        lambda host, timeout: HealthResult(  # noqa: ARG005
+            True, latency_ms=100, models=("google/gemma-4-e4b",)
+        ),
+    )
+    monkeypatch.setattr(
+        "librairy.web.app.lmstudio_try_classify",
+        lambda host, model, timeout: "'response_format.type' must be 'json_schema'",  # noqa: ARG005
+    )
+    client, _, _ = client_for(tmp_path)
+
+    response = client.post(
+        "/settings/providers/lmstudio/test",
+        headers={"x-csrf-token": client.cookies["csrf_token"]},
+        data={"lmstudio_host": "192.168.145.36", "lmstudio_model": "google/gemma-4-e4b"},
+    )
+
+    assert "actually answer with it" in response.text
+    assert "json_schema" in response.text
+
+
+def test_lmstudio_test_skips_the_round_trip_when_the_model_is_not_listed(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """No point asking a server to use a model it has not loaded."""
+    from librairy.ai.base import HealthResult
+
+    monkeypatch.setattr(
+        "librairy.web.app.lmstudio_probe",
+        lambda host, timeout: HealthResult(  # noqa: ARG005
+            True, latency_ms=100, models=("google/gemma-4-e4b",)
+        ),
+    )
+
+    def forbidden(host, model, timeout):  # noqa: ANN001, ARG001
+        raise AssertionError("attempted a round trip with an unloaded model")
+
+    monkeypatch.setattr("librairy.web.app.lmstudio_try_classify", forbidden)
+    client, _, _ = client_for(tmp_path)
+
+    response = client.post(
+        "/settings/providers/lmstudio/test",
+        headers={"x-csrf-token": client.cookies["csrf_token"]},
+        data={"lmstudio_host": "192.168.145.36", "lmstudio_model": "gemma4-e4b"},
+    )
+
+    assert "has not loaded" in response.text
