@@ -196,3 +196,46 @@ def test_disabled_catalog_toggle_skips_the_lookup(tmp_path: Path, monkeypatch) -
     result = classify_item(audio, "track03.flac", settings, conn=conn)
 
     assert "heuristic" in [entry.source for entry in result.evidence]
+
+
+def test_every_classifier_result_survives_destination_rendering() -> None:
+    """analyze_items re-renders each result with dataclasses.replace(reason=...).
+
+    AIClassification and UnknownResult had no `reason` field, so the moment an
+    AI provider actually returned an answer the whole batch died with
+    "unexpected keyword argument 'reason'". It stayed hidden for as long as
+    every provider returned None.
+    """
+    import dataclasses
+
+    from librairy.ai.orchestrator import AIClassification
+    from librairy.classify import UnknownResult
+    from librairy.classify.documents import ClassificationResult
+    from librairy.classify.heuristics import HeuristicResult
+    from librairy.classify.music import MusicClassification
+    from librairy.classify.video import VideoClassification
+
+    for result_type in (
+        AIClassification,
+        UnknownResult,
+        ClassificationResult,
+        HeuristicResult,
+        MusicClassification,
+        VideoClassification,
+    ):
+        fields = {field.name for field in dataclasses.fields(result_type)}
+        assert "reason" in fields, f"{result_type.__name__} cannot carry a reason"
+        assert "dest_relpath" in fields
+
+
+def test_ai_result_can_be_rerendered_the_way_analyze_does(tmp_path: Path) -> None:
+    import dataclasses
+
+    from librairy.ai.orchestrator import AIClassification
+
+    result = AIClassification("music", "song.flac", "Music/song.flac", 0.9, (), {})
+
+    replaced = dataclasses.replace(result, dest_relpath=None, reason="below threshold")
+
+    assert replaced.dest_relpath is None
+    assert replaced.reason == "below threshold"

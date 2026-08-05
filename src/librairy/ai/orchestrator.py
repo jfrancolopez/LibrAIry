@@ -36,6 +36,11 @@ class AIClassification:
     confidence: float
     evidence: tuple[EvidenceEntry, ...]
     fields: dict[str, object]
+    # analyze_items re-renders every destination through
+    # _with_runtime_destination, which sets `reason` via dataclasses.replace.
+    # Without this field that call raises, so a working AI answer crashed the
+    # whole batch — invisible for as long as the providers returned nothing.
+    reason: str | None = None
 
 
 def apply_ai_if_needed(

@@ -135,15 +135,29 @@
         <p>{{ entry.info.identifies }}</p>
         <p class="muted"><strong>Cost:</strong> {{ entry.info.cost }}</p>
         <p class="muted"><strong>Sends:</strong> {{ entry.info.sends }}</p>
-        {% if not entry.info.keyless %}
-          <details class="why">
-            <summary>How to get a key</summary>
-            <ol class="why-list">
-              {% for step in entry.info.steps %}<li>{{ step }}</li>{% endfor %}
+
+        {% if entry.info.keyless %}
+          <p class="muted">Working already — no account, no key.</p>
+        {% else %}
+          {# Open by default when there is no key, because that is exactly when
+             the instructions are wanted. Collapsed once it is set. #}
+          <details class="setup-steps" {% if entry.status != 'set' %}open{% endif %}>
+            <summary>How to get a key ({{ entry.info.steps|length }} steps, free)</summary>
+            <ol class="steps">
+              {% for step in entry.info.steps %}
+                <li>
+                  <span>{{ step.text }}</span>
+                  {% if step.url %}
+                    <a class="btn step-link" href="{{ step.url }}" target="_blank" rel="noreferrer noopener">{{ step.url_label or 'Open' }} ↗</a>
+                  {% endif %}
+                </li>
+              {% endfor %}
             </ol>
+            {% if entry.info.env_var %}
+              <p class="muted">Environment variable: <code>{{ entry.info.env_var }}</code></p>
+            {% endif %}
           </details>
         {% endif %}
-        <p><a href="{{ entry.info.signup_url }}" target="_blank" rel="noreferrer noopener">{{ entry.info.signup_url }}</a></p>
       </section>
     {% endfor %}
   </div>

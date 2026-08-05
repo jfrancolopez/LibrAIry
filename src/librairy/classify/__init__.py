@@ -197,6 +197,7 @@ class UnknownResult:
     confidence: float
     evidence: tuple[EvidenceEntry, ...]
     fields: dict[str, object]
+    reason: str | None = None
 
 
 def _unknown(relpath: str) -> UnknownResult:

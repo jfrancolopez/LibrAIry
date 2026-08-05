@@ -493,3 +493,51 @@ def test_settings_catalog_cards_explain_purpose_cost_and_signup(tmp_path: Path) 
     assert "key set" in page
     assert "no key needed" in page
     assert "tmdb-secret" not in page
+
+
+def test_catalog_setup_steps_are_open_when_no_key_is_set(tmp_path: Path) -> None:
+    """The instructions are wanted exactly when the key is missing."""
+    client, _, _ = client_for(tmp_path)
+
+    page = client.get("/settings").text
+
+    assert "<details class=\"setup-steps\" open>" in page
+    assert "How to get a key" in page
+
+
+def test_each_setup_step_carries_its_own_link(tmp_path: Path) -> None:
+    client, _, _ = client_for(tmp_path)
+
+    page = client.get("/settings").text
+
+    assert "https://www.themoviedb.org/signup" in page
+    assert "https://www.themoviedb.org/settings/api/request" in page
+    assert "https://acoustid.org/new-application" in page
+    assert 'class="btn step-link"' in page
+    assert 'rel="noreferrer noopener"' in page
+
+
+def test_setup_steps_name_the_environment_variable(tmp_path: Path) -> None:
+    client, _, _ = client_for(tmp_path)
+
+    page = client.get("/settings").text
+
+    assert "TMDB_KEY" in page
+    assert "ACOUSTID_KEY" in page
+
+
+def test_keyless_catalogs_say_so_instead_of_showing_steps(tmp_path: Path) -> None:
+    client, _, _ = client_for(tmp_path)
+
+    page = client.get("/settings").text
+
+    assert "Working already — no account, no key." in page
+
+
+def test_tmdb_steps_warn_about_the_v4_token(tmp_path: Path) -> None:
+    """Copying the v4 token instead of the v3 key is the classic TMDB mistake."""
+    client, _, _ = client_for(tmp_path)
+
+    page = client.get("/settings").text
+
+    assert "API Key (v3 auth)" in page

@@ -17,6 +17,19 @@ KEYLESS = ""
 
 
 @dataclass(frozen=True)
+class Step:
+    """One instruction. `url` makes the page it refers to one click away.
+
+    Signup flows are the place people give up, and "open Settings → API" is
+    only useful if you are already on the right site.
+    """
+
+    text: str
+    url: str = ""
+    url_label: str = ""
+
+
+@dataclass(frozen=True)
 class CatalogInfo:
     slug: str
     name: str
@@ -24,8 +37,9 @@ class CatalogInfo:
     key_field: str  # "" when the catalog needs no key
     cost: str
     signup_url: str
-    steps: tuple[str, ...]
+    steps: tuple[Step, ...]
     sends: str
+    env_var: str = ""
     integrated: bool = True
 
     @property
@@ -41,7 +55,7 @@ CATALOGS: tuple[CatalogInfo, ...] = (
         key_field=KEYLESS,
         cost="Free — no account needed",
         signup_url="https://musicbrainz.org",
-        steps=("Nothing to do — it works out of the box.",),
+        steps=(Step("Nothing to do — it works out of the box."),),
         sends="Track and album titles, artist names, and durations. Never file paths.",
     ),
     CatalogInfo(
@@ -51,10 +65,21 @@ CATALOGS: tuple[CatalogInfo, ...] = (
         key_field="acoustid",
         cost="Free",
         signup_url="https://acoustid.org/new-application",
+        env_var="ACOUSTID_KEY",
         steps=(
-            "Create a free account at acoustid.org.",
-            'Register an application (any name) to get an "API key".',
-            "Paste the key into ACOUSTID_KEY in your .env, then restart the container.",
+            Step(
+                "Create a free AcoustID account (email and password, nothing else).",
+                "https://acoustid.org/login",
+                "Sign up / log in",
+            ),
+            Step(
+                'Register an application. Any name will do — pick "LibrAIry". '
+                'The value you need is labelled "API key".',
+                "https://acoustid.org/new-application",
+                "Register an application",
+            ),
+            Step("Add ACOUSTID_KEY=<your key> to your .env file."),
+            Step("Restart the container: docker compose up -d"),
         ),
         sends="An audio fingerprint and duration — not the audio itself, never file paths.",
     ),
@@ -65,10 +90,27 @@ CATALOGS: tuple[CatalogInfo, ...] = (
         key_field="tmdb",
         cost="Free for personal use",
         signup_url="https://www.themoviedb.org/settings/api",
+        env_var="TMDB_KEY",
         steps=(
-            "Create a free account at themoviedb.org.",
-            'Open Settings → API and request an API key (choose "Developer").',
-            "Paste the key into TMDB_KEY in your .env, then restart the container.",
+            Step(
+                "Create a free TMDB account and verify the email they send you.",
+                "https://www.themoviedb.org/signup",
+                "Create an account",
+            ),
+            Step(
+                'Request an API key. Choose "Developer", accept the terms, and fill '
+                "the short form — personal use is fine, and it is approved instantly.",
+                "https://www.themoviedb.org/settings/api/request",
+                "Request a key",
+            ),
+            Step(
+                'Copy the value shown as "API Key (v3 auth)" — the long v4 token is '
+                "not the one LibrAIry uses.",
+                "https://www.themoviedb.org/settings/api",
+                "Open your API settings",
+            ),
+            Step("Add TMDB_KEY=<your key> to your .env file."),
+            Step("Restart the container: docker compose up -d"),
         ),
         sends="Cleaned title guesses and years. Never file paths.",
     ),
@@ -79,7 +121,7 @@ CATALOGS: tuple[CatalogInfo, ...] = (
         key_field=KEYLESS,
         cost="Free — no account needed",
         signup_url="https://openlibrary.org/developers/api",
-        steps=("Nothing to do — it works out of the box.",),
+        steps=(Step("Nothing to do — it works out of the box."),),
         sends="Cleaned title and author guesses. Never file paths.",
     ),
 )
