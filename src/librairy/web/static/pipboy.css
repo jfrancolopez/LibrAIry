@@ -240,6 +240,28 @@ button:hover, .btn:hover { filter: brightness(1.06); }
 button:active, .btn:active { transform: translateY(1px); box-shadow: none; }
 button:disabled, .btn:disabled { opacity: 0.55; cursor: not-allowed; }
 
+/* A button is as wide as its label. Panels are grids, and a grid stretches its
+   children by default, which is why "Rebuild Search Index" spanned an entire
+   card while buttons elsewhere were squeezed. Add .btn-block to opt back in. */
+button, .btn { justify-self: start; }
+.btn-block { justify-self: stretch; width: 100%; }
+
+/* Buttons that belong together, spaced consistently and wrapping instead of
+   compressing. This is the grouping to reach for anywhere two or more actions
+   sit side by side. */
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-2) 0;
+}
+.button-row > * { flex: 0 0 auto; justify-self: auto; }
+/* Pushes what follows to the far edge — "Cancel … Confirm" without a spacer. */
+.button-row .spacer { flex: 1 1 auto; }
+/* Secondary actions read as links but line up with real buttons. */
+.button-row a:not(.btn) { padding: var(--space-2) 0; }
+
 .btn-primary, button.primary {
   background: var(--accent);
   color: var(--on-accent);
@@ -603,6 +625,38 @@ tbody tr:hover { background: var(--bg-metric); }
    an empty third of the screen. */
 .explorer-pane.is-empty { display: none; }
 
+.load-more { margin-top: var(--space-2); }
+
+/* ---- Search results ---------------------------------------------------- */
+/* A result is a card, not a table row: the facts that answer "is this the file
+   I meant?" need room to sit together, and a preview has to expand in place. */
+.result-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-3); }
+.result {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-3);
+  padding: var(--space-3);
+  background: var(--bg-metric);
+  border: var(--border-thin) solid var(--border);
+  border-radius: var(--radius-ui);
+}
+.result .row-thumb { width: 4rem; height: 4rem; }
+.result-body { min-width: 0; }
+.result-body > p { margin: 0 0 var(--space-1); }
+.result-name { font-weight: 600; }
+.result-path, .result-copy {
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+.result-snippet { font-size: var(--text-sm); }
+.result-facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+}
+
 /* ---- Health charts ----------------------------------------------------- */
 /* Server-rendered bars rather than a charting library: the portal has no JS
    build step, and its CSP blocks inline script. Width/height come through the
@@ -840,9 +894,11 @@ kbd {
   --bg-panel: #1e1913;
   --bg-input: #100d0a;
   --bg-metric: #241d15;
-  --text: #ffb000;
+  --text: #e8a838;
   --text-dim: #c08a2a;
-  --text-glow: 0 0 0.35rem rgba(255, 176, 0, 0.35);
+  /* Halation is what makes a phosphor look real and also what makes it tiring.
+     Enough to suggest the glow, not enough to smear the text. */
+  --text-glow: 0 0 0.3rem rgba(232, 168, 56, 0.22);
   --accent: #ffd479;
   --accent-2: #e09a2b;
   --accent-soft: rgba(255, 212, 121, 0.3);
@@ -852,33 +908,38 @@ kbd {
   --panel-shadow: none;
   --radius: 0;
   --scanline: rgba(255, 255, 255, 0.03);
-  --ok: #ffb000;
+  /* A real amber CRT was monochrome, but ok and warn were then the same colour
+     and the health bars became unreadable. Green wins over authenticity here. */
+  --ok: #9ad36a;
   --warn: #ffd479;
   --fail: #ff7a5c;
   --font-body: var(--font-mono);
 }
 
+/* Still unmistakably the DOS blue screen, but pulled back from fully saturated
+   #0000a8 and pure #ffff55 — at full chroma those two vibrate against each
+   other and are genuinely tiring to read for any length of time. */
 [data-theme="dos-blue"] {
-  --bg: #0000a8;
-  --bg-glow: #0000c0;
-  --bg-panel: #0000c4;
-  --bg-input: #000080;
-  --bg-metric: #0000bb;
-  --text: #ffffff;
+  --bg: #141a6e;
+  --bg-glow: #1b2280;
+  --bg-panel: #1a2180;
+  --bg-input: #0f1454;
+  --bg-metric: #1e2688;
+  --text: #f2f2ff;
   --text-dim: #b9b9ff;
   --text-glow: none;
-  --accent: #ffff55;
-  --accent-2: #55ffff;
-  --accent-soft: rgba(255, 255, 85, 0.28);
-  --accent-glow: rgba(255, 255, 85, 0.18);
-  --on-accent: #00008a;
+  --accent: #ffe066;
+  --accent-2: #74dde0;
+  --accent-soft: rgba(255, 224, 102, 0.28);
+  --accent-glow: rgba(255, 224, 102, 0.18);
+  --on-accent: #0f1454;
   --border: #7c7cff;
   --panel-shadow: none;
   --radius: 0;
   --scanline: transparent;
-  --ok: #55ff55;
-  --warn: #ffff55;
-  --fail: #ff9a9a;
+  --ok: #7ee08a;
+  --warn: #ffe066;
+  --fail: #ff9d9d;
   --font-body: var(--font-mono);
 }
 
@@ -890,11 +951,13 @@ kbd {
   --bg-metric: #2a1a55;
   --text: #f2e9ff;
   --text-dim: #c0a9e6;
-  --text-glow: 0 0 0.35rem rgba(255, 110, 199, 0.25);
-  --accent: #ff6ec7;
-  --accent-2: #4de0e0;
-  --accent-soft: rgba(255, 110, 199, 0.3);
-  --accent-glow: rgba(77, 224, 224, 0.18);
+  --text-glow: 0 0 0.3rem rgba(224, 127, 184, 0.18);
+  /* Hot #ff6ec7 on a dark ground is the definition of chromatic aberration on
+     an LCD; a touch less chroma keeps the mood and stops the fringing. */
+  --accent: #e07fb8;
+  --accent-2: #6fd2d2;
+  --accent-soft: rgba(224, 127, 184, 0.3);
+  --accent-glow: rgba(111, 210, 210, 0.18);
   --on-accent: #1a1033;
   --border: #7d55c7;
   --panel-shadow: none;
@@ -903,6 +966,34 @@ kbd {
   --ok: #4de0e0;
   --warn: #ffd479;
   --fail: #ff8ba0;
+}
+
+/* Dracula, the palette from the editor theme. Built for long sessions: a
+   mid-dark ground rather than black, and accents that are vivid without being
+   fully saturated. `--text-dim` is lifted off the official #6272a4 comment
+   colour, which only reaches ~3.2:1 here and fails AA for body text. */
+[data-theme="dracula"] {
+  --bg: #282a36;
+  --bg-glow: #343746;
+  --bg-panel: #2f313f;
+  --bg-input: #21222c;
+  --bg-metric: #343746;
+  --text: #f8f8f2;
+  --text-dim: #9aa3c7;
+  --text-glow: none;
+  --accent: #bd93f9;
+  --accent-2: #8be9fd;
+  --accent-soft: rgba(189, 147, 249, 0.28);
+  --accent-glow: rgba(189, 147, 249, 0.16);
+  --on-accent: #21222c;
+  --border: #6272a4;
+  --panel-shadow: none;
+  --radius: 0;
+  --scanline: transparent;
+  --scanline-opacity: 0;
+  --ok: #50fa7b;
+  --warn: #ffb86c;
+  --fail: #ff6e6e;
 }
 
 [data-theme="pipboy-green"] {

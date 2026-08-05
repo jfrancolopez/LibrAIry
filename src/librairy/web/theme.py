@@ -28,7 +28,8 @@ THEMES: dict[str, ThemeSwatch] = {
     "platinum-gray": ThemeSwatch("#d4d4d8", "#9a9aa2", "#234a7d", "#1b1b1d"),
     "crt-amber": ThemeSwatch("#171310", "#8a6a1f", "#ffd479", "#ffb000"),
     "dos-blue": ThemeSwatch("#0000a8", "#7c7cff", "#ffff55", "#ffffff"),
-    "vaporwave": ThemeSwatch("#1a1033", "#7d55c7", "#ff6ec7", "#f2e9ff"),
+    "vaporwave": ThemeSwatch("#1a1033", "#7d55c7", "#e07fb8", "#f2e9ff"),
+    "dracula": ThemeSwatch("#282a36", "#6272a4", "#bd93f9", "#f8f8f2"),
     "pipboy-green": ThemeSwatch("#061109", "#56d364", "#ffbf4d", "#7cff6b"),
 }
 

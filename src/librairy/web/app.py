@@ -772,6 +772,17 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             {"title": "Browse", **data},
         )
 
+    @app.get("/browse/{category}/files", response_class=HTMLResponse)
+    def browse_files_route(
+        request: Request, category: str, folder: str = "", page: int = 1
+    ) -> HTMLResponse:
+        """One more batch of file rows, appended in place by "Load more"."""
+        try:
+            data = browse_category(conn, category, folder=folder, page=page)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return TEMPLATES.TemplateResponse(request, "partials/browse_files.html", data)
+
     @app.get("/browse/items/{item_id}/panel", response_class=HTMLResponse)
     def browse_item_panel(request: Request, item_id: int) -> HTMLResponse:
         """Read-only detail panel for Browse; reuses the item-detail data."""

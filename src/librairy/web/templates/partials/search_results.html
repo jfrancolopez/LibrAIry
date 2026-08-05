@@ -3,25 +3,64 @@
     <p>Search is ready. Try: <code>queen night opera</code>, <code>photos 2026</code>, or filter by root/category after files are indexed.</p>
   {% endif %}
   {% if results %}
-    <table>
-      <thead><tr><th scope="col">Name</th><th scope="col">Path</th><th scope="col">Category</th><th scope="col">Actions</th></tr></thead>
-      <tbody>
-        {% for row in results %}
-          <tr>
-            <td>{% if row.source == 'content' %}<span class="badge badge-info">text match</span> {% endif %}{{ row.name|safe }}<span>{{ row.snippet|safe }}</span></td>
-            <td><code>{{ row.root }}/{{ row.relpath }}</code><span>copy: {{ row.host_path }}</span></td>
-            <td>{{ row.category or 'misc' }}</td>
-            <td><a href="/preview/items/{{ row.item_id }}">Detail</a> <a href="/history">History{% if row.history_count %} ({{ row.history_count }}){% endif %}</a></td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    <ul class="result-list">
+      {% for row in results %}
+        <li class="result" id="result-{{ row.item_id }}">
+          {% if row.has_thumbnail %}
+            <img class="row-thumb" src="/preview/items/{{ row.item_id }}/thumb" alt="" loading="lazy" decoding="async">
+          {% else %}
+            <span class="row-thumb is-placeholder" aria-hidden="true"></span>
+          {% endif %}
+
+          <div class="result-body">
+            <p class="result-name">
+              {% if row.source == 'content' %}<span class="badge badge-info">text match</span> {% endif %}
+              {# row.name carries the FTS <mark> highlighting — it shows which
+                 part of the name matched, so it is rendered instead of the
+                 plain filename. #}
+              <span class="mono">{{ row.name|safe }}</span>
+            </p>
+            <p class="result-path mono muted">{{ row.root }}/{{ row.relpath }}</p>
+            {% if row.snippet %}<p class="result-snippet muted">{{ row.snippet|safe }}</p>{% endif %}
+
+            <p class="result-facts">
+              <span class="badge badge-info">{{ row.category or 'misc' }}</span>
+              <span class="muted">{{ row.extension }}</span>
+              {% if row.size %}<span class="muted">{{ row.size }}</span>{% endif %}
+              {% if row.state %}<span class="muted">{{ row.state }}</span>{% endif %}
+              {% if row.confidence is not none %}
+                <span class="badge {{ 'badge-ok' if row.confidence >= 0.85 else ('badge-warn' if row.confidence >= 0.6 else 'badge-fail') }}">{{ '%.2f'|format(row.confidence) }}</span>
+              {% endif %}
+              {% if row.history_count %}<span class="muted">{{ row.history_count }} move(s)</span>{% endif %}
+            </p>
+
+            {% if row.destination %}
+              <p class="from-to"><span class="muted">goes to</span> <span class="mono">{{ row.destination }}</span></p>
+            {% endif %}
+
+            {# Expands in place. Detail used to be a link straight to a fragment
+               endpoint, which replaced the page with an unstyled bare card. #}
+            <div class="button-row">
+              <button type="button"
+                hx-get="/preview/items/{{ row.item_id }}"
+                hx-target="#search-preview-{{ row.item_id }}"
+                hx-swap="innerHTML">Preview</button>
+              <a class="btn" href="/items/{{ row.item_id }}">Open details</a>
+            </div>
+            <div id="search-preview-{{ row.item_id }}"></div>
+            <p class="muted result-copy">copy: {{ row.host_path }}</p>
+          </div>
+        </li>
+      {% endfor %}
+    </ul>
   {% elif query or filters.category or filters.root or filters.year or filters.genre or filters.content %}
     <p class="status warn">No matching indexed items — check spelling or rebuild the search index from Health.</p>
   {% endif %}
-  <nav class="pager" aria-label="Search pages">
-    {% if has_prev %}<a hx-get="/search/results?q={{ query }}&page={{ filters.page - 1 }}" hx-target="#search-results" hx-swap="outerHTML" href="/search?q={{ query }}&page={{ filters.page - 1 }}">Prev</a>{% endif %}
-    <span>page {{ filters.page }}</span>
-    {% if has_next %}<a hx-get="/search/results?q={{ query }}&page={{ filters.page + 1 }}" hx-target="#search-results" hx-swap="outerHTML" href="/search?q={{ query }}&page={{ filters.page + 1 }}">Next</a>{% endif %}
-  </nav>
+  {% if has_next or has_prev %}
+    <nav class="pager button-row" aria-label="Search pages">
+      {% if has_prev %}<a class="btn" hx-get="/search/results?q={{ query }}&page={{ filters.page - 1 }}" hx-target="#search-results" hx-swap="outerHTML" href="/search?q={{ query }}&page={{ filters.page - 1 }}">Previous</a>{% endif %}
+      <span class="muted">page {{ filters.page }}</span>
+      {% if has_next %}<a class="btn" hx-get="/search/results?q={{ query }}&page={{ filters.page + 1 }}" hx-target="#search-results" hx-swap="outerHTML" href="/search?q={{ query }}&page={{ filters.page + 1 }}">Next</a>{% endif %}
+    </nav>
+  {% endif %}
 </div>

@@ -66,7 +66,7 @@ def test_every_preset_is_defined_in_css_and_python() -> None:
 
     assert set(THEME_NAMES) <= set(blocks)
     assert DEFAULT_THEME in THEME_NAMES
-    assert len(THEME_NAMES) == 6
+    assert len(THEME_NAMES) == 7
 
 
 @pytest.mark.parametrize("theme", THEME_NAMES)
@@ -118,3 +118,28 @@ def test_unknown_theme_and_background_fall_back_to_defaults() -> None:
     assert normalize_background("#ABC") == "#abc"
     assert normalize_background("#12345g") == ""
     assert normalize_background(None) == ""
+
+
+def test_dracula_matches_the_editor_palette() -> None:
+    tokens = _blocks()["dracula"]
+
+    assert tokens["--bg"] == "#282a36"
+    assert tokens["--text"] == "#f8f8f2"
+    assert tokens["--accent"] == "#bd93f9"
+    assert tokens["--ok"] == "#50fa7b"
+    # The official #6272a4 comment colour is only ~3.2:1 on this ground and
+    # fails AA for body text, so text-dim is deliberately lifted off it.
+    assert tokens["--text-dim"] != "#6272a4"
+
+
+@pytest.mark.parametrize("theme", THEME_NAMES)
+def test_status_colours_are_told_apart_from_each_other(theme: str) -> None:
+    """The health bars rely on ok/warn/fail reading as three different things.
+
+    crt-amber used to set --ok and --warn to shades of the same amber, which is
+    faithful to a monochrome CRT and useless in a chart.
+    """
+    tokens = _blocks()[theme]
+    statuses = {token: tokens[token] for token in ("--ok", "--warn", "--fail")}
+
+    assert len(set(statuses.values())) == 3, f"{theme} reuses a colour: {statuses}"

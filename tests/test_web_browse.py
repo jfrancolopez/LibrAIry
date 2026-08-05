@@ -288,3 +288,48 @@ def test_human_size_formatting() -> None:
     assert human_size(900) == "900 B"
     assert human_size(1536) == "1.5 KB"
     assert human_size(25_904_964) == "24.7 MB"
+
+
+def test_load_more_appends_instead_of_paging(tmp_path: Path) -> None:
+    """Prev/Next threw away everything you had already scrolled past."""
+    client, conn, settings = client_for(tmp_path)
+    for index in range(55):
+        seed_item(conn, settings, f"Documents/file-{index:03d}.txt", "documents")
+
+    page = client.get("/browse/documents").text
+
+    assert "Load more" in page
+    assert "Prev" not in page and "page 1" not in page
+    assert 'hx-target="this"' in page
+    assert "/browse/documents/files?folder=&page=2" in page
+
+
+def test_load_more_returns_only_rows_and_the_next_button(tmp_path: Path) -> None:
+    client, conn, settings = client_for(tmp_path)
+    for index in range(55):
+        seed_item(conn, settings, f"Documents/file-{index:03d}.txt", "documents")
+
+    batch = client.get("/browse/documents/files?page=2")
+
+    assert batch.status_code == 200
+    assert "<html" not in batch.text, "a fragment, not a whole page"
+    assert "file-050.txt" in batch.text
+    # Last batch, so nothing more to offer.
+    assert "Load more" not in batch.text
+
+
+def test_load_more_is_absent_when_everything_fits(tmp_path: Path) -> None:
+    client, conn, settings = client_for(tmp_path)
+    seed_item(conn, settings, "Documents/only.txt", "documents")
+
+    assert "Load more" not in client.get("/browse/documents").text
+
+
+def test_empty_message_only_shows_on_the_first_page(tmp_path: Path) -> None:
+    """Appending past the end must not stamp "No files" under the list."""
+    client, conn, settings = client_for(tmp_path)
+    seed_item(conn, settings, "Documents/only.txt", "documents")
+
+    beyond = client.get("/browse/documents/files?page=9")
+
+    assert "No files at this level." not in beyond.text

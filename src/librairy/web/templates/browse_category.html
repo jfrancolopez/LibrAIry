@@ -36,31 +36,10 @@
     </section>
 
     <section class="explorer-pane" data-pane="2" aria-label="Files">
-      <h3>Files <span class="muted">{{ items|length }}</span></h3>
+      <h3>Files</h3>
       <div class="pane-list">
-        {% for item in items %}
-          <a class="browse-row is-item" href="/items/{{ item.item_id }}"
-             hx-get="/browse/items/{{ item.item_id }}/panel" hx-target="#browse-panel" hx-swap="outerHTML"
-             hx-trigger="click, focus">
-            {% if item.thumb %}
-              <img class="row-thumb" src="/preview/items/{{ item.item_id }}/thumb" alt="" loading="lazy" decoding="async">
-            {% else %}
-              <span class="row-thumb is-placeholder" aria-hidden="true"></span>
-            {% endif %}
-            <span class="row-name mono">{{ item.name }}</span>
-            <span class="row-size muted">{{ item.size }}</span>
-          </a>
-        {% else %}
-          <p class="muted">No files at this level.</p>
-        {% endfor %}
+        {% include "partials/browse_files.html" %}
       </div>
-      {% if has_prev or has_next %}
-        <nav class="pager" aria-label="Pages">
-          {% if has_prev %}<a href="/browse/{{ category }}?folder={{ folder }}&page={{ page - 1 }}">Prev</a>{% endif %}
-          <span class="muted">page {{ page }}</span>
-          {% if has_next %}<a href="/browse/{{ category }}?folder={{ folder }}&page={{ page + 1 }}">Next</a>{% endif %}
-        </nav>
-      {% endif %}
     </section>
 
     <aside id="browse-panel" class="browse-panel card explorer-pane" aria-label="Details"

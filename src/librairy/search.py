@@ -13,6 +13,12 @@ from librairy.config import Settings
 PAGE_SIZE = 50
 TEXT_FIELDS = ("name", "clean_name", "tags", "artist", "album", "title", "show", "genre", "event")
 CATEGORIES = {"music", "movies", "shows", "photos", "documents", "books", "projects", "misc"}
+# Kept in step with web/thumbs.py: only these can answer a thumbnail request,
+# and asking for one on anything else renders a broken-image icon.
+THUMBNAILABLE = {
+    ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".heic", ".avif", ".webp",
+    ".mp4", ".mkv", ".mov", ".avi", ".webm", ".m4v",
+}
 FTS_OPERATORS = {"AND", "OR", "NOT", "NEAR"}
 
 
@@ -160,6 +166,53 @@ def _content_search_items(
     ]
 
 
+def _result_details(conn: sqlite3.Connection, row: dict[str, object]) -> dict[str, object]:
+    """The facts that decide "is this the file I meant?" without opening it.
+
+    A result used to be a name, a path and a category. Everything here is one
+    row from tables the search already joined against, so enriching costs a
+    lookup per result rather than a second pass over the index.
+    """
+    item = conn.execute(
+        "SELECT size, state FROM items WHERE id=?", (row["item_id"],)
+    ).fetchone()
+    proposal = conn.execute(
+        """
+        SELECT confidence, dest_root, dest_relpath, status
+        FROM proposals WHERE item_id=? AND status != 'superseded'
+        ORDER BY id DESC LIMIT 1
+        """,
+        (row["item_id"],),
+    ).fetchone()
+    name = PurePosixPath(str(row["relpath"])).name
+    suffix = PurePosixPath(name).suffix.lower()
+    return {
+        "file_name": name,
+        "size": human_size(item["size"] if item else None),
+        "extension": suffix.lstrip(".") or "no extension",
+        "state": item["state"] if item else "",
+        "has_thumbnail": suffix in THUMBNAILABLE,
+        "confidence": proposal["confidence"] if proposal else None,
+        "proposal_status": proposal["status"] if proposal else None,
+        "destination": (
+            f"{proposal['dest_root']}/{proposal['dest_relpath']}"
+            if proposal and proposal["dest_relpath"]
+            else ""
+        ),
+    }
+
+
+def human_size(size: int | None) -> str:
+    if not size or size < 0:
+        return ""
+    value = float(size)
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if value < 1024 or unit == "TB":
+            return f"{value:.0f} {unit}" if unit == "B" else f"{value:.1f} {unit}"
+        value /= 1024
+    return ""
+
+
 def search_data(
     conn: sqlite3.Connection,
     settings: Settings,
@@ -174,6 +227,7 @@ def search_data(
             "SELECT COUNT(*) FROM history WHERE dest_root=? AND dest_relpath=?",
             (row["root"], row["relpath"]),
         ).fetchone()[0]
+        row.update(_result_details(conn, row))
     return {
         "query": query,
         "filters": filters,

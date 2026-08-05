@@ -32,13 +32,9 @@
     </details>
   </td>
   <td>
-    <button
-      type="button"
-      hx-get="/preview/items/{{ proposal.item_id }}"
-      hx-target="#preview-{{ proposal.id }}"
-      hx-swap="innerHTML"
-    >Preview</button>
-    <div class="row-actions">
+    {# One row: decide first, look closer second. Same grouping and spacing as
+       every other set of actions in the portal. #}
+    <div class="button-row row-actions">
       <button type="button" class="btn-primary"
         hx-post="/review/action"
         hx-vals='{"action": "approve", "proposal_id": "{{ proposal.id }}", "state": "{{ proposal.status }}"}'
@@ -49,6 +45,12 @@
         hx-vals='{"action": "reject", "proposal_id": "{{ proposal.id }}", "state": "{{ proposal.status }}"}'
         hx-target="#review-list" hx-swap="outerHTML"
         hx-headers='{"x-csrf-token":"{{ request.state.session.csrf_token }}"}'>Reject</button>
+      <button
+        type="button"
+        hx-get="/preview/items/{{ proposal.item_id }}"
+        hx-target="#preview-{{ proposal.id }}"
+        hx-swap="innerHTML"
+      >Preview</button>
     </div>
     <div id="preview-{{ proposal.id }}"></div>
     <details class="edit-toggle">
@@ -63,7 +65,7 @@
       <label>Category <input name="category" value="{{ proposal.category }}"></label>
       <label>Name <input name="clean_name" value="{{ proposal.clean_name }}"></label>
       <label>Destination <input name="dest_relpath" value="{{ proposal.dest_relpath or '' }}"></label>
-      <button type="submit">Save</button>
+      <div class="button-row"><button type="submit" class="btn-primary">Save</button></div>
     </form>
     </details>
   </td>

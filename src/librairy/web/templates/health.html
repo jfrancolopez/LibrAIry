@@ -104,7 +104,9 @@
       <span class="status">Database <span class="badge badge-{{ 'ok' if db_status.status=='OK' else 'fail' if db_status.status=='FAIL' else 'warn' }}">{{ db_status.status }}</span></span>
       <span>{{ db_status.detail }}</span>
       {% if db_status.hint %}<span>{{ db_status.hint }}</span>{% endif %}
-      <button hx-post="/index/rebuild" hx-target="#index-result" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>Rebuild Search Index</button>
+      <div class="button-row">
+        <button hx-post="/index/rebuild" hx-target="#index-result" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>Rebuild Search Index</button>
+      </div>
       <div id="index-result"></div>
     </article>
     <article class="metric wide">

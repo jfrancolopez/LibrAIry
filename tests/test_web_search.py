@@ -58,8 +58,12 @@ def test_search_highlight_pagination_host_path_and_actions(tmp_path: Path) -> No
     assert next_page.text.count("/preview/items/") == 5
     assert "/mnt/user/library/Documents/Queen-54.txt" in next_page.text
     assert "/data/library" not in page.text
-    assert "Detail" in page.text
-    assert "History" in page.text
+    # Preview expands in place; "Open details" is the only navigation. The old
+    # Detail link pointed straight at a fragment endpoint, which replaced the
+    # whole page with an unstyled bare card.
+    assert 'hx-target="#search-preview-' in page.text
+    assert "Open details" in page.text
+    assert 'href="/items/' in page.text
 
 
 def test_search_first_visit_and_empty_state_are_keyboard_operable(tmp_path: Path) -> None:
@@ -123,3 +127,36 @@ def test_dashboard_search_box_lands_on_results(tmp_path: Path) -> None:
     # Landing on /search?q=... renders results server-side (no extra click).
     assert str(queen) in landing
     assert "Bohemian.flac" in landing
+
+
+def test_results_carry_the_facts_that_identify_a_file(tmp_path: Path) -> None:
+    """A result used to be a name, a path and a category — not enough to tell
+    two similarly named files apart without opening both."""
+    client, conn, settings = client_for(tmp_path)
+    seed_library(conn, settings, "Photos/2026/holiday.jpg", "photos")
+
+    page = client.get("/search?q=holiday").text
+
+    assert "row-thumb" in page, "an image result should show its thumbnail"
+    assert "/preview/items/" in page and "/thumb" in page
+    assert "result-facts" in page
+    assert "jpg" in page
+
+
+def test_non_previewable_results_do_not_request_a_thumbnail(tmp_path: Path) -> None:
+    client, conn, settings = client_for(tmp_path)
+    seed_library(conn, settings, "Documents/notes.txt", "documents")
+
+    page = client.get("/search?q=notes").text
+
+    assert "row-thumb is-placeholder" in page
+    assert "/thumb" not in page
+
+
+def test_search_size_formatting() -> None:
+    from librairy.search import human_size
+
+    assert human_size(None) == ""
+    assert human_size(0) == ""
+    assert human_size(900) == "900 B"
+    assert human_size(1536) == "1.5 KB"
