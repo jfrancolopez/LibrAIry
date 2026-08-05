@@ -82,7 +82,7 @@ These are stored in SQLite and apply without rebuilding the container:
 | `backup.include_db_snapshot` | Include a SQLite snapshot in backups. |
 | `appearance.theme` | Colour preset for the portal. |
 | `appearance.background` | Optional background colour override; empty means the theme's own. |
-| `catalog.<slug>.enabled` | Per-catalog on/off switch. Slugs: musicbrainz, acoustid, tmdb, discogs, lastfm, tvmaze, openlibrary. A catalog that is off makes no requests. |
+| `catalog.<slug>.enabled` | Per-catalog on/off switch. Slugs: musicbrainz, acoustid, tmdb, discogs, lastfm, coverart, tvmaze, openlibrary. A catalog that is off makes no requests. |
 
 API keys can be set from the Settings page or from the environment. **The environment
 always wins** — a variable in your compose file or UNRAID template is deliberate
@@ -104,6 +104,7 @@ silently to the next evidence source.
 | TVmaze | TV shows, and each episode's title | none | Cleaned show titles, season and episode numbers |
 | Discogs | Music releases, including vinyl and rare pressings | `DISCOGS_TOKEN` | A cleaned artist/title guess, for files with no readable tags |
 | Last.fm | Genres for music that has none | `LASTFM_KEY` | Artist and album names |
+| Cover Art Archive | Album art on review cards | none | A release ID, or an artist and album to find one |
 | Open Library | Books by title, author or ISBN | none | Cleaned title and author guesses |
 
 No catalog is ever sent a file path.
@@ -128,3 +129,13 @@ Last.fm sits outside that cascade. It never identifies anything; it fills in the
 once the release is known, and only when the file itself does not say. Genre is the
 first path component under the genre-first template, so without it a perfectly
 identified album still lands in `Music/General/`.
+
+**Album art.** Audio is the one category with nothing to look at: an image or a video
+gets a real thumbnail, a document gets its opening lines, and a song gets a filename.
+Cover Art Archive fills that gap on review and browse cards.
+
+It runs **only when you open a preview**, never during analysis. Fetching art for every
+track in an inbox would cost a MusicBrainz request per album, at one request a second,
+for pictures nobody may ever look at. One file at a time, on demand, costs nothing.
+Covers are cached in `appdata/thumbs/` and **never written into your library** — v1
+renames and moves files, it does not add them.

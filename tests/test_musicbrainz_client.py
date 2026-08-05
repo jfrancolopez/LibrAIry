@@ -35,8 +35,12 @@ RECORDING = {
     "title": "Bohemian Rhapsody",
     "artist-credit": [{"name": "Queen"}],
     "releases": [
-        {"title": "Greatest Hits", "date": "1981-10-26"},
-        {"title": "A Night at the Opera", "date": "1975-11-21"},
+        {"id": "hits-mbid", "title": "Greatest Hits", "date": "1981-10-26"},
+        {
+            "id": "8ff3b1cc-0f7e-4c92-a55d-3c1a1a5f0d21",
+            "title": "A Night at the Opera",
+            "date": "1975-11-21",
+        },
     ],
 }
 
@@ -53,6 +57,8 @@ def test_maps_a_recording_onto_classifier_fields_and_caches() -> None:
         "title": "Bohemian Rhapsody",
         "year": 1975,
         "track": 0,
+        # Carried so Cover Art Archive has something to key off later.
+        "release_id": "8ff3b1cc-0f7e-4c92-a55d-3c1a1a5f0d21",
     }
     assert len(calls) == 1, "identical MBID should hit the process cache"
 

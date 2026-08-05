@@ -1,6 +1,6 @@
 # Phase 15 — Catalog Expansion + Web API Key Entry (v1.2)
 
-**Status:** IN PROGRESS — P15-01/02/03/04/06 done; every catalog wired and individually switchable. P15-05/07 remain (2026-08-05)
+**Status:** IN PROGRESS — P15-01/02/03/04/05/06 done; every catalog wired and individually switchable. P15-07 remains (2026-08-05)
 **Depends on:** Phase 14 (settings/cards design language in place)
 **Size:** M–L (catalog tasks are independent; key-entry task needs its own security care)
 
@@ -75,7 +75,7 @@ Owner intent (2026-07-23): "find all the free catalogs — if I configure multip
 **Depends on:** P15-04 (uses MusicBrainz release IDs already in evidence) | **Size:** S
 **Description:** When music evidence contains a MusicBrainz release ID, fetch the cover thumbnail into the appdata thumbnail cache and show it on review cards/browse detail. **Never write art into the library** (v1 invariant: renames/moves only). Toggle default ON (keyless).
 **Acceptance criteria:**
-- [ ] Review card for a MusicBrainz-matched album shows cover art from cache; library tree untouched (test asserts no new files under library).
+- [x] Review card for a MusicBrainz-matched album shows cover art from cache; library tree untouched (test asserts no new files under library). Verified against the live API.
 
 ### P15-06 Web-based API key entry (security-scoped)
 **Depends on:** P15-01 | **Size:** M
@@ -125,3 +125,7 @@ Owner intent (2026-07-23): "find all the free catalogs — if I configure multip
 - 2026-08-05: **the two Last.fm endpoints do not return the same shape.** `artist.gettoptags` carries a `count` per tag; `album.getinfo` returns the album's tags already ordered by relevance with **no counts at all**. A flat popularity floor would therefore reject every album tag and silently fall through to the vaguer artist-level answer — the floor now applies only when counts are actually present. Caught by reasoning about the API rather than by a test, because the fixtures were written from the same wrong assumption as the code; the test came after.
 - 2026-08-05: Discogs and Last.fm could **not** be live-verified — no `DISCOGS_TOKEN` or `LASTFM_KEY` on this machine. Both correctly return `None` when unconfigured *and* when handed an invalid credential (checked against the live hosts). Re-run the success path once keys exist; same standing open item as TMDB and AcoustID.
 - 2026-08-05: the Discogs token travels in an `Authorization: Discogs token=…` header, never the query string. Query strings reach logs, proxies and referrers; `tests/test_discogs_client.py` asserts the token is absent from the URL.
+- 2026-08-05: **P15-05 done**, with one scope change worth recording. The plan keyed cover art off "MusicBrainz release IDs already in evidence", but only the *fingerprint* path records one, and most music in a real library is tagged rather than fingerprinted — so as specified the feature would almost never fire. `musicbrainz.search_release(artist, album)` fills the gap, and the lookup runs **lazily, when a preview is opened**, not during analysis: fetching art for a whole inbox would cost a MusicBrainz request per album at 1 req/s for pictures nobody may look at. Covers live in `appdata/thumbs/`; a test asserts the library tree stays empty.
+- 2026-08-05: **the live check found two bugs the mocked tests could not.** Running two searches back to back earned a `503` from MusicBrainz — `search_release` had no throttle, because the module docstring says callers bring their own and its caller (the preview page) has none. Worse, the bare `except` cached that 503 as a permanent "no such album", so a transient rate-limit would hide a findable release for the life of the process. Both fixed: `search_release` throttles itself (and the docstring now explains why the two entry points differ), and both it and `coverart` only cache a negative result when the answer is *final* — a 4xx, not a 5xx or a timeout. Mocked openers raise whatever the test author picks, so "which failures are permanent" is a question only real traffic asks.
+- 2026-08-05: cover MBIDs are validated against a UUID pattern rather than escaped. The value goes into both a URL and a filename, and validation fails closed where escaping has to be right twice.
+- 2026-08-05: live-verified — Queen / *A Night at the Opera* and Radiohead / *OK Computer* both return real JPEGs (13.6 KB and 24.9 KB, `ffd8ff` magic). Slowdive / *Souvlaki* resolves to a release with no front art, which is the normal negative case and degrades to no thumbnail.

@@ -5,32 +5,39 @@ file is, this says what that recording is called. Same client shape as the
 other catalogs: stdlib-only HTTP, short timeout, per-process cache, and None on
 any failure.
 
-Rate limiting is deliberately NOT done here. MusicBrainz allows one request per
-second and `classify_music._rate_limited_musicbrainz_lookup` already enforces
-`settings.mb_rate_limit` around every call; throttling in both places would
-sleep twice per lookup for no benefit. Any other caller has to bring its own.
+The two entry points throttle differently, on purpose. `lookup_recording` does
+not: its only caller is `classify_music._rate_limited_musicbrainz_lookup`,
+which already enforces `settings.mb_rate_limit`, and throttling in both places
+would sleep twice per lookup. `search_release` does, because its caller is the
+preview page, which has no rate limiter at all.
 """
 
 from __future__ import annotations
 
 import json
+import time
 from typing import Any
+from urllib.error import HTTPError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 RECORDING_URL = "https://musicbrainz.org/ws/2/recording"
+RELEASE_URL = "https://musicbrainz.org/ws/2/release"
 # MusicBrainz rejects requests without a contactable User-Agent.
 USER_AGENT = "LibrAIry/1.0 (+https://github.com/jfrancolopez/LibrAIry)"
 TIMEOUT_SECONDS = 8
+# MusicBrainz allows one request a second; going faster earns a 503.
+MIN_INTERVAL_SECONDS = 1.1
 
 _CACHE: dict[str, dict[str, Any] | None] = {}
+_LAST_SEARCH = 0.0
 
 
 def lookup_recording(mbid: str, *, opener=urlopen) -> dict[str, Any] | None:
     """Fields for one recording MBID, shaped for classify/music.py.
 
-    Returns `{"artist", "album", "title", "year", "track"}`. None when
-    unidentified or unreachable.
+    Returns `{"artist", "album", "title", "year", "track", "release_id"}`.
+    None when unidentified or unreachable.
     """
     mbid = mbid.strip()
     if not mbid:
@@ -53,6 +60,58 @@ def lookup_recording(mbid: str, *, opener=urlopen) -> dict[str, Any] | None:
     fields = _fields(payload)
     _CACHE[mbid] = fields
     return fields
+
+
+def search_release(artist: str, album: str, *, opener=urlopen, sleeper=time.sleep) -> str | None:
+    """Release MBID for an artist/album pair, for files identified by their tags.
+
+    Only the fingerprint path leaves a release MBID in the evidence, and most
+    music in a real library is tagged rather than fingerprinted — so without
+    this, cover art would be missing for nearly everything.
+
+    Unlike `lookup_recording`, this one **does** throttle itself. Its caller is
+    the preview page, which has no rate limiter of its own; opening two album
+    previews in quick succession earned a 503 from MusicBrainz the first time
+    this was tried against the live service.
+    """
+    artist, album = artist.strip(), album.strip()
+    if not artist or not album:
+        return None
+    cache_key = f"search|{artist}|{album}".casefold()
+    if cache_key in _CACHE:
+        cached = _CACHE[cache_key]
+        return str(cached["id"]) if cached else None
+
+    query = f'artist:"{_escape(artist)}" AND release:"{_escape(album)}"'
+    params = {"query": query, "fmt": "json", "limit": "1"}
+    request = Request(  # noqa: S310 - fixed https host, params are url-encoded
+        f"{RELEASE_URL}?{urlencode(params)}",
+        headers={"User-Agent": USER_AGENT},
+    )
+    _throttle(sleeper)
+    try:
+        with opener(request, timeout=TIMEOUT_SECONDS) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except HTTPError as exc:
+        # 404/400 mean this album is not there and asking again will not help.
+        # 503 means "you are going too fast" — caching that would blacklist a
+        # perfectly findable album for the life of the process.
+        if exc.code < 500:
+            _CACHE[cache_key] = None
+        return None
+    except Exception:  # noqa: BLE001 - transient; degrade without poisoning the cache
+        return None
+
+    releases = payload.get("releases") if isinstance(payload, dict) else None
+    first = releases[0] if isinstance(releases, list) and releases else None
+    mbid = str(first.get("id") or "") if isinstance(first, dict) else ""
+    _CACHE[cache_key] = {"id": mbid} if mbid else None
+    return mbid or None
+
+
+def _escape(value: str) -> str:
+    """Lucene syntax: quotes and backslashes would break out of the term."""
+    return value.replace("\\", "\\\\").replace('"', '\\"')
 
 
 def lookup_for_settings(_settings) -> Any:
@@ -79,6 +138,9 @@ def _fields(payload: Any) -> dict[str, Any] | None:
         "title": title,
         "year": _year(release.get("date")),
         "track": 0,
+        # Cover Art Archive is keyed by release MBID, so this is what makes
+        # album art reachable later. Not a path component — see classify/music.
+        "release_id": str(release.get("id") or ""),
     }
 
 
@@ -104,6 +166,17 @@ def _year(date: Any) -> int:
     return int(text) if text.isdigit() else 0
 
 
+def _throttle(sleeper) -> None:
+    """Only `search_release` uses this — see its docstring for why."""
+    global _LAST_SEARCH
+    elapsed = time.monotonic() - _LAST_SEARCH
+    if _LAST_SEARCH and elapsed < MIN_INTERVAL_SECONDS:
+        sleeper(MIN_INTERVAL_SECONDS - elapsed)
+    _LAST_SEARCH = time.monotonic()
+
+
 def reset_cache() -> None:
     """Test helper — the cache is process-local."""
+    global _LAST_SEARCH
     _CACHE.clear()
+    _LAST_SEARCH = 0.0

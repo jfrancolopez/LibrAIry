@@ -77,6 +77,13 @@ def classify_music(
                 fields.update(_fields_from_musicbrainz(path, mb))
                 confidence = 0.9
                 evidence.append(EvidenceEntry("musicbrainz", "recording", mbid, 0.9))
+                release_id = str(mb.get("release_id") or "")
+                if release_id:
+                    # Not a field: fields become path components, and an
+                    # MBID is not something anyone wants in a folder name.
+                    evidence.append(
+                        EvidenceEntry("musicbrainz", "release_id", release_id, 0.9)
+                    )
 
     if confidence == 0.0 and discogs_lookup is not None:
         release = _discogs_release(path, discogs_lookup, settings)

@@ -8,6 +8,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+from librairy.catalogs import catalog_enabled
 from librairy.config import Settings
 from librairy.paths import PathValidationError, validate_dest
 from librairy.web.theme import ThemeSwatch, normalize_theme, swatch_for
@@ -64,7 +65,9 @@ def preview_for_item(conn, settings: Settings, item_id: int) -> Preview:
         facts = (f"type: {kind}", f"size: {row['size']} bytes")
         return Preview(kind, title, f"/preview/items/{item_id}/thumb", facts)
     if kind == "audio":
-        return Preview(kind, title, None, ("type: audio", _size_fact(row["size"])))
+        cover = _cover_for_audio(conn, settings, item_id, path)
+        thumb_url = f"/preview/items/{item_id}/thumb" if cover else None
+        return Preview(kind, title, thumb_url, ("type: audio", _size_fact(row["size"])))
     if kind == "document":
         return Preview(
             kind,
@@ -121,10 +124,73 @@ def _text_snippet(path: Path) -> str | None:
     return collapsed[:PREVIEW_TEXT_CHARS].rstrip() + "…"
 
 
+def _cover_for_audio(conn, settings: Settings, item_id: int, path: Path) -> Path | None:
+    """Album art for one track, or None. Never raises — a cover is a nicety.
+
+    Deliberately lazy: this runs when someone opens a preview, not during
+    analysis. Looking up a release for every track in an inbox would cost a
+    MusicBrainz request per album at one request a second, to fetch art that
+    nobody may ever look at. One file at a time, on demand, costs nothing.
+    """
+    try:
+        if not catalog_enabled(conn, "coverart"):
+            return None
+        release_id = _release_mbid(conn, settings, item_id, path)
+        if not release_id:
+            return None
+        from librairy.tools.coverart import cover_path
+
+        return cover_path(settings.appdata_dir, release_id)
+    except Exception as exc:  # noqa: BLE001 - never break a page over album art
+        LOGGER.debug("cover art lookup failed for item %s: %s", item_id, exc)
+        return None
+
+
+def _release_mbid(conn, settings: Settings, item_id: int, path: Path) -> str:
+    """The release MBID from evidence, else searched for from the file's tags.
+
+    Only the AcoustID fingerprint path records a release MBID, and most music
+    in a real library is tagged rather than fingerprinted — so the tag-based
+    search is the case that actually fires.
+    """
+    from librairy.proposals import decode_evidence
+
+    row = conn.execute(
+        "SELECT evidence FROM proposals WHERE item_id=? AND status != 'superseded'",
+        (item_id,),
+    ).fetchone()
+    if row is not None:
+        for entry in decode_evidence(row["evidence"]):
+            if entry.source == "musicbrainz" and entry.field == "release_id" and entry.detail:
+                return str(entry.detail)
+
+    if not catalog_enabled(conn, "musicbrainz"):
+        return ""
+    tags = _audio_tags(path, settings)
+    from librairy.tools.musicbrainz import search_release
+
+    return search_release(tags.get("artist", ""), tags.get("album", "")) or ""
+
+
+def _audio_tags(path: Path, settings: Settings) -> dict[str, str]:
+    from librairy.tools.ffprobe import probe
+
+    result = probe(path, settings)
+    if not result.ok or not isinstance(result.data, dict):
+        return {}
+    tags = result.data.get("tags") or {}
+    return {str(key).lower(): str(value) for key, value in tags.items()}
+
+
 def thumbnail_for_item(conn, settings: Settings, item_id: int) -> Path:
     row = _item_row(conn, item_id)
     path = resolve_item_path(settings, row["root"], row["relpath"])
     kind = _kind(path)
+    if kind == "audio":
+        cover = _cover_for_audio(conn, settings, item_id, path)
+        if cover is None:
+            raise PreviewNotFound("no cover art for this release")
+        return cover
     if kind not in {"image", "video"}:
         raise PreviewNotFound("thumbnail unavailable")
     return get_thumbnail(

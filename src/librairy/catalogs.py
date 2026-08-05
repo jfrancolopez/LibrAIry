@@ -173,6 +173,20 @@ CATALOGS: tuple[CatalogInfo, ...] = (
         sends="Artist and album names. Never file paths.",
     ),
     CatalogInfo(
+        slug="coverart",
+        name="Cover Art Archive",
+        identifies="Album art, shown on review cards",
+        key_field=KEYLESS,
+        cost="Free — no account needed",
+        signup_url="https://coverartarchive.org",
+        steps=(Step("Nothing to do — it works out of the box."),),
+        sends=(
+            "A MusicBrainz release ID when the file already has one, otherwise an "
+            "artist and album name to find it. Only when you open a preview, never "
+            "during analysis. Never file paths."
+        ),
+    ),
+    CatalogInfo(
         slug="tvmaze",
         name="TVmaze",
         identifies="TV shows, and the title of each individual episode",
