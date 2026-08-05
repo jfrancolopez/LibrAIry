@@ -343,6 +343,7 @@ def test_theme_selection_round_trips_and_applies_without_restart(tmp_path: Path)
             "batch_size": "50",
             "use_fingerprints": "on",
             "appearance_theme": "crt-amber",
+            "appearance_background_custom": "on",
             "appearance_background": "#101010",
         },
     )
@@ -369,6 +370,7 @@ def test_invalid_theme_and_background_fall_back_to_defaults(tmp_path: Path) -> N
             "batch_size": "50",
             "use_fingerprints": "on",
             "appearance_theme": "hot-pink-deluxe",
+            "appearance_background_custom": "on",
             "appearance_background": "url(javascript:alert(1))",
         },
     )
@@ -382,7 +384,7 @@ def test_invalid_theme_and_background_fall_back_to_defaults(tmp_path: Path) -> N
     assert "javascript" not in page.text
 
 
-def test_background_reset_clears_the_override(tmp_path: Path) -> None:
+def test_unticking_the_override_clears_the_background(tmp_path: Path) -> None:
     client, conn, settings = client_for(tmp_path)
     csrf = client.cookies["csrf_token"]
     base = {
@@ -395,18 +397,51 @@ def test_background_reset_clears_the_override(tmp_path: Path) -> None:
     client.post(
         "/settings",
         headers={"x-csrf-token": csrf},
-        data={**base, "appearance_background": "#223344"},
+        data={**base, "appearance_background_custom": "on", "appearance_background": "#223344"},
     )
     before = runtime_settings(conn, settings).appearance["background"]
+    # The colour input still posts its value with the box unticked; that is the
+    # whole point of the tickbox.
     client.post(
         "/settings",
         headers={"x-csrf-token": csrf},
-        data={**base, "appearance_background": "#223344", "appearance_background_reset": "on"},
+        data={**base, "appearance_background": "#223344"},
     )
     after = runtime_settings(conn, settings).appearance
 
     assert before == "#223344"
     assert after == {"theme": "vaporwave", "background": ""}
+
+
+def test_saving_a_theme_does_not_silently_black_out_its_background(tmp_path: Path) -> None:
+    """<input type="color"> defaults to #000000 and always posts.
+
+    Before the tickbox gated it, picking any theme in the portal also stored a
+    black background override, so every palette rendered on black and looked
+    broken.
+    """
+    client, conn, settings = client_for(tmp_path)
+    csrf = client.cookies["csrf_token"]
+
+    client.post(
+        "/settings",
+        headers={"x-csrf-token": csrf},
+        data={
+            "confidence_threshold": "0.8",
+            "batch_size": "50",
+            "use_fingerprints": "on",
+            "appearance_theme": "dracula",
+            "appearance_background": "#000000",
+        },
+    )
+    page = client.get("/dashboard")
+
+    assert runtime_settings(conn, settings).appearance == {
+        "theme": "dracula",
+        "background": "",
+    }
+    assert 'data-theme="dracula"' in page.text
+    assert "--bg:" not in page.text
 
 
 def test_thumbnail_cache_is_per_theme(tmp_path: Path) -> None:

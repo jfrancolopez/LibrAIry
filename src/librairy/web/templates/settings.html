@@ -53,7 +53,7 @@
 
 <form id="settings-form" method="post" action="/settings" hx-post="/settings" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>
   <h2 id="appearance">Appearance</h2>
-  <p class="muted">Pick a retro palette. Applies on the next page you load — no restart.</p>
+  <p class="muted">Pick a retro palette. Saving reloads the page, so you see it straight away.</p>
   <label>Theme
     <select name="appearance_theme">
       {% for name in theme_options %}
@@ -61,11 +61,12 @@
       {% endfor %}
     </select>
   </label>
-  <label>Background override
+  <label><input type="checkbox" name="appearance_background_custom"
+    {% if settings_view.appearance.background %}checked{% endif %}> Override the theme background</label>
+  <label>Background colour
     <input type="color" name="appearance_background" value="{{ settings_view.appearance.background or '#000000' }}">
   </label>
-  <p class="muted">Leave the override empty to use the theme's own background. Extreme colors can hurt readability — the presets are contrast-checked, custom backgrounds are not.</p>
-  <label><input type="checkbox" name="appearance_background_reset"> Reset background to the theme default</label>
+  <p class="muted">Unticked, each theme uses its own background — that is what the contrast checks cover. A custom colour is applied as-is and is not checked against the theme's text colour.</p>
 
   <h2 id="analysis">Analysis</h2>
   <p class="muted">How confident a proposal must be, and how many files each worker pass handles.</p>

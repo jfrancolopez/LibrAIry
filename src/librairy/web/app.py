@@ -314,10 +314,13 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
                 content_search_enabled="content_search_enabled" in form,
                 appearance_values={
                     "theme": str(form.get("appearance_theme", "")),
+                    # <input type="color"> always posts a value, so an untouched
+                    # picker would otherwise paint every theme #000000. The
+                    # colour only counts when the tickbox opts into it.
                     "background": (
-                        ""
-                        if "appearance_background_reset" in form
-                        else str(form.get("appearance_background", "")).strip()
+                        str(form.get("appearance_background", "")).strip()
+                        if "appearance_background_custom" in form
+                        else ""
                     ),
                 },
                 backup_values={
