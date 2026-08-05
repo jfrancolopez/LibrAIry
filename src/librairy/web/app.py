@@ -11,6 +11,9 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from librairy import __version__
+from librairy.ai.lmstudio import diagnose as lmstudio_diagnose
+from librairy.ai.lmstudio import normalize_host
+from librairy.ai.lmstudio import probe as lmstudio_probe
 from librairy.catalogs import catalog_enabled
 from librairy.config import Settings
 from librairy.db import connect
@@ -355,6 +358,34 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         except SettingsValidationError as exc:
             return _settings_error(request, str(exc))
         return _settings_redirect(request)
+
+    @app.post("/settings/providers/lmstudio/test", response_class=HTMLResponse)
+    async def settings_lmstudio_test(request: Request) -> HTMLResponse:
+        """Probe the address in the form, without saving it.
+
+        Testing used to mean: save, navigate to Health, press Test there, come
+        back. So a wrong IP had to be committed as configuration before you
+        could find out it was wrong.
+        """
+        form = await _request_form(request)
+        host = str(form.get("lmstudio_host", "")).strip()
+        model = str(form.get("lmstudio_model", "")).strip()
+        health = lmstudio_probe(host, settings.ai_timeout)
+        return TEMPLATES.TemplateResponse(
+            request,
+            "partials/lmstudio_test.html",
+            {
+                "result": {
+                    "ok": health.ok,
+                    "endpoint": normalize_host(host),
+                    "latency_ms": health.latency_ms,
+                    "models": health.models,
+                    "model": model,
+                    "error": health.error,
+                    "hint": "" if health.ok else lmstudio_diagnose(health.error or ""),
+                }
+            },
+        )
 
     @app.post("/settings/keys/{slug}", response_class=HTMLResponse)
     async def settings_save_key(request: Request, slug: str) -> Response:

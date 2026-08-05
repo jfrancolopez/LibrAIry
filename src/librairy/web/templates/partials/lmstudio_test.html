@@ -1,0 +1,29 @@
+<div id="lmstudio-test" class="lmstudio-test">
+  {% if result.ok %}
+    <p><span class="badge badge-ok">reachable</span> {{ result.endpoint }} answered in {{ result.latency_ms }} ms.</p>
+    {% if result.models %}
+      <p class="muted">Models loaded on that server — click one to use it:</p>
+      <div class="button-row model-picks">
+        {% for model in result.models %}
+          <button type="button" class="btn model-pick{% if model == result.model %} is-current{% endif %}"
+                  data-model="{{ model }}">{{ model }}</button>
+        {% endfor %}
+      </div>
+      {% if result.model and result.model not in result.models %}
+        <p class="status warn">The model box says <code>{{ result.model }}</code>, which that server
+          has not loaded. Every file would wait for the full timeout and get nothing back. Pick one
+          of the models above, then save.</p>
+      {% elif not result.model %}
+        <p class="status warn">No model chosen yet. Pick one above, then save.</p>
+      {% else %}
+        <p class="status ok">Ready. Save to start using it.</p>
+      {% endif %}
+    {% else %}
+      <p class="status warn">The server is reachable but has no model loaded. Load one in LM Studio,
+        then test again.</p>
+    {% endif %}
+  {% else %}
+    <p><span class="badge badge-fail">unreachable</span> {{ result.endpoint or 'no address' }} — {{ result.error }}</p>
+    <p class="status warn">{{ result.hint }}</p>
+  {% endif %}
+</div>

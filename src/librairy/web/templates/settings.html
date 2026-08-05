@@ -242,14 +242,29 @@
 </form>
 
 <h3>LM Studio (local, on your LAN)</h3>
-<p class="muted">Running LM Studio on another machine? Type its IP — <code>http://</code> and <code>:1234</code> are filled in for you. No API key, nothing leaves your network. In LM Studio: <strong>Developer</strong> tab → start the server → enable <strong>Serve on Local Network</strong>.</p>
-<form method="post" action="/settings/providers/lmstudio" hx-post="/settings/providers/lmstudio" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>
+<p class="muted">Running LM Studio on another machine? Type its IP — <code>http://</code> and <code>:1234</code> are filled in for you. No API key, nothing leaves your network.</p>
+<ol class="steps setup-steps-open">
+  <li><span>In LM Studio, open the <strong>Developer</strong> tab and start the server.</span></li>
+  <li><span>Turn on <strong>Serve on Local Network</strong> in the same panel. Without it the server only answers its own machine, and LibrAIry will time out.</span></li>
+  <li><span>Load a model, then press <strong>Test</strong> below to see it listed here.</span></li>
+</ol>
+<form id="lmstudio-form" method="post" action="/settings/providers/lmstudio" hx-post="/settings/providers/lmstudio" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-  <label>IP or URL <input name="lmstudio_host" value="{{ lmstudio.host }}" placeholder="192.168.1.50"></label>
-  <label>Model <input name="lmstudio_model" value="{{ lmstudio.model }}" placeholder="qwen2.5-7b-instruct"></label>
-  <button type="submit" class="btn-primary">Save LM Studio</button>
+  <label>IP or URL <input id="lmstudio-host" name="lmstudio_host" value="{{ lmstudio.host }}" placeholder="192.168.1.50"></label>
+  <label>Model <input id="lmstudio-model" name="lmstudio_model" value="{{ lmstudio.model }}" placeholder="press Test to list what is loaded"></label>
+  <div class="button-row">
+    <button type="button"
+            hx-post="/settings/providers/lmstudio/test"
+            hx-include="#lmstudio-form"
+            hx-target="#lmstudio-test"
+            hx-swap="outerHTML"
+            hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>Test connection</button>
+    <button type="submit" class="btn-primary">Save LM Studio</button>
+  </div>
 </form>
-<p class="muted">After saving, use the <strong>Test</strong> button on the <a href="/health">Health</a> page to confirm the connection and see which models are loaded.</p>
+<div id="lmstudio-test" class="lmstudio-test">
+  <p class="muted">Test checks the address in the box above — you do not have to save a wrong one to find out it is wrong.</p>
+</div>
 
 <h3>Ollama Endpoints</h3>
 <table>

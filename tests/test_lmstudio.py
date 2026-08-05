@@ -111,3 +111,46 @@ def test_settings_host_overrides_env_without_restart(tmp_path: Path) -> None:
 
     assert providers[0].endpoint == "http://10.0.0.7:1234"
     assert providers[0].model == "qwen3-8b"
+
+
+def test_diagnose_maps_a_timeout_to_the_setting_that_causes_it() -> None:
+    """LM Studio binds to 127.0.0.1 until told otherwise, so a running server
+    on a pingable machine still times out. "timed out" alone sends people
+    hunting through their firewall for a problem that is a checkbox."""
+    from librairy.ai.lmstudio import diagnose
+
+    assert "Serve on Local Network" in diagnose("timed out")
+    assert "Start the server" in diagnose("[Errno 61] Connection refused")
+    assert "does not resolve" in diagnose("[Errno 8] nodename nor servname provided")
+    assert "No route" in diagnose("[Errno 101] Network is unreachable")
+    assert diagnose("something novel")  # never silent
+
+
+def test_probe_reports_models_for_an_unsaved_address(monkeypatch) -> None:
+    from librairy.ai.lmstudio import probe
+
+    calls: list[str] = []
+
+    def fake_urlopen(req, timeout=None):  # noqa: ANN001, ARG001
+        calls.append(req.full_url)
+        return _Resp({"data": [{"id": "qwen2.5-7b-instruct"}, {"id": "gemma-3-4b"}]})
+
+    monkeypatch.setattr("librairy.ai.lmstudio.request.urlopen", fake_urlopen)
+    result = probe("192.168.145.36")
+
+    assert result.ok is True
+    assert result.models == ("qwen2.5-7b-instruct", "gemma-3-4b")
+    assert calls == ["http://192.168.145.36:1234/v1/models"]
+
+
+def test_probe_with_no_address_does_not_reach_the_network(monkeypatch) -> None:
+    from librairy.ai.lmstudio import probe
+
+    def forbidden(req, timeout=None):  # noqa: ANN001, ARG001
+        raise AssertionError("probed with an empty address")
+
+    monkeypatch.setattr("librairy.ai.lmstudio.request.urlopen", forbidden)
+    result = probe("   ")
+
+    assert result.ok is False
+    assert "No address" in (result.error or "")

@@ -40,9 +40,11 @@ Open **Settings → AI providers → LM Studio (local, on your LAN)** and fill i
 
 - **IP or URL** — just the IP is enough: `192.168.1.50`. LibrAIry fills in
   `http://` and `:1234` for you. Use `192.168.1.50:5000` if you changed the port.
-- **Model** — the identifier from LM Studio, e.g. `qwen2.5-14b-instruct`.
+- **Model** — the identifier from LM Studio, e.g. `qwen2.5-14b-instruct`. You do
+  not have to know it in advance: press **Test connection** and LibrAIry lists
+  the models that server has actually loaded, so you can click one.
 
-Press **Save LM Studio**. No restart is needed.
+Press **Test connection** first, then **Save LM Studio**. No restart is needed.
 
 Prefer environment variables instead? Set these in `.env` and recreate the
 container:
@@ -56,14 +58,25 @@ The Settings value wins over the environment variable when both are set.
 
 ## 3. Test it
 
-Go to **Health → AI providers** and press **Test** on the `lmstudio` row.
+Press **Test connection**, right under the two boxes in Settings. It probes the
+address you have typed *without saving it*, so a wrong IP never has to be
+committed as configuration before you find out it is wrong.
 
-- **OK** — the badge turns green and the models loaded in LM Studio are listed.
-- **FAIL** — the error tells you what happened:
-  - *Connection refused* → the server is not running, or **Serve on Local
-    Network** is off.
-  - *timed out* → a firewall is blocking the port, or you typed the wrong IP.
-    On Windows, allow LM Studio through the firewall for **Private** networks.
+- **reachable** — the loaded models are listed as buttons. Click one to fill the
+  model box. If the box already names a model that server has not loaded,
+  LibrAIry says so: that combination looks healthy but makes every single file
+  wait out the full AI timeout and return nothing.
+- **unreachable** — the message names the likely cause:
+  - *Connection refused* → nothing is listening there. Start the server in the
+    Developer tab, and check the port.
+  - *timed out* → most often **Serve on Local Network** is off, so the server is
+    running but only answers its own machine. Otherwise a firewall is blocking
+    the port; on Windows, allow LM Studio through for **Private** networks.
+  - *does not resolve* → use an IP rather than a hostname.
+  - *no route* → if LibrAIry is in Docker, check the container can see your LAN.
+
+The `lmstudio` row on the **Health** page still works and tests the *saved*
+configuration, which is the one analysis actually uses.
 
 ## 4. Make it the preferred provider
 

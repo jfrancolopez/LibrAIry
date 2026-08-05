@@ -94,3 +94,54 @@ def _request(method: str, url: str, body: dict | None, timeout: int) -> dict:
 
 def _error_message(exc: OSError) -> str:
     return str(getattr(exc, "reason", exc)) or exc.__class__.__name__
+
+
+def probe(host: str, timeout: int = 8) -> HealthResult:
+    """Health-check an arbitrary host without saving it as configuration.
+
+    The settings page tests what you have typed, before you commit to it.
+    Making someone save a wrong IP in order to discover it is wrong is a
+    strange way to run a form.
+    """
+    endpoint = normalize_host(host)
+    if not endpoint:
+        return HealthResult(False, error="No address given.")
+    config = ProviderConfig(
+        name="lmstudio",
+        kind="lmstudio",
+        endpoint=endpoint,
+        model="",
+        enabled=True,
+        is_local=True,
+    )
+    return LMStudioProvider(config).health(timeout)
+
+
+def diagnose(error: str) -> str:
+    """Turn a socket error into the thing to actually go and change.
+
+    LM Studio binds to 127.0.0.1 by default, so the overwhelmingly common
+    failure is a server that is genuinely running and genuinely unreachable —
+    "timed out" on its own sends people hunting through their firewall.
+    """
+    lowered = (error or "").lower()
+    if "timed out" in lowered or "timeout" in lowered:
+        return (
+            "The machine answered a ping but not on this port. LM Studio only "
+            'listens to its own machine until you turn on "Serve on Local '
+            'Network" — find it in the Developer tab, beside the server toggle.'
+        )
+    if "refused" in lowered:
+        return (
+            "The machine is reachable but nothing is listening on that port. "
+            "Start the server in LM Studio's Developer tab, and check the port "
+            "matches (1234 by default)."
+        )
+    if "not known" in lowered or "nodename" in lowered or "name or service" in lowered:
+        return "That hostname does not resolve. An IP address avoids the question."
+    if "no route" in lowered or "unreachable" in lowered:
+        return (
+            "No route to that address. If LibrAIry is in Docker, check the "
+            "container is on a network that can see your LAN."
+        )
+    return "Check the address, the port, and that the server is started."

@@ -744,3 +744,79 @@ def test_cloud_provider_key_can_be_saved_and_is_never_echoed(tmp_path: Path) -> 
 
     assert runtime_settings(conn, settings).keys["openai"] == "set"
     assert "sk-typed-here" not in page
+
+
+def test_lmstudio_test_button_probes_the_typed_address_without_saving(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """The old flow was: save, go to Health, press Test, come back. So a wrong
+    IP had to be committed as configuration before you could learn it was wrong."""
+    from librairy.ai.base import HealthResult
+
+    probed: list[str] = []
+
+    def fake_probe(host, timeout):  # noqa: ANN001, ARG001
+        probed.append(host)
+        return HealthResult(True, latency_ms=12, models=("gemma-3-4b", "qwen2.5-7b-instruct"))
+
+    monkeypatch.setattr("librairy.web.app.lmstudio_probe", fake_probe)
+    client, conn, _ = client_for(tmp_path)
+
+    response = client.post(
+        "/settings/providers/lmstudio/test",
+        headers={"x-csrf-token": client.cookies["csrf_token"]},
+        data={"lmstudio_host": "192.168.145.36", "lmstudio_model": "gemma-3-4b"},
+    )
+
+    assert probed == ["192.168.145.36"]
+    assert "reachable" in response.text
+    assert "http://192.168.145.36:1234" in response.text
+    assert "qwen2.5-7b-instruct" in response.text
+    # Nothing was written: testing is not configuring.
+    assert conn.execute(
+        "SELECT COUNT(*) c FROM settings WHERE key LIKE 'ai.lmstudio%'"
+    ).fetchone()["c"] == 0
+
+
+def test_lmstudio_test_warns_when_the_chosen_model_is_not_loaded(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """A reachable server with the wrong model name is the nastiest failure:
+    health passes, and every file waits out a full timeout for nothing."""
+    from librairy.ai.base import HealthResult
+
+    monkeypatch.setattr(
+        "librairy.web.app.lmstudio_probe",
+        lambda host, timeout: HealthResult(  # noqa: ARG005
+            True, latency_ms=9, models=("gemma-3-4b",)
+        ),
+    )
+    client, _, _ = client_for(tmp_path)
+
+    response = client.post(
+        "/settings/providers/lmstudio/test",
+        headers={"x-csrf-token": client.cookies["csrf_token"]},
+        data={"lmstudio_host": "192.168.145.36", "lmstudio_model": "gemma4-e4b"},
+    )
+
+    assert "has not loaded" in response.text
+    assert "full timeout" in response.text
+
+
+def test_lmstudio_test_explains_an_unreachable_host(tmp_path: Path, monkeypatch) -> None:
+    from librairy.ai.base import HealthResult
+
+    monkeypatch.setattr(
+        "librairy.web.app.lmstudio_probe",
+        lambda host, timeout: HealthResult(False, error="timed out"),  # noqa: ARG005
+    )
+    client, _, _ = client_for(tmp_path)
+
+    response = client.post(
+        "/settings/providers/lmstudio/test",
+        headers={"x-csrf-token": client.cookies["csrf_token"]},
+        data={"lmstudio_host": "192.168.145.36", "lmstudio_model": ""},
+    )
+
+    assert "unreachable" in response.text
+    assert "Serve on Local Network" in response.text

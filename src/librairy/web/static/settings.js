@@ -30,3 +30,20 @@
     });
   }
 })();
+
+// Clicking a model reported by LM Studio fills the model box. The buttons
+// arrive with an htmx swap, so the listener is delegated from the document
+// rather than bound to elements that do not exist at load time.
+(function () {
+  document.addEventListener("click", function (event) {
+    var button = event.target.closest(".model-pick");
+    if (!button) return;
+    var field = document.getElementById("lmstudio-model");
+    if (!field) return;
+    field.value = button.dataset.model;
+    document.querySelectorAll(".model-pick").forEach(function (other) {
+      other.classList.toggle("is-current", other === button);
+    });
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+})();
