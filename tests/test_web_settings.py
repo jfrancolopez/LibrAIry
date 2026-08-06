@@ -6,7 +6,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from librairy.ai.base import HealthResult
-from librairy.ai.registry import provider_chain
+from librairy.ai.registry import provider_chain, provider_order
 from librairy.classify import analyze_items
 from librairy.config import Settings
 from librairy.db import connect
@@ -1018,3 +1018,45 @@ def test_unticking_a_backup_category_is_saved_and_ticking_all_means_default(
 def _setting(conn, key: str) -> str:
     row = conn.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
     return json.loads(row["value"]) if row else ""
+
+def test_provider_order_moves_one_step_at_a_time(tmp_path: Path) -> None:
+    """Two buttons per row, in place of a box you typed five exact slugs into."""
+    client, conn, settings = client_for(tmp_path)
+
+    page = client.get("/settings").text
+    assert 'id="provider-chain"' in page
+    assert 'name="order"' not in page, "the comma-separated text box is gone"
+
+    before = provider_order(conn, settings)
+    moved = client.post(
+        f"/settings/providers/order/{before[1]}/up",
+        headers={"x-csrf-token": client.cookies["csrf_token"]},
+    )
+
+    assert moved.status_code == 200
+    after = provider_order(conn, settings)
+    assert after[0] == before[1]
+    assert after[1] == before[0]
+    assert sorted(after) == sorted(before), "moving must not add or drop a provider"
+
+
+def test_the_ends_of_the_chain_cannot_be_pushed_off_it(tmp_path: Path) -> None:
+    client, conn, settings = client_for(tmp_path)
+    before = provider_order(conn, settings)
+
+    csrf = {"x-csrf-token": client.cookies["csrf_token"]}
+    client.post(f"/settings/providers/order/{before[0]}/up", headers=csrf)
+    client.post(f"/settings/providers/order/{before[-1]}/down", headers=csrf)
+
+    assert provider_order(conn, settings) == before
+
+
+def test_an_unconfigured_provider_still_appears_in_the_chain(tmp_path: Path) -> None:
+    """Seeing it is how you know it is being skipped rather than missing."""
+    client, _, _ = client_for(tmp_path)
+
+    page = client.get("/settings").text
+
+    assert "not set up" in page
+    for label in ("Ollama", "LM Studio", "OpenAI", "Claude", "Gemini"):
+        assert label in page

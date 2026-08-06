@@ -294,16 +294,22 @@
 </div>
 
 <div class="tab-panel" data-tab-panel="ai">
-<h2 id="providers">AI Provider Selector</h2>
-<p class="muted">{{ provider_header() }}. Changes apply to the next analysis batch.</p>
-<form method="post" action="/settings/providers/order" hx-post="/settings/providers/order" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>
-  <label>Provider kind order
-    <input name="order" value="{{ provider_order|join(',') }}">
-  </label>
-  <button type="submit">Reorder</button>
-</form>
+<section class="metric wide" id="providers">
+  <h2>Who gets asked, in order</h2>
+  <p class="muted">
+    LibrAIry works down this list and stops at the first one that answers.
+    Anything not set up is skipped, so the order is safe to arrange the way
+    you would like it rather than the way it happens to be configured today.
+    {{ provider_header() }} · changes apply to the next analysis batch.
+  </p>
+  {% include "partials/provider_chain.html" %}
+</section>
 
-<h3>LM Studio (local, on your LAN)</h3>
+<section class="metric wide">
+<h2>Local AI — nothing leaves your network</h2>
+<p class="muted">Either of these can run on this machine or on any other machine you own. No account, no key, no bill.</p>
+
+<h3>LM Studio</h3>
 <p class="muted">Running LM Studio on another machine? Type its IP — <code>http://</code> and <code>:1234</code> are filled in for you. No API key, nothing leaves your network.</p>
 <ol class="steps setup-steps-open">
   <li><span>In LM Studio, open the <strong>Developer</strong> tab and start the server.</span></li>
@@ -328,16 +334,15 @@
   <p class="muted">Test checks the address in the box above — you do not have to save a wrong one to find out it is wrong.</p>
 </div>
 
-<h3>Ollama Endpoints</h3>
+<h3>Ollama</h3>
 {# The feature was here all along and nothing said so — the form looked like it
    configured the local Ollama rather than any machine on the network. #}
 <p class="muted">
   Ollama does not have to run on this machine. Add as many as you like — a
   desktop with a real GPU, a second server, anything on your LAN — and give
   each one the URL it answers on, like <code>http://192.168.1.50:11434</code>.
-  LibrAIry tries them in the order they appear in <a href="#providers">the provider order above</a>
-  and falls through to the next when one is down. Nothing leaves your network,
-  and no key is involved.
+  LibrAIry tries them in the order listed here and falls through to the next
+  when one is down.
 </p>
 <p class="muted">
   Ollama only listens to its own machine unless you tell it otherwise: set
@@ -374,9 +379,11 @@
   <label>Model <input name="model" placeholder="qwen3:8b"></label>
   <button type="submit">Add Ollama endpoint</button>
 </form>
+</section>
 
-<h3>Cloud Providers</h3>
-<p class="muted">Optional, and off until you deliberately turn one on. A cloud provider is only asked about files the local models could not place, and it receives the same redacted description they do — filenames, sizes and durations, never the file itself and never its path. All three charge for use; LibrAIry does not resell anything, you are billed by them directly.</p>
+<section class="metric wide">
+<h2>Cloud AI — off until you turn one on</h2>
+<p class="muted">Only asked about files the local models could not place, and it receives the same redacted description they do — filenames, sizes and durations, never the file itself and never its path. All three charge for use; LibrAIry does not resell anything, you are billed by them directly.</p>
 <div class="grid catalog-grid">
   {% for info in ai_providers %}
     {% set provider = (providers | selectattr('kind', 'equalto', info.kind) | list | first) %}
@@ -448,6 +455,7 @@
     </section>
   {% endfor %}
 </div>
+</section>
 
 </div>
 

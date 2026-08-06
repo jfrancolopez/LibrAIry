@@ -36,6 +36,8 @@ from librairy.settings_service import (
     disable_cloud_provider,
     enable_cloud_provider,
     example_path,
+    move_provider,
+    provider_ask_chain,
     provider_header,
     remove_ollama_endpoint,
     reorder_providers,
@@ -496,6 +498,28 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         form = await _request_form(request)
         reorder_providers(conn, settings, str(form.get("order", "")).split(","))
         return _settings_redirect(request)
+
+    @app.post("/settings/providers/order/{kind}/{direction}", response_class=HTMLResponse)
+    def settings_provider_move(request: Request, kind: str, direction: str) -> HTMLResponse:
+        """Move one provider up or down the chain, and redraw just the chain.
+
+        Two buttons per row beats a text box you had to type five exact slugs
+        into, and swapping in place keeps the rest of the tab where it was.
+        """
+        if direction not in {"up", "down"}:
+            raise HTTPException(status_code=422, detail="direction must be up or down")
+        try:
+            move_provider(conn, settings, kind, direction)
+        except SettingsValidationError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return TEMPLATES.TemplateResponse(
+            request,
+            "partials/provider_chain.html",
+            {
+                "ask_chain": provider_ask_chain(conn, settings),
+                "csrf_token": request.state.session["csrf_token"],
+            },
+        )
 
     @app.post("/settings/providers/cloud/{kind}/enable", response_class=HTMLResponse)
     async def settings_cloud_enable(request: Request, kind: str) -> Response:

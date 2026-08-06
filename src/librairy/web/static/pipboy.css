@@ -1019,6 +1019,40 @@ tbody tr:hover { background: var(--bg-metric); }
 }
 .setup-steps code { overflow-wrap: anywhere; }
 
+/* ---- The AI fallback chain --------------------------------------------- */
+/* A numbered list you rearrange with two buttons, in place of a text box you
+   had to type five exact provider slugs into. */
+.chain { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
+.chain-step {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-metric);
+  border: var(--border-thin) solid var(--border);
+  border-radius: var(--radius-ui);
+}
+/* Dimmed rather than hidden: a provider you have not set up is still part of
+   the order, and seeing it is how you know it is being skipped. */
+.chain-step.is-idle { opacity: 0.62; }
+.chain-rank {
+  width: 1.75rem;
+  height: 1.75rem;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--bg-input);
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+.chain-body { min-width: 0; display: grid; gap: 2px; }
+.chain-name { margin: 0; font-weight: 600; display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+.chain-body p.muted { margin: 0; font-size: var(--text-sm); }
+.chain-move button { min-width: 2.25rem; padding: var(--space-1) var(--space-2); }
+.chain-move button[disabled] { opacity: 0.3; cursor: not-allowed; }
+
 /* ---- Advisory flags ---------------------------------------------------- */
 /* Wallets, hidden files, possible adult content. Advisories, not verdicts —
    styled to be noticed in a scan without shouting over the decision buttons. */

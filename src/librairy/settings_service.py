@@ -71,6 +71,7 @@ def settings_page_data(conn: sqlite3.Connection, settings: Settings) -> dict[str
         "examples": {category: example_path(conn, category, settings) for category in CATEGORIES},
         "providers": providers,
         "provider_order": provider_order(conn, settings),
+        "ask_chain": provider_ask_chain(conn, settings),
         "cloud_providers": CLOUD_PROVIDERS,
         "backup_remotes": configured_remotes(settings),
         # Sizes next to each tick box, so "include photos" is a decision with
@@ -90,6 +91,87 @@ def settings_page_data(conn: sqlite3.Connection, settings: Settings) -> dict[str
         "key_states": all_key_states(conn, settings),
         "ai_providers": AI_PROVIDERS,
     }
+
+
+@dataclass(frozen=True)
+class ChainStep:
+    """One rung of "who gets asked, in order", as the page shows it."""
+
+    kind: str
+    label: str
+    #  Where it runs, in the terms that matter: privacy and money.
+    where: str
+    #  ready | not set up | off | key set, not enabled
+    status: str
+    detail: str
+    position: int
+    is_first: bool
+    is_last: bool
+
+    @property
+    def ready(self) -> bool:
+        return self.status == "ready"
+
+
+PROVIDER_LABELS = {
+    "ollama": ("Ollama", "on this machine or anywhere on your LAN"),
+    "lmstudio": ("LM Studio", "on this machine or anywhere on your LAN"),
+    "openai": ("OpenAI", "cloud — they bill you, and metadata leaves your network"),
+    "anthropic": ("Claude", "cloud — they bill you, and metadata leaves your network"),
+    "gemini": ("Gemini", "cloud — they bill you, and metadata leaves your network"),
+}
+
+
+def provider_ask_chain(conn: sqlite3.Connection, settings: Settings) -> list[ChainStep]:
+    """The fallback order as a list you can read, not a comma-separated string.
+
+    The order was a text box you typed "lmstudio,ollama,openai" into: you had
+    to already know the five slugs, and nothing on the page connected the
+    order to the providers configured below it. It is the single most
+    important setting in the AI tab -- it decides whether a private local
+    model or a paid cloud one sees your files first.
+    """
+    order = provider_order(conn, settings)
+    configured = {provider.kind: provider for provider in configured_providers(conn, settings)}
+    states = all_key_states(conn, settings)
+    steps: list[ChainStep] = []
+    for index, kind in enumerate(order):
+        label, where = PROVIDER_LABELS.get(kind, (kind, ""))
+        provider = configured.get(kind)
+        if provider is not None and provider.enabled:
+            status, detail = "ready", provider.model or "no model chosen"
+        elif kind in CLOUD_PROVIDERS and states.get(kind) and states[kind].is_set:
+            status, detail = "key set, not enabled", "turn it on below to use it"
+        elif provider is not None:
+            status, detail = "off", provider.model or "configured but switched off"
+        else:
+            status, detail = "not set up", "nothing configured yet — it is skipped"
+        steps.append(
+            ChainStep(
+                kind=kind,
+                label=label,
+                where=where,
+                status=status,
+                detail=detail,
+                position=index + 1,
+                is_first=index == 0,
+                is_last=index == len(order) - 1,
+            )
+        )
+    return steps
+
+
+def move_provider(conn: sqlite3.Connection, settings: Settings, kind: str, direction: str) -> None:
+    """Swap one provider with its neighbour. The whole of the reordering UI."""
+    order = provider_order(conn, settings)
+    if kind not in order:
+        raise SettingsValidationError("unknown provider")
+    index = order.index(kind)
+    target = index - 1 if direction == "up" else index + 1
+    if not 0 <= target < len(order):
+        return
+    order[index], order[target] = order[target], order[index]
+    reorder_providers(conn, settings, order)
 
 
 def provider_header(conn: sqlite3.Connection, settings: Settings) -> str:
