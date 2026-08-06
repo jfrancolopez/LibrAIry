@@ -1,6 +1,7 @@
 {# Sits inside the proposal card and gets its full width, so a picture is a
    picture rather than a stamp in a narrow column. #}
-<aside class="preview-card">
+{% set has_media = preview.thumb_url or preview.media_url %}
+<aside class="preview-card{% if not has_media %} is-textonly{% elif preview.kind == 'document' %} is-document{% endif %}">
   <div class="preview-media">
     {% if preview.media_url and preview.kind == 'video' %}
       {# preload="none" — a page of previews must not start fetching gigabytes
@@ -22,7 +23,10 @@
   <div class="preview-facts">
     <p class="preview-kind muted">{{ preview.kind|capitalize }}</p>
     <h4>{{ preview.title }}</h4>
-    {% if preview.body %}<p class="preview-text">{{ preview.body }}</p>{% endif %}
+    {# <pre>, not <p>: the shape of a file is half of what tells you which file
+       it is, and a CSV, a config and a subtitle track all read as one grey
+       paragraph once the line breaks are gone. #}
+    {% if preview.body %}<pre class="preview-text">{{ preview.body }}</pre>{% endif %}
     <p class="preview-tags">
       {% for fact in preview.facts %}<span class="badge badge-info">{{ fact }}</span>{% endfor %}
     </p>

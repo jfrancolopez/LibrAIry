@@ -133,13 +133,42 @@ def test_document_preview_truncates_long_text(tmp_path: Path) -> None:
     assert len(response.text) < PREVIEW_TEXT_CHARS * 3, "the whole file must not be inlined"
 
 
-def test_document_preview_collapses_whitespace(tmp_path: Path) -> None:
+def test_document_preview_keeps_the_line_structure(tmp_path: Path) -> None:
+    """Collapsed, a CSV, a config and a subtitle track all read the same.
+
+    The shape of a file is half of what tells you which file it is. Leading
+    blank lines still go -- they are just an empty panel -- and tabs become
+    spaces, because eight columns shoves everything off the edge.
+    """
     client, conn, settings = client_for(tmp_path)
-    item = insert_file(conn, settings, "spaced.txt", b"first\n\n\n     second\t\tthird")
+    item = insert_file(conn, settings, "spaced.txt", b"\n\nname,qty\nrope,2\n\tindented")
 
     response = client.get(f"/preview/items/{item}")
 
-    assert "first second third" in response.text
+    assert "<pre class=\"preview-text\">name,qty\nrope,2\n    indented</pre>" in response.text
+
+
+def test_a_long_document_is_cut_by_lines_as_well_as_characters(tmp_path: Path) -> None:
+    """A log with 40,000 short lines is as much to send as one huge line."""
+    client, conn, settings = client_for(tmp_path)
+    body = "\n".join(f"line {n}" for n in range(500)).encode()
+    item = insert_file(conn, settings, "big.log", body)
+
+    text = client.get(f"/preview/items/{item}").text
+
+    assert "line 0" in text
+    assert "line 400" not in text
+    assert "…" in text
+
+
+def test_csv_and_log_files_actually_get_a_preview(tmp_path: Path) -> None:
+    """They classified as documents while extraction refused them: blank body."""
+    client, conn, settings = client_for(tmp_path)
+    csv_item = insert_file(conn, settings, "sheet.csv", b"name,qty\nrope,2")
+    log_item = insert_file(conn, settings, "run.log", b"started ok")
+
+    assert "rope,2" in client.get(f"/preview/items/{csv_item}").text
+    assert "started ok" in client.get(f"/preview/items/{log_item}").text
 
 
 def test_unreadable_document_degrades_to_no_snippet(tmp_path: Path, monkeypatch) -> None:

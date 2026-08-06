@@ -14,7 +14,27 @@ from librairy.paths import validate_relpath
 from librairy.planner import utc_now
 
 SCOPED_CATEGORIES = {"documents", "books", "projects"}
-TEXT_SUFFIXES = {".txt", ".md", ".markdown", ".rst", ".py", ".toml", ".json", ".yaml", ".yml"}
+# Anything that is already text on disk. Reading one is a file read and
+# nothing else -- no decoder, no subprocess -- so the list can be generous.
+# It was not, and .csv, .tsv and .log were classified as documents while
+# extraction refused them: previews for those came up blank, and searching
+# inside them found nothing.
+TEXT_SUFFIXES = {
+    # prose and notes
+    ".txt", ".md", ".markdown", ".rst", ".org", ".tex", ".nfo",
+    # tabular and logs
+    ".csv", ".tsv", ".log",
+    # configuration
+    ".toml", ".json", ".yaml", ".yml", ".ini", ".cfg", ".conf", ".properties",
+    # markup
+    ".html", ".htm", ".xml", ".svg",
+    # source
+    ".py", ".js", ".mjs", ".ts", ".tsx", ".jsx", ".css", ".scss", ".sql",
+    ".sh", ".bash", ".zsh", ".ps1", ".c", ".h", ".cpp", ".hpp", ".cs",
+    ".java", ".kt", ".go", ".rs", ".rb", ".php", ".swift", ".lua", ".r",
+    # subtitles
+    ".srt", ".vtt", ".ssa", ".ass",
+}
 MAX_ATTEMPTS = 3
 
 

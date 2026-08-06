@@ -10,6 +10,7 @@ from pathlib import Path
 
 from librairy.catalogs import catalog_enabled
 from librairy.config import Settings
+from librairy.content.extract import TEXT_SUFFIXES
 from librairy.paths import PathValidationError, validate_dest
 from librairy.web.theme import ThemeSwatch, normalize_theme, swatch_for
 
@@ -17,11 +18,20 @@ LOGGER = logging.getLogger(__name__)
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".heic", ".avif", ".webp"}
 VIDEO_EXTENSIONS = {".mp4", ".mkv", ".mov", ".avi", ".webm", ".m4v"}
 AUDIO_EXTENSIONS = {".mp3", ".flac", ".wav", ".ogg", ".m4a", ".aac"}
-# Anything librairy.content.extract can pull text out of.
-DOCUMENT_EXTENSIONS = {".pdf", ".txt", ".md", ".csv", ".tsv", ".log", ".docx", ".epub"}
+# Anything librairy.content.extract can pull text out of, kept in step with it
+# rather than listed twice -- the two lists had drifted, and .csv, .tsv and
+# .log were previewed as documents with nothing in the body.
+DOCUMENT_EXTENSIONS = TEXT_SUFFIXES | {".pdf", ".docx", ".epub"}
+# poppler renders the first page of a PDF straight to a JPEG. It is already in
+# the image for pdftotext, so this costs nothing extra to ship.
+PAGE_RENDER_EXTENSIONS = {".pdf"}
 
-
-PREVIEW_TEXT_CHARS = 700
+# Enough to recognise a document without scrolling, and the panel scrolls if
+# you want more. The old 700 characters, with every line break collapsed, was
+# one grey paragraph -- unreadable for anything with structure, which is most
+# of what a person keeps: notes, config, subtitles, code, a table.
+PREVIEW_TEXT_CHARS = 4000
+PREVIEW_TEXT_LINES = 80
 THUMBNAIL_WIDTH = 320
 THUMBNAIL_TIMEOUT_SECONDS = 20
 
@@ -118,10 +128,11 @@ def preview_for_item(conn, settings: Settings, item_id: int, *, bulk: bool = Fal
             no_play_reason=reason,
         )
     if kind == "document":
+        page = _page_thumbnail(settings, path, row["fingerprint"] or f"item-{item_id}")
         return Preview(
             kind,
             title,
-            None,
+            f"/preview/items/{item_id}/thumb" if page else None,
             (f"type: {path.suffix.lstrip('.') or 'document'}", _size_fact(row["size"])),
             body=_text_snippet(path),
         )
@@ -149,7 +160,12 @@ def human_bytes(size: int | None) -> str:
 
 
 def _text_snippet(path: Path) -> str | None:
-    """Opening lines of a document. None when it cannot be read.
+    """Opening lines of a document, with its line structure intact.
+
+    Collapsing whitespace turned a shopping list, a config file, a subtitle
+    track and a CSV into the same grey paragraph. The shape of a file is half
+    of what tells you which file it is, so the line breaks stay and the panel
+    scrolls.
 
     Extraction shells out to pdftotext for PDFs, so any failure here — missing
     binary, encrypted file, scanned pages with no text layer — degrades to no
@@ -165,12 +181,28 @@ def _text_snippet(path: Path) -> str | None:
     except Exception as exc:  # noqa: BLE001 - a preview is never worth an error page
         LOGGER.debug("preview text extraction failed for %s: %s", path, exc)
         return None
-    collapsed = " ".join(text.split())
-    if not collapsed:
+    return _trim_text(text)
+
+
+def _trim_text(text: str) -> str | None:
+    """First lines of a file, without the leading blank ones, capped both ways.
+
+    Two caps rather than one: a minified stylesheet is one line of 200 KB, and
+    a log with 40,000 short lines is just as much to send.
+    """
+    # Tabs render as eight columns and shove everything off the panel.
+    lines = [line.replace("\t", "    ").rstrip() for line in text.splitlines()]
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    if not lines:
         return None
-    if len(collapsed) <= PREVIEW_TEXT_CHARS:
-        return collapsed
-    return collapsed[:PREVIEW_TEXT_CHARS].rstrip() + "…"
+    clipped = lines[:PREVIEW_TEXT_LINES]
+    truncated = len(clipped) < len(lines)
+    body = "\n".join(clipped)
+    if len(body) > PREVIEW_TEXT_CHARS:
+        body = body[:PREVIEW_TEXT_CHARS].rstrip()
+        truncated = True
+    return f"{body}\n…" if truncated else body
 
 
 def _cover_for_audio(
@@ -247,6 +279,11 @@ def thumbnail_for_item(conn, settings: Settings, item_id: int) -> Path:
         if cover is None:
             raise PreviewNotFound("no cover art for this release")
         return cover
+    if kind == "document":
+        page = _page_thumbnail(settings, path, row["fingerprint"] or f"item-{item_id}")
+        if page is None:
+            raise PreviewNotFound("no page image for this document")
+        return page
     if kind not in {"image", "video"}:
         raise PreviewNotFound("thumbnail unavailable")
     return get_thumbnail(
@@ -290,6 +327,44 @@ def get_thumbnail(
 
 def thumbnail_media_type(path: Path) -> str:
     return "image/jpeg" if path.suffix.lower() == ".jpg" else "image/svg+xml"
+
+
+def _page_thumbnail(settings: Settings, source: Path, fingerprint: str) -> Path | None:
+    """The first page of a document as a picture, or None.
+
+    A cover is how anyone recognises a PDF -- the first line of its text is
+    usually a header nobody reads. poppler ships in the image already for
+    pdftotext, and no page render is worth an error page, so every failure
+    here just means the preview falls back to text.
+    """
+    if source.suffix.lower() not in PAGE_RENDER_EXTENSIONS:
+        return None
+    if shutil.which("pdftoppm") is None:
+        return None
+    thumbs = settings.appdata_dir / "thumbs"
+    thumbs.mkdir(parents=True, exist_ok=True)
+    target = thumbs / f"{_safe_fingerprint(fingerprint)}-page.jpg"
+    if target.exists():
+        return target
+    # -singlefile makes pdftoppm write exactly <prefix>.jpg rather than
+    # <prefix>-01.jpg, which is the difference between one predictable path
+    # and guessing at poppler's page-number padding.
+    prefix = target.with_suffix("")
+    command = [
+        "pdftoppm", "-jpeg", "-r", "72", "-f", "1", "-l", "1",
+        "-scale-to", str(THUMBNAIL_WIDTH), "-singlefile", str(source), str(prefix),
+    ]
+    try:
+        result = subprocess.run(  # noqa: S603 - fixed argv, no shell
+            command, capture_output=True, timeout=THUMBNAIL_TIMEOUT_SECONDS, check=False
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        LOGGER.debug("page render failed for %s: %s", source, exc)
+        return None
+    if result.returncode != 0 or not target.exists() or target.stat().st_size == 0:
+        target.unlink(missing_ok=True)
+        return None
+    return target
 
 
 def _render_thumbnail(source: Path, target: Path, kind: str, settings: Settings) -> bool:
