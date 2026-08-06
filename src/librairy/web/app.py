@@ -80,6 +80,7 @@ from librairy.web.history import (
     undo_history_entry,
     undo_history_plan,
 )
+from librairy.web.params import OptionalFloat, OptionalInt, PageNumber
 from librairy.web.quarantine import (
     approve_stage,
     quarantine_data,
@@ -526,10 +527,10 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         request: Request,
         category: str | None = None,
         state: str = "proposed",
-        min_confidence: float | None = None,
-        max_confidence: float | None = None,
+        min_confidence: OptionalFloat = None,
+        max_confidence: OptionalFloat = None,
         has_destination: str | None = None,
-        page: int = 1,
+        page: PageNumber = 1,
         sort: str | None = None,
     ) -> HTMLResponse:
         filters = filters_from_query(
@@ -552,10 +553,10 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         request: Request,
         category: str | None = None,
         state: str = "proposed",
-        min_confidence: float | None = None,
-        max_confidence: float | None = None,
+        min_confidence: OptionalFloat = None,
+        max_confidence: OptionalFloat = None,
         has_destination: str | None = None,
-        page: int = 1,
+        page: PageNumber = 1,
         sort: str | None = None,
     ) -> HTMLResponse:
         filters = filters_from_query(
@@ -581,10 +582,10 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         all_matching: Annotated[bool, Form()] = False,
         category: Annotated[str | None, Form()] = None,
         state: Annotated[str, Form()] = "proposed",
-        min_confidence: Annotated[float | None, Form()] = None,
-        max_confidence: Annotated[float | None, Form()] = None,
+        min_confidence: Annotated[OptionalFloat, Form()] = None,
+        max_confidence: Annotated[OptionalFloat, Form()] = None,
         has_destination: Annotated[str | None, Form()] = None,
-        page: Annotated[int, Form()] = 1,
+        page: Annotated[PageNumber, Form()] = 1,
         sort: Annotated[str | None, Form()] = None,
     ) -> HTMLResponse:
         filters = filters_from_query(
@@ -872,10 +873,10 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         q: str = "",
         category: str | None = None,
         root: str | None = None,
-        year: int | None = None,
+        year: OptionalInt = None,
         genre: str | None = None,
         content: bool = False,
-        page: int = 1,
+        page: PageNumber = 1,
     ) -> HTMLResponse:
         """The results fragment, swapped in as you type. Still its own URL."""
         filters = _search_filters(root, category, year, genre, content, page)
@@ -891,10 +892,10 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         q: str = "",
         category: str | None = None,
         root: str | None = None,
-        year: int | None = None,
+        year: OptionalInt = None,
         genre: str | None = None,
         content: bool = False,
-        page: int = 1,
+        page: PageNumber = 1,
     ) -> HTMLResponse:
         """Categories when you are browsing, results when you are searching."""
         return TEMPLATES.TemplateResponse(
@@ -909,10 +910,10 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         q: str = "",
         category: str | None = None,
         root: str | None = None,
-        year: int | None = None,
+        year: OptionalInt = None,
         genre: str | None = None,
         content: bool = False,
-        page: int = 1,
+        page: PageNumber = 1,
     ) -> HTMLResponse:
         """The half of the page that changes as you type — tiles or results.
 
@@ -960,7 +961,7 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
 
     @app.get("/browse/{category}", response_class=HTMLResponse)
     def browse_category_route(
-        request: Request, category: str, folder: str = "", page: int = 1
+        request: Request, category: str, folder: str = "", page: PageNumber = 1
     ) -> HTMLResponse:
         try:
             data = browse_category(conn, category, folder=folder, page=page)
@@ -974,7 +975,7 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
 
     @app.get("/browse/{category}/files", response_class=HTMLResponse)
     def browse_files_route(
-        request: Request, category: str, folder: str = "", page: int = 1
+        request: Request, category: str, folder: str = "", page: PageNumber = 1
     ) -> HTMLResponse:
         """One more batch of file rows, appended in place by "Load more"."""
         try:

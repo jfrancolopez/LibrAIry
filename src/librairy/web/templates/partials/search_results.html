@@ -58,9 +58,10 @@
   {% endif %}
   {% if has_next or has_prev %}
     <nav class="pager button-row" aria-label="Search pages">
-      {% if has_prev %}<a class="btn" hx-get="/search/results?q={{ query }}&page={{ filters.page - 1 }}" hx-target="#search-results" hx-swap="outerHTML" href="/search?q={{ query }}&page={{ filters.page - 1 }}">Previous</a>{% endif %}
+      {# urlencode, or a search for "R&B" loses everything after the ampersand. #}
+      {% if has_prev %}<a class="btn" hx-get="/search/results?q={{ query|urlencode }}&page={{ filters.page - 1 }}" hx-target="#search-results" hx-swap="outerHTML" href="/browse?q={{ query|urlencode }}&page={{ filters.page - 1 }}">Previous</a>{% endif %}
       <span class="muted">page {{ filters.page }}</span>
-      {% if has_next %}<a class="btn" hx-get="/search/results?q={{ query }}&page={{ filters.page + 1 }}" hx-target="#search-results" hx-swap="outerHTML" href="/search?q={{ query }}&page={{ filters.page + 1 }}">Next</a>{% endif %}
+      {% if has_next %}<a class="btn" hx-get="/search/results?q={{ query|urlencode }}&page={{ filters.page + 1 }}" hx-target="#search-results" hx-swap="outerHTML" href="/browse?q={{ query|urlencode }}&page={{ filters.page + 1 }}">Next</a>{% endif %}
     </nav>
   {% endif %}
 </div>

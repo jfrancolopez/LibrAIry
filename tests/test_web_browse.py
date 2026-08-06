@@ -339,3 +339,41 @@ def test_empty_message_only_shows_on_the_first_page(tmp_path: Path) -> None:
     beyond = client.get("/browse/documents/files?page=9")
 
     assert "No files at this level." not in beyond.text
+
+
+def test_folder_with_an_ampersand_is_reachable(tmp_path: Path) -> None:
+    """"R&B" turned ?folder=R&B into folder=R plus a stray B parameter.
+
+    The pane came up empty with nothing on screen to explain why, and every
+    folder name comes from the filesystem, so & is only the first character
+    that would have done this.
+    """
+    client, conn, settings = client_for(tmp_path)
+    seed_item(conn, settings, "Music/R&B Soul/track.mp3", "music")
+    seed_item(conn, settings, "Music/R&B Soul/Alicia/live.mp3", "music")
+
+    top = client.get("/browse/music").text
+    assert "folder=R%26B+Soul" in top, "the folder link must escape the ampersand"
+
+    inside = client.get("/browse/music", params={"folder": "R&B Soul"})
+    assert "track.mp3" in inside.text
+    assert 'data-parent="/browse/music"' in inside.text
+    assert "folder=R%26B+Soul%2FAlicia" in inside.text, "and so must the link one level down"
+
+
+def test_blank_filter_fields_do_not_break_search(tmp_path: Path) -> None:
+    """An untouched Year box submits year=, which used to 422.
+
+    htmx does not swap error responses, so the search box simply stopped
+    responding — no results, no message, nothing in the page to react to.
+    """
+    client, conn, settings = client_for(tmp_path)
+    seed_item(conn, settings, "Music/Queen/Bohemian.flac", "music")
+
+    blanks = {"q": "bohemian", "root": "library", "category": "", "year": "", "genre": ""}
+    page = client.get("/browse", params=blanks)
+    body = client.get("/browse/body", params=blanks)
+
+    assert page.status_code == 200
+    assert body.status_code == 200
+    assert "Bohemian.flac" in body.text

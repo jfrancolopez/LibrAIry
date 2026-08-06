@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 from pathlib import PurePosixPath
+from urllib.parse import urlencode
 
 from librairy.config import Settings
 from librairy.proposals import decode_evidence
@@ -75,7 +76,13 @@ def browse_category(
     return {
         "category": category,
         "folder": folder,
-        "folders": sorted(folders.items()),
+        # Built here rather than concatenated in the template: a folder called
+        # "R&B" turned "?folder=R&B" into folder=R plus a stray B parameter,
+        # and the pane came up empty with nothing to explain why.
+        "folders": [
+            {"name": name, "count": count, "href": folder_href(category, folder, name)}
+            for name, count in sorted(folders.items())
+        ],
         "items": items,
         # Load the first file into the details pane straight away, so arriving
         # at a folder shows something instead of "select a file".
@@ -107,6 +114,23 @@ def human_size(size: int | None) -> str:
     return ""
 
 
+def folder_href(category: str, folder: str, name: str) -> str:
+    """Link into a subfolder, with the folder name properly escaped.
+
+    Every folder link in Browse goes through here. Folder names come from the
+    filesystem, so they carry &, ?, # and every other character that means
+    something in a URL.
+    """
+    child = f"{folder}/{name}" if folder else name
+    return _folder_url(category, child)
+
+
+def _folder_url(category: str, folder: str) -> str:
+    if not folder:
+        return f"/browse/{category}"
+    return f"/browse/{category}?{urlencode({'folder': folder})}"
+
+
 def _crumbs(category: str, folder: str) -> list[dict[str, str]]:
     """Breadcrumb trail: All → Category → each folder segment."""
     trail = [
@@ -116,7 +140,7 @@ def _crumbs(category: str, folder: str) -> list[dict[str, str]]:
     walked = ""
     for part in [segment for segment in folder.split("/") if segment]:
         walked = f"{walked}/{part}" if walked else part
-        trail.append({"label": part, "href": f"/browse/{category}?folder={walked}"})
+        trail.append({"label": part, "href": _folder_url(category, walked)})
     return trail
 
 
@@ -124,8 +148,7 @@ def _parent_href(category: str, folder: str) -> str:
     parts = [segment for segment in folder.split("/") if segment]
     if not parts:
         return "/browse"
-    parent = "/".join(parts[:-1])
-    return f"/browse/{category}?folder={parent}" if parent else f"/browse/{category}"
+    return _folder_url(category, "/".join(parts[:-1]))
 
 
 def item_detail(conn: sqlite3.Connection, settings: Settings, item_id: int) -> dict[str, object]:

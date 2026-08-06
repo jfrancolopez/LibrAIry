@@ -25,9 +25,9 @@
       <h3>Folders</h3>
       <div class="pane-list" data-parent="{{ parent_href }}">
         {% if folder %}<a class="browse-row is-folder" href="{{ parent_href }}"><span>..</span></a>{% endif %}
-        {% for name, count in folders %}
-          <a class="browse-row is-folder" href="/browse/{{ category }}?folder={{ folder ~ '/' ~ name if folder else name }}">
-            <span>{{ name }}</span><span class="muted">{{ count }}</span>
+        {% for entry in folders %}
+          <a class="browse-row is-folder" href="{{ entry.href }}">
+            <span>{{ entry.name }}</span><span class="muted">{{ entry.count }}</span>
           </a>
         {% else %}
           {% if not folder %}<p class="muted">No subfolders here.</p>{% endif %}
