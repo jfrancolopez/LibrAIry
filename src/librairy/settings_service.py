@@ -36,7 +36,9 @@ from librairy.taxonomy import (
     template_style,
 )
 from librairy.web.theme import (
+    COMFORT_THEMES,
     DEFAULT_THEME,
+    THEME_LABELS,
     THEME_NAMES,
     normalize_background,
     normalize_theme,
@@ -80,6 +82,8 @@ def settings_page_data(conn: sqlite3.Connection, settings: Settings) -> dict[str
         "auth_required": settings.auth_required,
         "lmstudio": lmstudio_view(conn, settings),
         "theme_options": THEME_NAMES,
+        "comfort_themes": COMFORT_THEMES,
+        "theme_labels": THEME_LABELS,
         "catalogs": [
             {
                 "info": catalog,

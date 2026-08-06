@@ -31,9 +31,35 @@ THEMES: dict[str, ThemeSwatch] = {
     "vaporwave": ThemeSwatch("#1a1033", "#7d55c7", "#e07fb8", "#f2e9ff"),
     "dracula": ThemeSwatch("#282a36", "#6272a4", "#bd93f9", "#f8f8f2"),
     "pipboy-green": ThemeSwatch("#061109", "#56d364", "#ffbf4d", "#7cff6b"),
+    # Palettes chosen for comfort rather than period accuracy — see the
+    # "Low-strain palettes" block in pipboy.css.
+    "solarized-dark": ThemeSwatch("#002b36", "#586e75", "#2aa198", "#eee8d5"),
+    "solarized-light": ThemeSwatch("#fdf6e3", "#b7ad94", "#1a6f70", "#073642"),
+    "nord": ThemeSwatch("#2e3440", "#4c566a", "#88c0d0", "#eceff4"),
+    "gruvbox-warm": ThemeSwatch("#282828", "#665c54", "#fabd2f", "#ebdbb2"),
 }
 
 THEME_NAMES: tuple[str, ...] = tuple(THEMES)
+
+# Palettes designed for long sessions rather than for looking like something.
+# Grouped separately in Settings because the two halves answer different
+# questions: which era do I want, versus which can I stare at for an hour.
+COMFORT_THEMES: frozenset[str] = frozenset(
+    {"solarized-dark", "solarized-light", "nord", "gruvbox-warm", "platinum-gray"}
+)
+THEME_LABELS: dict[str, str] = {
+    "beige-box": "Beige Box — 90s desktop",
+    "platinum-gray": "Platinum Gray — quiet and neutral",
+    "crt-amber": "CRT Amber — amber phosphor",
+    "dos-blue": "DOS Blue — high contrast, loud",
+    "vaporwave": "Vaporwave — purple and pink",
+    "dracula": "Dracula — the editor palette",
+    "pipboy-green": "Pip-Boy Green — glowing phosphor",
+    "solarized-dark": "Solarized Dark — low glare",
+    "solarized-light": "Solarized Light — low glare, bright room",
+    "nord": "Nord — cool and desaturated",
+    "gruvbox-warm": "Gruvbox — warm, less blue light",
+}
 
 
 def normalize_theme(name: str | None) -> str:

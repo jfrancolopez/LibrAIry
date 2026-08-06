@@ -54,12 +54,26 @@
 <form id="settings-form" method="post" action="/settings" hx-post="/settings" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>
   <div class="tab-panel" data-tab-panel="appearance">
   <h2 id="appearance">Appearance</h2>
-  <p class="muted">Pick a retro palette. Saving reloads the page, so you see it straight away.</p>
+  <p class="muted">
+    Saving reloads the page, so you see it straight away. Every palette here is
+    checked against WCAG AA for body text on all three of its surfaces — a
+    theme cannot ship looking good and reading badly.
+  </p>
   <label>Theme
     <select name="appearance_theme">
-      {% for name in theme_options %}
-        <option value="{{ name }}" {% if settings_view.appearance.theme == name %}selected{% endif %}>{{ name }}</option>
-      {% endfor %}
+      {# Grouped because the two halves answer different questions: one is
+         "which era do I want this to look like", the other is "which of these
+         can I stare at for an hour". #}
+      <optgroup label="Easy on the eyes">
+        {% for name in theme_options if name in comfort_themes %}
+          <option value="{{ name }}" {% if settings_view.appearance.theme == name %}selected{% endif %}>{{ theme_labels[name] }}</option>
+        {% endfor %}
+      </optgroup>
+      <optgroup label="Period pieces">
+        {% for name in theme_options if name not in comfort_themes %}
+          <option value="{{ name }}" {% if settings_view.appearance.theme == name %}selected{% endif %}>{{ theme_labels[name] }}</option>
+        {% endfor %}
+      </optgroup>
     </select>
   </label>
   <label><input type="checkbox" name="appearance_background_custom"
@@ -204,9 +218,16 @@
         <p>{{ entry.info.identifies }}</p>
         <p class="muted"><strong>Cost:</strong> {{ entry.info.cost }}</p>
         <p class="muted"><strong>Sends:</strong> {{ entry.info.sends }}</p>
+        {# "Free" is easier to trust when you can see where the answer comes
+           from and go and read it yourself. #}
+        {% if entry.info.api_url %}
+          <p class="muted"><strong>Asks:</strong>
+            <a class="mono" href="{{ entry.info.signup_url }}" target="_blank" rel="noreferrer noopener">{{ entry.info.api_url }} ↗</a>
+          </p>
+        {% endif %}
 
         {% if entry.info.keyless %}
-          <p class="muted">Working already — no account, no key.</p>
+          <p class="muted">Working already — no account, no key. Run by a non-profit and funded by donations, which is why it asks nothing of you.</p>
         {% else %}
           {# Open by default when there is no key, because that is exactly when
              the instructions are wanted. Collapsed once it is set. #}

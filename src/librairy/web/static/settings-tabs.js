@@ -5,10 +5,11 @@
 // at opposite ends of the document), so panels are matched by name, not
 // position, and every panel with that name shows together.
 //
-// The chosen tab is remembered per browser, and a #hash still wins so existing
-// deep links keep landing on the right thing.
+// Opening Settings always lands on the first tab. It used to remember the last
+// one you were on, which sounds helpful and is not: you come to Settings to
+// change one thing, and weeks later it opens on a panel you have no memory of
+// choosing. A #hash still wins, so deep links keep working.
 (function () {
-  var STORAGE_KEY = "librairy.settings.tab";
   var bar = document.querySelector("[data-settings-tabs]");
   if (!bar) return;
 
@@ -24,11 +25,6 @@
       tab.classList.toggle("is-active", active);
       tab.setAttribute("aria-selected", active ? "true" : "false");
     });
-    try {
-      localStorage.setItem(STORAGE_KEY, name);
-    } catch (err) {
-      // Private browsing. Losing the preference is not worth breaking tabs.
-    }
   }
 
   function tabForHash() {
@@ -36,12 +32,6 @@
     var target = document.querySelector(window.location.hash);
     var panel = target && target.closest("[data-tab-panel]");
     return panel ? panel.dataset.tabPanel : "";
-  }
-
-  function known(name) {
-    return tabs.some(function (tab) {
-      return tab.dataset.tab === name;
-    });
   }
 
   bar.addEventListener("click", function (event) {
@@ -52,17 +42,10 @@
   // A validation error is useless on a hidden panel, so it takes priority.
   var errored = document.querySelector("#settings-error, #settings-result");
   var erroredPanel = errored && errored.closest("[data-tab-panel]");
-  var stored = "";
-  try {
-    stored = localStorage.getItem(STORAGE_KEY) || "";
-  } catch (err) {
-    stored = "";
-  }
 
-  var initial =
+  show(
     (erroredPanel && erroredPanel.dataset.tabPanel) ||
-    tabForHash() ||
-    (known(stored) ? stored : "") ||
-    tabs[0].dataset.tab;
-  show(initial);
+      tabForHash() ||
+      tabs[0].dataset.tab
+  );
 })();

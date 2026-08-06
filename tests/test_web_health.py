@@ -126,7 +126,7 @@ def test_health_summary_all_green_when_dependencies_ok(tmp_path: Path, monkeypat
     response = client.get("/health")
 
     assert response.status_code == 200
-    assert "System health" in response.text
+    assert "All good" in response.text
 
 
 def test_health_surfaces_backup_status(tmp_path: Path) -> None:

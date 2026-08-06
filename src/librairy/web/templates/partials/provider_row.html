@@ -1,6 +1,23 @@
+{# Endpoint and model come from the configuration, not from the status table.
+   That table is keyed by name and keeps a row for every endpoint that ever
+   existed, so it went on reporting a renamed box or a changed model as though
+   it were still there. #}
 <div id="provider-{{ provider.name }}" class="provider-row">
-  <span>{% set ps = 'FAIL' if provider.last_error else 'OK' if provider.last_ok_at else 'WARN' %}<span class="badge badge-{{ 'ok' if ps=='OK' else 'fail' if ps=='FAIL' else 'warn' }}">{{ ps }}</span> {{ provider.name }} / {{ provider.kind }} / {{ provider.model }}</span>
-  <span>{% if provider.last_error %}{{ provider.last_error }}{% elif provider.last_ok_at %}last ok {{ provider.last_ok_at }}{% elif provider.enabled %}not tested yet{% else %}disabled{% endif %}</span>
+  <span>
+    {% if provider.last_error %}<span class="badge badge-fail">not reachable</span>
+    {% elif provider.last_ok_at %}<span class="badge badge-ok">answered</span>
+    {% elif not provider.enabled %}<span class="badge">off</span>
+    {% else %}<span class="badge badge-warn">never tested</span>{% endif %}
+    <strong>{{ provider.name }}</strong>
+    <span class="muted">{{ provider.model or 'no model chosen' }}</span>
+  </span>
+  <span class="muted">
+    {% if provider.endpoint %}{{ provider.endpoint }} · {% endif %}
+    {% if provider.last_error %}{{ provider.last_error }}
+    {% elif provider.last_ok_at %}answered {{ provider.last_ok_at }}{% if provider.latency_ms %} in {{ provider.latency_ms }} ms{% endif %}
+    {% elif provider.enabled %}press Test to find out whether it answers
+    {% else %}switched off, so it is never asked{% endif %}
+  </span>
   <button
     type="button"
     hx-post="/health/providers/{{ provider.name }}"

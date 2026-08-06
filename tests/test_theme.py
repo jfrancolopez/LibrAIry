@@ -66,7 +66,7 @@ def test_every_preset_is_defined_in_css_and_python() -> None:
 
     assert set(THEME_NAMES) <= set(blocks)
     assert DEFAULT_THEME in THEME_NAMES
-    assert len(THEME_NAMES) == 7
+    assert len(THEME_NAMES) == 11
 
 
 @pytest.mark.parametrize("theme", THEME_NAMES)
@@ -188,3 +188,19 @@ def test_every_heading_level_has_a_size_from_the_scale() -> None:
         assert all("var(--text-" in body for body in sized), (
             f"{level} sets a font-size outside the type scale"
         )
+
+
+def test_no_class_is_styled_as_two_different_components() -> None:
+    """`.meter` was both an 8px bar and a wrapper around a labelled bar.
+
+    The bar's `height: 0.5rem` won on source order, so every labelled row on
+    Health collapsed to eight pixels and spilled its own label out of the card
+    — the "text is hidden" report. Two components need two names.
+    """
+    sized: dict[str, list[str]] = {}
+    for match in re.finditer(r"^(\.[a-z0-9-]+)\s*\{([^}]*)\}", CSS, flags=re.M):
+        if re.search(r"(^|;)\s*height:", match.group(2)):
+            sized.setdefault(match.group(1), []).append(match.group(2))
+
+    for selector, bodies in sized.items():
+        assert len(bodies) == 1, f"{selector} sets height in {len(bodies)} separate rules"

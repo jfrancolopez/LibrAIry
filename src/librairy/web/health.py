@@ -11,7 +11,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from librairy.ai.orchestrator import provider_for_config
-from librairy.ai.registry import provider_chain
+from librairy.ai.registry import configured_providers
 from librairy.ai.status import upsert_provider_status
 from librairy.backup import backup_status
 from librairy.config import Settings
@@ -37,8 +37,54 @@ class HealthRow:
     hint: str = ""
 
 
+def live_provider_status(conn: sqlite3.Connection, settings: Settings) -> list[dict[str, object]]:
+    """Providers as they are configured now, with whatever test result exists.
+
+    provider_status is an append-only record keyed by name, so it keeps a row
+    for every endpoint that has ever existed: rename an Ollama box, change a
+    model, disable a cloud provider, and Health went on reporting the old one
+    as though it were still there. The configuration is the truth; the table
+    only supplies the last test result for the names still in it.
+    """
+    recorded = {row["name"]: row for row in conn.execute("SELECT * FROM provider_status")}
+    live: list[dict[str, object]] = []
+    for config in configured_providers(conn, settings):
+        row = recorded.get(config.name)
+        live.append(
+            {
+                "name": config.name,
+                "kind": config.kind,
+                # From the configuration, never from the record — this is the
+                # half that used to go stale.
+                "endpoint": config.endpoint,
+                "model": config.model,
+                "enabled": config.enabled,
+                "last_ok_at": row["last_ok_at"] if row else None,
+                "last_error": row["last_error"] if row else None,
+                "latency_ms": row["latency_ms"] if row else None,
+                "last_used_at": row["last_used_at"] if row else None,
+                "tested": bool(row and (row["last_ok_at"] or row["last_error"])),
+            }
+        )
+    return live
+
+
+def prune_provider_status(conn: sqlite3.Connection, settings: Settings) -> int:
+    """Forget test results for providers that no longer exist."""
+    names = {config.name for config in configured_providers(conn, settings)}
+    stale = [
+        row["name"]
+        for row in conn.execute("SELECT name FROM provider_status")
+        if row["name"] not in names
+    ]
+    for name in stale:
+        conn.execute("DELETE FROM provider_status WHERE name=?", (name,))
+    return len(stale)
+
+
 def health_data(conn: sqlite3.Connection, settings: Settings) -> dict[str, object]:
-    providers = list(conn.execute("SELECT * FROM provider_status ORDER BY name"))
+    prune_provider_status(conn, settings)
+    providers = live_provider_status(conn, settings)
     tools = tool_statuses(settings)
     db = db_status(settings)
     disk_stats = _disk_stats(settings)
@@ -82,6 +128,30 @@ class Bar:
     pct: int
     tone: str = "accent"  # accent | ok | warn | fail
     caption: str = ""
+
+    @property
+    def state_label(self) -> str:
+        """The lifecycle state said in words, for the pipeline chart.
+
+        "discovered", "postponed" and "unstable" are the names of rows in a
+        table. Someone reading a health page wants to know what is happening
+        to their files.
+        """
+        return STATE_LABELS.get(self.label, self.label)
+
+
+# Deliberately phrased as what is happening, not what the row is called.
+STATE_LABELS = {
+    "discovered": "seen, not yet analysed",
+    "unstable": "still being written to",
+    "proposed": "waiting for you in Review",
+    "approved": "approved, waiting to move",
+    "committed": "filed in your library",
+    "quarantine-proposed": "proposed for quarantine",
+    "quarantined": "moved to quarantine",
+    "postponed": "you skipped it for now",
+    "pending": "sent back for another look",
+}
 
 
 GROWTH_DAYS = 14
@@ -355,15 +425,24 @@ def tool_statuses(settings: Settings) -> list[HealthRow]:  # noqa: ARG001
     return [_tool_status(name, command) for name, command in TOOL_COMMANDS.items()]
 
 
-def test_provider(conn: sqlite3.Connection, settings: Settings, name: str) -> sqlite3.Row | None:
-    configs = provider_chain(conn, settings)
+def test_provider(
+    conn: sqlite3.Connection, settings: Settings, name: str
+) -> dict[str, object] | None:
+    """Ask one provider whether it answers, and report what it said.
+
+    Over every configured provider rather than the enabled chain: "is this
+    thing reachable" is the question you ask *before* switching it on, and
+    testing a switched-off endpoint used to silently re-show its stale row.
+    """
+    configs = configured_providers(conn, settings)
     config = next((provider for provider in configs if provider.name == name), None)
     if config is None:
-        return conn.execute("SELECT * FROM provider_status WHERE name=?", (name,)).fetchone()
+        return None
     provider = provider_for_config(config, settings)
     health = provider.health(settings.ai_timeout)
     upsert_provider_status(conn, config, health)
-    return conn.execute("SELECT * FROM provider_status WHERE name=?", (name,)).fetchone()
+    live = live_provider_status(conn, settings)
+    return next((row for row in live if row["name"] == name), None)
 
 
 def db_status(settings: Settings) -> HealthRow:

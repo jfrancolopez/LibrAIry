@@ -1,10 +1,19 @@
 {% extends "base.html" %}
 {% block content %}
-  <p>System health: <span class="badge badge-{{ 'ok' if summary_status=='OK' else 'fail' if summary_status=='FAIL' else 'warn' }}">{{ summary_status }}</span></p>
-  <h1>Health</h1>
+  <header class="page-head">
+    <div>
+      <h1>Health</h1>
+      <p class="muted">
+        Whether the parts LibrAIry depends on are working: the helper tools it
+        shells out to, the AI providers it asks, your disks, the background
+        worker and the backup. Nothing here changes any of your files.
+      </p>
+    </div>
+    <span class="badge badge-{{ 'ok' if summary_status=='OK' else 'fail' if summary_status=='FAIL' else 'warn' }} badge-lg">{{ 'All good' if summary_status=='OK' else 'Needs a look' }}</span>
+  </header>
   {% if recommendations %}
     <section class="card recommendations">
-      <h2>Recommendations</h2>
+      <h2>Worth doing something about</h2>
       <ul>
         {% for rec in recommendations %}
           <li>
@@ -32,9 +41,9 @@
     <section class="widget card">
       <h3>Disk used</h3>
       {% for bar in disk_meters %}
-        <div class="meter" title="{{ bar.caption }}">
-          <div class="meter-head"><span>{{ bar.label }}</span><span class="muted">{{ bar.value }}% used</span></div>
-          <div class="meter-track"><div class="meter-fill tone-{{ bar.tone }}" style="width: {{ bar.pct }}%"></div></div>
+        <div class="chart-bar" title="{{ bar.caption }}">
+          <div class="chart-head"><span>{{ bar.label }}</span><span class="muted">{{ bar.value }}% used</span></div>
+          <div class="chart-track"><div class="chart-fill tone-{{ bar.tone }}" style="width: {{ bar.pct }}%"></div></div>
           <p class="muted">{{ bar.caption }}</p>
         </div>
       {% else %}
@@ -43,22 +52,22 @@
     </section>
 
     <section class="widget card">
-      <h3>Confidence of the queue</h3>
+      <h3>How sure the queue is</h3>
       {% for bar in confidence %}
-        <div class="meter" title="{{ bar.caption }}">
-          <div class="meter-head"><span>{{ bar.label }}</span><span class="muted">{{ bar.value }}</span></div>
-          <div class="meter-track"><div class="meter-fill tone-{{ bar.tone }}" style="width: {{ bar.pct }}%"></div></div>
+        <div class="chart-bar" title="{{ bar.caption }}">
+          <div class="chart-head"><span>{{ bar.label }}</span><span class="muted">{{ bar.value }} file{{ 's' if bar.value != 1 else '' }}</span></div>
+          <div class="chart-track"><div class="chart-fill tone-{{ bar.tone }}" style="width: {{ bar.pct }}%"></div></div>
         </div>
       {% endfor %}
-      <p class="muted">Green needs no thought; red is where your attention is worth most.</p>
+      <p class="muted">Green can be approved in bulk. Red is where your attention is worth the most.</p>
     </section>
 
     <section class="widget card">
-      <h3>Pipeline</h3>
+      <h3>Where everything sits</h3>
       {% for bar in pipeline %}
-        <div class="meter" title="{{ bar.caption }}">
-          <div class="meter-head"><span>{{ bar.label }}</span><span class="muted">{{ bar.value }}</span></div>
-          <div class="meter-track"><div class="meter-fill tone-{{ bar.tone }}" style="width: {{ bar.pct }}%"></div></div>
+        <div class="chart-bar" title="{{ bar.caption }}">
+          <div class="chart-head"><span>{{ bar.state_label }}</span><span class="muted">{{ bar.value }}</span></div>
+          <div class="chart-track"><div class="chart-fill tone-{{ bar.tone }}" style="width: {{ bar.pct }}%"></div></div>
         </div>
       {% else %}
         <p class="muted">Nothing indexed yet.</p>
@@ -90,6 +99,7 @@
     </article>
     <article class="metric wide">
       <span class="status">AI providers</span>
+      <span class="muted">Read from your current settings, so a renamed endpoint or a changed model shows the new one. Press Test to ask whether it actually answers.</span>
       {% if providers %}
         <div class="health-table">
           {% for provider in providers %}
@@ -97,7 +107,7 @@
           {% endfor %}
         </div>
       {% else %}
-        <span class="muted">No provider status recorded — run analysis or test a provider.</span>
+        <span class="muted">No AI configured. LibrAIry falls back to its own rules, which handle most music, film and photo naming on their own. <a href="/settings#ai">Add one in Settings → AI</a>.</span>
       {% endif %}
     </article>
     <article class="metric wide">

@@ -41,6 +41,9 @@ class CatalogInfo:
     sends: str
     env_var: str = ""
     integrated: bool = True
+    #  The endpoint LibrAIry actually calls. "Free" is easier to trust when
+    #  you can see where the answer came from and go and read it yourself.
+    api_url: str = ""
 
     @property
     def keyless(self) -> bool:
@@ -50,6 +53,7 @@ class CatalogInfo:
 CATALOGS: tuple[CatalogInfo, ...] = (
     CatalogInfo(
         slug="musicbrainz",
+        api_url="https://musicbrainz.org/ws/2/recording",
         name="MusicBrainz",
         identifies="Music releases, artists and albums",
         key_field=KEYLESS,
@@ -60,6 +64,7 @@ CATALOGS: tuple[CatalogInfo, ...] = (
     ),
     CatalogInfo(
         slug="acoustid",
+        api_url="https://api.acoustid.org/v2/lookup",
         name="AcoustID",
         identifies="Music identified by its audio fingerprint",
         key_field="acoustid",
@@ -85,6 +90,7 @@ CATALOGS: tuple[CatalogInfo, ...] = (
     ),
     CatalogInfo(
         slug="tmdb",
+        api_url="https://api.themoviedb.org/3/search/movie",
         name="TMDB",
         identifies="Movies and TV shows",
         key_field="tmdb",
@@ -116,6 +122,7 @@ CATALOGS: tuple[CatalogInfo, ...] = (
     ),
     CatalogInfo(
         slug="discogs",
+        api_url="https://api.discogs.com/database/search",
         name="Discogs",
         identifies="Music releases, including vinyl and rare pressings",
         key_field="discogs",
@@ -144,6 +151,7 @@ CATALOGS: tuple[CatalogInfo, ...] = (
     ),
     CatalogInfo(
         slug="lastfm",
+        api_url="https://ws.audioscrobbler.com/2.0/",
         name="Last.fm",
         identifies="Genres for music that has none",
         key_field="lastfm",
@@ -174,6 +182,7 @@ CATALOGS: tuple[CatalogInfo, ...] = (
     ),
     CatalogInfo(
         slug="coverart",
+        api_url="https://coverartarchive.org/release/{mbid}/front-250",
         name="Cover Art Archive",
         identifies="Album art, shown on review cards",
         key_field=KEYLESS,
@@ -188,6 +197,7 @@ CATALOGS: tuple[CatalogInfo, ...] = (
     ),
     CatalogInfo(
         slug="tvmaze",
+        api_url="https://api.tvmaze.com/search/shows",
         name="TVmaze",
         identifies="TV shows, and the title of each individual episode",
         key_field=KEYLESS,
@@ -198,6 +208,7 @@ CATALOGS: tuple[CatalogInfo, ...] = (
     ),
     CatalogInfo(
         slug="openlibrary",
+        api_url="https://openlibrary.org/search.json",
         name="Open Library",
         identifies="Books by title, author or ISBN",
         key_field=KEYLESS,

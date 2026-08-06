@@ -1129,75 +1129,34 @@ tr.is-idle { opacity: 0.55; }
 .tone-fail { background: var(--fail, var(--accent)); }
 .tone-accent { background: var(--accent); }
 
-.meter { margin-bottom: var(--space-3); }
-.meter-head {
+/* A labelled chart row: name, number, and a bar under them.
+   Named apart from .meter on purpose. Both existed as ".meter" — the bare 8px
+   bar the dashboard draws volumes with, and this wrapper — so the bar rule's
+   `height: 0.5rem` collapsed every labelled row on Health to eight pixels and
+   spilled its own label out of the card. Two components, two names. */
+.chart-bar { margin-bottom: var(--space-4); }
+/* Not --text-sm: these are the labels on the charts the page exists for.
+   "91% used" is the content, not an aside about it. */
+.chart-head {
   display: flex;
   justify-content: space-between;
-  gap: var(--space-2);
-  font-size: var(--text-sm);
-  margin-bottom: var(--space-1);
+  align-items: baseline;
+  gap: var(--space-3);
+  font-size: var(--text-base);
+  margin-bottom: var(--space-2);
 }
-.meter-track {
-  height: 0.6rem;
+.chart-head > :first-child { font-weight: 600; }
+/* The number is the answer, so it does not get the muted treatment. */
+.chart-head .muted { font-size: var(--text-base); color: var(--text); white-space: nowrap; }
+.chart-track {
+  height: 0.75rem;
   background: var(--bg-input);
   border-radius: 999px;
   overflow: hidden;
 }
-.meter-fill { height: 100%; border-radius: 999px; min-width: 2px; }
-.meter p { margin: var(--space-1) 0 0; font-size: var(--text-sm); }
+.chart-fill { height: 100%; border-radius: 999px; min-width: 2px; }
+.chart-bar p { margin: var(--space-1) 0 0; font-size: var(--text-sm); }
 
-.spark {
-  display: flex;
-  align-items: flex-end;
-  gap: var(--space-1);
-  height: 8rem;
-  padding-top: var(--space-2);
-  overflow-x: auto;
-}
-.spark-col {
-  flex: 1 1 0;
-  min-width: 1.5rem;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-  align-items: center;
-  height: 100%;
-  gap: var(--space-1);
-}
-.spark-bar {
-  width: 100%;
-  background: var(--accent);
-  border-radius: calc(var(--radius-ui) / 2) calc(var(--radius-ui) / 2) 0 0;
-  min-height: 2px;
-}
-/* A day with nothing committed still gets a visible baseline, so the axis
-   reads as a timeline rather than a gap. */
-.spark-bar.is-zero { background: var(--border); }
-.spark-label {
-  font-size: 0.7rem;
-  color: var(--text-dim);
-  white-space: nowrap;
-}
-
-.browse-panel { position: sticky; top: var(--space-4); }
-.preview-text {
-  margin: var(--space-2) 0;
-  padding: var(--space-3);
-  background: var(--bg);
-  border: var(--border-thin) solid var(--border);
-  border-radius: var(--radius-ui);
-  font-family: var(--font-mono);
-  font-size: var(--text-sm);
-  line-height: 1.5;
-  max-height: 22rem;
-  overflow: auto;
-  /* pre-wrap, not pre: prose has no line breaks of its own and would need
-     horizontal scrolling for every paragraph. Long code lines still scroll,
-     which is what the overflow above is for. */
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  tab-size: 4;
-}
 .panel-facts { list-style: none; margin: var(--space-2) 0; padding: 0; display: grid; gap: var(--space-1); font-size: var(--text-sm); }
 
 kbd {
@@ -1597,3 +1556,115 @@ kbd {
 .backup-pick .muted { grid-area: size; }
 /* A category with nothing in it is still selectable — files land in it later. */
 .backup-pick.is-empty { opacity: 0.6; }
+
+/* ---- Low-strain palettes ------------------------------------------------ */
+/* The seven presets above are period pieces first and comfortable second. These
+   four are the other way round: each one is a palette designed by someone for
+   staring at all day, kept at its published values wherever those clear WCAG AA
+   on this app's surfaces, and lifted off them where they do not. */
+
+/* Ethan Schoonover's Solarized, whose whole premise is a fixed low
+   background/foreground contrast that stays readable without glare. */
+[data-theme="solarized-dark"] {
+  --bg: #002b36;
+  --bg-glow: #073642;
+  --bg-panel: #04303c;
+  --bg-input: #01232c;
+  --bg-metric: #073642;
+  --text: #eee8d5;
+  --text-dim: #93a1a1;
+  --text-glow: none;
+  --accent: #2aa198;
+  --accent-2: #268bd2;
+  --accent-soft: rgba(42, 161, 152, 0.28);
+  --accent-glow: rgba(42, 161, 152, 0.14);
+  --on-accent: #002b36;
+  --border: #586e75;
+  --panel-shadow: none;
+  --radius: 0;
+  --scanline: transparent;
+  --scanline-opacity: 0;
+  --ok: #859900;
+  --warn: #cb9b26;
+  --fail: #dc5a5a;
+}
+
+/* Solarized's light half. The same restraint, for a bright room. */
+[data-theme="solarized-light"] {
+  --bg: #fdf6e3;
+  --bg-glow: #eee8d5;
+  --bg-panel: #f7f0dd;
+  --bg-input: #fffbf0;
+  --bg-metric: #eee8d5;
+  --text: #073642;
+  --text-dim: #4d6066;
+  --text-glow: none;
+  --accent: #1a6f70;
+  --accent-2: #1f6f9e;
+  --accent-soft: rgba(26, 111, 112, 0.22);
+  --accent-glow: rgba(26, 111, 112, 0.12);
+  --on-accent: #fdf6e3;
+  --border: #b7ad94;
+  --panel-shadow: none;
+  --radius: 0;
+  --scanline: transparent;
+  --scanline-opacity: 0;
+  --ok: #4f6b00;
+  --warn: #8a5a00;
+  --fail: #b4232a;
+}
+
+/* Nord: cool, desaturated, deliberately low-contrast between surfaces so
+   nothing on the page shouts. */
+[data-theme="nord"] {
+  --bg: #2e3440;
+  --bg-glow: #3b4252;
+  --bg-panel: #343b49;
+  --bg-input: #292f3a;
+  --bg-metric: #3b4252;
+  --text: #eceff4;
+  --text-dim: #b3bccc;
+  --text-glow: none;
+  --accent: #88c0d0;
+  --accent-2: #81a1c1;
+  --accent-soft: rgba(136, 192, 208, 0.26);
+  --accent-glow: rgba(136, 192, 208, 0.14);
+  --on-accent: #2e3440;
+  --border: #4c566a;
+  --panel-shadow: none;
+  --radius: 0;
+  --scanline: transparent;
+  --scanline-opacity: 0;
+  --ok: #a3be8c;
+  --warn: #ebcb8b;
+  /* Nord publishes #bf616a here; it lands at 2.75:1 on the raised panel, so a
+     health bar in "fail" would be the one you could not read. Lifted to clear
+     3:1 while staying recognisably nord-11. */
+  --fail: #d4808a;
+}
+
+/* Gruvbox: warm and slightly yellowed, which is the same trick as a blue-light
+   filter but chosen rather than filtered over the top. */
+[data-theme="gruvbox-warm"] {
+  --bg: #282828;
+  --bg-glow: #3c3836;
+  --bg-panel: #32302f;
+  --bg-input: #1d2021;
+  --bg-metric: #3c3836;
+  --text: #ebdbb2;
+  --text-dim: #bdae93;
+  --text-glow: none;
+  --accent: #fabd2f;
+  --accent-2: #83a598;
+  --accent-soft: rgba(250, 189, 47, 0.26);
+  --accent-glow: rgba(250, 189, 47, 0.14);
+  --on-accent: #282828;
+  --border: #665c54;
+  --panel-shadow: none;
+  --radius: 0;
+  --scanline: transparent;
+  --scanline-opacity: 0;
+  --ok: #b8bb26;
+  --warn: #fe8019;
+  --fail: #fb4934;
+}
