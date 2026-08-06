@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from configparser import ConfigParser
 from dataclasses import dataclass
+from datetime import UTC, datetime, time, timedelta
 from pathlib import Path
 
 from librairy.config import Settings
@@ -26,6 +28,106 @@ class BackupRunSummary:
     failed: int = 0
     paused: bool = False
     warning: str = ""
+
+
+# The schedule was stored and never read: the worker drained the queue on
+# every cycle whatever it said, so "daily@02:00" was decoration. These are the
+# four shapes that answer a real question about a real connection.
+SCHEDULES: dict[str, str] = {
+    "after_commit": "As soon as there is something new",
+    "hourly": "At most once an hour",
+    "daily": "Once a day, at the time below",
+    "manual": "Only when you press Back up now",
+}
+DEFAULT_SCHEDULE = "after_commit"
+LAST_RUN_KEY = "backup.last_run_at"
+RUN_REQUESTED_KEY = "backup.run_requested"
+
+
+def backup_due(
+    conn: sqlite3.Connection,
+    settings: Settings,
+    *,
+    now: datetime | None = None,
+) -> bool:
+    """Whether this worker cycle should drain the backup queue.
+
+    "Back up now" beats every schedule, including manual: it is the button
+    that exists so a schedule you have set is never a thing you are stuck
+    behind.
+    """
+    if not settings.backup_enabled:
+        return False
+    if _flag(conn, RUN_REQUESTED_KEY):
+        return True
+    schedule = settings.backup_schedule or DEFAULT_SCHEDULE
+    if schedule == "after_commit":
+        return True
+    if schedule == "manual":
+        return False
+    moment = now or datetime.now(UTC)
+    last = _last_run(conn)
+    if schedule == "hourly":
+        return last is None or (moment - last) >= timedelta(hours=1)
+    if schedule == "daily":
+        if last is not None and last.date() == moment.date():
+            return False
+        return moment.time() >= _daily_time(settings.backup_daily_at)
+    # An unrecognised value must not silently mean "never back anything up".
+    return True
+
+
+def request_backup_now(conn: sqlite3.Connection) -> None:
+    """Ask the worker to run on its next pass, rather than copying here.
+
+    A batch can be gigabytes, and a web request is the wrong place to find
+    that out. The worker picks this up within one cycle.
+    """
+    _set(conn, RUN_REQUESTED_KEY, "1")
+
+
+def record_backup_run(conn: sqlite3.Connection, *, at: datetime | None = None) -> None:
+    _set(conn, LAST_RUN_KEY, at.isoformat() if at else utc_now())
+    _set(conn, RUN_REQUESTED_KEY, "")
+
+
+def backup_run_pending(conn: sqlite3.Connection) -> bool:
+    return _flag(conn, RUN_REQUESTED_KEY)
+
+
+def last_backup_run(conn: sqlite3.Connection) -> str:
+    row = conn.execute("SELECT value FROM settings WHERE key=?", (LAST_RUN_KEY,)).fetchone()
+    return json.loads(row["value"]) if row else ""
+
+
+def _last_run(conn: sqlite3.Connection) -> datetime | None:
+    raw = last_backup_run(conn)
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+
+
+def _daily_time(value: str) -> time:
+    try:
+        hours, _, minutes = value.strip().partition(":")
+        return time(int(hours), int(minutes or 0))
+    except ValueError:
+        return time(2, 0)
+
+
+def _flag(conn: sqlite3.Connection, key: str) -> bool:
+    row = conn.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
+    return bool(row and json.loads(row["value"]))
+
+
+def _set(conn: sqlite3.Connection, key: str, value: str) -> None:
+    conn.execute(
+        "INSERT OR REPLACE INTO settings(key, value) VALUES (?, ?)",
+        (key, json.dumps(value)),
+    )
 
 
 def rclone_config_path(settings: Settings) -> Path:

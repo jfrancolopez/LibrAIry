@@ -23,6 +23,8 @@ WEB_SETTINGS = {
     "backup.remote",
     "backup.bandwidth_limit",
     "backup.schedule",
+    "backup.daily_at",
+    "backup.categories",
     "backup.include_db_snapshot",
 }
 

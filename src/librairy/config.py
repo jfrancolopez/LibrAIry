@@ -87,6 +87,7 @@ class Settings(BaseSettings):
     backup_remote: str = Field("", alias="BACKUP_REMOTE")
     backup_bandwidth_limit: str = Field("", alias="BACKUP_BANDWIDTH_LIMIT")
     backup_schedule: str = Field("after_commit", alias="BACKUP_SCHEDULE")
+    backup_daily_at: str = Field("02:00", alias="BACKUP_DAILY_AT")
     backup_include_db_snapshot: bool = Field(True, alias="BACKUP_INCLUDE_DB_SNAPSHOT")
     # Comma-separated category names, or empty for everything. Off-site storage
     # is usually metered, and a photo library and a film collection are not the
@@ -277,7 +278,11 @@ class Settings(BaseSettings):
         "BACKUP_ENABLED=false",
         "BACKUP_REMOTE=",
         "BACKUP_BANDWIDTH_LIMIT=",
+        "# after_commit | hourly | daily | manual",
         "BACKUP_SCHEDULE=after_commit",
+        "",
+        "# Time of day for the daily schedule, UTC (the container's clock).",
+        "BACKUP_DAILY_AT=02:00",
         "BACKUP_INCLUDE_DB_SNAPSHOT=true",
         "",
         "",

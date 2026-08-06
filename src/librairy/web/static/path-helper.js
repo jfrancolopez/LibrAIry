@@ -1,12 +1,18 @@
-// Storage-path .env generator (P16-06). Docker bind mounts are fixed at launch,
-// so this can't remount live — it builds a .env snippet to paste and re-launch.
-// Vanilla JS, no secrets, no network.
+// Storage-path .env generator. Docker bind mounts are fixed at launch, so this
+// cannot remount live — it builds the four lines to paste and re-launch.
+//
+// There is no folder browser, and that is not an omission. A web page cannot
+// open a native picker on the machine running the container: browsers hide real
+// paths from pages on purpose, and the container can only see the folders
+// Docker already handed it. The next best thing is typing one parent folder and
+// having the four boxes fill themselves, which is what this does.
 (function () {
   var helper = document.getElementById("path-helper");
   if (!helper) return;
   var fields = Array.prototype.slice.call(helper.querySelectorAll(".path-field"));
   var out = document.getElementById("path-env");
-  var example = document.getElementById("path-example");
+  var base = document.getElementById("path-base");
+  var preset = document.getElementById("path-base-preset");
   var copy = document.getElementById("path-copy");
 
   function render() {
@@ -17,24 +23,34 @@
       .join("\n");
   }
 
+  function applyBase() {
+    var parent = base.value.trim().replace(/\/+$/, "");
+    if (!parent) return;
+    fields.forEach(function (f) {
+      f.value = parent + "/" + f.getAttribute("data-leaf");
+    });
+    render();
+  }
+
   fields.forEach(function (f) {
     f.addEventListener("input", render);
   });
 
-  if (example) {
-    example.addEventListener("click", function () {
-      var base = "/Users/you/Desktop";
-      var map = {
-        HOST_INBOX_DIR: base + "/librairy-inbox",
-        HOST_LIBRARY_DIR: base + "/librairy-library",
-        HOST_QUARANTINE_DIR: base + "/librairy-quarantine",
-        HOST_APPDATA_DIR: base + "/librairy-appdata",
-      };
-      fields.forEach(function (f) {
-        var key = f.getAttribute("data-key");
-        if (map[key]) f.value = map[key];
-      });
-      render();
+  if (base) base.addEventListener("input", applyBase);
+
+  if (preset) {
+    preset.addEventListener("change", function () {
+      if (!preset.value) return;
+      base.value = preset.value;
+      applyBase();
+      // The placeholders are not paths anyone actually has, so send them
+      // straight to the part that needs replacing rather than letting it be
+      // copied into a .env as-is.
+      var placeholder = base.value.indexOf("YOUR-NAME");
+      if (placeholder !== -1) {
+        base.focus();
+        base.setSelectionRange(placeholder, placeholder + "YOUR-NAME".length);
+      }
     });
   }
 
@@ -45,7 +61,7 @@
         document.execCommand("copy");
         copy.textContent = "Copied";
         setTimeout(function () {
-          copy.textContent = "Copy .env snippet";
+          copy.textContent = "Copy these four lines";
         }, 1500);
       } catch (e) {
         /* selection is enough if clipboard is blocked */

@@ -21,6 +21,7 @@ from librairy.ai.lmstudio import diagnose as lmstudio_diagnose
 from librairy.ai.lmstudio import is_chat_model, normalize_host
 from librairy.ai.lmstudio import probe as lmstudio_probe
 from librairy.ai.lmstudio import try_classify as lmstudio_try_classify
+from librairy.backup import request_backup_now
 from librairy.catalogs import catalog_enabled
 from librairy.config import Settings
 from librairy.db import connect
@@ -379,6 +380,7 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
                     "remote": str(form.get("backup_remote", "")).strip(),
                     "bandwidth_limit": str(form.get("backup_bandwidth_limit", "")).strip(),
                     "schedule": str(form.get("backup_schedule", "after_commit")).strip(),
+                    "daily_at": str(form.get("backup_daily_at", "02:00")).strip(),
                     "include_db_snapshot": "backup_include_db_snapshot" in form,
                     # Every box ticked is stored as empty, which is the default
                     # and means "everything" — so a category added in a later
@@ -512,6 +514,19 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         form = await _request_form(request)
         reorder_providers(conn, settings, str(form.get("order", "")).split(","))
         return _settings_redirect(request)
+
+    @app.post("/settings/backup/run-now", response_class=HTMLResponse)
+    def settings_backup_run_now() -> HTMLResponse:
+        """Queue a backup for the worker's next pass.
+
+        Not copied here: a batch can be gigabytes, and a web request is the
+        wrong place to find that out.
+        """
+        request_backup_now(conn)
+        return HTMLResponse(
+            '<span id="backup-run-state" class="badge badge-ok">queued — '
+            "the worker starts it on its next pass</span>"
+        )
 
     @app.post("/settings/providers/order/{kind}/{direction}", response_class=HTMLResponse)
     def settings_provider_move(request: Request, kind: str, direction: str) -> HTMLResponse:

@@ -181,14 +181,62 @@
   </p>
   <label>Bandwidth limit <input name="backup_bandwidth_limit" value="{{ settings_view.backup.bandwidth_limit }}" placeholder="optional, e.g. 2M"></label>
   <p class="muted">Caps the upload so a backup does not saturate your connection. <code>2M</code> is 2 MB/s.</p>
+  <h3>When it runs</h3>
   <label>Schedule
     <select name="backup_schedule">
-      <option value="after_commit" {% if settings_view.backup.schedule == 'after_commit' %}selected{% endif %}>after_commit</option>
-      <option value="daily@02:00" {% if settings_view.backup.schedule == 'daily@02:00' %}selected{% endif %}>daily@02:00</option>
+      {% for value, label in backup_schedules.items() %}
+        <option value="{{ value }}" {% if settings_view.backup.schedule == value %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
     </select>
   </label>
+  <label>Time of day (for the daily option)
+    <input type="time" name="backup_daily_at" value="{{ settings_view.backup.daily_at }}">
+  </label>
+  <p class="muted">
+    Times are UTC, which is what the container runs on. Pick a slot when you are
+    not using the connection — a first backup of a whole library can take days
+    on domestic upload speeds, and every later one is only what changed.
+  </p>
+  {# A button, not a nested form: this whole section lives inside the settings
+     form, and the HTML parser throws an inner <form> away. #}
+  <div class="notice-row">
+    <p class="muted">
+      {% if backup_last_run %}Last run {{ backup_last_run }}.{% else %}Has not run yet.{% endif %}
+      Whatever the schedule says, this sends everything queued right now.
+    </p>
+    <span>
+      <button type="button" hx-post="/settings/backup/run-now"
+              hx-target="#backup-run-state" hx-swap="outerHTML"
+              hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>Back up now</button>
+      <span id="backup-run-state" class="muted">{% if backup_run_pending %}queued — the worker starts it on its next pass{% endif %}</span>
+    </span>
+  </div>
   <label><input type="checkbox" name="backup_include_db_snapshot" {% if settings_view.backup.include_db_snapshot %}checked{% endif %}> Include SQLite snapshot</label>
   <p class="muted">A copy of LibrAIry's own database, so a rebuilt machine remembers what it filed and can still undo it. Kilobytes, and worth having.</p>
+
+  <h3>Backing up to another machine on your network</h3>
+  <p class="muted">
+    "Remote" does not have to mean the cloud. rclone talks to a NAS, a Pi or a
+    spare desktop just as well, which costs nothing per month and is usually far
+    faster than an upload — worth doing even if you also back up off-site, since
+    a copy in the same building is not a copy that survives the building.
+  </p>
+  <ol class="steps setup-steps-open">
+    <li><span>On this host, run <code>rclone config</code> pointed at LibrAIry's own config file:
+      <br><code>rclone --config {{ host_appdata_dir }}/rclone/rclone.conf config</code></span></li>
+    <li><span>Choose <strong>n</strong> for a new remote and give it a name, e.g. <code>nas</code>.</span></li>
+    <li><span>Pick the protocol your machine already speaks:
+      <strong>sftp</strong> if it has SSH (most Linux boxes, Synology, UNRAID),
+      <strong>smb</strong> for a Windows or Samba share,
+      <strong>webdav</strong> for Nextcloud. SFTP needs nothing installed on the other end.</span></li>
+    <li><span>Give it the LAN address and login — for example host <code>192.168.1.20</code>, user <code>backup</code>.
+      Those credentials go into rclone's own config file, never into LibrAIry.</span></li>
+    <li><span>Put the remote and the folder in the box above, like <code>nas:/mnt/backup/librairy</code>.</span></li>
+  </ol>
+  <p class="muted">
+    A LAN target is fast enough that the bandwidth limit above is usually
+    unnecessary — leave it empty unless the copy is interfering with something.
+  </p>
 
   </div>
 
@@ -295,19 +343,61 @@
     </tbody>
   </table>
 
-  <h3>Set up folders</h3>
+  <h3>Move LibrAIry to different folders</h3>
   <div id="path-helper" class="card">
-    <p class="muted">Point LibrAIry at folders on your computer. On macOS, keep them inside your home folder (e.g. the Desktop) so Docker can share them.</p>
-    <button type="button" class="btn-ghost" id="path-example">Use macOS Desktop test folders</button>
-    <label>Inbox (drop files here) <input class="path-field mono" data-key="HOST_INBOX_DIR" value="{{ storage_paths[0].host }}"></label>
-    <label>Library (organized output) <input class="path-field mono" data-key="HOST_LIBRARY_DIR" value="{{ storage_paths[1].host }}"></label>
-    <label>Quarantine (reversible) <input class="path-field mono" data-key="HOST_QUARANTINE_DIR" value="{{ storage_paths[2].host }}"></label>
-    <label>Appdata (database, logs) <input class="path-field mono" data-key="HOST_APPDATA_DIR" value="{{ storage_paths[3].host }}"></label>
-    <label>Paste this into your <code>.env</code>, then run the command below:
+    <p class="muted">
+      There is no folder browser here, and it is not an omission: a web page
+      cannot open a file picker on the machine running the container. Browsers
+      deliberately hide real paths from pages — that is the same rule that stops
+      any website reading your disk — and LibrAIry can only see the four folders
+      Docker has already handed it. So the paths are typed, and the four boxes
+      below fill themselves from one starting folder.
+    </p>
+
+    <label>Start from
+      <select id="path-base-preset">
+        <option value="">choose a common place…</option>
+        <option value="/mnt/user">UNRAID share — /mnt/user</option>
+        <option value="/Users/YOUR-NAME/Desktop">macOS Desktop — /Users/YOUR-NAME/Desktop</option>
+        <option value="/home/YOUR-NAME">Linux home — /home/YOUR-NAME</option>
+        <option value="/srv/librairy">Linux server — /srv/librairy</option>
+        <option value="/volume1">Synology — /volume1</option>
+      </select>
+    </label>
+    <label>Parent folder
+      <input id="path-base" class="mono" placeholder="/mnt/user" autocomplete="off">
+    </label>
+    <p class="muted">Everything below is filled in from this, and each box stays editable.</p>
+
+    <label>Inbox — where you drop files <input class="path-field mono" data-key="HOST_INBOX_DIR" data-leaf="librairy-inbox" value="{{ storage_paths[0].host }}"></label>
+    <label>Library — where they end up <input class="path-field mono" data-key="HOST_LIBRARY_DIR" data-leaf="librairy-library" value="{{ storage_paths[1].host }}"></label>
+    <label>Quarantine — the out-tray <input class="path-field mono" data-key="HOST_QUARANTINE_DIR" data-leaf="librairy-quarantine" value="{{ storage_paths[2].host }}"></label>
+    <label>Appdata — database, logs, thumbnails <input class="path-field mono" data-key="HOST_APPDATA_DIR" data-leaf="librairy-appdata" value="{{ storage_paths[3].host }}"></label>
+
+    <h4>What to do with this</h4>
+    <p class="muted">
+      Docker decides which folders a container can see <em>when it starts</em>,
+      and cannot be told about new ones while it runs. So changing these is two
+      steps, and LibrAIry does the first for you:
+    </p>
+    <ol class="steps setup-steps-open">
+      <li><span>Copy the four lines below into the file called <code>.env</code>, next to
+        your <code>docker-compose.yml</code>. Replace the existing
+        <code>HOST_*_DIR</code> lines if they are already in there.</span></li>
+      <li><span>Run <code>docker compose up -d</code> in that same folder. It stops the
+        current container, starts a new one pointed at the new folders, and keeps
+        your database — nothing is re-scanned from scratch and nothing is lost.</span></li>
+      <li><span>Come back to this page. The table above will show the new paths.</span></li>
+    </ol>
+    <label>The four lines
       <textarea id="path-env" class="mono" rows="6" readonly></textarea>
     </label>
-    <button type="button" class="btn-primary" id="path-copy">Copy .env snippet</button>
-    <p class="mono" id="path-cmd">docker compose up -d</p>
+    <button type="button" class="btn-primary" id="path-copy">Copy these four lines</button>
+    <p class="muted">
+      Nothing is written or moved by this page — it only writes text into the box
+      above. Your files stay exactly where they are until you run that command,
+      and even then Docker only changes what the container can see.
+    </p>
   </div>
 </section>
 <script src="/static/path-helper.js" defer></script>

@@ -51,7 +51,8 @@ Configuration has two layers. Boot-time environment variables define paths, port
 | `BACKUP_ENABLED` | Default one-way rclone backup toggle, usually changed in Settings. |
 | `BACKUP_REMOTE` | Default rclone remote destination, e.g. `b2:librairy-backup`. |
 | `BACKUP_BANDWIDTH_LIMIT` | Optional rclone bandwidth limit. |
-| `BACKUP_SCHEDULE` | Backup schedule setting; `after_commit` is the default. |
+| `BACKUP_SCHEDULE` | When the worker drains the backup queue: `after_commit` (default), `hourly`, `daily`, or `manual`. "Back up now" in Settings overrides all four. |
+| `BACKUP_DAILY_AT` | Time of day for the `daily` schedule, in UTC — the container's clock. Default `02:00`. |
 | `AUTH_REQUIRED` | `false` (default) leaves the portal open on your LAN with no password. `true` forces first-run password setup and blocks password removal. |
 | `BACKUP_INCLUDE_DB_SNAPSHOT` | Whether backup includes a SQLite appdata snapshot. |
 | `NORMALIZE_ATTRIBUTES` | `true` (default) clears the macOS hidden flag and settles permissions on each file as it is placed in the library. Runs at the move, never during a scan. |
@@ -81,7 +82,9 @@ These are stored in SQLite and apply without rebuilding the container:
 | `backup.enabled` | Toggle one-way rclone copy-out backup. |
 | `backup.remote` | rclone remote destination consumed from mounted `rclone.conf`. |
 | `backup.bandwidth_limit` | Optional rclone bandwidth limit. |
-| `backup.schedule` | Backup schedule mode. |
+| `backup.schedule` | Backup schedule mode: `after_commit`, `hourly`, `daily`, `manual`. |
+| `backup.daily_at` | Time of day for the `daily` mode, UTC. |
+| `backup.categories` | Which categories go off-site. Empty means all of them, including any added in a later release. |
 | `backup.include_db_snapshot` | Include a SQLite snapshot in backups. |
 | `appearance.theme` | Colour preset for the portal. |
 | `appearance.background` | Optional background colour override; empty means the theme's own. |

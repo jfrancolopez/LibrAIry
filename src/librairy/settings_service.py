@@ -17,7 +17,13 @@ from librairy.ai.registry import (
     set_provider_order,
 )
 from librairy.ai.signup import AI_PROVIDERS
-from librairy.backup import category_sizes, configured_remotes
+from librairy.backup import (
+    SCHEDULES,
+    backup_run_pending,
+    category_sizes,
+    configured_remotes,
+    last_backup_run,
+)
 from librairy.catalogs import CATALOGS, CATALOGS_BY_SLUG, catalog_enabled, catalog_status
 from librairy.config import Settings
 from librairy.dedup import DedupConfigError, dedup_options, set_dedup_option
@@ -79,6 +85,10 @@ def settings_page_data(conn: sqlite3.Connection, settings: Settings) -> dict[str
         # Sizes next to each tick box, so "include photos" is a decision with
         # a number attached rather than a guess.
         "backup_categories": category_sizes(conn, effective_settings(conn, settings)),
+        "backup_schedules": SCHEDULES,
+        "backup_last_run": last_backup_run(conn),
+        "backup_run_pending": backup_run_pending(conn),
+        "host_appdata_dir": settings.host_appdata_dir,
         "auth_required": settings.auth_required,
         "lmstudio": lmstudio_view(conn, settings),
         "theme_options": THEME_NAMES,
@@ -288,6 +298,7 @@ def runtime_settings(conn: sqlite3.Connection, settings: Settings) -> RuntimeSet
                 settings.backup_bandwidth_limit,
             ),
             "schedule": _setting_value(conn, "backup.schedule", settings.backup_schedule),
+            "daily_at": _setting_value(conn, "backup.daily_at", settings.backup_daily_at),
             "categories": _setting_value(conn, "backup.categories", settings.backup_categories),
             "include_db_snapshot": _setting_bool(
                 conn,
@@ -322,6 +333,7 @@ def effective_settings(conn: sqlite3.Connection, settings: Settings) -> Settings
             "backup_remote": str(view.backup["remote"]),
             "backup_bandwidth_limit": str(view.backup["bandwidth_limit"]),
             "backup_schedule": str(view.backup["schedule"]),
+            "backup_daily_at": str(view.backup["daily_at"]),
             "backup_include_db_snapshot": bool(view.backup["include_db_snapshot"]),
             "backup_categories": str(view.backup["categories"]),
         }

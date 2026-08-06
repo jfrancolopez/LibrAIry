@@ -11,7 +11,12 @@ from contextlib import suppress
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from librairy.backup import run_backup_once
+from librairy.backup import (
+    BackupRunSummary,
+    backup_due,
+    record_backup_run,
+    run_backup_once,
+)
 from librairy.classify import analyze_items
 from librairy.config import Settings
 from librairy.content.extract import process_content_extractions
@@ -94,7 +99,13 @@ class Worker:
             _set_worker_state(self.conn, "current_phase", "content")
             content = process_content_extractions(self.conn, settings, settings.batch_size)
             _set_worker_state(self.conn, "current_phase", "backup")
-            backup = run_backup_once(self.conn, settings, batch_size=settings.batch_size)
+            # The schedule used to be stored and never read, so every cycle
+            # drained the queue whatever the setting said.
+            if backup_due(self.conn, settings):
+                backup = run_backup_once(self.conn, settings, batch_size=settings.batch_size)
+                record_backup_run(self.conn)
+            else:
+                backup = BackupRunSummary()
             summary = WorkerSummary(
                 scanned=scan.discovered,
                 hashed=scan.hashed,

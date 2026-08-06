@@ -62,6 +62,7 @@ def test_no_full_page_swaps_into_body(page: Path) -> None:
 
 
 FORM_TAG = re.compile(r"<form\b|</form>", re.IGNORECASE)
+JINJA_COMMENT = re.compile(r"\{#.*?#\}", re.DOTALL)
 
 
 @pytest.mark.parametrize("page", PAGES, ids=lambda p: p.name)
@@ -77,8 +78,11 @@ def test_no_nested_forms(page: Path) -> None:
     this tracks the source order of the tags — enough to catch a `<form>` opened
     while another is unmistakably still open.
     """
+    # Jinja comments never reach the browser, so a comment that mentions
+    # <form> is not a form. Without this, documenting the rule trips it.
+    source = JINJA_COMMENT.sub("", page.read_text(encoding="utf-8"))
     depth = 0
-    for match in FORM_TAG.finditer(page.read_text(encoding="utf-8")):
+    for match in FORM_TAG.finditer(source):
         if match.group().lower().startswith("</"):
             depth = max(0, depth - 1)
             continue
