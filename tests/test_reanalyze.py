@@ -23,6 +23,11 @@ def _settings(tmp_path: Path) -> Settings:
         LIBRARY_DIR=tmp_path / "library",
         QUARANTINE_DIR=tmp_path / "quarantine",
         FILE_STABILITY_SECONDS=0,
+        # OLLAMA_HOST defaults to host.docker.internal, so leaving it alone
+        # means every analyze in here opens a socket to whatever happens to be
+        # answering on the machine running the tests. These tests are about
+        # requeueing, not about AI.
+        OLLAMA_HOST="",
         _env_file=None,
     )
     for directory in (settings.inbox_dir, settings.library_dir, settings.quarantine_dir):

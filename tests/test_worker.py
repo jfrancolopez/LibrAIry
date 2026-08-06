@@ -159,14 +159,36 @@ def test_inbox_signature_changes_when_a_file_is_dropped(tmp_path: Path) -> None:
     from librairy.worker import inbox_signature
 
     inbox = tmp_path / "inbox"
-    (inbox / "nested").mkdir(parents=True)
+    nested = inbox / "nested"
+    nested.mkdir(parents=True)
     before = inbox_signature(inbox)
+    was = os.stat(nested)
 
-    (inbox / "nested" / "dropped.mkv").write_bytes(b"x")
-    after = inbox_signature(inbox)
+    (nested / "dropped.mkv").write_bytes(b"x")
+    # Directory mtimes come from a coarse kernel clock, so a drop landing in
+    # the same tick as the last poll can leave the timestamp untouched and go
+    # unnoticed. Winding the mtime back makes that the case under test instead
+    # of a race that fails on CI once a week.
+    os.utime(nested, ns=(was.st_atime_ns, was.st_mtime_ns))
 
-    assert before != after
-    assert inbox_signature(inbox) == after  # stable when nothing moves
+    assert inbox_signature(inbox) != before
+    assert inbox_signature(inbox) == inbox_signature(inbox)  # stable at rest
+
+
+def test_inbox_signature_changes_when_a_file_is_taken_away(tmp_path: Path) -> None:
+    """Half of "did anything change?" is things leaving, not only arriving."""
+    from librairy.worker import inbox_signature
+
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "leaving.mkv").write_bytes(b"x")
+    before = inbox_signature(inbox)
+    was = os.stat(inbox)
+
+    (inbox / "leaving.mkv").unlink()
+    os.utime(inbox, ns=(was.st_atime_ns, was.st_mtime_ns))
+
+    assert inbox_signature(inbox) != before
 
 
 def test_inbox_signature_survives_a_missing_inbox(tmp_path: Path) -> None:

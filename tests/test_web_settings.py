@@ -870,6 +870,10 @@ def test_lmstudio_test_separates_chat_models_from_embedding_models(
             models=("google/gemma-4-e4b", "text-embedding-nomic-embed-text-v1.5"),
         ),
     )
+    # Without this the route makes a real round trip to the host in the form —
+    # which happened to be a live server on the author's LAN, so the test
+    # passed at one desk and hung for seventy-five seconds everywhere else.
+    monkeypatch.setattr("librairy.web.app.lmstudio_try_classify", lambda *a, **k: "")  # noqa: ARG005
     client, _, _ = client_for(tmp_path)
 
     response = client.post(

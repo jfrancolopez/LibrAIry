@@ -19,6 +19,10 @@ def settings_for(tmp_path: Path) -> Settings:
         LIBRARY_DIR=tmp_path / "library",
         QUARANTINE_DIR=tmp_path / "quarantine",
         FILE_STABILITY_SECONDS=0,
+        # The end-to-end path this proves is scan → plan → commit → undo, all
+        # of it local. Leaving OLLAMA_HOST at its default would have the
+        # analyzer dial out to whatever is listening on the host machine.
+        OLLAMA_HOST="",
         _env_file=None,
     )
 

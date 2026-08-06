@@ -1,13 +1,25 @@
 name: CI
 
 on:
+  # Scoped to main so a pull request runs once, not twice: an unscoped `push`
+  # fires on the PR branch as well and every run is a duplicate of the other.
   push:
+    branches: [main]
   pull_request:
+
+# A new push to the same branch makes the run already in flight irrelevant.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
     runs-on: ubuntu-latest
     strategy:
+      # Otherwise the first failure cancels the other interpreter, and
+      # "3.11 failed, 3.12 cancelled" cannot tell you whether the break is
+      # version-specific — which is the first thing you want to know.
+      fail-fast: false
       matrix:
         python-version: ["3.11", "3.12"]
     steps:

@@ -155,10 +155,16 @@ def next_sleep(previous: float, work_found: bool) -> float:
 def inbox_signature(inbox_dir: Path) -> str:
     """A cheap fingerprint that changes when anything is added to the inbox.
 
-    Creating, renaming or deleting a file bumps the mtime of the directory
-    holding it, so walking directory mtimes catches a drop without stat-ing
-    every file. The inbox is a staging area, not a library — this stays small
-    and fast even when the library it feeds is enormous.
+    Hashes the names of everything in the tree, plus each directory's mtime.
+    Names are what os.walk already collected, so they cost no extra syscalls,
+    and they are what makes a drop detectable *immediately*: directory mtimes
+    alone come from a coarse kernel clock, so a file landing in the same tick
+    as the previous poll leaves the timestamp untouched and the drop invisible
+    until something else disturbs the folder.
+
+    Directory mtimes stay in because they also move when a file is replaced
+    in place under a name that was already there. The inbox is a staging area,
+    not a library, so this stays small and fast however big the library grows.
     """
     # os.walk swallows its own errors, so a missing inbox would otherwise hash
     # to a perfectly stable "empty tree" and look like a healthy quiet one. An
@@ -167,11 +173,15 @@ def inbox_signature(inbox_dir: Path) -> str:
     if not inbox_dir.is_dir():
         return ""
     hasher = hashlib.blake2b(digest_size=16)
-    for root, dirnames, _ in os.walk(inbox_dir):
+    for root, dirnames, filenames in os.walk(inbox_dir):
         # Deterministic order, or the same tree hashes differently each pass.
+        # os.walk reads dirnames back after the yield, so sorting in place is
+        # also what keeps the traversal order stable.
         dirnames.sort()
+        mtime = ""
         with suppress(OSError):
-            hasher.update(f"{root}:{os.stat(root).st_mtime_ns}".encode())
+            mtime = str(os.stat(root).st_mtime_ns)
+        hasher.update(f"{root}:{mtime}:{','.join(sorted(filenames))}\n".encode())
     return hasher.hexdigest()
 
 
