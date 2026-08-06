@@ -90,3 +90,48 @@ def state_counts(conn: sqlite3.Connection, root: str | None = None) -> dict[str,
 
 def should_reset_for_fingerprint_change(state: str) -> bool:
     return state in RESET_ON_FINGERPRINT_CHANGE
+
+
+def vanished_count(conn: sqlite3.Connection) -> int:
+    """Proposals whose file is no longer where the scanner last saw it.
+
+    Not an error and not necessarily a problem: an unmounted disk looks
+    exactly like this, and everything comes back on the next scan. It is only
+    worth a number on screen so the counts add up -- these are filtered out of
+    Review and Commit, and without saying so the totals would just be wrong.
+    """
+    return int(
+        conn.execute(
+            """
+            SELECT COUNT(*) FROM proposals p JOIN items i ON i.id = p.item_id
+            WHERE p.status IN ('proposed', 'approved', 'postponed')
+              AND i.missing_since IS NOT NULL
+            """
+        ).fetchone()[0]
+    )
+
+
+def forget_vanished(conn: sqlite3.Connection) -> int:
+    """Drop the proposals for files that are gone. Never touches a file.
+
+    Deliberately manual. A missing file is usually a disk that is not mounted,
+    and clearing these automatically would throw away every decision made
+    about a whole volume the moment it dropped offline.
+    """
+    rows = conn.execute(
+        """
+        SELECT p.id, p.item_id FROM proposals p JOIN items i ON i.id = p.item_id
+        WHERE p.status IN ('proposed', 'approved', 'postponed')
+          AND i.missing_since IS NOT NULL
+        """
+    ).fetchall()
+    for row in rows:
+        conn.execute(
+            "UPDATE proposals SET status='superseded', updated_at=? WHERE id=?",
+            (utc_now(), row["id"]),
+        )
+        conn.execute(
+            "UPDATE items SET state='discovered' WHERE id=?",
+            (row["item_id"],),
+        )
+    return len(rows)

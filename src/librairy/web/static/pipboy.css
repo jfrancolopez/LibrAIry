@@ -1019,6 +1019,18 @@ tbody tr:hover { background: var(--bg-metric); }
 }
 .setup-steps code { overflow-wrap: anywhere; }
 
+/* A notice with one action in it: explanation on the left, the button that
+   acts on it on the right, so the two never drift apart on a wide screen. */
+.notice-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.notice-row p { margin: 0; max-width: 70ch; }
+.notice-row form { margin: 0; }
+
 /* ---- The AI fallback chain --------------------------------------------- */
 /* A numbered list you rearrange with two buttons, in place of a text box you
    had to type five exact provider slugs into. */

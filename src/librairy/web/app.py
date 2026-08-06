@@ -6,7 +6,13 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import FastAPI, Form, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
+from fastapi.responses import (
+    FileResponse,
+    HTMLResponse,
+    JSONResponse,
+    RedirectResponse,
+    Response,
+)
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -19,6 +25,7 @@ from librairy.catalogs import catalog_enabled
 from librairy.config import Settings
 from librairy.db import connect
 from librairy.dedup import DedupConfigError
+from librairy.lifecycle import forget_vanished
 from librairy.logging import configure_logging
 from librairy.search import (
     DEFAULT_SEARCH_ROOT,
@@ -136,9 +143,16 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
     TEMPLATES.env.globals["portal_password_set"] = lambda: has_admin_password(conn)
     TEMPLATES.env.globals["appearance_view"] = lambda: appearance_settings(conn)
     TEMPLATES.env.globals["activity_view"] = lambda: activity(conn)
-    # Commit appears in the nav only when there is something to commit.
+    # Commit appears in the nav only when there is something to commit — which
+    # means something whose file is still there. A count that led to "nothing
+    # is approved yet" was worse than no tab at all.
     TEMPLATES.env.globals["approved_waiting"] = lambda: int(
-        conn.execute("SELECT COUNT(*) FROM proposals WHERE status='approved'").fetchone()[0]
+        conn.execute(
+            """
+            SELECT COUNT(*) FROM proposals p JOIN items i ON i.id = p.item_id
+            WHERE p.status='approved' AND i.missing_since IS NULL
+            """
+        ).fetchone()[0]
     )
     app.middleware("http")(_auth_and_security(conn, settings))
 
@@ -598,6 +612,17 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             review_data(conn, filters),
         )
 
+    @app.post("/review/forget-missing", include_in_schema=False)
+    def review_forget_missing(request: Request) -> RedirectResponse:  # noqa: ARG001
+        """Drop proposals whose file is gone. Never touches a file.
+
+        Manual on purpose: a missing file is usually an unmounted disk, and
+        clearing these automatically would throw away every decision made
+        about a whole volume the moment it dropped offline.
+        """
+        forget_vanished(conn)
+        return RedirectResponse("/review", status_code=303)
+
     @app.post("/review/action", response_class=HTMLResponse)
     def review_action(
         request: Request,
@@ -765,7 +790,12 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         )
 
     @app.post("/commit/create", response_class=HTMLResponse)
-    def commit_create(request: Request) -> HTMLResponse:
+    def commit_create(request: Request) -> Response:
+        if not commit_overview(conn)["approved_count"]:
+            # Nothing approved, or what was approved has since vanished from
+            # disk. /commit explains that in words; a 422 saying "plan has no
+            # operations" explained nothing and left you on a blank page.
+            return RedirectResponse("/commit", status_code=303)
         try:
             plan_id = create_commit_plan(conn, settings)
         except Exception as exc:
@@ -1035,6 +1065,29 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             request,
             "item_detail.html",
             {"title": "Item Detail", **data},
+        )
+
+    @app.exception_handler(HTTPException)
+    async def http_error(request: Request, exc: HTTPException) -> Response:
+        """A refused action in a browser should be a page, not a JSON blob.
+
+        Pressing "Review the exact plan" on a proposal whose file had been
+        deleted answered with `{"detail":"source not ready: ..."}` on a white
+        page. Anything that is not a browser — the API, htmx, the tests —
+        still gets JSON, because that is what those callers handle.
+        """
+        wants_html = "text/html" in request.headers.get("accept", "")
+        if not wants_html or request.headers.get("HX-Request"):
+            return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
+        return TEMPLATES.TemplateResponse(
+            request,
+            "error.html",
+            {
+                "title": "That could not be done",
+                "status": exc.status_code,
+                "message": exc.detail,
+            },
+            status_code=exc.status_code,
         )
 
     @app.exception_handler(404)

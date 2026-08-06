@@ -22,6 +22,25 @@
     </div>
   </header>
 
+  {% if vanished %}
+    {# These are hidden from the list because approving one produces a commit
+       that cannot run. Saying so is the difference between a total that looks
+       wrong and a total that explains itself. #}
+    <section class="status warn notice-row">
+      <p>
+        <strong>{{ vanished }} file{{ 's' if vanished != 1 else '' }} moved or deleted outside LibrAIry</strong>
+        since {{ 'they were' if vanished != 1 else 'it was' }} proposed, so
+        {{ 'they are' if vanished != 1 else 'it is' }} not listed below. If a disk is
+        unmounted this is expected — plug it back in and the next scan picks
+        {{ 'them' if vanished != 1 else 'it' }} up again with the decisions intact.
+      </p>
+      <form method="post" action="/review/forget-missing">
+        <input type="hidden" name="csrf_token" value="{{ request.state.session.csrf_token }}">
+        <button type="submit">Forget them</button>
+      </form>
+    </section>
+  {% endif %}
+
   <form
     class="filter-bar filter-grid"
     hx-get="/review/list"

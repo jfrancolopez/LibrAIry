@@ -94,6 +94,13 @@ class Settings(BaseSettings):
     # can be downloaded again.
     backup_categories: str = Field("", alias="BACKUP_CATEGORIES")
     auth_required: bool = Field(False, alias="AUTH_REQUIRED")
+    # Applied to files and folders as they are placed in the library, so a
+    # download that arrived 0600 is readable over SMB afterwards. Octal, as a
+    # string, because 644 as an integer is not 0o644. Empty leaves the
+    # permissions exactly as they arrived.
+    normalize_attributes: bool = Field(True, alias="NORMALIZE_ATTRIBUTES")
+    file_mode: str = Field("644", alias="FILE_MODE")
+    dir_mode: str = Field("755", alias="DIR_MODE")
 
     ENV_EXAMPLE: ClassVar[tuple[str, ...]] = (
         "# =============================================================================",
@@ -286,6 +293,27 @@ class Settings(BaseSettings):
         "# =============================================================================",
         "",
         "AUTH_REQUIRED=false",
+        "",
+        "",
+        "# =============================================================================",
+        "# FILE ATTRIBUTES  (applied when a file is placed in the library)",
+        "# =============================================================================",
+        "# Files pick up attributes from wherever they came from: a macOS 'hidden'",
+        "# flag that survives a copy, mode 0600 from a download, 0777 from a USB",
+        "# stick. None of it is visible in a file manager, and all of it turns into",
+        "# 'I cannot see that file' weeks later, over SMB, from another machine.",
+        "#",
+        "# This runs at the moment of the move and never during a scan — scanning",
+        "# and analysis never write to your disks, and that guarantee is worth more",
+        "# than tidying up earlier.",
+        "#",
+        "# Leave FILE_MODE/DIR_MODE empty to keep whatever permissions arrived",
+        "# (right for exFAT or NTFS, where a chmod either fails or lies).",
+        "# =============================================================================",
+        "",
+        "NORMALIZE_ATTRIBUTES=true",
+        "FILE_MODE=644",
+        "DIR_MODE=755",
         "",
         "",
         "# =============================================================================",

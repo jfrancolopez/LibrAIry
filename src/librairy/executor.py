@@ -10,6 +10,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from librairy.attributes import normalize_placed_file, parse_mode
 from librairy.backup import enqueue_backup_item
 from librairy.config import Settings
 from librairy.fingerprint import blake2b_file
@@ -125,6 +126,15 @@ def _execute_op(conn: sqlite3.Connection, row: sqlite3.Row, settings: Settings) 
     final_dest = resolve_collision(dest)
     final_dest.parent.mkdir(parents=True, exist_ok=True)
     _move_verified(src, final_dest, row["src_fingerprint"], row["plan_id"])
+    # After the move and after verification: a file that arrived safely and
+    # kept an awkward mode beats a commit that reports failure for a file it
+    # actually moved.
+    if settings.normalize_attributes:
+        normalize_placed_file(
+            final_dest,
+            file_mode=parse_mode(settings.file_mode),
+            dir_mode=parse_mode(settings.dir_mode),
+        )
     dest_root = _root_path(settings, row["dest_root"]).resolve()
     final_relpath = final_dest.relative_to(dest_root).as_posix()
     result = "renamed_collision" if final_dest != dest else "done"

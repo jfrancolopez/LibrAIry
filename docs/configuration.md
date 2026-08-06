@@ -54,6 +54,9 @@ Configuration has two layers. Boot-time environment variables define paths, port
 | `BACKUP_SCHEDULE` | Backup schedule setting; `after_commit` is the default. |
 | `AUTH_REQUIRED` | `false` (default) leaves the portal open on your LAN with no password. `true` forces first-run password setup and blocks password removal. |
 | `BACKUP_INCLUDE_DB_SNAPSHOT` | Whether backup includes a SQLite appdata snapshot. |
+| `NORMALIZE_ATTRIBUTES` | `true` (default) clears the macOS hidden flag and settles permissions on each file as it is placed in the library. Runs at the move, never during a scan. |
+| `FILE_MODE` | Octal permissions for placed files, default `644`. Empty keeps whatever arrived — right for exFAT and NTFS, where a chmod either fails or lies. |
+| `DIR_MODE` | Octal permissions for folders LibrAIry creates, default `755`. Folders that already have this mode are left alone, so a tree you set up by hand is untouched. |
 | `PUID` | Container file-owner UID, default `99`. |
 | `PGID` | Container file-owner GID, default `100`. |
 

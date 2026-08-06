@@ -7,7 +7,7 @@ from typing import Any
 
 from librairy.config import Settings
 from librairy.flags import flags_for, unhidden_name
-from librairy.lifecycle import transition_item
+from librairy.lifecycle import transition_item, vanished_count
 from librairy.paths import PathValidationError, sanitize_component, validate_dest
 from librairy.planner import utc_now
 from librairy.proposals import decode_evidence
@@ -77,6 +77,9 @@ def review_data(conn: sqlite3.Connection, filters: ReviewFilters) -> dict[str, o
         "page_count": max(1, -(-total // PAGE_SIZE)),
         "range_start": 0 if not total else (filters.page - 1) * PAGE_SIZE + 1,
         "range_end": min(filters.page * PAGE_SIZE, total),
+        # Filtered out of the list above; without a number the totals would
+        # simply be wrong and nothing would say why.
+        "vanished": vanished_count(conn),
     }
 
 
@@ -379,7 +382,12 @@ def _group_rows(rows: list[dict[str, Any]]) -> list[dict[str, object]]:
 
 
 def _where(filters: ReviewFilters) -> tuple[str, list[object]]:
-    clauses = ["p.status = ?"]
+    # A proposal for a file that is no longer on disk is not a decision anyone
+    # can make: approving it produces a commit operation that fails, which is
+    # exactly what happened -- "Review the exact plan" answered with a raw
+    # "source not ready" and no page. The scanner already knows they are gone;
+    # nothing was asking it.
+    clauses = ["p.status = ?", "i.missing_since IS NULL"]
     params: list[object] = [filters.state]
     if filters.category:
         clauses.append("p.category = ?")

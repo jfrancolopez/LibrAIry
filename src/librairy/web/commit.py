@@ -8,6 +8,7 @@ from typing import Any
 from librairy.config import Settings
 from librairy.db import connect
 from librairy.executor import execute_plan
+from librairy.lifecycle import vanished_count
 from librairy.locks import LockHeldError
 from librairy.planner import OperationSpec, approve_plan, create_plan
 from librairy.web.evidence import humanize_evidence
@@ -34,6 +35,7 @@ def commit_overview(conn: sqlite3.Connection) -> dict[str, Any]:
             FROM proposals p
             JOIN items i ON i.id = p.item_id
             WHERE p.status='approved' AND p.dest_relpath IS NOT NULL
+              AND i.missing_since IS NULL
             GROUP BY p.category
             ORDER BY count DESC
             """
@@ -48,6 +50,7 @@ def commit_overview(conn: sqlite3.Connection) -> dict[str, Any]:
             FROM proposals p
             JOIN items i ON i.id = p.item_id
             WHERE p.status='approved' AND p.dest_relpath IS NOT NULL
+              AND i.missing_since IS NULL
             ORDER BY p.id LIMIT 5
             """
         )
@@ -66,8 +69,13 @@ def commit_overview(conn: sqlite3.Connection) -> dict[str, Any]:
         "sample": sample,
         "unfinished": _unfinished_plans(conn),
         "waiting_review": conn.execute(
-            "SELECT COUNT(*) FROM proposals WHERE status='proposed' AND dest_relpath IS NOT NULL"
+            """
+            SELECT COUNT(*) FROM proposals p JOIN items i ON i.id = p.item_id
+            WHERE p.status='proposed' AND p.dest_relpath IS NOT NULL
+              AND i.missing_since IS NULL
+            """
         ).fetchone()[0],
+        "vanished": vanished_count(conn),
         "last_plan": conn.execute(
             "SELECT * FROM plans WHERE status='done' ORDER BY finished_at DESC LIMIT 1"
         ).fetchone(),
@@ -108,6 +116,7 @@ def create_commit_plan(conn: sqlite3.Connection, settings: Settings) -> str:
             FROM proposals p
             JOIN items i ON i.id = p.item_id
             WHERE p.status='approved' AND p.dest_relpath IS NOT NULL
+              AND i.missing_since IS NULL
             ORDER BY p.id
             """
         )
