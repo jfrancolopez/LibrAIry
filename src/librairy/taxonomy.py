@@ -8,6 +8,7 @@ from pathlib import Path
 from string import Formatter
 from typing import Any
 
+from librairy.naming import slugify, slugify_filename, tidy_relpath
 from librairy.paths import PathValidationError, sanitize_component, validate_dest
 
 CATEGORIES = ("music", "movies", "shows", "photos", "documents", "books", "projects", "misc")
@@ -62,7 +63,7 @@ def render_destination(
         return RenderResult(None, f"missing tokens: {', '.join(missing)}")
     try:
         safe_fields = _safe_fields(fields)
-        relpath = template.format(**safe_fields)
+        relpath = tidy_relpath(template.format(**safe_fields))
         validate_dest(library_root, relpath)
     except (KeyError, ValueError, PathValidationError) as exc:
         return RenderResult(None, str(exc))
@@ -92,7 +93,7 @@ def set_template_style(conn: sqlite3.Connection, category: str, style: str) -> N
 
 
 def clean_name_from_title(title: str, ext: str = "") -> str:
-    base = sanitize_component(_strip_hashtags(title).replace("_", " "))
+    base = slugify(_strip_hashtags(title), fallback=sanitize_component(title))
     if ext and not ext.startswith("."):
         ext = f".{ext}"
     return f"{base}{ext}"
@@ -118,12 +119,21 @@ def _missing_tokens(template: str, fields: dict[str, Any]) -> list[str]:
 
 
 def _safe_fields(fields: dict[str, Any]) -> dict[str, Any]:
+    """Every token in a destination template, made safe to be a path component.
+
+    Sanitising here rather than at each call site is what makes the guarantee
+    hold: a new template or a new metadata source cannot introduce a folder
+    with a space, an ampersand or an emoji in it without going through this.
+    """
     safe: dict[str, Any] = {}
     for key, value in fields.items():
         if isinstance(value, int):
             safe[key] = value
             continue
-        safe[key] = sanitize_component(_strip_hashtags(str(value)))
+        text = _strip_hashtags(str(value))
+        # clean_name is the filename, so its extension must not be mangled by
+        # the length cap or absorbed into the slug.
+        safe[key] = slugify_filename(text) if key == "clean_name" else slugify(text)
     return safe
 
 

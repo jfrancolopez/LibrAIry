@@ -121,7 +121,7 @@ def test_episode_resolves_via_tvmaze_when_tmdb_is_unavailable(tmp_path: Path) ->
     )
 
     assert result.category == "shows"
-    assert result.clean_name == "S03E09 - The Rains of Castamere.mkv"
+    assert result.clean_name == "S03E09-The-Rains-of-Castamere.mkv"
     assert result.fields["show"] == "Game of Thrones"
     assert result.fields["episode_title"] == "The Rains of Castamere"
     assert result.confidence == 0.82
@@ -147,7 +147,7 @@ def test_tmdb_names_the_show_and_tvmaze_names_the_episode(tmp_path: Path) -> Non
     sources = [e.source for e in result.evidence]
     assert result.fields["show"] == "Game of Thrones"
     assert result.fields["genre"] == "Sci-Fi & Fantasy"  # TMDB's, not TVmaze's
-    assert result.clean_name == "S03E09 - The Rains of Castamere.mkv"
+    assert result.clean_name == "S03E09-The-Rains-of-Castamere.mkv"
     # Two catalogs agreeing on the show is worth more than either alone.
     assert result.confidence == 0.9
     assert sources.count("tmdb") == 1

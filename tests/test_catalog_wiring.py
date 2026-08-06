@@ -266,7 +266,7 @@ def test_pipeline_calls_tvmaze_for_episodes(tmp_path: Path, monkeypatch) -> None
     result = classify_item(video, "breaking.bad.s05e14.mkv", settings, conn=conn)
 
     assert seen, "pipeline never called TVmaze — it needs no key, so nothing else gates it"
-    assert result.clean_name == "S05E14 - Ozymandias.mkv"
+    assert result.clean_name == "S05E14-Ozymandias.mkv"
     assert "tvmaze" in [entry.source for entry in result.evidence]
 
 

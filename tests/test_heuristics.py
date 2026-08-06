@@ -25,7 +25,7 @@ def test_project_positive_and_negative(tmp_path: Path) -> None:
 
     assert result is not None
     assert result.category == "projects"
-    assert result.dest_relpath == "Projects/Demo Project/Demo Project"
+    assert result.dest_relpath == "Projects/Demo-Project/Demo-Project"
     assert classify_path(plain, settings_for(tmp_path)) is None
 
 
@@ -39,7 +39,7 @@ def test_screenshot_file_positive_and_negative(tmp_path: Path) -> None:
 
     assert result is not None
     assert result.category == "photos"
-    assert result.dest_relpath == "Photos/2026/Screenshots/Screenshot 2026.png"
+    assert result.dest_relpath == "Photos/2026/Screenshots/Screenshot-2026.png"
 
     # A non-screenshot image is still a photo — it just files under the folder
     # it came from rather than Screenshots.
@@ -108,7 +108,7 @@ def test_season_folder_positive_and_negative(tmp_path: Path) -> None:
 
     assert result is not None
     assert result.category == "shows"
-    assert result.dest_relpath == "Shows/General/Example Show/Season 02/Season 02"
+    assert result.dest_relpath == "Shows/General/Example-Show/Season-02/Season-02"
     assert classify_path(plain, settings_for(tmp_path)) is None
 
 
@@ -125,7 +125,7 @@ def test_untagged_album_positive_and_negative(tmp_path: Path) -> None:
 
     assert result is not None
     assert result.category == "music"
-    assert result.dest_relpath == "Music/General/Unknown Artist/Unknown Album/Unknown Album"
+    assert result.dest_relpath == "Music/General/Unknown-Artist/Unknown-Album/Unknown-Album"
     assert classify_path(plain, settings_for(tmp_path)) is None
 
 
@@ -136,7 +136,7 @@ def test_outputs_are_proposal_fields_not_raw_absolute_paths(tmp_path: Path) -> N
     result = classify_path(backup, settings_for(tmp_path))
 
     assert result is not None
-    assert result.dest_relpath == "Misc/system backup"
+    assert result.dest_relpath == "Misc/system-backup"
     assert str(tmp_path) not in result.dest_relpath
 
 
@@ -270,8 +270,8 @@ def test_print_files_become_projects_named_after_their_folder(tmp_path: Path) ->
     assert result is not None
     assert result.category == "projects"
     assert result.confidence >= 0.8
-    assert result.fields["project"] == "Dice Prints"
-    assert (result.dest_relpath or "").startswith("Projects/Dice Prints/")
+    assert result.fields["project"] == "Dice-Prints"
+    assert (result.dest_relpath or "").startswith("Projects/Dice-Prints/")
 
 
 def test_loose_print_file_uses_its_own_name_as_the_project(tmp_path: Path) -> None:
@@ -291,4 +291,4 @@ def test_loose_print_file_uses_its_own_name_as_the_project(tmp_path: Path) -> No
 
     assert result is not None
     assert result.category == "projects"
-    assert result.fields["project"] == "bracket v2"
+    assert result.fields["project"] == "bracket-v2"

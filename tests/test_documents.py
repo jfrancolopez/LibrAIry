@@ -18,7 +18,7 @@ def test_book_extension_classifies_with_destination(tmp_path: Path) -> None:
 
     assert result.category == "books"
     assert result.confidence >= 0.8
-    assert result.dest_relpath == "Books/Unknown Author/Dune/Dune.epub"
+    assert result.dest_relpath == "Books/Unknown-Author/Dune/Dune.epub"
     assert result.evidence[0].source == "heuristic"
 
 
@@ -41,7 +41,7 @@ def test_project_marker_classifies_project(tmp_path: Path) -> None:
     result = classify_document_like("Demo_Project/package.json", settings=settings)
 
     assert result.category == "projects"
-    assert result.dest_relpath == "Projects/Demo Project/Demo Project"
+    assert result.dest_relpath == "Projects/Demo-Project/Demo-Project"
 
 
 def test_misc_fallback_stays_pending_below_threshold(tmp_path: Path) -> None:

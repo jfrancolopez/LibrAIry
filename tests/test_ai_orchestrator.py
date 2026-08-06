@@ -73,7 +73,7 @@ def test_ai_result_merges_evidence_and_caps_confidence(tmp_path: Path) -> None:
 
     assert result.category == "documents"
     assert result.confidence == 0.85
-    assert result.dest_relpath == "Documents/2026/AI Report.bin"
+    assert result.dest_relpath == "Documents/2026/AI-Report.bin"
     assert result.evidence[-1].source == "ai"
     assert "fake-local/qwen3:4b/local" in result.evidence[-1].detail
 

@@ -58,7 +58,7 @@ def test_analyze_propose_plan_commit_flow_keeps_pending_in_inbox(tmp_path: Path)
     assert json.loads(run_cli(tmp_path, "plan", "approve", plan_id).stdout)["status"] == "approved"
     assert json.loads(run_cli(tmp_path, "commit", plan_id, "--yes").stdout)["done"] == 1
 
-    assert (library / "Books/Unknown Author/Dune/Dune.epub").exists()
+    assert (library / "Books/Unknown-Author/Dune/Dune.epub").exists()
     assert (inbox / "scan001.pdf").exists()
 
 

@@ -162,7 +162,7 @@ def test_genre_fills_the_first_path_component(tmp_path: Path) -> None:
     )
 
     assert result.fields["genre"] == "Shoegaze"
-    assert result.dest_relpath == "Music/Shoegaze/Slowdive/Souvlaki/01 - Alison.flac"
+    assert result.dest_relpath == "Music/Shoegaze/Slowdive/Souvlaki/01-Alison.flac"
     assert ("lastfm", "genre") in [(e.source, e.field) for e in result.evidence]
 
 

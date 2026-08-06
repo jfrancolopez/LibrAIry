@@ -5,6 +5,7 @@ from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
+from librairy.classify.photo_names import photo_name
 from librairy.config import Settings
 from librairy.models import EvidenceEntry
 from librairy.taxonomy import RenderResult, clean_name_from_title, render_destination
@@ -128,6 +129,7 @@ def _classify_file(path: Path, settings: Settings) -> HeuristicResult | None:
     if suffix in IMAGE_EXTS and SCREENSHOT_RE.match(stem):
         # "Screenshot 2022-03-01 093819.png" carries its own date. Hardcoding 0
         # here filed every screenshot ever taken under a literal Photos/0/.
+        named = photo_name(stem, suffix)
         return _result(
             "photos",
             "Screenshots",
@@ -135,10 +137,10 @@ def _classify_file(path: Path, settings: Settings) -> HeuristicResult | None:
             {
                 "year": _year_from_name(stem) or "Unknown",
                 "event": "Screenshots",
-                "clean_name": clean_name_from_title(stem, suffix),
+                "clean_name": named.name,
             },
             settings,
-            "filename matches screenshot pattern",
+            named.reason or "filename matches screenshot pattern",
             hidden=path.name[1:] if path.name.startswith(".") else None,
         )
     if suffix in IMAGE_EXTS:
@@ -215,17 +217,18 @@ def _image_file(
 
     year = _year_from_name(stem) or _year_from_name(path.parent.name) or "Unknown"
     event = _event_from_parent(path, settings)
+    named = photo_name(stem, suffix, event=event)
     if CAMERA_RE.match(stem):
         confidence, detail = 0.88, "camera filename pattern"
     else:
         confidence, detail = 0.85, "image extension"
     return _result(
         "photos",
-        clean_name_from_title(stem, suffix),
+        named.name,
         confidence,
-        {"year": year, "event": event, "clean_name": clean_name_from_title(stem, suffix)},
+        {"year": year, "event": event, "clean_name": named.name},
         settings,
-        detail,
+        named.reason or detail,
     )
 
 

@@ -235,7 +235,7 @@ def test_settings_apply_to_next_analysis_batch(tmp_path: Path) -> None:
 
     assert summary.proposed == 1
     assert effective_settings(conn, settings).confidence_threshold == 0.4
-    assert row["dest_relpath"].startswith("Music/General/Unknown Artist")
+    assert row["dest_relpath"].startswith("Music/General/Unknown-Artist")
 
 
 def test_provider_header_degrades_to_heuristics_only(tmp_path: Path) -> None:

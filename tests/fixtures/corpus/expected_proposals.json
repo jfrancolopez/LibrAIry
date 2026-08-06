@@ -7,7 +7,7 @@
   {
     "category": "movies",
     "dest": null,
-    "name": "The Matrix (1999).mkv"
+    "name": "The-Matrix-(1999).mkv"
   },
   {
     "category": "shows",
@@ -16,13 +16,13 @@
   },
   {
     "category": "photos",
-    "dest": "Photos/2026/Screenshots/Screenshot 2026.png",
+    "dest": "Photos/2026/Screenshots/Screenshot-2026.png",
     "name": "Screenshots"
   },
   {
     "category": "photos",
-    "dest": "Photos/Unknown/Trip to Lisbon/IMG 4821.jpg",
-    "name": "IMG 4821.jpg"
+    "dest": "Photos/Unknown/Trip-to-Lisbon/IMG_4821-Trip-to-Lisbon.jpg",
+    "name": "IMG_4821-Trip-to-Lisbon.jpg"
   },
   {
     "category": "documents",
@@ -31,13 +31,13 @@
   },
   {
     "category": "books",
-    "dest": "Books/Unknown Author/Dune/Dune.epub",
+    "dest": "Books/Unknown-Author/Dune/Dune.epub",
     "name": "Dune"
   },
   {
     "category": "projects",
-    "dest": "Projects/Demo Project/Demo Project",
-    "name": "Demo Project"
+    "dest": "Projects/Demo-Project/Demo-Project",
+    "name": "Demo-Project"
   },
   {
     "category": "misc",

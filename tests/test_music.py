@@ -34,7 +34,7 @@ def test_tagged_file_classifies_from_tags_without_network(tmp_path: Path) -> Non
     )
 
     assert result.confidence >= 0.85
-    assert result.dest_relpath == "Music/Rock/Queen/A Night at the Opera/01 - Death on Two Legs.mp3"
+    assert result.dest_relpath == "Music/Rock/Queen/A-Night-at-the-Opera/01-Death-on-Two-Legs.mp3"
     assert [entry.source for entry in result.evidence] == ["tags"]
 
 
@@ -64,7 +64,7 @@ def test_untagged_file_uses_acoustid_and_musicbrainz_fixtures(tmp_path: Path, mo
 
     assert (
         result.dest_relpath
-        == "Music/Rock/Queen/News of the World/11 - We Are the Champions.flac"
+        == "Music/Rock/Queen/News-of-the-World/11-We-Are-the-Champions.flac"
     )
     assert [entry.source for entry in result.evidence] == ["acoustid", "musicbrainz"]
 
@@ -84,4 +84,4 @@ def test_music_destinations_render_genre_first_by_default(tmp_path: Path) -> Non
         tags={"artist": "Queen", "album": "Jazz", "title": "Bicycle Race", "genre": "Rock"},
     )
 
-    assert result.dest_relpath == "Music/Rock/Queen/Jazz/Bicycle Race.mp3"
+    assert result.dest_relpath == "Music/Rock/Queen/Jazz/Bicycle-Race.mp3"
