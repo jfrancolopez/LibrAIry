@@ -9,13 +9,55 @@ from librairy.planner import utc_now
 from librairy.quarantine import restore_entry
 from librairy.web.evidence import humanize_evidence
 
+#  What the reason column holds, said the way a person would say it.
+REASONS = {
+    "exact_duplicate": "byte-for-byte copy of a file you already have",
+    "user_discard": "you said you did not want it",
+}
+UNWANTED = "you marked it as “Don’t want it” in Review"
 
-def quarantine_data(conn: sqlite3.Connection) -> dict[str, object]:
+
+def quarantine_data(
+    conn: sqlite3.Connection, settings: Settings | None = None
+) -> dict[str, object]:
+    entries = _entries(conn)
     return {
         "staged": _staged(conn),
-        "entries": _entries(conn),
+        "entries": entries,
         "similar_flags": _similar_flags(conn),
+        # The one thing the page could not answer: where the files actually
+        # are, so you can go and delete them yourself. LibrAIry will not.
+        "host_quarantine_dir": settings.host_quarantine_dir if settings else "",
+        "held": sum(1 for entry in entries if not entry["restored_at"]),
     }
+
+
+def reason_text(reason: str | None) -> str:
+    return REASONS.get(str(reason or ""), str(reason or "no reason recorded"))
+
+
+def staged_reason(evidence: str | None) -> str:
+    """Why a file is queued for quarantine, from the evidence already on it.
+
+    Only two things put a file here: the duplicate finder, which writes
+    "exact duplicate of ..." into its evidence, and "Don't want it" in Review,
+    which leaves the original evidence untouched. Reading it back beats
+    another column that could disagree with the evidence beside it.
+    """
+    if "exact duplicate of" in (evidence or ""):
+        return REASONS["exact_duplicate"]
+    return UNWANTED
+
+
+def human_size(size: int | None) -> str:
+    if not size or size < 0:
+        return ""
+    value = float(size)
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if value < 1024 or unit == "TB":
+            return f"{value:.0f} {unit}" if unit == "B" else f"{value:.1f} {unit}"
+        value /= 1024
+    return ""
 
 
 def restore_quarantine(
@@ -61,12 +103,18 @@ def _staged(conn: sqlite3.Connection) -> list[dict[str, object]]:
         """
     ).fetchall()
     return [
-        {**dict(row), "evidence_views": humanize_evidence(row["evidence"] or "")} for row in rows
+        {
+            **dict(row),
+            "evidence_views": humanize_evidence(row["evidence"] or ""),
+            "reason_text": staged_reason(row["evidence"]),
+            "size_label": human_size(row["item_size"]),
+        }
+        for row in rows
     ]
 
 
-def _entries(conn: sqlite3.Connection) -> list[sqlite3.Row]:
-    return list(
+def _entries(conn: sqlite3.Connection) -> list[dict[str, object]]:
+    rows = list(
         conn.execute(
             """
             SELECT qe.*, i.relpath AS item_relpath, i.size AS item_size, i.state AS item_state
@@ -76,10 +124,11 @@ def _entries(conn: sqlite3.Connection) -> list[sqlite3.Row]:
             """
         )
     )
+    return [{**dict(row), "reason_text": reason_text(row["reason"])} for row in rows]
 
 
-def _similar_flags(conn: sqlite3.Connection) -> list[sqlite3.Row]:
-    return list(
+def _similar_flags(conn: sqlite3.Connection) -> list[dict[str, object]]:
+    rows = list(
         conn.execute(
             """
             SELECT f.*, a.relpath AS item_relpath, b.relpath AS similar_relpath,
@@ -92,3 +141,11 @@ def _similar_flags(conn: sqlite3.Connection) -> list[sqlite3.Row]:
             """
         )
     )
+    return [
+        {
+            **dict(row),
+            "item_size_label": human_size(row["item_size"]),
+            "similar_size_label": human_size(row["similar_size"]),
+        }
+        for row in rows
+    ]

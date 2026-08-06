@@ -217,8 +217,8 @@ def test_commit_page_shows_what_would_move_before_anything_moves(tmp_path: Path)
     assert "documents" in page
     # A sample of the actual destinations, not just a total.
     assert "Documents/2026/a.txt" in page
-    assert "Review the exact plan" in page
-    assert "can be undone from History" in page
+    assert "See exactly what will move" in page
+    assert "be undone from History" in page
 
 
 def test_commit_page_with_nothing_approved_points_at_review(tmp_path: Path) -> None:
@@ -231,7 +231,7 @@ def test_commit_page_with_nothing_approved_points_at_review(tmp_path: Path) -> N
     assert "Nothing is approved yet" in page
     assert "waiting for you in Review" in page
     assert 'href="/review"' in page
-    assert "Review the exact plan" not in page, "no button when there is nothing to commit"
+    assert "See exactly what will move" not in page, "no button when there is nothing to commit"
 
 
 def test_commit_page_with_an_empty_system_does_not_send_you_to_review(tmp_path: Path) -> None:
@@ -250,8 +250,8 @@ def test_unexecuted_plans_are_surfaced_instead_of_vanishing(tmp_path: Path) -> N
 
     page = client.get("/commit").text
 
-    assert "Plans not yet run" in page
-    assert "Nothing has moved for these." in page
+    assert "Started but never run" in page
+    assert "Nothing moved." in page
 
 
 def test_overview_totals_are_human_readable(tmp_path: Path) -> None:

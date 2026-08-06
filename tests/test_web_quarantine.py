@@ -61,12 +61,15 @@ def test_quarantine_screen_lists_staged_and_similar_flags_without_delete(tmp_pat
     response = client.get("/quarantine")
 
     assert response.status_code == 200
-    assert "Quarantine is reversible" in response.text
+    assert "LibrAIry never deletes anything" in response.text
     assert "copy.txt" in response.text
-    assert "original inbox:dupe.txt" in response.text
-    assert "needs human judgment" in response.text
-    assert "score 0.91" in response.text
-    assert "delete" not in response.text.lower()
+    assert "inbox:dupe.txt" in response.text or "dupe.txt" in response.text
+    assert "your call" in response.text.lower()
+    assert "similarity 0.91" in response.text
+    # The page now tells you where to go and delete things yourself, so the
+    # invariant is "no control that deletes", not "the word never appears".
+    for control in ("hx-delete", 'action="/quarantine/delete', "/quarantine/purge"):
+        assert control not in response.text
 
 
 def test_staged_quarantine_approve_and_unstage_actions(tmp_path: Path) -> None:

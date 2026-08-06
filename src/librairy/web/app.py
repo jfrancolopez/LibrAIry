@@ -746,7 +746,7 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             {
                 "title": "Quarantine",
                 "csrf_token": request.state.session["csrf_token"],
-                **quarantine_data(conn),
+                **quarantine_data(conn, settings),
             },
         )
 

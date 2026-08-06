@@ -77,7 +77,7 @@ def test_fresh_install_empty_states_are_purposeful(tmp_path: Path) -> None:
     assert "drop files into the inbox" in review.text
     # Search folded into Browse, so its empty state is Browse's empty state.
     assert "Browse fills up as you commit" in browse.text
-    assert "Quarantine is reversible" in quarantine.text
+    assert "LibrAIry never deletes anything" in quarantine.text
     assert "Every committed filesystem operation" in history.text
 
 

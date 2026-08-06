@@ -1,24 +1,77 @@
 {% extends "base.html" %}
 {% block content %}
-  <p class="status warn">Confirm the exact plan below.</p>
-  <h1>Confirm Commit</h1>
-  <p>Plan {{ plan.id }}</p>
-  <p>Hash {{ plan.plan_hash }}</p>
-  <p>{{ ops|length }} operation(s), {{ quarantine_count }} quarantine operation(s)</p>
-  {% for category in categories %}<span>{{ category.category }}: {{ category.count }}</span>{% endfor %}
-  <form
-    hx-post="/commit/execute/{{ plan.id }}"
-    hx-target="#commit-progress"
-    hx-swap="outerHTML"
-    hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'
-  >
-    <button type="submit">Execute Commit</button>
-  </form>
+  {# This is the last screen before files move, and it used to open with a
+     UUID and a SHA-256 — the two things on it least useful to the person
+     deciding. What they need first is: how many files, how much data, where
+     it is going, and can I undo it. #}
+  <header class="page-head">
+    <div>
+      <h1>Move {{ ops|length }} file{{ 's' if ops|length != 1 else '' }}?</h1>
+      <p class="muted">
+        Every move below is copied and verified by hash before the original is
+        released, written to History, and undoable from there afterwards.
+        Nothing is deleted or overwritten.
+      </p>
+    </div>
+    <form
+      hx-post="/commit/execute/{{ plan.id }}"
+      hx-target="#commit-progress"
+      hx-swap="outerHTML"
+      hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'
+    >
+      <button type="submit" class="btn-primary btn-lg">Yes, move them</button>
+    </form>
+  </header>
+
+  <p class="pill-row">
+    {% for category in categories %}
+      <span class="badge badge-info">{{ category.category }} {{ category.count }}</span>
+    {% endfor %}
+    {% if quarantine_count %}
+      <span class="badge badge-warn">{{ quarantine_count }} into quarantine, not the library</span>
+    {% endif %}
+  </p>
+
   <table>
-    <thead><tr><th scope="col">Seq</th><th scope="col">Move</th><th scope="col">Result</th></tr></thead>
+    <thead><tr><th scope="col">#</th><th scope="col">From → to</th><th scope="col">Result</th></tr></thead>
     <tbody>
-      {% for op in ops %}<tr><td>{{ op.seq }}</td><td><div class="from-to"><span class="mono muted">{{ op.src_root }}/{{ op.src_relpath }}</span><span aria-hidden="true">→</span><span class="mono">{{ op.dest_root }}/{{ op.dest_relpath }}</span></div>{% if op.evidence_views %}<details class="why"><summary>Why?</summary><ul class="why-list">{% for view in op.evidence_views %}<li><span class="badge {{ 'badge-warn' if view.cloud else 'badge-info' }}">{{ view.label }}</span> {{ view.text }} <span class="muted">{{ view.weight_pct }}%</span></li>{% endfor %}</ul></details>{% endif %}</td><td>{{ op.result or 'pending' }}</td></tr>{% endfor %}
+      {% for op in ops %}
+        <tr>
+          <td>{{ op.seq }}</td>
+          <td>
+            <div class="from-to">
+              <span class="mono muted">{{ op.src_root }}/{{ op.src_relpath }}</span>
+              <span aria-hidden="true">→</span>
+              <span class="mono">{{ op.dest_root }}/{{ op.dest_relpath }}</span>
+            </div>
+            {% if op.evidence_views %}
+              <details class="why"><summary>Why?</summary>
+                <ul class="why-list">
+                  {% for view in op.evidence_views %}
+                    <li><span class="badge {{ 'badge-warn' if view.cloud else 'badge-info' }}">{{ view.label }}</span> {{ view.text }} <span class="muted">{{ view.weight_pct }}%</span></li>
+                  {% endfor %}
+                </ul>
+              </details>
+            {% endif %}
+          </td>
+          <td>{{ op.result or 'not started' }}</td>
+        </tr>
+      {% endfor %}
     </tbody>
   </table>
+
   {% include "partials/commit_progress.html" %}
+
+  {# The plan id and its hash are what make a commit auditable — the executor
+     refuses to run if the hash no longer matches what you approved. Worth
+     keeping, worth putting at the bottom. #}
+  <details class="setup-steps">
+    <summary>Plan fingerprint</summary>
+    <p class="muted">
+      The executor recomputes this hash before touching anything and refuses to
+      run if it has changed, so what you approve here is exactly what runs.
+    </p>
+    <p class="mono muted">plan {{ plan.id }}</p>
+    <p class="mono muted">hash {{ plan.plan_hash }}</p>
+  </details>
 {% endblock %}

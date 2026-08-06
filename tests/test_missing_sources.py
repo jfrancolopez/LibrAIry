@@ -70,7 +70,7 @@ def test_a_file_deleted_outside_librairy_leaves_review(tmp_path: Path) -> None:
 
 
 def test_commit_will_not_build_a_plan_around_a_missing_file(tmp_path: Path) -> None:
-    """"Review the exact plan" answered with a raw JSON "source not ready"."""
+    """"See exactly what will move" answered with a raw JSON "source not ready"."""
     client, conn, _ = client_for(tmp_path)
     seed(conn, "gone.mkv", status="approved", gone=True)
 

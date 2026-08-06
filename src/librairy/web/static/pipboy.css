@@ -1031,6 +1031,11 @@ tbody tr:hover { background: var(--bg-metric); }
 .notice-row p { margin: 0; max-width: 70ch; }
 .notice-row form { margin: 0; }
 
+/* A run of badges that summarises what follows, on its own line. */
+.pill-row { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: var(--space-3) 0; }
+/* A row that has already been dealt with: still readable, no longer the point. */
+tr.is-idle { opacity: 0.55; }
+
 /* ---- The AI fallback chain --------------------------------------------- */
 /* A numbered list you rearrange with two buttons, in place of a text box you
    had to type five exact provider slugs into. */

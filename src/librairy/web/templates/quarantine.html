@@ -1,44 +1,115 @@
 {% extends "base.html" %}
 {% block content %}
-  <p class="status warn">Quarantine is reversible — nothing here is ever removed.</p>
-  <h1>Quarantine</h1>
+  {# The page used to speak in the vocabulary of the tables underneath it —
+     "Staged", "Approve Stage", "Un-stage", "Executed" — which are the states
+     of a proposal row, not anything a person is trying to do. What a person
+     is trying to do is decide whether a file leaves the library, and get it
+     back if they change their mind. #}
+  <header class="page-head">
+    <div>
+      <h1>Quarantine</h1>
+      <p class="muted">
+        The out-tray. Files here have been moved out of the way — duplicates,
+        and anything you said you did not want — and they are still on your
+        disk, whole and unchanged. LibrAIry never deletes anything.
+      </p>
+    </div>
+  </header>
+
+  <section class="card notice-row">
+    <p>
+      {% if held %}
+        <strong>{{ held }} file{{ 's' if held != 1 else '' }} held here.</strong>
+      {% else %}
+        <strong>Nothing is being held.</strong>
+      {% endif %}
+      To actually delete them, open the folder yourself and delete them yourself —
+      that is a decision this app will not make on a single click.
+    </p>
+    {% if host_quarantine_dir %}
+      <p class="mono muted">{{ host_quarantine_dir }}</p>
+    {% endif %}
+  </section>
+
   <section class="metric wide">
-    <h2>Staged</h2>
+    <h2>Waiting on you</h2>
+    <p class="muted">LibrAIry thinks {{ 'these belong' if staged|length != 1 else 'this belongs' }} in quarantine. Nothing moves until you say so and then commit.</p>
     {% if staged %}
       {% for proposal in staged %}
         <article class="compare-card">
-          <div class="from-to"><span class="badge badge-warn">staged</span><span class="mono muted">{{ proposal.item_relpath }}</span><span aria-hidden="true">→</span><span class="mono">{{ proposal.dest_root }}/{{ proposal.dest_relpath }}</span></div>{% if proposal.evidence_views %}<details class="why"><summary>Why?</summary><ul class="why-list">{% for view in proposal.evidence_views %}<li><span class="badge {{ 'badge-warn' if view.cloud else 'badge-info' }}">{{ view.label }}</span> {{ view.text }} <span class="muted">{{ view.weight_pct }}%</span></li>{% endfor %}</ul></details>{% endif %}
-          <span>reason: {{ proposal.action }} / confidence {{ '%.2f'|format(proposal.confidence) }}</span>
-          <button hx-post="/quarantine/staged/{{ proposal.id }}/approve" hx-target="#quarantine-result" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>Approve Stage</button>
-          <button hx-post="/quarantine/staged/{{ proposal.id }}/unstage" hx-target="#quarantine-result" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>Un-stage</button>
+          <div class="from-to">
+            <span class="mono muted">{{ proposal.item_relpath }}</span>
+            <span aria-hidden="true">→</span>
+            <span class="mono">quarantine</span>
+          </div>
+          <p class="muted">
+            {{ proposal.reason_text }}{% if proposal.confidence is not none %} · {{ '%.0f'|format(proposal.confidence * 100) }}% sure{% endif %}{% if proposal.size_label %} · {{ proposal.size_label }}{% endif %}
+          </p>
+          {% if proposal.evidence_views %}
+            <details class="why"><summary>Why?</summary>
+              <ul class="why-list">
+                {% for view in proposal.evidence_views %}
+                  <li><span class="badge {{ 'badge-warn' if view.cloud else 'badge-info' }}">{{ view.label }}</span> {{ view.text }} <span class="muted">{{ view.weight_pct }}%</span></li>
+                {% endfor %}
+              </ul>
+            </details>
+          {% endif %}
+          <div class="button-row">
+            <button class="btn-primary" hx-post="/quarantine/staged/{{ proposal.id }}/approve" hx-target="#quarantine-result" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>Move it out</button>
+            <button hx-post="/quarantine/staged/{{ proposal.id }}/unstage" hx-target="#quarantine-result" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>Keep it — file it normally</button>
+          </div>
         </article>
       {% endfor %}
-    {% else %}<p class="muted">No duplicate quarantine proposals are staged yet.</p>{% endif %}
+      <p class="muted">Approved files move on the next commit, like every other move: hash-verified, journaled, undoable.</p>
+    {% else %}
+      <p class="muted">Nothing is waiting. Duplicates show up here after a scan, and so does anything you mark <em>Don't want it</em> in Review.</p>
+    {% endif %}
   </section>
+
   <section class="metric wide">
-    <h2>Executed</h2>
+    <h2>Already moved out</h2>
     {% if entries %}
-      {% for entry in entries %}
-        <article class="compare-card">
-          <span>reason {{ entry.reason }} / original {{ entry.original_root }}:{{ entry.original_relpath }}</span>
-          <span>quarantine item: {{ entry.item_relpath or 'missing' }} / state {{ entry.item_state or 'unknown' }}</span>
-          <span>quarantined {{ entry.quarantined_at }}{% if entry.restored_at %} / restored {{ entry.restored_at }}{% endif %}</span>
-          {% if not entry.restored_at %}<button hx-post="/quarantine/restore/{{ entry.id }}" hx-target="#quarantine-result" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>Restore</button>{% endif %}
-        </article>
-      {% endfor %}
-    {% else %}<p class="muted">No files have been quarantined. Quarantine is reversible and never removes files.</p>{% endif %}
+      <table>
+        <thead><tr><th>File</th><th>Why</th><th>When</th><th></th></tr></thead>
+        <tbody>
+          {% for entry in entries %}
+            <tr{% if entry.restored_at %} class="is-idle"{% endif %}>
+              <td class="mono">{{ entry.item_relpath or entry.original_relpath }}</td>
+              <td>{{ entry.reason_text }}</td>
+              <td class="muted">
+                {{ entry.quarantined_at }}
+                {% if entry.restored_at %}<br><span class="badge badge-ok">put back {{ entry.restored_at }}</span>{% endif %}
+              </td>
+              <td>
+                {% if not entry.restored_at %}
+                  <button hx-post="/quarantine/restore/{{ entry.id }}" hx-target="#quarantine-result" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>Put it back</button>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <p class="muted">"Put it back" returns the file to exactly where it came from, verified by hash on the way.</p>
+    {% else %}
+      <p class="muted">Nothing has been moved out yet.</p>
+    {% endif %}
   </section>
+
   <section class="metric wide">
-    <h2>Similar Media - Human Judgment Required</h2>
+    <h2>Looks similar — your call</h2>
+    <p class="muted">Not the same file, close enough to be worth a look. LibrAIry will not act on these: two versions of the same film at different qualities are a choice only you can make.</p>
     {% if similar_flags %}
       {% for flag in similar_flags %}
         <article class="compare-card split">
-          <div><strong>Item</strong><span>{{ flag.item_relpath }}</span><span>{{ flag.item_size }} bytes</span></div>
-          <div><strong>Similar</strong><span>{{ flag.similar_relpath }}</span><span>{{ flag.similar_size }} bytes</span></div>
-          <span><span class="badge badge-warn">{{ flag.kind }}</span> score {{ flag.score if flag.score is not none else 'n/a' }} — needs human judgment</span>
+          <div><strong>This</strong><span class="mono">{{ flag.item_relpath }}</span><span class="muted">{{ flag.item_size_label }}</span></div>
+          <div><strong>looks like</strong><span class="mono">{{ flag.similar_relpath }}</span><span class="muted">{{ flag.similar_size_label }}</span></div>
+          <span><span class="badge badge-warn">{{ flag.kind }}</span>{% if flag.score is not none %} similarity {{ flag.score }}{% endif %}</span>
         </article>
       {% endfor %}
-    {% else %}<p class="muted">No similar-media flags yet. If czkawka is enabled, future scans list human-review matches here.</p>{% endif %}
+    {% else %}
+      <p class="muted">Nothing flagged. Turn on czkawka in Settings → Library if you want LibrAIry to look for near-duplicates.</p>
+    {% endif %}
   </section>
+
   <div id="quarantine-result"></div>
 {% endblock %}

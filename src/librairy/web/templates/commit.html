@@ -1,9 +1,19 @@
 {% extends "base.html" %}
 {% block content %}
-  <h1>Commit</h1>
+  <header class="page-head">
+    <div>
+      <h1>Move approved files</h1>
+      <p class="muted">
+        The one screen in LibrAIry that touches your files. Everything you
+        approved in Review waits here until you press the button — then each
+        file is copied, verified by hash, and only then released from the
+        inbox. Nothing is deleted, nothing is overwritten, and every move can
+        be undone from History.
+      </p>
+    </div>
+  </header>
 
   {% if approved_count %}
-    <p class="status warn">Commit moves files. Nothing is ever deleted, and every move can be undone from History.</p>
 
     <div class="widget-grid">
       <section class="widget card centerpiece">
@@ -12,9 +22,9 @@
         <p class="muted">{{ total_bytes }} across {{ by_category|length }} categor{{ 'y' if by_category|length == 1 else 'ies' }}</p>
         <form method="post" action="/commit/create">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-          <button type="submit">Review the exact plan</button>
+          <button type="submit" class="btn-lg">See exactly what will move</button>
         </form>
-        <p class="muted">You will see every move and confirm again before anything happens.</p>
+        <p class="muted">Next screen lists every move, one by one. Nothing happens until you confirm there.</p>
       </section>
 
       <section class="widget card">
@@ -57,8 +67,8 @@
 
   {% if unfinished %}
     <section class="card">
-      <h3>Plans not yet run</h3>
-      <p class="muted">Created but never executed. Nothing has moved for these.</p>
+      <h3>Started but never run</h3>
+      <p class="muted">You opened the confirm screen and did not press the button. Nothing moved. Open one to finish it, or ignore it — an unrun plan does nothing on its own.</p>
       <ul class="plan-list">
         {% for plan in unfinished %}
           <li>
