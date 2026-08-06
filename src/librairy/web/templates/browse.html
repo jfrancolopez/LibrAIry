@@ -1,12 +1,51 @@
 {% extends "base.html" %}
 {% block content %}
-  <p class="muted">Read-only view of your organized library.</p>
-  <h1>Browse</h1>
-  <p class="muted"><a href="/access">How to open this library from SMB, FTP, or WebDAV clients</a></p>
-  {% if categories|sum(attribute=1) == 0 %}<p class="muted">Browse is empty until files are indexed or committed into the library.</p>{% endif %}
-  <div class="dashboard-grid">
-    {% for category, count in categories %}
-      <a class="metric" href="/browse/{{ category }}"><strong>{{ count }}</strong><span>{{ category }}</span></a>
-    {% endfor %}
-  </div>
+  {# Search and Browse were two tabs answering one question, and the split was
+     the confusing kind: Browse showed the library, Search showed the library
+     and the inbox and quarantine mixed together, so the same word found
+     different things depending on which tab you were standing in. One page:
+     categories when you are browsing, results when you are searching. #}
+  <header class="page-head">
+    <div>
+      <h1>Your library</h1>
+      <p class="muted">
+        Everything filed and committed. Nothing here can be changed from the portal —
+        <a href="/access">open it over SMB, FTP or WebDAV</a> to work with the files themselves.
+      </p>
+    </div>
+  </header>
+
+  <form class="filter-grid" action="/browse" method="get" role="search"
+        hx-get="/browse/body" hx-target="#browse-body" hx-swap="outerHTML"
+        hx-trigger="keyup changed delay:300ms from:input, change from:select">
+    <label class="field field-wide">Find a file
+      <input type="search" name="q" value="{{ query }}" placeholder="queen night opera">
+    </label>
+    {# The old page defaulted to every root at once, which is why searching
+       turned up inbox files you had not filed yet. #}
+    <label class="field">Where
+      <select name="root">
+        {% for value, label in scopes %}
+          <option value="{{ value }}"{% if value == scope %} selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="field field-narrow">Category
+      <input name="category" value="{{ filters.category or '' }}" placeholder="any">
+    </label>
+    <label class="field field-narrow">Year
+      <input name="year" type="number" value="{{ filters.year or '' }}" placeholder="any">
+    </label>
+    <label class="field field-narrow">Genre
+      <input name="genre" value="{{ filters.genre or '' }}" placeholder="any">
+    </label>
+    <label class="field checkbox-field">
+      <input name="content" type="checkbox" value="true" {% if filters.content %}checked{% endif %}>
+      search inside documents
+    </label>
+    <button type="submit">Search</button>
+  </form>
+
+  {% include "partials/browse_body.html" %}
+  <script src="/static/previews.js" defer></script>
 {% endblock %}

@@ -712,6 +712,16 @@ tbody tr:hover { background: var(--bg-metric); }
 .filter-grid .field select { width: 12rem; }
 .filter-grid .field-narrow input,
 .filter-grid .field-narrow select { width: 7rem; }
+.filter-grid .field-wide input { width: 20rem; }
+/* A checkbox belongs beside its label, not stacked above it like a text box
+   under its caption. */
+.filter-grid .checkbox-field {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-2);
+  align-self: center;
+}
+.filter-grid .checkbox-field input { width: auto; }
 
 /* ---- Review toolbar --------------------------------------------------- */
 /* Sticky: the actions belong with the rows you are reading, not forty rows

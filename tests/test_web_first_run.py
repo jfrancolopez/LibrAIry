@@ -69,15 +69,14 @@ def test_fresh_install_empty_states_are_purposeful(tmp_path: Path) -> None:
 
     dashboard = client.get("/dashboard")
     review = client.get("/review")
-    search = client.get("/search")
     browse = client.get("/browse")
     quarantine = client.get("/quarantine")
     history = client.get("/history")
 
     assert "/mnt/user/dropbox/inbox" in dashboard.text
     assert "drop files into the inbox" in review.text
-    assert "Search is ready" in search.text
-    assert "Browse is empty" in browse.text
+    # Search folded into Browse, so its empty state is Browse's empty state.
+    assert "Browse fills up as you commit" in browse.text
     assert "Quarantine is reversible" in quarantine.text
     assert "Every committed filesystem operation" in history.text
 

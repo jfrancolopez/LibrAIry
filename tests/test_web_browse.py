@@ -122,9 +122,15 @@ def test_browse_templates_have_no_mutating_affordances(tmp_path: Path) -> None:
     # The shared app header (logout form) is chrome, not a browse affordance.
     html = re.sub(r"<header class=\"app-header\".*?</header>", "", html, flags=re.S)
 
-    assert "<form" not in html
-    assert "hx-post" not in html
-    assert "<button" not in html
+    # The invariant is that Browse cannot change anything, not that it has no
+    # controls at all: it now carries the search box that used to be its own
+    # tab, and a GET form reads. Anything that writes is still forbidden.
+    for verb in ("hx-post", "hx-put", "hx-patch", "hx-delete", 'method="post"'):
+        assert verb not in html.lower()
+    forms = re.findall(r"<form[^>]*>", html)
+    assert all('method="get"' in form for form in forms), forms
+    # Submitting a search is the only button here.
+    assert html.count("<button") == len(forms)
 
 
 def test_browse_requests_do_not_walk_filesystem(tmp_path: Path, monkeypatch) -> None:

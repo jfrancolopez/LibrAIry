@@ -20,7 +20,14 @@ from librairy.config import Settings
 from librairy.db import connect
 from librairy.dedup import DedupConfigError
 from librairy.logging import configure_logging
-from librairy.search import SearchFilters, rebuild_search_index, search_data
+from librairy.search import (
+    DEFAULT_SEARCH_ROOT,
+    SEARCH_SCOPES,
+    SearchFilters,
+    rebuild_search_index,
+    scope_to_root,
+    search_data,
+)
 from librairy.secrets_store import save_key
 from librairy.settings_service import (
     SettingsValidationError,
@@ -811,30 +818,34 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             f'<p id="index-result"><span class="badge badge-ok">Indexed</span> {indexed} items</p>'
         )
 
-    @app.get("/search", response_class=HTMLResponse)
-    def search(
-        request: Request,
-        q: str = "",
-        category: str | None = None,
-        root: str | None = None,
-        year: int | None = None,
-        genre: str | None = None,
-        content: bool = False,
-        page: int = 1,
-    ) -> HTMLResponse:
-        filters = SearchFilters(
+    def _search_filters(
+        root: str | None,
+        category: str | None,
+        year: int | None,
+        genre: str | None,
+        content: bool,
+        page: int,
+    ) -> SearchFilters:
+        return SearchFilters(
             category=category,
-            root=root,
+            root=scope_to_root(root),
             year=year,
             genre=genre,
             content=content,
             page=page,
         )
-        return TEMPLATES.TemplateResponse(
-            request,
-            "search.html",
-            {"title": "Search", **search_data(conn, settings, q, filters)},
-        )
+
+    @app.get("/search", include_in_schema=False)
+    def search(request: Request) -> RedirectResponse:
+        """Search lives in Browse now — one place to look at your files.
+
+        Two tabs for "where are my files" was one too many, and the split was
+        the confusing kind: Browse showed the library, Search showed the
+        library and the inbox and quarantine all mixed together. Old links and
+        bookmarks keep working.
+        """
+        query = f"?{request.url.query}" if request.url.query else ""
+        return RedirectResponse(f"/browse{query}", status_code=302)
 
     @app.get("/search/results", response_class=HTMLResponse)
     def search_results(
@@ -847,14 +858,8 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         content: bool = False,
         page: int = 1,
     ) -> HTMLResponse:
-        filters = SearchFilters(
-            category=category,
-            root=root,
-            year=year,
-            genre=genre,
-            content=content,
-            page=page,
-        )
+        """The results fragment, swapped in as you type. Still its own URL."""
+        filters = _search_filters(root, category, year, genre, content, page)
         return TEMPLATES.TemplateResponse(
             request,
             "partials/search_results.html",
@@ -862,12 +867,63 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         )
 
     @app.get("/browse", response_class=HTMLResponse)
-    def browse(request: Request) -> HTMLResponse:
+    def browse(
+        request: Request,
+        q: str = "",
+        category: str | None = None,
+        root: str | None = None,
+        year: int | None = None,
+        genre: str | None = None,
+        content: bool = False,
+        page: int = 1,
+    ) -> HTMLResponse:
+        """Categories when you are browsing, results when you are searching."""
         return TEMPLATES.TemplateResponse(
             request,
             "browse.html",
-            {"title": "Browse", **browse_home(conn)},
+            _browse_context(q, category, root, year, genre, content, page),
         )
+
+    @app.get("/browse/body", response_class=HTMLResponse)
+    def browse_body(
+        request: Request,
+        q: str = "",
+        category: str | None = None,
+        root: str | None = None,
+        year: int | None = None,
+        genre: str | None = None,
+        content: bool = False,
+        page: int = 1,
+    ) -> HTMLResponse:
+        """The half of the page that changes as you type — tiles or results.
+
+        One container the server fills either way, so a live search cannot
+        leave a grid of categories stranded above a list of matches.
+        """
+        return TEMPLATES.TemplateResponse(
+            request,
+            "partials/browse_body.html",
+            _browse_context(q, category, root, year, genre, content, page),
+        )
+
+    def _browse_context(
+        q: str,
+        category: str | None,
+        root: str | None,
+        year: int | None,
+        genre: str | None,
+        content: bool,
+        page: int,
+    ) -> dict[str, object]:
+        filters = _search_filters(root, category, year, genre, content, page)
+        return {
+            "title": "Browse",
+            "searching": bool(q.strip() or category or year or genre),
+            "scopes": SEARCH_SCOPES,
+            "scope": root or DEFAULT_SEARCH_ROOT,
+            **browse_home(conn),
+            **search_data(conn, settings, q, filters),
+        }
 
     @app.get("/access", response_class=HTMLResponse)
     def access_pointers(request: Request) -> HTMLResponse:

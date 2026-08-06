@@ -33,6 +33,30 @@ class SearchFilters:
     page: int = 1
 
 
+# Searching every root at once mixed three unrelated things — files you have
+# not filed yet, your actual library, and things you quarantined — and the
+# unfiled ones dominate, because that is where the volume is. "Find my stuff"
+# means the library; the inbox is Review's job and quarantine has its own page.
+DEFAULT_SEARCH_ROOT = "library"
+# The value the "Everywhere" option posts. Empty string would be
+# indistinguishable from "the field was not submitted", which is what made the
+# default ambiguous in the first place.
+ALL_ROOTS = "all"
+SEARCH_SCOPES = (
+    (DEFAULT_SEARCH_ROOT, "My library"),
+    ("inbox", "Inbox — not filed yet"),
+    ("quarantine", "Quarantine"),
+    (ALL_ROOTS, "Everywhere"),
+)
+
+
+def scope_to_root(scope: str | None) -> str | None:
+    """Form value to a root filter. None means every root."""
+    if scope == ALL_ROOTS:
+        return None
+    return scope or DEFAULT_SEARCH_ROOT
+
+
 def sync_search_item(conn: sqlite3.Connection, item_id: int) -> None:
     row = conn.execute(
         """

@@ -118,15 +118,18 @@ def test_dashboard_search_box_lands_on_results(tmp_path: Path) -> None:
     queen = seed_library(conn, settings, "Music/Queen/Night Opera/Bohemian.flac", "music")
 
     dashboard = client.get("/dashboard").text
-    landing = client.get("/search?q=queen opera").text
+    landing = client.get("/browse?q=queen opera").text
+    # The old Search URL still works — bookmarks and links outlive a redesign.
+    redirect = client.get("/search?q=queen opera", follow_redirects=False)
 
-    # Dashboard has a prominent search box that GETs /search.
     assert 'class="search-hero"' in dashboard
-    assert 'action="/search"' in dashboard
+    assert 'action="/browse"' in dashboard
     assert 'name="q"' in dashboard
-    # Landing on /search?q=... renders results server-side (no extra click).
+    # Landing on /browse?q=... renders results server-side (no extra click).
     assert str(queen) in landing
     assert "Bohemian.flac" in landing
+    assert redirect.status_code == 302
+    assert redirect.headers["location"] == "/browse?q=queen%20opera"
 
 
 def test_results_carry_the_facts_that_identify_a_file(tmp_path: Path) -> None:
@@ -187,7 +190,42 @@ def test_destination_is_shown_while_a_file_is_still_in_the_inbox(tmp_path: Path)
         evidence=[EvidenceEntry("heuristic", "category", "music", 0.9)],
     )
 
-    page = client.get("/search?q=loose").text
+    # Searching defaults to the library, so an unfiled file needs saying so.
+    default_scope = client.get("/browse?q=loose").text
+    page = client.get("/browse?q=loose&root=inbox").text
 
+    assert "loose.flac" not in default_scope
     assert "goes to" in page
     assert "library/Music/loose.flac" in page
+
+
+def test_search_defaults_to_the_library_not_every_root(tmp_path: Path) -> None:
+    """Searching every root at once mixed three unrelated things, and the
+    unfiled ones dominate because that is where the volume is. Typing a word
+    in Browse and getting inbox files back is the confusing half of that."""
+    client, conn, settings = client_for(tmp_path)
+    seed_library(conn, settings, "Music/Queen/Bohemian.flac", "music")
+    (settings.inbox_dir / "Bohemian-copy.flac").write_text("x", encoding="utf-8")
+    scan_root(conn, "inbox", settings.inbox_dir, settings)
+
+    library_only = client.get("/browse?q=bohemian").text
+    everywhere = client.get("/browse?q=bohemian&root=all").text
+
+    assert "Music/Queen/Bohemian.flac" in library_only
+    assert "Bohemian-copy.flac" not in library_only
+    assert "Bohemian-copy.flac" in everywhere
+
+
+def test_browse_shows_categories_until_you_actually_search(tmp_path: Path) -> None:
+    """Tiles or results, never both: a live search must not leave a grid of
+    categories stranded above the matches."""
+    client, conn, settings = client_for(tmp_path)
+    seed_library(conn, settings, "Music/Queen/Bohemian.flac", "music")
+
+    idle = client.get("/browse").text
+    searching = client.get("/browse?q=bohemian").text
+
+    assert 'href="/browse/music"' in idle
+    assert "Back to categories" not in idle
+    assert 'href="/browse/music"' not in searching
+    assert "Back to categories" in searching
