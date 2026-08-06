@@ -130,3 +130,43 @@ def test_history_timeline_groups_by_plan_and_deep_links_to_browse(tmp_path: Path
     assert "2 file(s)" in page
     # Committed destinations deep-link into Browse at the containing folder.
     assert '/browse/documents' in page
+
+
+def test_history_search_finds_a_move_by_part_of_its_path(tmp_path: Path) -> None:
+    """The journal only grows, and "scroll until you find it" stops working
+    somewhere in the low hundreds."""
+    client, conn, _ = client_for(tmp_path)
+    for name in ("Ozymandias.mkv", "Bohemian Rhapsody.flac", "invoice.pdf"):
+        conn.execute(
+            """
+            INSERT INTO history(ts, plan_id, op_id, action, src_root, src_relpath,
+                                dest_root, dest_relpath, fingerprint, outcome)
+            VALUES ('now', 'p1', 1, 'move', 'inbox', ?, 'library', ?, 'fp', 'ok')
+            """,
+            (name, f"Shows/{name}"),
+        )
+
+    hit = client.get("/history?q=ozy")
+    miss = client.get("/history?q=nothing-like-this")
+
+    assert "Ozymandias.mkv" in hit.text
+    assert "Bohemian" not in hit.text
+    assert "1 file move" in hit.text
+    assert "No file moves match" in miss.text
+
+
+def test_history_search_is_case_insensitive_and_survives_wildcards(tmp_path: Path) -> None:
+    """Underscores are in half the filenames here, so a stray LIKE wildcard
+    must not be treated as a syntax error or silently match everything."""
+    client, conn, _ = client_for(tmp_path)
+    conn.execute(
+        """
+        INSERT INTO history(ts, plan_id, op_id, action, src_root, src_relpath,
+                            dest_root, dest_relpath, fingerprint, outcome)
+        VALUES ('now', 'p1', 1, 'move', 'inbox', 'my_file.mkv', 'library', 'Movies/my_file.mkv',
+                'fp', 'ok')
+        """
+    )
+
+    assert "my_file.mkv" in client.get("/history?q=MY_FILE").text
+    assert client.get("/history?q=%").status_code == 200

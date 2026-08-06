@@ -1,7 +1,29 @@
 {% extends "base.html" %}
 {% block content %}
-  <h1>History</h1>
-  <p class="muted">Every committed move, grouped by plan — newest first. Undo anything; nothing is ever deleted.</p>
+  <header class="page-head">
+    <div>
+      <h1>History</h1>
+      <p class="muted">Every committed move, grouped by plan — newest first. Undo anything; nothing is ever deleted.</p>
+    </div>
+    {# The journal only grows, and scrolling stops working somewhere in the low
+       hundreds. Half a filename you remember is enough. #}
+    <form class="filter-grid" action="/history" method="get" role="search">
+      <label class="field">Find a move
+        <input type="search" name="q" value="{{ query }}" placeholder="part of a file name">
+      </label>
+      <button type="submit">Search</button>
+      {% if query %}<a class="btn btn-ghost" href="/history">Clear</a>{% endif %}
+    </form>
+  </header>
+  {% if query %}
+    {# Settings changes are counted separately or the number contradicts the
+       list folded away below it. #}
+    <p class="muted">
+      {{ entries|length }} file move{{ '' if entries|length == 1 else 's' }}
+      {%- if settings_changes %} and {{ settings_changes|length }} settings change{{ '' if settings_changes|length == 1 else 's' }}{% endif %}
+      match <strong>{{ query }}</strong>, out of {{ total }} journalled entries.
+    </p>
+  {% endif %}
   <div id="history-result"></div>
   {% if timeline %}
     {% for group in timeline %}
@@ -31,6 +53,26 @@
       </section>
     {% endfor %}
   {% else %}
-    <p class="muted">No journal entries yet. Every committed filesystem operation appears here with undo context.</p>
+    {% if query %}
+      <p class="muted">No file moves match <strong>{{ query }}</strong>.</p>
+    {% else %}
+      <p class="muted">No journal entries yet. Every committed filesystem operation appears here with undo context.</p>
+    {% endif %}
+  {% endif %}
+
+  {% if settings_changes %}
+    {# Journalled for audit, but not moves: no plan, nothing to undo, and no
+       source and destination worth an arrow between them. #}
+    <details class="settings-journal">
+      <summary>{{ settings_changes|length }} settings change(s) in this window</summary>
+      <ul class="timeline-list">
+        {% for entry in settings_changes %}
+          <li>
+            <span class="mono">{{ entry.dest_relpath }}</span>
+            <span class="muted">{{ entry.ts }}</span>
+          </li>
+        {% endfor %}
+      </ul>
+    </details>
   {% endif %}
 {% endblock %}

@@ -409,6 +409,43 @@ button, .btn { justify-self: start; }
 }
 .search-hero button { min-height: 2.75rem; padding-inline: var(--space-5); }
 
+/* ---- Overflow nav ------------------------------------------------------ */
+/* <details> so it works with no script and under the CSP. */
+.nav-more { position: relative; }
+.nav-more summary {
+  cursor: pointer;
+  list-style: none;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-ui);
+}
+.nav-more summary::-webkit-details-marker { display: none; }
+.nav-more summary::after { content: " ▾"; }
+.nav-more[open] summary { background: var(--bg-metric); }
+.nav-more-panel {
+  position: absolute;
+  right: 0;
+  z-index: 20;
+  display: grid;
+  gap: var(--space-1);
+  min-width: 11rem;
+  margin-top: var(--space-1);
+  padding: var(--space-2);
+  background: var(--bg-panel);
+  border: var(--border-thin) solid var(--border);
+  border-radius: var(--radius-ui);
+  box-shadow: var(--shadow-2);
+}
+/* A count next to a nav item, so "Commit 12" reads as a queue not a label. */
+.nav-count {
+  display: inline-block;
+  padding: 0 0.35rem;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: var(--text-sm);
+  font-weight: 700;
+}
+
 /* ---- Dashboard hero --------------------------------------------------- */
 /* Seven cards of equal weight mean reading all seven to learn whether
    anything wants you. One figure, one sentence, one button answers that
@@ -1445,4 +1482,20 @@ kbd {
   --warn: #ffbf4d;
   --fail: #ff6b6b;
   --font-body: var(--font-mono);
+}
+
+/* ---- Settings journal -------------------------------------------------- */
+/* Audit trail, kept but folded away: settings changes are not file moves and
+   were burying every real one. */
+.settings-journal {
+  margin-top: var(--space-5);
+  padding: var(--space-3);
+  border: var(--border-thin) solid var(--border);
+  border-radius: var(--radius-ui);
+  background: var(--bg-metric);
+}
+.settings-journal summary {
+  cursor: pointer;
+  color: var(--text-dim);
+  font-size: var(--text-sm);
 }

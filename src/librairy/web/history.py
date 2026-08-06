@@ -7,14 +7,30 @@ from librairy.config import Settings
 from librairy.history import list_history, undo_op, undo_plan
 
 
-def history_data(conn: sqlite3.Connection, limit: int = 50) -> dict[str, object]:
-    entries = [_augment(dict(row)) for row in list_history(conn, limit=limit)]
+def history_data(
+    conn: sqlite3.Connection, limit: int = 50, query: str = ""
+) -> dict[str, object]:
+    rows = [_augment(dict(row)) for row in list_history(conn, limit=limit, query=query)]
+    # A settings change is journalled for audit, but it is not a move: it has
+    # no plan, nothing to undo here, and no source and destination worth the
+    # arrow between them. Eighteen of them under a heading reading "Plan None ·
+    # 18 file(s) · Undo plan" pushed every real move off the page.
+    entries = [row for row in rows if row.get("action") != "settings_change"]
+    changes = [row for row in rows if row.get("action") == "settings_change"]
     plans = {row["id"]: row for row in _plans(conn)}
     return {
         "entries": entries,
+        "settings_changes": changes,
         "plans": list(plans.values()),
         "timeline": _timeline(entries, plans),
+        "query": query,
+        "total": _journal_size(conn),
     }
+
+
+def _journal_size(conn: sqlite3.Connection) -> int:
+    """So "12 of 4,318" tells you the search worked, not that history is small."""
+    return int(conn.execute("SELECT COUNT(*) FROM history").fetchone()[0])
 
 
 def _augment(entry: dict[str, object]) -> dict[str, object]:

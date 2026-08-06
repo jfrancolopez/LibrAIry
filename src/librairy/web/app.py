@@ -112,6 +112,10 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
     TEMPLATES.env.globals["portal_password_set"] = lambda: has_admin_password(conn)
     TEMPLATES.env.globals["appearance_view"] = lambda: appearance_settings(conn)
     TEMPLATES.env.globals["activity_view"] = lambda: activity(conn)
+    # Commit appears in the nav only when there is something to commit.
+    TEMPLATES.env.globals["approved_waiting"] = lambda: int(
+        conn.execute("SELECT COUNT(*) FROM proposals WHERE status='approved'").fetchone()[0]
+    )
     app.middleware("http")(_auth_and_security(conn, settings))
 
     @app.get("/", include_in_schema=False)
@@ -745,14 +749,16 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         )
 
     @app.get("/history", response_class=HTMLResponse)
-    def history(request: Request) -> HTMLResponse:
+    def history(request: Request, q: str = "") -> HTMLResponse:
         return TEMPLATES.TemplateResponse(
             request,
             "history.html",
             {
                 "title": "History",
                 "csrf_token": request.state.session["csrf_token"],
-                **history_data(conn),
+                # A search wants a wider net than the default fifty rows: the
+                # move you are hunting for is usually not a recent one.
+                **history_data(conn, limit=500 if q.strip() else 50, query=q),
             },
         )
 

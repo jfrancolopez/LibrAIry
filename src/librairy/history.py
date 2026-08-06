@@ -26,15 +26,35 @@ def list_history(
     conn: sqlite3.Connection,
     plan_id: str | None = None,
     limit: int = 50,
+    query: str = "",
 ) -> list[sqlite3.Row]:
+    """The journal, newest first. `query` matches either path or the action.
+
+    The journal only grows, and "scroll until you find it" stops working
+    somewhere in the low hundreds. Matching is a plain substring on the paths
+    rather than FTS: the useful question here is "where did that file go", and
+    the answer is half a filename you remember.
+    """
+    clauses: list[str] = []
+    params: list[object] = []
     if plan_id:
-        return list(
-            conn.execute(
-                "SELECT * FROM history WHERE plan_id=? ORDER BY id DESC LIMIT ?",
-                (plan_id, limit),
-            )
+        clauses.append("plan_id = ?")
+        params.append(plan_id)
+    if query.strip():
+        clauses.append("(src_relpath LIKE ? OR dest_relpath LIKE ? OR action LIKE ?)")
+        # LIKE wildcards in the query are the user's business; escaping them
+        # would only stop someone searching for a literal underscore, which is
+        # in half the filenames here.
+        like = f"%{query.strip()}%"
+        params.extend([like, like, like])
+    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    params.append(limit)
+    return list(
+        conn.execute(
+            f"SELECT * FROM history {where} ORDER BY id DESC LIMIT ?",  # noqa: S608
+            params,
         )
-    return list(conn.execute("SELECT * FROM history ORDER BY id DESC LIMIT ?", (limit,)))
+    )
 
 
 def undo_plan(conn: sqlite3.Connection, plan_id: str, settings: Settings) -> list[UndoResult]:

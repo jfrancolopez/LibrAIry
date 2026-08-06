@@ -64,3 +64,45 @@ def test_full_browser_flow_setup_login_dashboard_logout_blocked(tmp_path: Path) 
 
 def _sample_path(path: str) -> str:
     return path.replace("{name}", "missing-provider")
+
+
+def test_commit_is_in_the_nav_only_when_something_is_waiting(tmp_path: Path) -> None:
+    """Commit is a step, not a place. It is somewhere to go exactly when
+    something is approved and waiting, and then it is the whole point."""
+    client, conn = client_for(tmp_path)
+    client.post("/setup", data={"password": "correct horse battery"})
+
+    quiet = client.get("/dashboard").text
+    conn.execute(
+        """
+        INSERT INTO items(id, root, relpath, size, mtime_ns, fingerprint,
+                          first_seen_at, last_seen_at)
+        VALUES (1, 'inbox', 'a.mkv', 1, 1, 'fp', 'now', 'now')
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO proposals(item_id, category, clean_name, dest_relpath, confidence,
+                              status, evidence, created_at, updated_at)
+        VALUES (1, 'movies', 'a.mkv', 'Movies/a.mkv', 0.9, 'approved', '[]', 'now', 'now')
+        """
+    )
+    waiting = client.get("/dashboard").text
+
+    assert '>Commit' not in quiet
+    assert 'href="/commit"' in waiting
+    assert "nav-count" in waiting
+    # And it is always reachable while you are on it, count or not.
+    assert 'href="/commit"' in client.get("/commit").text
+
+
+def test_the_rarely_used_pages_move_behind_one_more_menu(tmp_path: Path) -> None:
+    """Nine equally-weighted tabs, five of them monthly at most."""
+    client, _ = client_for(tmp_path)
+    client.post("/setup", data={"password": "correct horse battery"})
+
+    page = client.get("/dashboard").text
+
+    assert "nav-more" in page
+    for href in ("/quarantine", "/history", "/health", "/access"):
+        assert f'href="{href}"' in page
