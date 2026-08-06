@@ -420,76 +420,103 @@
 <h2>Local AI — nothing leaves your network</h2>
 <p class="muted">Either of these can run on this machine or on any other machine you own. No account, no key, no bill.</p>
 
-<h3>LM Studio</h3>
-<p class="muted">Running LM Studio on another machine? Type its IP — <code>http://</code> and <code>:1234</code> are filled in for you. No API key, nothing leaves your network.</p>
-<ol class="steps setup-steps-open">
-  <li><span>In LM Studio, open the <strong>Developer</strong> tab and start the server.</span></li>
-  <li><span>Turn on <strong>Serve on Local Network</strong> in the same panel. Without it the server only answers its own machine, and LibrAIry will time out.</span></li>
-  <li><span>Load a model, then press <strong>Test</strong> below to see it listed here.</span></li>
-</ol>
-<form id="lmstudio-form" method="post" action="/settings/providers/lmstudio" hx-post="/settings/providers/lmstudio" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>
-  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-  <label>IP or URL <input id="lmstudio-host" name="lmstudio_host" value="{{ lmstudio.host }}" placeholder="192.168.1.50"></label>
-  <label>Model <input id="lmstudio-model" name="lmstudio_model" value="{{ lmstudio.model }}" placeholder="press Test to list what is loaded"></label>
-  <div class="button-row">
-    <button type="button"
-            hx-post="/settings/providers/lmstudio/test"
-            hx-include="#lmstudio-form"
-            hx-target="#lmstudio-test"
-            hx-swap="outerHTML"
-            hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>Test connection</button>
-    <button type="submit" class="btn-primary">Save LM Studio</button>
+<div class="local-ai">
+<section class="card">
+  <h3>LM Studio</h3>
+  <p class="muted">Running on another machine? Type its IP — <code>http://</code> and <code>:1234</code> are filled in for you.</p>
+  <ol class="steps setup-steps-open">
+    <li><span>In LM Studio, open the <strong>Developer</strong> tab and start the server.</span></li>
+    <li><span>Turn on <strong>Serve on Local Network</strong> in the same panel. Without it the server only answers its own machine, and LibrAIry times out.</span></li>
+    <li><span>Load a model, then press <strong>Test connection</strong> to see it listed here.</span></li>
+  </ol>
+  <div class="field-row">
+    <label class="field">IP or URL <input id="lmstudio-host" name="lmstudio_host" form="lmstudio-form" value="{{ lmstudio.host }}" placeholder="192.168.1.50"></label>
+    <label class="field">Model <input id="lmstudio-model" name="lmstudio_model" form="lmstudio-form" value="{{ lmstudio.model }}" placeholder="press Test to list what is loaded"></label>
   </div>
-</form>
-<div id="lmstudio-test" class="lmstudio-test">
-  <p class="muted">Test checks the address in the box above — you do not have to save a wrong one to find out it is wrong.</p>
-</div>
+  {# The form element sits outside the settings form and the fields join it
+     with form="lmstudio-form". HTML has no nested forms: the parser drops the
+     inner start tag and reparents its fields onto the outer one. #}
+  <form id="lmstudio-form" method="post" action="/settings/providers/lmstudio" hx-post="/settings/providers/lmstudio" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="button-row">
+      <button type="button"
+              hx-post="/settings/providers/lmstudio/test"
+              hx-include="#lmstudio-form"
+              hx-target="#lmstudio-test"
+              hx-swap="outerHTML"
+              hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>Test connection</button>
+      <button type="submit" class="btn-primary">Save</button>
+    </div>
+  </form>
+  <div id="lmstudio-test" class="lmstudio-test">
+    <p class="muted">Test checks the address in the box, not the saved one — you do not have to save a wrong address to find out it is wrong.</p>
+  </div>
+</section>
 
-<h3>Ollama</h3>
-{# The feature was here all along and nothing said so — the form looked like it
-   configured the local Ollama rather than any machine on the network. #}
-<p class="muted">
-  Ollama does not have to run on this machine. Add as many as you like — a
-  desktop with a real GPU, a second server, anything on your LAN — and give
-  each one the URL it answers on, like <code>http://192.168.1.50:11434</code>.
-  LibrAIry tries them in the order listed here and falls through to the next
-  when one is down.
-</p>
-<p class="muted">
-  Ollama only listens to its own machine unless you tell it otherwise: set
-  <code>OLLAMA_HOST=0.0.0.0</code> on the machine running it, then
-  <strong>Test</strong> here to confirm this container can reach it.
-</p>
-<table>
-  <thead><tr><th>Name</th><th>Endpoint</th><th>Model</th><th>Status</th><th>Actions</th></tr></thead>
-  <tbody>
-    {% for provider in providers if provider.kind == 'ollama' %}
-      <tr>
-        <td>{{ provider.name }}</td>
-        <td>{{ provider.endpoint }}</td>
-        <td>{{ provider.model }}</td>
-        <td>{% if provider.enabled %}<span class="badge badge-ok">enabled</span>{% else %}<span class="badge badge-warn">disabled</span>{% endif %}</td>
-        <td>
-          <form hx-post="/settings/providers/ollama/{{ provider.name }}/toggle" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>
-            <label><input type="checkbox" name="enabled" {% if provider.enabled %}checked{% endif %}> enabled</label>
-            <button>Save</button>
-          </form>
-          <button hx-post="/health/providers/{{ provider.name }}" hx-target="#provider-test-{{ provider.name }}" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>Test</button>
-          <form hx-post="/settings/providers/ollama/{{ provider.name }}/remove" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>
-            <button>Remove</button>
-          </form>
-          <span id="provider-test-{{ provider.name }}"></span>
-        </td>
-      </tr>
-    {% endfor %}
-  </tbody>
-</table>
-<form method="post" action="/settings/providers/ollama" hx-post="/settings/providers/ollama" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>
-  <label>Name <input name="name" placeholder="lan-beast"></label>
-  <label>URL <input name="url" placeholder="http://192.168.1.50:11434"></label>
-  <label>Model <input name="model" placeholder="qwen3:8b"></label>
-  <button type="submit">Add Ollama endpoint</button>
-</form>
+<section class="card">
+  <h3>Ollama</h3>
+  {# The feature was here all along and nothing said so — the form looked like
+     it configured the local Ollama rather than any machine on the network. #}
+  <p class="muted">
+    Add as many machines as you like: a desktop with a real GPU, a second
+    server, anything on your LAN. LibrAIry tries them in the order listed and
+    falls through to the next when one is down.
+  </p>
+  <p class="muted">
+    Ollama only listens to its own machine until you tell it otherwise — set
+    <code>OLLAMA_HOST=0.0.0.0</code> on the machine running it, then press Test
+    here to confirm this container can reach it. That one line is the answer to
+    almost every "I typed the IP and nothing happened".
+  </p>
+
+  {% set ollama = providers | selectattr('kind', 'equalto', 'ollama') | list %}
+  {% if ollama %}
+    <ul class="endpoint-list">
+      {% for provider in ollama %}
+        <li class="endpoint{% if not provider.enabled %} is-idle{% endif %}">
+          <div class="endpoint-body">
+            <p class="endpoint-name">
+              <strong>{{ provider.name }}</strong>
+              {% if provider.enabled %}<span class="badge badge-ok">in use</span>{% else %}<span class="badge">off</span>{% endif %}
+            </p>
+            <p class="muted mono">{{ provider.endpoint }} · {{ provider.model }}</p>
+            <span id="provider-test-{{ provider.name }}"></span>
+          </div>
+          <div class="button-row">
+            <button type="button" hx-post="/health/providers/{{ provider.name }}"
+                    hx-target="#provider-test-{{ provider.name }}"
+                    hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>Test</button>
+            <button type="button"
+                    {# The route reads presence, not value, so switching off has
+                       to omit the key entirely — "enabled=" is still present. #}
+                    hx-vals='{{ '{}' if provider.enabled else '{"enabled": "on"}' }}'
+                    hx-post="/settings/providers/ollama/{{ provider.name }}/toggle"
+                    hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>{{ 'Switch off' if provider.enabled else 'Switch on' }}</button>
+            <button type="button" class="btn-danger"
+                    hx-post="/settings/providers/ollama/{{ provider.name }}/remove"
+                    hx-confirm="Remove {{ provider.name }}? Nothing on that machine is touched — LibrAIry just stops asking it."
+                    hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>Remove</button>
+          </div>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="muted">No Ollama machines added yet.</p>
+  {% endif %}
+
+  <h4>Add a machine</h4>
+  <div class="field-row">
+    <label class="field">Name <input name="name" form="ollama-add" placeholder="lan-beast"></label>
+    <label class="field field-wide">URL <input name="url" form="ollama-add" placeholder="http://192.168.1.50:11434"></label>
+    <label class="field">Model <input name="model" form="ollama-add" placeholder="qwen3:8b"></label>
+  </div>
+  <form id="ollama-add" method="post" action="/settings/providers/ollama" hx-post="/settings/providers/ollama" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button type="submit">Add</button>
+  </form>
+  <p class="muted">The name is yours — it is what appears in the order list above and in Health.</p>
+</section>
+</div>
 </section>
 
 <section class="metric wide">

@@ -1036,6 +1036,33 @@ tbody tr:hover { background: var(--bg-metric); }
 /* A row that has already been dealt with: still readable, no longer the point. */
 tr.is-idle { opacity: 0.55; }
 
+/* ---- Local AI: LM Studio and the Ollama machines ----------------------- */
+/* Two cards side by side rather than a run of h3s, and each configured machine
+   is a row with its actions on it. It was a bare <table> with three separate
+   one-button forms crammed into the last cell. */
+.local-ai { display: grid; grid-template-columns: repeat(auto-fit, minmax(24rem, 1fr)); gap: var(--space-4); }
+.field-row { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: flex-end; }
+.field-row .field { flex: 1 1 10rem; margin: var(--space-2) 0; }
+.field-row .field-wide { flex: 2 1 16rem; }
+
+.endpoint-list { list-style: none; margin: var(--space-3) 0; padding: 0; display: grid; gap: var(--space-2); }
+.endpoint {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-metric);
+  border: var(--border-thin) solid var(--border);
+  border-radius: var(--radius-ui);
+}
+/* Dimmed, not hidden: a machine you switched off is still one you configured. */
+.endpoint.is-idle { opacity: 0.62; }
+.endpoint-body { min-width: 0; }
+.endpoint-body p { margin: 0; overflow-wrap: anywhere; }
+.endpoint-name { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+
 /* ---- The AI fallback chain --------------------------------------------- */
 /* A numbered list you rearrange with two buttons, in place of a text box you
    had to type five exact provider slugs into. */

@@ -6,7 +6,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from librairy.ai.base import HealthResult
-from librairy.ai.registry import provider_chain, provider_order
+from librairy.ai.registry import configured_providers, provider_chain, provider_order
 from librairy.classify import analyze_items
 from librairy.config import Settings
 from librairy.db import connect
@@ -1060,3 +1060,24 @@ def test_an_unconfigured_provider_still_appears_in_the_chain(tmp_path: Path) -> 
     assert "not set up" in page
     for label in ("Ollama", "LM Studio", "OpenAI", "Claude", "Gemini"):
         assert label in page
+
+
+def test_switching_an_ollama_machine_off_actually_switches_it_off(tmp_path: Path) -> None:
+    """The route reads presence, not value: "enabled=" would switch it on."""
+    client, conn, settings = client_for(tmp_path)
+    csrf = {"x-csrf-token": client.cookies["csrf_token"]}
+    client.post(
+        "/settings/providers/ollama",
+        data={"name": "lan-beast", "url": "http://192.168.1.50:11434", "model": "qwen3:8b"},
+        headers=csrf,
+    )
+
+    page = client.get("/settings").text
+    assert "lan-beast" in page
+    # An enabled row must post no "enabled" key at all.
+    assert "hx-vals='{}'" in page
+
+    client.post("/settings/providers/ollama/lan-beast/toggle", headers=csrf)
+    off = [p for p in configured_providers(conn, settings) if p.name == "lan-beast"]
+
+    assert off and off[0].enabled is False
