@@ -10,6 +10,7 @@ from librairy.executor import ExecutionError, execute_plan
 from librairy.history import undo_op
 from librairy.paths import PathValidationError
 from librairy.planner import OperationSpec, approve_plan, compute_plan_hash, create_plan
+from librairy.proposals import EvidenceEntry, upsert_proposal
 from librairy.quarantine import quarantine_operation, restore_entry
 from librairy.scanner import scan_root
 
@@ -205,6 +206,75 @@ def test_missing_source_marks_plan_failed_for_retry_visibility(tmp_path: Path) -
 
     assert summary.skipped_missing == 1
     assert conn.execute("SELECT status FROM plans WHERE id=?", (plan_id,)).fetchone()[0] == "failed"
+
+
+def test_a_moved_file_leaves_the_review_queue_even_when_the_plan_is_partial(
+    tmp_path: Path,
+) -> None:
+    """Marking proposals committed used to live in the web commit route,
+    behind `if not summary.partial`. One file edited since it was planned made
+    the whole plan partial, so proposals for files that *had* moved stayed
+    'proposed' — and came back in Review asking to move themselves to where
+    they already were. 140 of 239 rows on the author's machine were this.
+    """
+    settings, conn, plan_id = setup_plan(
+        tmp_path,
+        [
+            OperationSpec("move", "a.txt", "library", "Documents/a.txt"),
+            OperationSpec("move", "b.txt", "library", "Documents/b.txt"),
+        ],
+    )
+    for relpath in ("a.txt", "b.txt"):
+        item_id = conn.execute("SELECT id FROM items WHERE relpath=?", (relpath,)).fetchone()[0]
+        upsert_proposal(
+            conn,
+            item_id=item_id,
+            category="documents",
+            clean_name=relpath,
+            dest_relpath=f"Documents/{relpath}",
+            confidence=0.9,
+            evidence=[EvidenceEntry("heuristic", "category", "extension", 0.9)],
+        )
+    # b is edited after planning, so it is skipped and the plan is partial.
+    (settings.inbox_dir / "b.txt").write_text("changed", encoding="utf-8")
+
+    summary = execute_plan(conn, plan_id, settings)
+    statuses = dict(
+        conn.execute(
+            "SELECT i.relpath, p.status FROM proposals p JOIN items i ON i.id=p.item_id"
+        ).fetchall()
+    )
+
+    assert summary.partial is True
+    assert summary.skipped_changed == 1
+    # The one that moved is done with; the one that did not is still yours.
+    assert statuses["Documents/a.txt"] == "committed"
+    assert statuses["b.txt"] == "proposed"
+
+
+def test_cli_commit_also_clears_the_review_queue(tmp_path: Path) -> None:
+    """The bookkeeping lived in the web route, so `librairy commit` never did
+    it at all — every proposal committed from the CLI stayed in the queue."""
+    settings, conn, plan_id = setup_plan(
+        tmp_path,
+        [OperationSpec("move", "a.txt", "library", "Documents/a.txt")],
+    )
+    item_id = conn.execute("SELECT id FROM items WHERE relpath='a.txt'").fetchone()[0]
+    upsert_proposal(
+        conn,
+        item_id=item_id,
+        category="documents",
+        clean_name="a.txt",
+        dest_relpath="Documents/a.txt",
+        confidence=0.9,
+        evidence=[EvidenceEntry("heuristic", "category", "extension", 0.9)],
+    )
+
+    # Exactly what cli.py does — no web layer involved.
+    execute_plan(conn, plan_id, settings)
+
+    status = conn.execute("SELECT status FROM proposals WHERE item_id=?", (item_id,)).fetchone()[0]
+    assert status == "committed"
 
 
 def test_destination_collision_is_renamed(tmp_path: Path) -> None:

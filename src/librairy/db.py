@@ -6,7 +6,7 @@ from pathlib import Path
 
 from librairy.config import Settings
 
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 
 
 class DatabaseVersionError(RuntimeError):
@@ -229,6 +229,28 @@ CREATE INDEX idx_backup_queue_state ON backup_queue(state);
 CREATE INDEX idx_backup_queue_item_id ON backup_queue(item_id);
 """
 
+# Repair, not schema. Until this release, proposals were marked committed only
+# by the web commit route, and only when the whole plan succeeded — so a plan
+# with one skipped file, or any commit made from the CLI, left proposals sitting
+# at 'proposed' for files that had already moved. They came back in Review as
+# rows proposing to move a file to exactly where it already was: 140 of 239 on
+# the author's machine.
+#
+# The condition is deliberately narrow. A proposal is only closed when the item
+# is *already standing at that proposal's destination*, which can only be true
+# if the move happened. No file is touched, and nothing still to do is affected.
+MIGRATION_011 = """
+UPDATE proposals
+SET status='committed', updated_at=datetime('now')
+WHERE status='proposed'
+  AND item_id IN (
+    SELECT p.item_id FROM proposals p JOIN items i ON i.id = p.item_id
+    WHERE p.dest_relpath IS NOT NULL
+      AND i.root = p.dest_root
+      AND i.relpath = p.dest_relpath
+  );
+"""
+
 MIGRATIONS = {
     1: MIGRATION_001,
     2: MIGRATION_002,
@@ -240,6 +262,7 @@ MIGRATIONS = {
     8: MIGRATION_008,
     9: MIGRATION_009,
     10: MIGRATION_010,
+    11: MIGRATION_011,
 }
 
 

@@ -88,6 +88,43 @@ def test_wal_and_foreign_keys_are_active(tmp_path: Path) -> None:
     assert conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1
 
 
+def test_migration_011_closes_proposals_for_files_already_filed(tmp_path: Path) -> None:
+    """Anyone who committed before this release has proposals stuck at
+    'proposed' for files that already moved — a review queue asking them to
+    move a file to where it already is. Upgrading clears them, and touches
+    nothing that still has somewhere to go.
+    """
+    settings = settings_for(tmp_path)
+    conn = connect(settings)
+    conn.executescript(
+        """
+        INSERT INTO items(id, root, relpath, size, mtime_ns, fingerprint,
+                          first_seen_at, last_seen_at)
+        VALUES (1, 'library', 'Movies/A.mkv', 1, 1, 'fp1', 'now', 'now'),
+               (2, 'inbox',   'b.mkv',        1, 1, 'fp2', 'now', 'now'),
+               (3, 'library', 'Movies/C.mkv', 1, 1, 'fp3', 'now', 'now');
+        INSERT INTO proposals(item_id, category, clean_name, dest_relpath, confidence,
+                              status, action, dest_root, evidence, created_at, updated_at)
+        -- already standing at its destination: the move happened
+        VALUES (1, 'movies', 'A.mkv', 'Movies/A.mkv', 0.9,
+                'proposed', 'move', 'library', '[]', 'now', 'now'),
+        -- still in the inbox: real work, must survive
+               (2, 'movies', 'B.mkv', 'Movies/B.mkv', 0.9,
+                'proposed', 'move', 'library', '[]', 'now', 'now'),
+        -- in the library but proposed somewhere else: also real, must survive
+               (3, 'movies', 'C.mkv', 'Movies/Reorganised/C.mkv', 0.9,
+                'proposed', 'move', 'library', '[]', 'now', 'now');
+        """
+    )
+    conn.execute(f"PRAGMA user_version={SCHEMA_VERSION - 1}")
+    conn.close()
+
+    reopened = connect(settings)
+    statuses = dict(reopened.execute("SELECT item_id, status FROM proposals").fetchall())
+
+    assert statuses == {1: "committed", 2: "proposed", 3: "proposed"}
+
+
 def test_newer_database_version_is_rejected(tmp_path: Path) -> None:
     db_path = tmp_path / "appdata" / "librairy.db"
     db_path.parent.mkdir()

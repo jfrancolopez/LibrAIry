@@ -131,6 +131,7 @@ def _execute_op(conn: sqlite3.Connection, row: sqlite3.Row, settings: Settings) 
     _finish_op(conn, row["id"], result, final_relpath)
     _journal(conn, row, final_relpath, row["src_fingerprint"], "ok")
     _move_item_row(conn, row, final_relpath, final_dest)
+    _mark_proposal_committed(conn, row["item_id"])
     if row["dest_root"] == "library":
         enqueue_backup_item(
             conn,
@@ -200,6 +201,29 @@ def _journal(
             fingerprint,
             outcome,
         ),
+    )
+
+
+def _mark_proposal_committed(conn: sqlite3.Connection, item_id: int | None) -> None:
+    """The file has moved, so its proposal is spent. Per op, not per plan.
+
+    This used to live in the web commit route, behind `if not summary.partial`,
+    which got it wrong twice over. A plan where one file had been edited since
+    it was planned is "partial", so *every* proposal in it stayed 'proposed' —
+    including the ones whose files had already been moved. And the CLI commit
+    path never called it at all.
+
+    The result was a review queue full of files that were already filed, each
+    one proposing to move itself to where it already was: on this author's
+    machine, 140 of 239 rows. Doing it here means it happens exactly when the
+    move happens, for every caller, however the rest of the plan goes.
+    """
+    if item_id is None:
+        return
+    conn.execute(
+        "UPDATE proposals SET status='committed', updated_at=? "
+        "WHERE item_id=? AND status<>'committed'",
+        (utc_now(), item_id),
     )
 
 

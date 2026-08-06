@@ -187,17 +187,6 @@ def progress_data(conn: sqlite3.Connection, plan_id: str) -> dict[str, object]:
     return {"plan": plan, "counts": counts, "recent_ops": recent}
 
 
-def mark_committed_proposals(conn: sqlite3.Connection, plan_id: str) -> None:
-    conn.execute(
-        """
-        UPDATE proposals
-        SET status='committed', updated_at=datetime('now')
-        WHERE item_id IN (SELECT item_id FROM plan_ops WHERE plan_id=? AND result IS NOT NULL)
-        """,
-        (plan_id,),
-    )
-
-
 def _execute_background(
     settings: Settings,
     state: CommitState,
@@ -205,9 +194,9 @@ def _execute_background(
 ) -> None:
     conn = connect(settings)
     try:
-        summary = execute_plan(conn, plan_id, settings)
-        if not summary.partial:
-            mark_committed_proposals(conn, plan_id)
+        # Proposals are marked committed by the executor, per op, as each file
+        # actually moves — not here, and not all-or-nothing on the plan.
+        execute_plan(conn, plan_id, settings)
     except LockHeldError:
         with state.lock:
             state.error = "LibrAIry is busy; retry when the worker releases the lock"
