@@ -25,6 +25,25 @@ PREVIEW_TEXT_CHARS = 700
 THUMBNAIL_WIDTH = 320
 THUMBNAIL_TIMEOUT_SECONDS = 20
 
+# What a browser can play from the original file, with no transcoding. Anything
+# else — .mkv and .avi above all — would need ffmpeg running for the length of
+# the video, which is not a thing a file organiser should do to your NAS. Those
+# still get a thumbnail, and the preview says plainly why there is no player.
+PLAYABLE_VIDEO = {
+    ".mp4": "video/mp4",
+    ".m4v": "video/mp4",
+    ".webm": "video/webm",
+    ".mov": "video/quicktime",
+}
+PLAYABLE_AUDIO = {
+    ".mp3": "audio/mpeg",
+    ".m4a": "audio/mp4",
+    ".aac": "audio/aac",
+    ".flac": "audio/flac",
+    ".wav": "audio/wav",
+    ".ogg": "audio/ogg",
+}
+
 
 @dataclass(frozen=True)
 class Preview:
@@ -35,6 +54,11 @@ class Preview:
     # First few hundred characters of a document, so "is this the right file?"
     # can be answered without leaving the page.
     body: str | None = None
+    # Set only when the browser can play the original file as-is.
+    media_url: str | None = None
+    media_type: str | None = None
+    # Why there is no player, when there is a good reason.
+    no_play_reason: str | None = None
 
 
 class PreviewError(RuntimeError):
@@ -69,12 +93,30 @@ def preview_for_item(conn, settings: Settings, item_id: int, *, bulk: bool = Fal
             row["fingerprint"] or f"item-{item_id}",
             theme=_active_theme(conn),
         )
-        facts = (f"type: {kind}", f"size: {row['size']} bytes")
-        return Preview(kind, title, f"/preview/items/{item_id}/thumb", facts)
+        facts = (f"type: {kind}", _size_fact(row["size"]))
+        playable, reason = _playable(path, PLAYABLE_VIDEO) if kind == "video" else (None, None)
+        return Preview(
+            kind,
+            title,
+            f"/preview/items/{item_id}/thumb",
+            facts,
+            media_url=f"/preview/items/{item_id}/media" if playable else None,
+            media_type=playable,
+            no_play_reason=reason,
+        )
     if kind == "audio":
         cover = _cover_for_audio(conn, settings, item_id, path, allow_search=not bulk)
         thumb_url = f"/preview/items/{item_id}/thumb" if cover else None
-        return Preview(kind, title, thumb_url, ("type: audio", _size_fact(row["size"])))
+        playable, reason = _playable(path, PLAYABLE_AUDIO)
+        return Preview(
+            kind,
+            title,
+            thumb_url,
+            ("type: audio", _size_fact(row["size"])),
+            media_url=f"/preview/items/{item_id}/media" if playable else None,
+            media_type=playable,
+            no_play_reason=reason,
+        )
     if kind == "document":
         return Preview(
             kind,
@@ -302,6 +344,28 @@ def prune_cache(settings: Settings, max_bytes: int) -> None:
         size = path.stat().st_size
         path.unlink()
         total -= size
+
+
+def _playable(path: Path, table: dict[str, str]) -> tuple[str | None, str | None]:
+    media_type = table.get(path.suffix.lower())
+    if media_type:
+        return media_type, None
+    label = path.suffix.lstrip(".").upper()
+    return None, f"{label} does not play in a browser without converting it"
+
+
+def media_for_item(conn, settings: Settings, item_id: int) -> tuple[Path, str]:
+    """The original file, for the player. Same containment check as previews.
+
+    Only formats a browser plays natively are served: an endpoint that streams
+    whatever it is asked for is a file-exfiltration route wearing a nice hat.
+    """
+    row = _item_row(conn, item_id)
+    path = resolve_item_path(settings, row["root"], row["relpath"])
+    media_type = PLAYABLE_VIDEO.get(path.suffix.lower()) or PLAYABLE_AUDIO.get(path.suffix.lower())
+    if not media_type:
+        raise PreviewForbidden("this file type is not playable in a browser")
+    return path, media_type
 
 
 def resolve_item_path(settings: Settings, root: str, relpath: str) -> Path:

@@ -11,6 +11,7 @@ from librairy.lifecycle import transition_item
 from librairy.paths import PathValidationError, sanitize_component, validate_dest
 from librairy.planner import utc_now
 from librairy.proposals import decode_evidence
+from librairy.quarantine import quarantine_operation
 from librairy.search import sync_search_item
 from librairy.taxonomy import CATEGORIES, render_destination
 from librairy.web.evidence import humanize_evidence
@@ -28,6 +29,22 @@ DEFAULT_CATEGORY_FIELDS = {
 }
 
 
+# The default keeps albums and seasons together, because deciding a whole album
+# at once is the fastest way through a queue. Every other sort is a question
+# about individual files ("what is eating my disk?"), and answering it while
+# still herding rows into their groups would scatter the order you asked for —
+# so an explicit sort gives you one flat list.
+SORTS = {
+    "confidence": ("Best guess first", "p.confidence DESC, p.id DESC"),
+    "doubtful": ("Least sure first", "p.confidence ASC, p.id DESC"),
+    "name": ("Name A–Z", "i.relpath COLLATE NOCASE ASC"),
+    "largest": ("Largest first", "i.size DESC, p.id DESC"),
+    "smallest": ("Smallest first", "i.size ASC, p.id DESC"),
+    "newest": ("Newest first", "i.first_seen_at DESC, p.id DESC"),
+}
+DEFAULT_SORT = "confidence"
+
+
 @dataclass(frozen=True)
 class ReviewFilters:
     category: str | None = None
@@ -36,6 +53,11 @@ class ReviewFilters:
     max_confidence: float | None = None
     has_destination: bool | None = None
     page: int = 1
+    sort: str = DEFAULT_SORT
+
+    @property
+    def grouped(self) -> bool:
+        return self.sort == DEFAULT_SORT
 
 
 def review_data(conn: sqlite3.Connection, filters: ReviewFilters) -> dict[str, object]:
@@ -43,7 +65,10 @@ def review_data(conn: sqlite3.Connection, filters: ReviewFilters) -> dict[str, o
     total = _proposal_count(conn, filters)
     return {
         "filters": filters,
-        "groups": _group_rows(rows),
+        "groups": _group_rows(rows) if filters.grouped else _flat_group(rows),
+        "sorts": SORTS,
+        "categories": CATEGORIES,
+        "dest_folders": destination_folders(conn),
         "total": total,
         "page_size": PAGE_SIZE,
         "has_next": filters.page * PAGE_SIZE < total,
@@ -63,6 +88,11 @@ def apply_review_action(
     proposal_ids: list[int] | None = None,
     all_matching: bool = False,
 ) -> int:
+    if action == "discard":
+        return discard_proposals(
+            conn,
+            _matching_ids(conn, filters) if all_matching else proposal_ids or [],
+        )
     if action not in {"approve", "reject", "postpone"}:
         raise ValueError(f"unknown review action: {action}")
     targets = _matching_ids(conn, filters) if all_matching else proposal_ids or []
@@ -85,6 +115,68 @@ def apply_review_action(
             "UPDATE proposals SET status=?, updated_at=? WHERE id=?",
             (status, utc_now(), row["id"]),
         )
+    return len(rows)
+
+
+DEST_FOLDER_LIMIT = 200
+
+
+def destination_folders(conn: sqlite3.Connection) -> list[str]:
+    """Folders that already exist in the library, for the destination box.
+
+    Typing a path from memory is the worst part of correcting a guess. These
+    feed a `<datalist>`, so the field stays a plain text input you can type
+    anything into — it just suggests the places you already keep things.
+    """
+    seen: dict[str, None] = {}
+    rows = conn.execute(
+        "SELECT DISTINCT relpath FROM items WHERE root='library' AND missing_since IS NULL"
+    )
+    for row in rows:
+        parts = PurePosixPath(row["relpath"]).parts[:-1]
+        for depth in range(1, len(parts) + 1):
+            seen.setdefault("/".join(parts[:depth]) + "/", None)
+            if len(seen) >= DEST_FOLDER_LIMIT:
+                return sorted(seen)
+    return sorted(seen)
+
+
+def discard_proposals(conn: sqlite3.Connection, proposal_ids: list[int]) -> int:
+    """"I don't want this file" — which means quarantine, not delete.
+
+    LibrAIry does not delete, and this is the one place a person is most likely
+    to wish it did. Quarantine is the honest version of that wish: the file
+    leaves the inbox, stops appearing in Review, and is restorable from the
+    Quarantine page for as long as you like. Emptying it is a decision you make
+    in your own file manager, deliberately, not one this app makes for you on a
+    single click.
+
+    Nothing moves here. The proposal is retargeted at quarantine and approved,
+    so the move goes through the same planner and executor as everything else:
+    hash-verified, journaled, undoable.
+    """
+    if not proposal_ids:
+        return 0
+    rows = conn.execute(
+        f"""
+        SELECT p.id, p.item_id, i.relpath
+        FROM proposals p JOIN items i ON i.id = p.item_id
+        WHERE p.status IN ('proposed', 'postponed') AND p.id IN ({_placeholders(proposal_ids)})
+        """,  # noqa: S608 - placeholders are generated from the id count
+        proposal_ids,
+    ).fetchall()
+    for row in rows:
+        operation = quarantine_operation(row["relpath"])
+        conn.execute(
+            """
+            UPDATE proposals
+            SET status='approved', action='quarantine', dest_root='quarantine',
+                dest_relpath=?, updated_at=?
+            WHERE id=?
+            """,
+            (operation.dest_relpath, utc_now(), row["id"]),
+        )
+        transition_item(conn, row["item_id"], "approved")
     return len(rows)
 
 
@@ -151,6 +243,7 @@ def filters_from_query(
     max_confidence: float | None = None,
     has_destination: str | None = None,
     page: int = 1,
+    sort: str | None = None,
 ) -> ReviewFilters:
     destination_filter = None
     if has_destination == "yes":
@@ -164,6 +257,8 @@ def filters_from_query(
         max_confidence=max_confidence,
         has_destination=destination_filter,
         page=max(1, page),
+        # An unknown sort is a typo or a stale bookmark, not a reason to fail.
+        sort=sort if sort in SORTS else DEFAULT_SORT,
     )
 
 
@@ -181,15 +276,15 @@ def _proposal_rows(
     rows = conn.execute(
         f"""
         SELECT p.*, i.relpath AS item_relpath, i.state AS item_state,
+               i.size AS item_size, i.first_seen_at AS item_first_seen_at,
                g.kind AS group_kind, g.label AS group_label
         FROM proposals p
         JOIN items i ON i.id = p.item_id
         LEFT JOIN groups g ON g.id = p.group_id
         WHERE {where}
-        ORDER BY COALESCE(g.kind, 'ungrouped'), COALESCE(g.label, 'Ungrouped'),
-                 p.confidence DESC, p.id DESC
+        ORDER BY {_order_by(filters)}
         LIMIT ? OFFSET ?
-        """,
+        """,  # noqa: S608 - _order_by only ever returns a value from SORTS
         params,
     ).fetchall()
     return [
@@ -197,6 +292,7 @@ def _proposal_rows(
             **dict(row),
             "evidence_lines": evidence_lines(row["evidence"]),
             "evidence_views": humanize_evidence(row["evidence"]),
+            "size_label": human_size(row["item_size"]),
             # Advisories, not classification: a wallet or a hidden file should
             # not disappear into a bulk approve unnoticed.
             "flags": flags_for(row["item_relpath"]),
@@ -204,6 +300,28 @@ def _proposal_rows(
         }
         for row in rows
     ]
+
+
+def _order_by(filters: ReviewFilters) -> str:
+    """Never interpolates user input — the key selects a fixed clause."""
+    _, clause = SORTS.get(filters.sort) or SORTS[DEFAULT_SORT]
+    if filters.grouped:
+        # Group first so an album arrives as an album, then confidence inside it.
+        return f"COALESCE(g.kind, 'ungrouped'), COALESCE(g.label, 'Ungrouped'), {clause}"
+    return clause
+
+
+def human_size(size: object) -> str:
+    """"1.4 GB", not "1503238553 bytes". Sizes are for comparing at a glance."""
+    try:
+        value = float(size)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return ""
+    for unit in ("B", "KB", "MB", "GB"):
+        if value < 1024 or unit == "GB":
+            return f"{value:.0f} {unit}" if unit == "B" else f"{value:.1f} {unit}"
+        value /= 1024
+    return ""
 
 
 def _proposal_count(conn: sqlite3.Connection, filters: ReviewFilters) -> int:
@@ -235,6 +353,13 @@ def _matching_ids(conn: sqlite3.Connection, filters: ReviewFilters) -> list[int]
             params,
         )
     ]
+
+
+def _flat_group(rows: list[dict[str, Any]]) -> list[dict[str, object]]:
+    """One list, in exactly the order asked for. See the note on SORTS."""
+    if not rows:
+        return []
+    return [{"kind": "sorted", "label": "", "rows": rows}]
 
 
 def _group_rows(rows: list[dict[str, Any]]) -> list[dict[str, object]]:

@@ -197,6 +197,9 @@ h2 {
   border-bottom: var(--border-thin) solid var(--border);
 }
 h3 { margin: var(--space-4) 0 var(--space-2); font-size: var(--text-lg); }
+/* h4 had no rule at all, so it fell back to the browser default and sat at an
+   arbitrary size between h3 and body text. Every level is on the scale now. */
+h4 { margin: var(--space-3) 0 var(--space-1); font-size: var(--text-base); font-weight: 700; }
 .muted { color: var(--text-dim); font-size: var(--text-sm); }
 p { margin: var(--space-2) 0; }
 
@@ -323,7 +326,13 @@ button, .btn { justify-self: start; }
   border: var(--border-thin) solid var(--border);
   border-radius: var(--radius-ui);
 }
-.metric strong {
+/* Direct child only. `.metric` does two jobs — a tile whose whole point is one
+   big number (Browse), and a plain section wrapper (Health, Quarantine, the
+   Settings catalog grid) — and as a descendant selector this rule reached
+   every <strong> nested anywhere inside the second kind. "Cost:" and "Sends:"
+   in a catalog card were rendering at 33.6px, the same size as the page's h1.
+   That is the "random big letters" you can see all over Health too. */
+.metric > strong {
   color: var(--accent);
   font-size: var(--text-2xl);
   line-height: 1;
@@ -512,37 +521,83 @@ tbody tr:hover { background: var(--bg-metric); }
 .row-actions { display: flex; gap: var(--space-1); flex-wrap: wrap; }
 .row-actions button { padding: var(--space-1) var(--space-3); min-height: 2rem; }
 
-/* Column widths, or the browser gives Destination everything and squeezes the
-   actions into a one-button-wide column that stacks three buttons vertically
-   and triples the height of every row. */
-.review-group table { table-layout: fixed; width: 100%; }
-.review-group th:nth-child(1), .review-group td:nth-child(1) { width: 2.5rem; }
-.review-group th:nth-child(2), .review-group td:nth-child(2) { width: 22%; }
-.review-group th:nth-child(4), .review-group td:nth-child(4) { width: 7rem; }
-.review-group th:nth-child(5), .review-group td:nth-child(5) { width: 5rem; }
-.review-group th:nth-child(6), .review-group td:nth-child(6) { width: 15rem; }
-/* Long paths must wrap inside their cell rather than widening the table. */
-.review-group td { overflow-wrap: anywhere; vertical-align: top; }
+.review-group { margin: var(--space-4) 0; }
 
-.edit-toggle summary {
-  cursor: pointer;
-  color: var(--accent);
-  font-size: var(--text-sm);
-  font-weight: 600;
-  margin-top: var(--space-2);
+/* ---- Proposal cards --------------------------------------------------- */
+/* A table row could not hold this. Every proposal carries a path, a
+   destination, evidence, four actions, an edit form and a preview, and the
+   preview was opening inside a 15rem cell — a stamp of picture in a column of
+   empty page. A card owns the full width when it needs it. */
+.proposal-list { display: grid; gap: var(--space-3); }
+.proposal {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: var(--border-thin) solid var(--border);
+  /* The confidence band reads down the left edge, so scanning a page for the
+     doubtful ones does not mean reading every score. */
+  border-left: 4px solid var(--border);
+  border-radius: var(--radius-ui);
+  background: var(--bg-metric);
 }
-.edit-toggle .edit-form { margin-top: var(--space-2); }
+.proposal.conf-high { border-left-color: var(--ok); }
+.proposal.conf-mid { border-left-color: var(--warn); }
+.proposal.conf-low { border-left-color: var(--fail); }
+.proposal-pick { display: flex; align-items: start; padding-top: 0.2rem; }
+.proposal-body { min-width: 0; display: grid; gap: var(--space-2); }
 
-.review-group { margin: var(--space-4) 0; overflow-x: auto; }
+.proposal-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.proposal-name {
+  margin: 0;
+  font-size: var(--text-base);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.proposal-meta { display: flex; align-items: center; gap: var(--space-2); flex: none; }
 
-.from-to {
+.proposal-dest {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: var(--text-sm);
+}
+.dest-arrow { color: var(--accent); font-weight: 700; }
+.dest-path { overflow-wrap: anywhere; }
+.btn-link {
+  background: none;
+  border: 0;
+  padding: 0;
+  min-height: 0;
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--text-sm);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.proposal-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
-  font-size: var(--text-sm);
 }
-.from-to span[aria-hidden] { color: var(--accent); font-weight: 700; }
+.proposal-actions button { min-height: 2rem; padding: var(--space-1) var(--space-3); }
+.proposal-actions .spacer { flex: 1 1 auto; }
+.proposal-edit {
+  padding: var(--space-3);
+  border: var(--border-thin) solid var(--border);
+  border-radius: var(--radius-ui);
+  background: var(--bg-input);
+}
 
 .why summary {
   cursor: pointer;
@@ -1072,9 +1127,71 @@ kbd {
   font-size: var(--text-sm);
 }
 
-.edit-form { display: grid; gap: var(--space-2); min-width: 16rem; }
+/* Three named fields on one line where they fit, rather than three unlabelled
+   boxes stacked in a narrow column. */
+.edit-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: var(--space-3);
+  margin: 0;
+}
+.edit-form .field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+  color: var(--text-dim);
+}
+.edit-form .field input, .edit-form .field select { width: 14rem; }
+.edit-form .field-wide { flex: 1 1 22rem; }
+.edit-form .field-wide input { width: 100%; }
+.edit-actions { display: flex; gap: var(--space-2); }
 
-.preview-card,
+/* Media beside the facts, not above them: a 16:9 still stacked on top of four
+   lines of text is most of a screen for one row. */
+.preview-card {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: var(--space-3);
+  margin: var(--space-2) 0 0;
+  padding: var(--space-3);
+  background: var(--bg-input);
+  border: var(--border-thin) solid var(--border);
+  border-radius: var(--radius-ui);
+}
+.preview-media { display: grid; gap: var(--space-2); align-content: start; min-width: 0; }
+.preview-media img {
+  width: 100%;
+  height: auto;
+  /* Enough to judge a file by, not so much that one preview is the page. */
+  max-height: 22rem;
+  object-fit: contain;
+  border-radius: var(--radius-ui);
+  background: var(--bg);
+}
+/* preload="none" means the browser knows nothing about the video yet, so
+   height:auto collapsed it to zero and left the poster and the controls with
+   nowhere to render — a black rectangle with no play button in it. A declared
+   ratio gives the box a size before any metadata arrives. */
+.preview-media video {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  max-height: 22rem;
+  object-fit: contain;
+  border-radius: var(--radius-ui);
+  background: var(--bg);
+}
+.preview-media audio { width: 100%; }
+.preview-facts { min-width: 0; display: grid; gap: var(--space-2); align-content: start; }
+.preview-facts h4 { margin: 0; overflow-wrap: anywhere; }
+.preview-facts p { margin: 0; }
+.preview-kind { text-transform: uppercase; letter-spacing: 0.05em; font-size: var(--text-sm); }
+.preview-tags { display: flex; flex-wrap: wrap; gap: var(--space-1); }
+@media (max-width: 720px) {
+  .preview-card { grid-template-columns: 1fr; }
+}
+
 .compare-card {
   display: grid;
   gap: var(--space-2);
@@ -1084,7 +1201,7 @@ kbd {
   border: var(--border-thin) solid var(--border);
   border-radius: var(--radius-ui);
 }
-.preview-card img, .compare-card img { max-width: 100%; height: auto; border-radius: var(--radius-ui); }
+.compare-card img { max-width: 100%; height: auto; border-radius: var(--radius-ui); }
 .compare-card.split { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
 
 /* ---- Sticky save bar (Phase 13) -------------------------------------- */

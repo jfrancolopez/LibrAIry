@@ -39,12 +39,12 @@ def test_image_video_audio_and_unsupported_previews_render(tmp_path: Path) -> No
     text_response = client.get(f"/preview/items/{text}")
     thumb_response = client.get(f"/preview/items/{image}/thumb")
 
-    assert "Image preview" in image_response.text
-    assert "Video preview" in video_response.text
-    assert "Audio preview" in audio_response.text
+    assert "Image" in image_response.text
+    assert "Video" in video_response.text
+    assert "Audio" in audio_response.text
     # A text file is previewable: the point of a preview is answering "is this
     # the right file?", and for a document that means seeing what is in it.
-    assert "Document preview" in text_response.text
+    assert "Document" in text_response.text
     assert "hello" in text_response.text
     assert thumb_response.status_code == 200
     assert thumb_response.headers["content-type"].startswith("image/svg+xml")
@@ -128,7 +128,7 @@ def test_document_preview_truncates_long_text(tmp_path: Path) -> None:
 
     response = client.get(f"/preview/items/{item}")
 
-    assert "Document preview" in response.text
+    assert "Document" in response.text
     assert "…" in response.text
     assert len(response.text) < PREVIEW_TEXT_CHARS * 3, "the whole file must not be inlined"
 
@@ -155,7 +155,7 @@ def test_unreadable_document_degrades_to_no_snippet(tmp_path: Path, monkeypatch)
     response = client.get(f"/preview/items/{item}")
 
     assert response.status_code == 200
-    assert "Document preview" in response.text
+    assert "Document" in response.text
     assert "preview-text" not in response.text
 
 
@@ -254,3 +254,56 @@ def test_a_killed_render_leaves_no_half_written_thumbnail(tmp_path: Path, monkey
     assert response.headers["content-type"].startswith("image/svg+xml")
     leftovers = list((settings.appdata_dir / "thumbs").glob("*.part"))
     assert leftovers == []
+
+
+def test_a_browser_playable_video_gets_a_player_and_a_poster(tmp_path: Path) -> None:
+    """The point of a preview is deciding whether this is the right file, and
+    for video that often means watching four seconds of it."""
+    client, conn, settings = client_for(tmp_path)
+    item_id = insert_file(conn, settings, "clip.mp4", b"\x00\x00\x00\x18ftypmp42")
+
+    body = client.get(f"/preview/items/{item_id}").text
+
+    assert "<video" in body
+    assert f'src="/preview/items/{item_id}/media"' in body
+    assert 'type="video/mp4"' in body
+    # Never start downloading a video nobody pressed play on.
+    assert 'preload="none"' in body
+
+
+def test_mkv_says_why_there_is_no_player_instead_of_showing_a_broken_one(
+    tmp_path: Path,
+) -> None:
+    """Matroska needs transcoding, which is not a thing a file organiser should
+    do to your NAS for a thumbnail."""
+    client, conn, settings = client_for(tmp_path)
+    item_id = insert_file(conn, settings, "movie.mkv", b"\x1a\x45\xdf\xa3")
+
+    body = client.get(f"/preview/items/{item_id}").text
+
+    assert "<video" not in body
+    assert "MKV does not play in a browser" in body
+
+
+def test_the_media_route_refuses_anything_it_cannot_play(tmp_path: Path) -> None:
+    """An endpoint that streams whatever it is asked for is a file
+    exfiltration route wearing a nice hat."""
+    client, conn, settings = client_for(tmp_path)
+    item_id = insert_file(conn, settings, "secrets.txt", b"private")
+
+    response = client.get(f"/preview/items/{item_id}/media")
+
+    assert response.status_code == 403
+    assert "private" not in response.text
+
+
+def test_the_media_route_serves_a_playable_file_with_ranges(tmp_path: Path) -> None:
+    client, conn, settings = client_for(tmp_path)
+    item_id = insert_file(conn, settings, "song.mp3", b"ID3" + b"x" * 400)
+
+    response = client.get(f"/preview/items/{item_id}/media")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "audio/mpeg"
+    # Range support is what lets you scrub instead of waiting for the whole file.
+    assert response.headers.get("accept-ranges") == "bytes"

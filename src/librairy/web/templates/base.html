@@ -34,13 +34,13 @@
         {% endif %}
         <a class="provider-pill" href="/settings" title="AI provider status">{{ provider_header() }}</a>
         <a href="/settings">Settings</a>
+        {# "Set password" used to live here too, which was a second door to a
+           thing that already has one in Settings. #}
         {% if request.state.session and portal_password_set() %}
           <form class="logout-form" method="post" action="/logout">
             <input type="hidden" name="csrf_token" value="{{ request.state.session.csrf_token }}">
             <button type="submit" class="btn-ghost">Log out</button>
           </form>
-        {% elif request.state.session %}
-          <a href="/settings#portal-security">Set password</a>
         {% endif %}
       </div>
     </header>

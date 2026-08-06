@@ -6,16 +6,18 @@
 //
 // Delegated from the document so it survives htmx swapping the list.
 (function () {
+  // A select-all in a group heading covers that group; the one in the toolbar
+  // sits outside every group and so covers the page.
   function rowsUnder(header) {
-    var table = header.closest("table");
-    return table
-      ? Array.prototype.slice.call(table.querySelectorAll('tbody input[name="proposal_id"]'))
+    var scope = header.closest(".review-group") || document.getElementById("review-list");
+    return scope
+      ? Array.prototype.slice.call(scope.querySelectorAll('input[name="proposal_id"]'))
       : [];
   }
 
   function allBoxes() {
     return Array.prototype.slice.call(
-      document.querySelectorAll('#review-list tbody input[name="proposal_id"]')
+      document.querySelectorAll('#review-list input[name="proposal_id"]')
     );
   }
 
@@ -55,6 +57,36 @@
     }
     syncHeaders();
     refreshCount();
+  });
+
+  // "Change…" and "Cancel" open and close the edit panel. A <details> would
+  // need no script, but its disclosure triangle and default typography are
+  // exactly the "ugly" the edit form was called out for; this is a button that
+  // looks like the other buttons. Delegated, so it survives an htmx swap.
+  document.addEventListener("click", function (event) {
+    var trigger = event.target.closest("[data-panel-toggle]");
+    if (!trigger) return;
+    var panel = document.getElementById(trigger.dataset.panelToggle);
+    if (!panel) return;
+    panel.hidden = !panel.hidden;
+    if (!panel.hidden) {
+      var first = panel.querySelector("select, input");
+      if (first) first.focus();
+    }
+  });
+
+  // htmx does not swap error responses, so a Preview button whose file has
+  // gone left the panel empty and looked like a broken button. Expand-all
+  // already said so; a single click should too.
+  document.body.addEventListener("htmx:responseError", function (event) {
+    var target = event.detail.target;
+    if (!target || !target.classList.contains("proposal-preview")) return;
+    var reason =
+      event.detail.xhr.status === 404
+        ? "Preview unavailable — the file has moved or been removed."
+        : "Preview failed (" + event.detail.xhr.status + ").";
+    target.innerHTML = '<p class="muted preview-failed"></p>';
+    target.firstChild.textContent = reason;
   });
 
   document.body.addEventListener("htmx:afterSwap", function () {

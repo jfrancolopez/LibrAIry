@@ -37,6 +37,7 @@ from librairy.settings_service import (
     set_ollama_enabled,
     settings_page_data,
 )
+from librairy.taxonomy import CATEGORIES as REVIEW_CATEGORIES
 from librairy.web.access import access_data
 from librairy.web.activity import activity
 from librairy.web.auth import (
@@ -81,6 +82,7 @@ from librairy.web.quarantine import (
 from librairy.web.review import apply_review_action, edit_proposal, filters_from_query, review_data
 from librairy.web.thumbs import (
     PreviewError,
+    media_for_item,
     preview_for_item,
     thumbnail_for_item,
     thumbnail_media_type,
@@ -498,6 +500,7 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         max_confidence: float | None = None,
         has_destination: str | None = None,
         page: int = 1,
+        sort: str | None = None,
     ) -> HTMLResponse:
         filters = filters_from_query(
             category=category,
@@ -506,6 +509,7 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             max_confidence=max_confidence,
             has_destination=has_destination,
             page=page,
+            sort=sort,
         )
         return TEMPLATES.TemplateResponse(
             request,
@@ -522,6 +526,7 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         max_confidence: float | None = None,
         has_destination: str | None = None,
         page: int = 1,
+        sort: str | None = None,
     ) -> HTMLResponse:
         filters = filters_from_query(
             category=category,
@@ -530,6 +535,7 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             max_confidence=max_confidence,
             has_destination=has_destination,
             page=page,
+            sort=sort,
         )
         return TEMPLATES.TemplateResponse(
             request,
@@ -549,6 +555,7 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         max_confidence: Annotated[float | None, Form()] = None,
         has_destination: Annotated[str | None, Form()] = None,
         page: Annotated[int, Form()] = 1,
+        sort: Annotated[str | None, Form()] = None,
     ) -> HTMLResponse:
         filters = filters_from_query(
             category=category,
@@ -557,6 +564,7 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             max_confidence=max_confidence,
             has_destination=has_destination,
             page=page,
+            sort=sort,
         )
         changed = apply_review_action(
             conn,
@@ -578,6 +586,7 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         category: Annotated[str, Form()],
         clean_name: Annotated[str, Form()],
         dest_relpath: Annotated[str | None, Form()] = None,
+        sort: Annotated[str | None, Form()] = None,
     ) -> HTMLResponse:
         try:
             proposal, warning = edit_proposal(
@@ -590,10 +599,17 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+        # The card re-renders on its own, so it needs the same context the list
+        # gives it: the sort it belongs to, and the category menu.
         return TEMPLATES.TemplateResponse(
             request,
             "partials/review_row.html",
-            {"proposal": proposal, "warning": warning},
+            {
+                "proposal": proposal,
+                "warning": warning,
+                "filters": filters_from_query(sort=sort),
+                "categories": REVIEW_CATEGORIES,
+            },
         )
 
     @app.get("/activity", response_class=HTMLResponse)
@@ -616,6 +632,19 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             "partials/preview_card.html",
             {"preview": preview_data},
         )
+
+    @app.get("/preview/items/{item_id}/media")
+    def preview_media(item_id: int) -> FileResponse:
+        """Streams the original so the preview can play it.
+
+        FileResponse answers Range requests, which is what lets you scrub a
+        video instead of waiting for the whole thing.
+        """
+        try:
+            path, media_type = media_for_item(conn, settings, item_id)
+        except PreviewError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+        return FileResponse(path, media_type=media_type)
 
     @app.get("/preview/items/{item_id}/thumb")
     def preview_thumb(item_id: int) -> FileResponse:

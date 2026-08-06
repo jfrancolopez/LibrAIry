@@ -1,39 +1,38 @@
+{% set qs = 'state=' ~ filters.state ~ '&category=' ~ (filters.category or '') ~ '&sort=' ~ filters.sort %}
 <div id="review-list" class="review-list">
   {% if toast %}<p><span class="badge badge-ok">{{ toast }}</span></p>{% endif %}
+
+  {# One datalist for the whole page rather than one per card: the same few
+     hundred folder names repeated fifty times is a lot of HTML for nothing. #}
+  <datalist id="dest-folders">
+    {% for folder in dest_folders %}<option value="{{ folder }}"></option>{% endfor %}
+  </datalist>
+
   {% if groups %}
     {% for group in groups %}
       <section class="review-group">
-        {# "ungrouped / Ungrouped / 50 shown" read like a debug dump. #}
-        <h2>
-          {% if group.kind == 'ungrouped' %}Individual files{% else %}{{ group.label }}{% endif %}
-          <span class="muted">{{ group.rows|length }} shown</span>
-        </h2>
-        <table>
-          <thead>
-            <tr>
-              <th scope="col">
-                <input type="checkbox" class="select-all" aria-label="Select every row in {{ group.label }}">
-              </th>
-              <th scope="col">Source</th>
-              <th scope="col">Destination</th>
-              <th scope="col">Confidence</th>
-              <th scope="col">Evidence</th>
-              <th scope="col">Edit</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for proposal in group.rows %}
-              {% include "partials/review_row.html" %}
-            {% endfor %}
-          </tbody>
-        </table>
+        {% if group.kind not in ('ungrouped', 'sorted') %}
+          {# Albums and seasons are worth naming; "ungrouped / Ungrouped" was a
+             debug dump, and a sorted list is already self-explanatory. #}
+          <h2>
+            <label class="group-pick">
+              <input type="checkbox" class="select-all" aria-label="Select every file in {{ group.label }}">
+            </label>
+            {{ group.label }} <span class="muted">{{ group.rows|length }} shown</span>
+          </h2>
+        {% endif %}
+        <div class="proposal-list">
+          {% for proposal in group.rows %}
+            {% include "partials/review_row.html" %}
+          {% endfor %}
+        </div>
       </section>
     {% endfor %}
   {% else %}
     <p class="muted">Nothing to review yet — drop files into the inbox and wait for the worker to stage proposals.</p>
   {% endif %}
+
   {% if page_count > 1 or total %}
-    {% set qs = 'state=' ~ filters.state ~ '&category=' ~ (filters.category or '') %}
     <nav class="pager" aria-label="Review pages">
       <span class="pager-count">
         {% if total %}Showing <strong>{{ range_start }}–{{ range_end }}</strong> of <strong>{{ total }}</strong>{% else %}No matches{% endif %}

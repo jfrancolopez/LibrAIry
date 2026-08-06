@@ -67,8 +67,8 @@ def test_review_evidence_labels_cloud_marker_and_pending_edit(tmp_path: Path) ->
     # Evidence renders as plain-language "why" lines, not bracket codes.
     assert "Looks like unknown item fallback" in response.text
     assert "AI · openai" in response.text
-    assert "Why?" in response.text
-    assert "pending destination" in response.text
+    assert "Why this?" in response.text
+    assert "no destination yet" in response.text
     assert "Destination" in response.text
 
 
@@ -258,13 +258,13 @@ def seed_proposal(
     return proposal_id
 
 
-def insert_item(conn, relpath: str) -> int:
+def insert_item(conn, relpath: str, size: int = 1) -> int:
     cursor = conn.execute(
         """
         INSERT INTO items(root, relpath, size, mtime_ns, fingerprint, first_seen_at, last_seen_at)
-        VALUES ('inbox', ?, 1, 1, ?, 'now', 'now')
+        VALUES ('inbox', ?, ?, 1, ?, 'now', 'now')
         """,
-        (relpath, relpath),
+        (relpath, size, relpath),
     )
     return int(cursor.lastrowid)
 
@@ -424,6 +424,95 @@ def test_each_group_offers_a_select_all_box(tmp_path: Path) -> None:
     for index in range(3):
         seed_proposal(conn, f"inbox/file-{index}.mkv", "movies", f"Movies/f{index}.mkv", 0.9, None)
 
+    # The page-level "Select all shown" lives in the sticky toolbar, outside
+    # every group, so review.js scopes it to the whole page.
+    page = client.get("/review").text
+
+    assert 'class="select-all"' in page
+    assert "Select all shown" in page
+
+
+def test_sorting_by_size_flattens_the_groups_and_orders_by_size(tmp_path: Path) -> None:
+    """Sorting and grouping fight each other: rows herded back into albums do
+    not arrive in the order you asked for. An explicit sort gives one list."""
+    client, conn = client_for(tmp_path)
+    for name, size in (("small.mkv", 10), ("huge.mkv", 9_000_000), ("mid.mkv", 5_000)):
+        item = insert_item(conn, f"inbox/{name}", size=size)
+        upsert_proposal(
+            conn,
+            item_id=item,
+            category="movies",
+            clean_name=name,
+            dest_relpath=f"Movies/{name}",
+            confidence=0.9,
+            evidence=[EvidenceEntry("heuristic", "category", "extension", 0.9)],
+        )
+
+    body = client.get("/review/list?sort=largest").text
+    order = [body.index(name) for name in ("huge.mkv", "mid.mkv", "small.mkv")]
+
+    assert order == sorted(order)
+    assert "8.6 MB" in body
+
+
+def test_an_unknown_sort_falls_back_instead_of_failing(tmp_path: Path) -> None:
+    """A stale bookmark is not a reason to show an error page."""
+    client, conn = client_for(tmp_path)
+    seed_proposal(conn, "inbox/a.mkv", "movies", "Movies/a.mkv", 0.9, None)
+
+    response = client.get("/review/list?sort=DROP+TABLE+proposals")
+
+    assert response.status_code == 200
+    assert "a.mkv" in response.text
+
+
+def test_dont_want_it_quarantines_rather_than_deleting(tmp_path: Path) -> None:
+    """LibrAIry never deletes. "I don't want this" means quarantine, which is
+    reversible, journaled, and goes through the same executor as everything."""
+    client, conn = client_for(tmp_path)
+    proposal_id = seed_proposal(conn, "inbox/junk.mkv", "movies", "Movies/junk.mkv", 0.9, None)
+
+    response = client.post(
+        "/review/action",
+        data={"action": "discard", "proposal_id": str(proposal_id)},
+        headers={"x-csrf-token": client.cookies["csrf_token"]},
+    )
+    row = conn.execute(
+        "SELECT status, action, dest_root, dest_relpath FROM proposals WHERE id=?",
+        (proposal_id,),
+    ).fetchone()
+
+    assert response.status_code == 200
+    assert row["status"] == "approved"
+    assert row["action"] == "quarantine"
+    assert row["dest_root"] == "quarantine"
+    assert row["dest_relpath"].endswith("inbox/junk.mkv")
+    # The file itself has not been touched — that happens at commit, verified.
+    assert item_state(conn, proposal_id) == "approved"
+
+
+def test_discard_does_not_reach_into_decided_proposals(tmp_path: Path) -> None:
+    client, conn = client_for(tmp_path)
+    proposal_id = seed_proposal(conn, "inbox/a.mkv", "movies", "Movies/a.mkv", 0.9, None)
+    conn.execute("UPDATE proposals SET status='committed'")
+
+    client.post(
+        "/review/action",
+        data={"action": "discard", "proposal_id": str(proposal_id)},
+        headers={"x-csrf-token": client.cookies["csrf_token"]},
+    )
+
+    assert proposal_status(conn, proposal_id) == "committed"
+
+
+def test_the_category_field_is_a_menu_of_the_categories_that_exist(tmp_path: Path) -> None:
+    """It was a free-text box that rejected anything but the eight valid
+    categories without ever saying what they were."""
+    client, conn = client_for(tmp_path)
+    seed_proposal(conn, "inbox/a.mkv", "movies", "Movies/a.mkv", 0.9, None)
+
     body = client.get("/review/list").text
 
-    assert 'class="select-all"' in body
+    assert '<select name="category">' in body
+    for category in ("music", "movies", "shows", "photos", "documents", "books"):
+        assert f'<option value="{category}"' in body

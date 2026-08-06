@@ -1,7 +1,34 @@
+{# Sits inside the proposal card and gets its full width, so a picture is a
+   picture rather than a stamp in a narrow column. #}
 <aside class="preview-card">
-  <p class="muted">{{ preview.kind|capitalize }} preview</p>
-  <h3>{{ preview.title }}</h3>
-  {% if preview.thumb_url %}<img src="{{ preview.thumb_url }}" alt="Preview for {{ preview.title }}">{% endif %}
-  {% if preview.body %}<p class="preview-text">{{ preview.body }}</p>{% endif %}
-  {% for fact in preview.facts %}<span>{{ fact }}</span>{% endfor %}
+  <div class="preview-media">
+    {% if preview.media_url and preview.kind == 'video' %}
+      {# preload="none" — a page of previews must not start fetching gigabytes
+         of video nobody has pressed play on. #}
+      <video controls preload="none" playsinline
+             {% if preview.thumb_url %}poster="{{ preview.thumb_url }}"{% endif %}>
+        <source src="{{ preview.media_url }}" type="{{ preview.media_type }}">
+      </video>
+    {% elif preview.thumb_url %}
+      <img src="{{ preview.thumb_url }}" alt="Preview for {{ preview.title }}">
+    {% endif %}
+    {% if preview.media_url and preview.kind == 'audio' %}
+      <audio controls preload="none">
+        <source src="{{ preview.media_url }}" type="{{ preview.media_type }}">
+      </audio>
+    {% endif %}
+  </div>
+
+  <div class="preview-facts">
+    <p class="preview-kind muted">{{ preview.kind|capitalize }}</p>
+    <h4>{{ preview.title }}</h4>
+    {% if preview.body %}<p class="preview-text">{{ preview.body }}</p>{% endif %}
+    <p class="preview-tags">
+      {% for fact in preview.facts %}<span class="badge badge-info">{{ fact }}</span>{% endfor %}
+    </p>
+    {% if preview.no_play_reason %}
+      {# Better than a player that silently shows a black rectangle. #}
+      <p class="muted">{{ preview.no_play_reason }}.</p>
+    {% endif %}
+  </div>
 </aside>

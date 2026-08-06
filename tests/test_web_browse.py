@@ -66,7 +66,7 @@ def test_item_detail_shows_preview_metadata_evidence_siblings_and_history(tmp_pa
     response = client.get(f"/items/{first}")
 
     assert response.status_code == 200
-    assert "Image preview" in response.text
+    assert "Image" in response.text
     assert "category: photos" in response.text
     assert "category photos 0.90" in response.text
     assert f"/items/{second}" in response.text

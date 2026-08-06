@@ -143,3 +143,48 @@ def test_status_colours_are_told_apart_from_each_other(theme: str) -> None:
     statuses = {token: tokens[token] for token in ("--ok", "--warn", "--fail")}
 
     assert len(set(statuses.values())) == 3, f"{theme} reuses a colour: {statuses}"
+
+
+def test_type_scale_is_not_leaked_by_descendant_selectors() -> None:
+    """`.metric strong` set every nested <strong> to 2.1rem — the size of the
+    page's own h1. `.metric` is a one-big-number tile in Browse and a plain
+    section wrapper everywhere else, so "Cost:" in a Settings catalog card, and
+    most bold words on Health, rendered as headlines.
+
+    The rule for any selector that sizes a bare element: bind it to a direct
+    child, or give the thing a class of its own.
+    """
+    css = Path("src/librairy/web/static/pipboy.css").read_text(encoding="utf-8")
+    oversized = re.findall(
+        r"^\s*([^{}\n]*\b(?:strong|em|b|small|code)\b[^{}\n]*)\{[^}]*font-size[^}]*\}",
+        css,
+        re.MULTILINE,
+    )
+    leaky = [
+        selector.strip()
+        for selector in oversized
+        # "a > strong" is bound to its parent; "a strong" reaches the whole tree.
+        if re.search(r"[.\w\]]\s+(?:strong|em|b|small|code)\b", selector)
+    ]
+
+    assert leaky == [], f"font-size on a descendant selector: {leaky}"
+
+
+def test_every_heading_level_has_a_size_from_the_scale() -> None:
+    """h4 had no rule, so it fell back to a browser default that sat at an
+    arbitrary size between h3 and body text."""
+    css = Path("src/librairy/web/static/pipboy.css").read_text(encoding="utf-8")
+
+    for level in ("h1", "h2", "h3", "h4"):
+        # A level can be styled by more than one rule (the shared
+        # "h1, h2, h3 { line-height }" plus its own size); any of them may
+        # carry the size, so check them together.
+        blocks = re.findall(
+            rf"^[^{{}}\n]*\b{level}\b[^{{}}\n]*{{([^}}]*)}}", css, re.MULTILINE
+        )
+        assert blocks, f"{level} has no rule of its own"
+        sized = [body for body in blocks if "font-size" in body]
+        assert sized, f"{level} never gets a font-size"
+        assert all("var(--text-" in body for body in sized), (
+            f"{level} sets a font-size outside the type scale"
+        )
