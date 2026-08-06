@@ -283,6 +283,21 @@
 </div>
 
 <h3>Ollama Endpoints</h3>
+{# The feature was here all along and nothing said so — the form looked like it
+   configured the local Ollama rather than any machine on the network. #}
+<p class="muted">
+  Ollama does not have to run on this machine. Add as many as you like — a
+  desktop with a real GPU, a second server, anything on your LAN — and give
+  each one the URL it answers on, like <code>http://192.168.1.50:11434</code>.
+  LibrAIry tries them in the order they appear in <a href="#providers">the provider order above</a>
+  and falls through to the next when one is down. Nothing leaves your network,
+  and no key is involved.
+</p>
+<p class="muted">
+  Ollama only listens to its own machine unless you tell it otherwise: set
+  <code>OLLAMA_HOST=0.0.0.0</code> on the machine running it, then
+  <strong>Test</strong> here to confirm this container can reach it.
+</p>
 <table>
   <thead><tr><th>Name</th><th>Endpoint</th><th>Model</th><th>Status</th><th>Actions</th></tr></thead>
   <tbody>
