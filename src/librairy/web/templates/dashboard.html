@@ -1,11 +1,18 @@
 {% extends "base.html" %}
 {% block content %}
-  <h1>Dashboard</h1>
+  {# No "Dashboard" heading: the nav already says which page this is, and
+     spending the first 55px of the page repeating it pushes the one thing you
+     came to find out further down. The hero below carries the h1, and it says
+     something worth reading.
+
+     Search stays outside the polled region on purpose — inside it, the
+     five-second swap would throw away whatever you had typed. #}
   <form class="search-hero" action="/search" method="get" role="search">
-    <input type="search" name="q" placeholder="Search your library — e.g. queen night opera" aria-label="Search your library" autofocus>
+    <input type="search" name="q" placeholder="Search your library — e.g. queen night opera" aria-label="Search your library">
     <button class="btn-primary" type="submit">Search</button>
   </form>
-  <div id="dashboard-stats" hx-get="/dashboard/stats" hx-trigger="every 5s" hx-swap="outerHTML">
-    {% include "partials/dashboard_stats.html" %}
-  </div>
+  {# No wrapper: the partial carries its own id and polling attributes, and a
+     wrapper here would duplicate the id on first paint and lose the trigger on
+     first swap. #}
+  {% include "partials/dashboard_stats.html" %}
 {% endblock %}

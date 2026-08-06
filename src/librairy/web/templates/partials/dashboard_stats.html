@@ -1,88 +1,138 @@
-<div id="dashboard-stats" class="widget-grid">
-  <article class="widget card centerpiece">
-    <h3>Awaiting review</h3>
-    <p class="big">{{ proposal_count }}</p>
-    <p class="muted">proposals staged</p>
-    {% if proposal_count %}<p><a class="btn btn-primary" href="/review">Review now</a></p>{% endif %}
-  </article>
+{# The polling attributes live on this element, not on a wrapper in
+   dashboard.html: hx-swap="outerHTML" replaces the element it is on, so a
+   wrapper carrying hx-trigger is replaced by a response that has none, and the
+   dashboard refreshes exactly once and then goes quiet forever. #}
+<div id="dashboard-stats"
+     hx-get="/dashboard/stats" hx-trigger="every 5s" hx-swap="outerHTML">
 
-  <article class="widget card">
-    <h3>Worker</h3>
-    <p class="big">{{ current_phase }}</p>
-    <p class="muted">{{ worker_state.get('last_cycle_at', 'no heartbeat yet') }}</p>
-  </article>
+  {# One focal point. Seven equally-weighted cards make you read all seven to
+     find out whether anything wants you; this answers that before you read
+     anything else, and carries the single action that follows from it. #}
+  {% if proposal_count %}
+    <section class="hero hero-act">
+      <p class="hero-figure">{{ proposal_count }}</p>
+      <div class="hero-copy">
+        <h1>waiting for your review</h1>
+        <p class="muted">Nothing moves until you approve it and commit.</p>
+        <a class="btn btn-primary btn-lg" href="/review">Review them</a>
+        {% if approved_count %}
+          <a class="btn" href="/commit">{{ approved_count }} already approved</a>
+        {% endif %}
+      </div>
+    </section>
+  {% elif approved_count %}
+    <section class="hero hero-act">
+      <p class="hero-figure">{{ approved_count }}</p>
+      <div class="hero-copy">
+        <h1>approved, ready to commit</h1>
+        <p class="muted">Committing moves them into your library. It is undoable.</p>
+        <a class="btn btn-primary btn-lg" href="/commit">Commit them</a>
+      </div>
+    </section>
+  {% else %}
+    <section class="hero hero-calm">
+      <p class="hero-figure">✓</p>
+      <div class="hero-copy">
+        <h1>Nothing needs you</h1>
+        <p class="muted">
+          Drop files at <span class="mono">{{ host_inbox_dir }}</span> and they show up here
+          within a few seconds.
+        </p>
+      </div>
+    </section>
+  {% endif %}
 
-  <article class="widget card">
-    <h3>Lifecycle</h3>
-    {% if counts %}
-      <ul>
-        {% for state, count in counts.items() %}
-          <li><span>{{ state }}</span><strong>{{ count }}</strong></li>
-        {% endfor %}
-      </ul>
-    {% else %}
-      <p class="muted">Inbox clear — drop files at <span class="mono">{{ host_inbox_dir }}</span>.</p>
-    {% endif %}
-  </article>
+  <div class="widget-grid">
+    <article class="widget card">
+      <h3>Worker</h3>
+      <p class="big">{{ current_phase }}</p>
+      <p class="muted">{{ worker_state.get('last_cycle_at', 'no heartbeat yet') }}</p>
+    </article>
 
-  <article class="widget card">
-    <h3>Disk</h3>
-    {% if disks %}
-      <ul>
-        {% for disk in disks %}
-          <li>
-            <span>{{ disk.root }}</span>
-            <span class="{{ 'status warn' if disk.percent_free < 10 else 'muted' }}">{{ disk.free_gb }}GB free · {{ disk.percent_free }}%</span>
-          </li>
-        {% endfor %}
-      </ul>
-    {% else %}
-      <p class="muted">No volumes reported.</p>
-    {% endif %}
-  </article>
+    <article class="widget card">
+      {# Inbox only. A committed library file sits in 'discovered' for good —
+         that is what an indexed library file is — so counting both together
+         reported the whole library as an unidentified backlog. #}
+      <h3>In the inbox</h3>
+      {% if lifecycle %}
+        <ul>
+          {% for label, count in lifecycle %}
+            <li><span>{{ label }}</span><strong>{{ count }}</strong></li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="muted">Inbox clear — drop files at <span class="mono">{{ host_inbox_dir }}</span>.</p>
+      {% endif %}
+      <p class="muted">{{ library_count }} file(s) filed in your library.</p>
+    </article>
 
-  <article class="widget card">
-    <h3>AI providers</h3>
-    {% if providers %}
-      <ul>
-        {% for provider in providers %}
-          <li>
-            <span>{{ provider.name }}</span>
-            <span class="badge {{ 'badge-ok' if provider.enabled else 'badge-warn' }}">{{ provider.kind }}</span>
-          </li>
-        {% endfor %}
-      </ul>
-    {% else %}
-      <p class="muted">Heuristics only — add Ollama or LM Studio in Settings.</p>
-    {% endif %}
-  </article>
+    <article class="widget card">
+      <h3>Disk</h3>
+      {% if volumes %}
+        <ul class="volume-list">
+          {% for volume in volumes %}
+            <li class="volume">
+              <span class="volume-name">{{ volume.label }}</span>
+              {# A bar is read at a glance; a percentage has to be read. #}
+              <span class="meter {{ 'is-low' if volume.low }}"
+                    role="img"
+                    aria-label="{{ volume.percent_used }}% used, {{ volume.free_gb }}GB free">
+                <span class="meter-fill" style="width: {{ volume.percent_used }}%"></span>
+              </span>
+              <span class="{{ 'status warn' if volume.low else 'muted' }}">
+                {{ volume.free_gb }}GB free · {{ volume.percent_free }}%
+              </span>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="muted">No volumes reported.</p>
+      {% endif %}
+    </article>
 
-  <article class="widget card">
-    <h3>Backup</h3>
-    {% if backup_counts %}
-      <ul>
-        {% for state, count in backup_counts.items() %}
-          <li><span>{{ state }}</span><strong>{{ count }}</strong></li>
-        {% endfor %}
-      </ul>
-    {% else %}
-      <p class="muted">No backup work queued.</p>
-    {% endif %}
-  </article>
+    <article class="widget card">
+      <h3>AI providers</h3>
+      {% if providers %}
+        <ul>
+          {% for provider in providers %}
+            <li>
+              <span>{{ provider.name }}</span>
+              <span class="badge {{ 'badge-ok' if provider.enabled else 'badge-warn' }}">{{ provider.kind }}</span>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="muted">Heuristics only — add Ollama or LM Studio in Settings.</p>
+      {% endif %}
+    </article>
 
-  <article class="widget card widget-wide widget-wide-2">
-    <h3>Recent operations</h3>
-    {% if recent_history %}
-      <ul>
-        {% for row in recent_history %}
-          <li>
-            <span class="badge {{ 'badge-ok' if row.outcome == 'ok' else 'badge-warn' }}">{{ row.action }}</span>
-            <span class="mono muted">{{ row.dest_relpath }}</span>
-          </li>
-        {% endfor %}
-      </ul>
-    {% else %}
-      <p class="muted">No committed operations yet. Approve proposals in Review, then commit them.</p>
-    {% endif %}
-  </article>
+    <article class="widget card">
+      <h3>Backup</h3>
+      {% if backup_counts %}
+        <ul>
+          {% for state, count in backup_counts.items() %}
+            <li><span>{{ state }}</span><strong>{{ count }}</strong></li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="muted">No backup work queued.</p>
+      {% endif %}
+    </article>
+
+    <article class="widget card widget-wide widget-wide-2">
+      <h3>Recent operations</h3>
+      {% if recent_history %}
+        <ul>
+          {% for row in recent_history %}
+            <li>
+              <span class="badge {{ 'badge-ok' if row.outcome == 'ok' else 'badge-warn' }}">{{ row.action }}</span>
+              <span class="mono muted">{{ row.dest_relpath }}</span>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="muted">No committed operations yet. Approve proposals in Review, then commit them.</p>
+      {% endif %}
+    </article>
+  </div>
 </div>

@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from librairy.config import Settings
 from librairy.db import connect
 from librairy.lifecycle import transition_item
+from librairy.proposals import EvidenceEntry, upsert_proposal
 from librairy.scanner import scan_root
 from librairy.web.app import create_app
 
@@ -40,7 +41,9 @@ def test_dashboard_counts_update_via_partial(tmp_path: Path) -> None:
     second = client.get("/dashboard/stats")
 
     assert "Inbox clear" in first.text
-    assert "<span>pending</span><strong>1</strong>" in second.text
+    # Plain language, not the database's word for it.
+    assert "needs more information" in second.text
+    assert "pending" not in second.text
 
 
 def test_dashboard_reads_existing_tables_without_engine_mutation(tmp_path: Path) -> None:
@@ -62,9 +65,86 @@ def test_dashboard_empty_state_and_disk_rows_render(tmp_path: Path) -> None:
     response = client.get("/dashboard")
 
     assert "drop files at" in response.text
-    assert "<span>inbox</span>" in response.text
-    assert "<span>appdata</span>" in response.text
+    # All four roots are one volume on a test machine, so they are named
+    # together on one row rather than reported as four separate disks.
+    assert "inbox + library + quarantine + appdata" in response.text
     assert "GB free" in response.text
+
+
+def test_dashboard_keeps_polling_after_the_first_swap(tmp_path: Path) -> None:
+    """hx-swap="outerHTML" replaces the element the attributes are on.
+
+    With the polling attributes on a wrapper, the first response replaced that
+    wrapper with markup that had no hx-trigger, and the dashboard went quiet
+    for good after five seconds.
+    """
+    client, _, _ = setup_client(tmp_path)
+
+    page = client.get("/dashboard")
+    swapped = client.get("/dashboard/stats")
+
+    assert 'hx-trigger="every 5s"' in swapped.text
+    assert 'hx-get="/dashboard/stats"' in swapped.text
+    # And exactly one element claims the id, on the full page too.
+    assert page.text.count('id="dashboard-stats"') == 1
+
+
+def test_dashboard_leads_with_the_thing_that_wants_you(tmp_path: Path) -> None:
+    client, conn, _ = setup_client(tmp_path)
+
+    calm = client.get("/dashboard/stats")
+    conn.execute(
+        """
+        INSERT INTO items(
+          id, root, relpath, size, mtime_ns, fingerprint, first_seen_at, last_seen_at
+        )
+        VALUES (1, 'inbox', 'a.mkv', 1, 1, 'fp', 'now', 'now')
+        """
+    )
+    upsert_proposal(
+        conn,
+        item_id=1,
+        category="movies",
+        clean_name="a.mkv",
+        dest_relpath="Movies/A.mkv",
+        confidence=0.9,
+        evidence=[EvidenceEntry("heuristic", "category", "extension", 0.9)],
+    )
+    busy = client.get("/dashboard/stats")
+
+    assert "Nothing needs you" in calm.text
+    assert "waiting for your review" in busy.text
+    assert 'href="/review"' in busy.text
+    assert "Nothing needs you" not in busy.text
+
+
+def test_dashboard_offers_commit_when_the_queue_is_already_approved(tmp_path: Path) -> None:
+    """Approved-and-uncommitted is its own state: nothing to review, but the
+    files are still sitting in the inbox until you commit."""
+    client, conn, _ = setup_client(tmp_path)
+    conn.execute(
+        """
+        INSERT INTO items(
+          id, root, relpath, size, mtime_ns, fingerprint, first_seen_at, last_seen_at
+        )
+        VALUES (1, 'inbox', 'a.mkv', 1, 1, 'fp', 'now', 'now')
+        """
+    )
+    upsert_proposal(
+        conn,
+        item_id=1,
+        category="movies",
+        clean_name="a.mkv",
+        dest_relpath="Movies/A.mkv",
+        confidence=0.9,
+        evidence=[EvidenceEntry("heuristic", "category", "extension", 0.9)],
+    )
+    conn.execute("UPDATE proposals SET status='approved'")
+
+    response = client.get("/dashboard/stats")
+
+    assert "ready to commit" in response.text
+    assert 'href="/commit"' in response.text
 
 
 def test_dashboard_surfaces_backup_queue_counts(tmp_path: Path) -> None:

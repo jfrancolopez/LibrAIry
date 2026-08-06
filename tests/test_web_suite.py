@@ -48,7 +48,7 @@ def test_full_browser_flow_setup_login_dashboard_logout_blocked(tmp_path: Path) 
     )
     assert setup.headers["location"] == "/dashboard"
     assert SESSION_COOKIE in client.cookies
-    assert "proposals staged" in client.get("/dashboard").text
+    assert "Nothing needs you" in client.get("/dashboard").text
 
     csrf = client.cookies["csrf_token"]
     logout = client.post("/logout", headers={"x-csrf-token": csrf}, follow_redirects=False)

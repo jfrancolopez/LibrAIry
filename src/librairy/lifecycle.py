@@ -70,11 +70,22 @@ def transition_item(conn: sqlite3.Connection, item_id: int, target: str) -> None
     )
 
 
-def state_counts(conn: sqlite3.Connection) -> dict[str, int]:
-    return {
-        row["state"]: row["count"]
-        for row in conn.execute("SELECT state, COUNT(*) AS count FROM items GROUP BY state")
-    }
+def state_counts(conn: sqlite3.Connection, root: str | None = None) -> dict[str, int]:
+    """Item counts per state, optionally for one root only.
+
+    Worth asking for a root: a committed library file sits in 'discovered'
+    forever, because that is what an ordinary indexed library file is. Counted
+    together with the inbox it reads as an enormous unidentified backlog — 140
+    already-filed files on the author's machine, reported as work outstanding.
+    """
+    if root is None:
+        rows = conn.execute("SELECT state, COUNT(*) AS count FROM items GROUP BY state")
+    else:
+        rows = conn.execute(
+            "SELECT state, COUNT(*) AS count FROM items WHERE root=? GROUP BY state",
+            (root,),
+        )
+    return {row["state"]: row["count"] for row in rows}
 
 
 def should_reset_for_fingerprint_change(state: str) -> bool:

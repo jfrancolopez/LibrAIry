@@ -46,6 +46,7 @@
   --text-lg: 1.2rem;
   --text-xl: 1.55rem;
   --text-2xl: 2.1rem;
+  --text-3xl: 3.6rem;       /* the one number a page is actually about */
   --radius-ui: 4px;
   --measure: 72ch;          /* readable cap for prose, not for grids */
   --shell-max: 1760px;      /* usable width on a 32" display */
@@ -385,17 +386,73 @@ button, .btn { justify-self: start; }
 }
 
 /* ---- Search box (dashboard) ------------------------------------------ */
+/* Was 3.25rem tall with 1.5rem above and below — 100px spent on the second
+   thing you came for, ahead of the first. Still comfortably clickable. */
 .search-hero {
   display: flex;
   gap: var(--space-3);
-  margin: var(--space-5) 0;
+  margin: 0 0 var(--space-4);
 }
 .search-hero input[type="search"] {
   flex: 1 1 auto;
-  font-size: var(--text-lg);
-  min-height: 3.25rem;
+  font-size: var(--text-base);
+  min-height: 2.75rem;
 }
-.search-hero button { min-height: 3.25rem; padding-inline: var(--space-5); }
+.search-hero button { min-height: 2.75rem; padding-inline: var(--space-5); }
+
+/* ---- Dashboard hero --------------------------------------------------- */
+/* Seven cards of equal weight mean reading all seven to learn whether
+   anything wants you. One figure, one sentence, one button answers that
+   before your eye has to work, and the widgets below stay available for when
+   you actually want the detail. */
+.hero {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-5);
+  margin-bottom: var(--space-5);
+  padding: var(--space-5);
+  border: var(--border-thin) solid var(--border);
+  border-radius: var(--radius-ui);
+  background: var(--bg-metric);
+}
+.hero-act { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent-glow); }
+.hero-figure {
+  margin: 0;
+  font-size: var(--text-3xl);
+  font-weight: 700;
+  line-height: 1;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+.hero-calm .hero-figure { color: var(--ok); }
+.hero-copy { flex: 1 1 20rem; min-width: 0; }
+/* The page's h1 lives here, so it needs the h1's own bottom margin removed. */
+.hero-copy h1 { margin: 0 0 var(--space-1); font-size: var(--text-xl); }
+.hero-copy p { margin: 0 0 var(--space-3); max-width: var(--measure); }
+.hero-copy .btn + .btn { margin-left: var(--space-2); }
+/* Fitts's law: the action you take most often is the easiest to hit. */
+.btn-lg { min-height: 3rem; padding-inline: var(--space-5); font-size: var(--text-lg); }
+
+/* ---- Disk meters ------------------------------------------------------ */
+/* Bar length is judged pre-attentively; a percentage has to be read and
+   compared. The number stays for when you want the exact figure. */
+.volume-list { display: grid; gap: var(--space-2); }
+/* `.widget li` is `display: flex; justify-content: space-between`, and it
+   out-specifies a bare `.volume`, which squeezed the bar to a three-pixel
+   sliver between the name and the figure. */
+.widget li.volume { display: grid; grid-template-columns: 1fr; gap: var(--space-1); }
+.volume-name { font-weight: 600; }
+.meter {
+  display: block;
+  height: 0.5rem;
+  border: var(--border-thin) solid var(--border);
+  border-radius: var(--radius-ui);
+  background: var(--bg-input);
+  overflow: hidden;
+}
+.meter-fill { display: block; height: 100%; background: var(--accent-2); }
+.meter.is-low .meter-fill { background: var(--warn); }
 
 /* ---- Tables ----------------------------------------------------------- */
 table { width: 100%; border-collapse: collapse; }
