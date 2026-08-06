@@ -9,6 +9,7 @@ from librairy.config import Settings
 from librairy.db import database_path
 from librairy.paths import validate_relpath
 from librairy.planner import utc_now
+from librairy.taxonomy import CATEGORIES
 from librairy.tools.rclone import RcloneStatus, check_command, copy_command, rclone_status, run
 
 MAX_BACKUP_ATTEMPTS = 3
@@ -48,6 +49,92 @@ def configured_remotes(settings: Settings) -> list[str]:
     return [f"{section}:" for section in parser.sections()]
 
 
+@dataclass(frozen=True)
+class CategorySize:
+    """What one category would cost to back up."""
+
+    category: str
+    files: int
+    bytes: int
+    selected: bool
+
+    @property
+    def size_label(self) -> str:
+        value = float(self.bytes)
+        for unit in ("B", "KB", "MB", "GB", "TB"):
+            if value < 1024 or unit == "TB":
+                return f"{value:.0f} {unit}" if unit == "B" else f"{value:.1f} {unit}"
+            value /= 1024
+        return ""
+
+
+def selected_categories(settings: Settings) -> set[str]:
+    """Categories to back up. Empty configuration means all of them.
+
+    Empty has to mean "everything" rather than "nothing": it is the default,
+    and a default that silently backs up nothing is the worst possible answer
+    to "is my library safe".
+    """
+    chosen = {part.strip() for part in settings.backup_categories.split(",") if part.strip()}
+    return chosen or set(CATEGORIES)
+
+
+def category_sizes(conn: sqlite3.Connection, settings: Settings) -> list[CategorySize]:
+    """Per-category file count and bytes in the library, for the picker.
+
+    Counting from the index rather than the filesystem: this renders on every
+    Settings page load, and walking a NAS-backed library to draw a form is not
+    a trade anyone would make.
+    """
+    chosen = selected_categories(settings)
+    rows = {
+        row["category"]: (row["files"], row["bytes"] or 0)
+        for row in conn.execute(
+            """
+            SELECT s.category, COUNT(*) AS files, SUM(i.size) AS bytes
+            FROM search_fts s JOIN items i ON i.id = s.item_id
+            WHERE i.root = 'library' AND i.missing_since IS NULL
+            GROUP BY s.category
+            """
+        )
+    }
+    return [
+        CategorySize(
+            category=category,
+            files=rows.get(category, (0, 0))[0],
+            bytes=rows.get(category, (0, 0))[1],
+            selected=category in chosen,
+        )
+        for category in CATEGORIES
+    ]
+
+
+def item_category(conn: sqlite3.Connection, item_id: int) -> str:
+    row = conn.execute(
+        """
+        SELECT category FROM proposals
+        WHERE item_id=? AND status != 'superseded'
+        ORDER BY id DESC LIMIT 1
+        """,
+        (item_id,),
+    ).fetchone()
+    return str(row["category"]) if row else ""
+
+
+def should_back_up(conn: sqlite3.Connection, settings: Settings, item_id: int) -> bool:
+    """Whether this file is in the selected set.
+
+    Unconfigured means everything, and everything includes files with no
+    category at all — the default must never quietly leave something out of a
+    backup you believe is complete. Once a deliberate subset is chosen, an
+    uncategorised file is not in it, because nobody asked for it and off-site
+    storage is metered.
+    """
+    if not settings.backup_categories.strip():
+        return True
+    return item_category(conn, item_id) in selected_categories(settings)
+
+
 def enqueue_backup_item(
     conn: sqlite3.Connection,
     settings: Settings,
@@ -57,6 +144,8 @@ def enqueue_backup_item(
     fingerprint: str,
 ) -> bool:
     if not settings.backup_enabled:
+        return False
+    if not should_back_up(conn, settings, item_id):
         return False
     cursor = conn.execute(
         """

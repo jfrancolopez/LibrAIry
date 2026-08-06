@@ -115,12 +115,58 @@
 
   <div class="tab-panel" data-tab-panel="system">
   <h2 id="backup">One-Way Backup</h2>
+  <p class="muted">
+    After each commit, LibrAIry copies newly filed files to a remote you have already
+    configured in rclone, verifies each copy, and stops there. <strong>One-way</strong> means
+    exactly that: nothing is ever read back, changed, or deleted at either end. It is a
+    safety net against losing this machine, not a sync — edit a file on the remote and
+    LibrAIry will neither notice nor object.
+  </p>
   <label><input type="checkbox" name="backup_enabled" {% if settings_view.backup.enabled %}checked{% endif %}> Enable rclone copy-out backup</label>
+
+  <h3>What gets copied</h3>
+  <p class="muted">
+    Only files already committed to your library — never the inbox, never quarantine.
+    Sizes are what is there today; the backup grows as you commit more.
+  </p>
+  {% set chosen = backup_categories | selectattr('selected') | list %}
+  <div class="grid backup-grid">
+    {% for entry in backup_categories %}
+      <label class="backup-pick{% if not entry.files %} is-empty{% endif %}">
+        <input type="checkbox" name="backup_category_{{ entry.category }}" {% if entry.selected %}checked{% endif %}>
+        <span class="backup-name">{{ entry.category }}</span>
+        <span class="muted">{{ entry.files }} file(s) · {{ entry.size_label or '0 B' }}</span>
+      </label>
+    {% endfor %}
+  </div>
+  <p class="muted">
+    Selected now: <strong>{{ chosen | sum(attribute='files') }} file(s)</strong>,
+    about <strong>{{ backup_categories | selectattr('selected') | sum(attribute='bytes') | filesizeformat }}</strong>
+    on first run. After that only new files are sent.
+  </p>
+  <p class="muted">
+    Worth thinking about: <strong>photos and documents</strong> are usually irreplaceable and
+    small — back those up first. <strong>Movies and shows</strong> are usually large and can be
+    obtained again, and are what makes a metered remote expensive. Leaving every box ticked
+    means everything, including categories added in future releases.
+  </p>
+
+  <h3>Where and how</h3>
   <label>Remote <input name="backup_remote" value="{{ settings_view.backup.remote }}" placeholder="b2:librairy-backup" list="backup-remotes"></label>
   <datalist id="backup-remotes">
     {% for remote in backup_remotes %}<option value="{{ remote }}">{% endfor %}
   </datalist>
+  <p class="muted">
+    {% if backup_remotes %}
+      Remotes found in your rclone config: {% for remote in backup_remotes %}<code>{{ remote }}</code>{% if not loop.last %}, {% endif %}{% endfor %}.
+    {% else %}
+      No rclone remotes configured yet. Run <code>rclone config</code> against
+      <code>appdata/rclone/rclone.conf</code> to add one — LibrAIry never asks for
+      cloud credentials and has no field to type them into.
+    {% endif %}
+  </p>
   <label>Bandwidth limit <input name="backup_bandwidth_limit" value="{{ settings_view.backup.bandwidth_limit }}" placeholder="optional, e.g. 2M"></label>
+  <p class="muted">Caps the upload so a backup does not saturate your connection. <code>2M</code> is 2 MB/s.</p>
   <label>Schedule
     <select name="backup_schedule">
       <option value="after_commit" {% if settings_view.backup.schedule == 'after_commit' %}selected{% endif %}>after_commit</option>
@@ -128,7 +174,7 @@
     </select>
   </label>
   <label><input type="checkbox" name="backup_include_db_snapshot" {% if settings_view.backup.include_db_snapshot %}checked{% endif %}> Include SQLite snapshot</label>
-  <p class="muted">No credential fields exist here. Configure remotes in appdata/rclone/rclone.conf with rclone itself.</p>
+  <p class="muted">A copy of LibrAIry's own database, so a rebuilt machine remembers what it filed and can still undo it. Kilobytes, and worth having.</p>
 
   </div>
 

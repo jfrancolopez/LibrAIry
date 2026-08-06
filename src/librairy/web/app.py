@@ -95,6 +95,20 @@ from librairy.web.thumbs import (
     thumbnail_media_type,
 )
 
+
+def _backup_categories(form) -> str:  # noqa: ANN001 - starlette FormData
+    """The ticked categories, or empty when all of them are.
+
+    Storing "everything" as the empty string keeps one meaning for the default
+    and means a category introduced in a later release is backed up too,
+    instead of quietly missing from a backup that looks complete.
+    """
+    chosen = [name for name in REVIEW_CATEGORIES if f"backup_category_{name}" in form]
+    if not chosen or len(chosen) == len(REVIEW_CATEGORIES):
+        return ""
+    return ",".join(sorted(chosen))
+
+
 PACKAGE_DIR = Path(__file__).parent
 TEMPLATES = Jinja2Templates(directory=PACKAGE_DIR / "templates")
 EXEMPT_PATHS = {"/", "/login", "/setup", "/healthz"}
@@ -349,6 +363,11 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
                     "bandwidth_limit": str(form.get("backup_bandwidth_limit", "")).strip(),
                     "schedule": str(form.get("backup_schedule", "after_commit")).strip(),
                     "include_db_snapshot": "backup_include_db_snapshot" in form,
+                    # Every box ticked is stored as empty, which is the default
+                    # and means "everything" — so a category added in a later
+                    # release is included rather than silently left out of a
+                    # backup someone believes is complete.
+                    "categories": _backup_categories(form),
                 },
             )
             for category in settings_page_data(conn, settings)["template_options"]:

@@ -88,6 +88,11 @@ class Settings(BaseSettings):
     backup_bandwidth_limit: str = Field("", alias="BACKUP_BANDWIDTH_LIMIT")
     backup_schedule: str = Field("after_commit", alias="BACKUP_SCHEDULE")
     backup_include_db_snapshot: bool = Field(True, alias="BACKUP_INCLUDE_DB_SNAPSHOT")
+    # Comma-separated category names, or empty for everything. Off-site storage
+    # is usually metered, and a photo library and a film collection are not the
+    # same proposition — one is irreplaceable and small, the other is large and
+    # can be downloaded again.
+    backup_categories: str = Field("", alias="BACKUP_CATEGORIES")
     auth_required: bool = Field(False, alias="AUTH_REQUIRED")
 
     ENV_EXAMPLE: ClassVar[tuple[str, ...]] = (

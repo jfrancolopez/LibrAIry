@@ -3,10 +3,20 @@ from __future__ import annotations
 from pathlib import Path
 from subprocess import CompletedProcess
 
-from librairy.backup import backup_status, enqueue_backup_item, run_backup_once, snapshot_database
+from librairy.backup import (
+    backup_status,
+    category_sizes,
+    enqueue_backup_item,
+    run_backup_once,
+    selected_categories,
+    snapshot_database,
+)
 from librairy.config import Settings
 from librairy.db import SCHEMA_VERSION, connect, user_version
 from librairy.locks import acquire_lock
+from librairy.proposals import EvidenceEntry, upsert_proposal
+from librairy.search import sync_search_item
+from librairy.taxonomy import CATEGORIES
 from librairy.tools.rclone import (
     RcloneError,
     check_command,
@@ -232,3 +242,89 @@ def test_backup_runner_pauses_when_unavailable(tmp_path: Path) -> None:
 
     assert summary.paused is True
     assert summary.warning
+
+
+def test_choosing_categories_leaves_the_rest_out_of_the_queue(tmp_path: Path) -> None:
+    """Off-site storage is metered, and a photo library and a film collection
+    are not the same proposition — one is irreplaceable and small, the other is
+    large and can be obtained again."""
+    settings = settings_for(tmp_path)
+    conn = connect(settings)
+    chosen = settings.model_copy(update={"backup_enabled": True, "backup_categories": "photos"})
+    for item_id, category in ((1, "photos"), (2, "movies")):
+        conn.execute(
+            """
+            INSERT INTO items(id, root, relpath, size, mtime_ns, fingerprint,
+                              first_seen_at, last_seen_at)
+            VALUES (?, 'library', ?, 10, 1, ?, 'now', 'now')
+            """,
+            (item_id, f"{category}/a-{item_id}.bin", f"fp{item_id}"),
+        )
+        upsert_proposal(
+            conn,
+            item_id=item_id,
+            category=category,
+            clean_name=f"a-{item_id}.bin",
+            dest_relpath=f"{category}/a-{item_id}.bin",
+            confidence=0.9,
+            evidence=[EvidenceEntry("heuristic", "category", "ext", 0.9)],
+        )
+
+    queued = [
+        enqueue_backup_item(
+            conn, chosen, item_id=item_id, relpath=f"x-{item_id}", fingerprint=f"fp{item_id}"
+        )
+        for item_id in (1, 2)
+    ]
+
+    assert queued == [True, False]
+    rows = [row["item_id"] for row in conn.execute("SELECT item_id FROM backup_queue")]
+    assert rows == [1]
+
+
+def test_selecting_nothing_means_everything_not_nothing(tmp_path: Path) -> None:
+    """The default must never quietly leave files out of a backup you believe
+    is complete — including files with no category at all."""
+    settings = settings_for(tmp_path)
+    conn = connect(settings)
+    enabled = settings.model_copy(update={"backup_enabled": True, "backup_categories": ""})
+    conn.execute(
+        """
+        INSERT INTO items(id, root, relpath, size, mtime_ns, fingerprint,
+                          first_seen_at, last_seen_at)
+        VALUES (1, 'library', 'odd/thing.bin', 10, 1, 'fp1', 'now', 'now')
+        """
+    )
+
+    assert selected_categories(enabled) == set(CATEGORIES)
+    assert enqueue_backup_item(conn, enabled, item_id=1, relpath="x", fingerprint="fp1") is True
+
+
+def test_category_sizes_report_what_each_choice_costs(tmp_path: Path) -> None:
+    settings = settings_for(tmp_path)
+    conn = connect(settings)
+    conn.execute(
+        """
+        INSERT INTO items(id, root, relpath, size, mtime_ns, fingerprint,
+                          first_seen_at, last_seen_at)
+        VALUES (1, 'library', 'Photos/a.jpg', 1572864, 1, 'fp1', 'now', 'now')
+        """
+    )
+    upsert_proposal(
+        conn,
+        item_id=1,
+        category="photos",
+        clean_name="a.jpg",
+        dest_relpath="Photos/a.jpg",
+        confidence=0.9,
+        evidence=[EvidenceEntry("heuristic", "category", "ext", 0.9)],
+    )
+    sync_search_item(conn, 1)
+
+    sizes = {entry.category: entry for entry in category_sizes(conn, settings)}
+
+    assert sizes["photos"].files == 1
+    assert sizes["photos"].size_label == "1.5 MB"
+    # Every category is listed, including the empty ones you might file into later.
+    assert set(sizes) == set(CATEGORIES)
+    assert sizes["movies"].files == 0

@@ -10,7 +10,10 @@ from librairy.ai.registry import provider_chain
 from librairy.classify import analyze_items
 from librairy.config import Settings
 from librairy.db import connect
+from librairy.proposals import EvidenceEntry, upsert_proposal
+from librairy.search import sync_search_item
 from librairy.settings_service import effective_settings, runtime_settings, save_settings
+from librairy.taxonomy import CATEGORIES
 from librairy.web import health as health_module
 from librairy.web.app import create_app
 
@@ -949,3 +952,69 @@ def test_lmstudio_test_skips_the_round_trip_when_the_model_is_not_listed(
     )
 
     assert "has not loaded" in response.text
+
+
+def test_backup_picker_shows_every_category_with_its_size(tmp_path: Path) -> None:
+    """"Include movies" should be a decision with a number attached, not a
+    guess about how much of a metered remote it will eat."""
+    client, conn, _ = client_for(tmp_path)
+    conn.execute(
+        """
+        INSERT INTO items(id, root, relpath, size, mtime_ns, fingerprint,
+                          first_seen_at, last_seen_at)
+        VALUES (1, 'library', 'Photos/a.jpg', 1572864, 1, 'fp1', 'now', 'now')
+        """
+    )
+    upsert_proposal(
+        conn,
+        item_id=1,
+        category="photos",
+        clean_name="a.jpg",
+        dest_relpath="Photos/a.jpg",
+        confidence=0.9,
+        evidence=[EvidenceEntry("heuristic", "category", "ext", 0.9)],
+    )
+    sync_search_item(conn, 1)
+
+    body = client.get("/settings").text
+
+    assert 'name="backup_category_photos"' in body
+    assert 'name="backup_category_movies"' in body
+    assert "1.5 MB" in body
+    # And it explains what one-way actually means before you switch it on.
+    assert "nothing is ever read back" in body
+
+
+def test_unticking_a_backup_category_is_saved_and_ticking_all_means_default(
+    tmp_path: Path,
+) -> None:
+    client, conn, _ = client_for(tmp_path)
+    base = {
+        "confidence_threshold": "0.8",
+        "batch_size": "50",
+        "backup_enabled": "on",
+        "use_fingerprints": "on",
+    }
+    everything = {f"backup_category_{name}": "on" for name in CATEGORIES}
+
+    client.post(
+        "/settings",
+        data={**base, "backup_category_photos": "on", "backup_category_documents": "on"},
+        headers={"x-csrf-token": client.cookies["csrf_token"]},
+    )
+    subset = _setting(conn, "backup.categories")
+    client.post(
+        "/settings",
+        data={**base, **everything},
+        headers={"x-csrf-token": client.cookies["csrf_token"]},
+    )
+    all_of_them = _setting(conn, "backup.categories")
+
+    assert subset == "documents,photos"
+    # Everything is stored as the default, so a category added later is included.
+    assert all_of_them == ""
+
+
+def _setting(conn, key: str) -> str:
+    row = conn.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
+    return json.loads(row["value"]) if row else ""
