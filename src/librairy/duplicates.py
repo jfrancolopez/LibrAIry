@@ -481,6 +481,60 @@ def record_reports(conn: sqlite3.Connection, settings: Settings, candidates) -> 
     return written
 
 
+def record_similar_reports(conn: sqlite3.Connection, settings: Settings) -> int:
+    """Reports for the pairs only czkawka found.
+
+    These never match on their bytes, so the exact pass never sees them — and
+    they are the pairs where a comparison earns its keep. Two encodes of one
+    song, a screenshot and its resize: the question is which one you want, and
+    that is answered by the resolution and the bitrate, not by a hash.
+    """
+    rows = conn.execute(
+        """
+        SELECT f.item_id, f.similar_item_id
+        FROM similar_media_flags f
+        JOIN items a ON a.id = f.item_id
+        JOIN items b ON b.id = f.similar_item_id
+        WHERE f.status = 'review'
+          AND a.missing_since IS NULL AND b.missing_since IS NULL
+          AND (a.root = 'inbox' OR b.root = 'inbox')
+        """
+    ).fetchall()
+    written = 0
+    for row in rows:
+        left = _item(conn, int(row["item_id"]))
+        right = _item(conn, int(row["similar_item_id"]))
+        if left is None or right is None:
+            continue
+        # The inbox copy is the one being decided about, so it is always the
+        # left-hand column; a report keyed the other way round would render
+        # "In your inbox" over a file that has been filed for years.
+        duplicate, keeper = (left, right) if left.root == "inbox" else (right, left)
+        if duplicate.root == keeper.root:
+            continue
+        save_report(conn, compare(conn, settings, duplicate, keeper, rmlint=NOT_ASKED))
+        written += 1
+    return written
+
+
+def _item(conn: sqlite3.Connection, item_id: int) -> Item | None:
+    row = conn.execute("SELECT * FROM items WHERE id=?", (item_id,)).fetchone()
+    if row is None:
+        return None
+    return Item(
+        id=row["id"],
+        root=row["root"],
+        relpath=row["relpath"],
+        size=row["size"],
+        mtime_ns=row["mtime_ns"],
+        fingerprint=row["fingerprint"],
+        state=row["state"],
+        first_seen_at=row["first_seen_at"],
+        last_seen_at=row["last_seen_at"],
+        missing_since=row["missing_since"],
+    )
+
+
 def save_report(conn: sqlite3.Connection, report: DuplicateReport) -> None:
     conn.execute(
         """
@@ -588,6 +642,7 @@ __all__ = [
     "compare",
     "items_with_reports",
     "record_reports",
+    "record_similar_reports",
     "reports_for_item",
     "save_report",
 ]

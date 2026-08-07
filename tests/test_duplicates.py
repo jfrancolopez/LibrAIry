@@ -310,3 +310,53 @@ def test_the_payload_is_plain_json_a_person_can_read(tmp_path: Path) -> None:
         "czkawka",
         "size",
     }
+
+
+def test_czkawka_only_pairs_get_a_report_too(tmp_path: Path) -> None:
+    """These never match on bytes, so the exact pass never sees them -- and
+    they are the pairs where a comparison earns its keep."""
+    from librairy.duplicates import record_similar_reports
+
+    settings = settings_for(tmp_path)
+    conn = connect(settings)
+    insert(conn, item(1, "library", "Photos/holiday.jpg", fingerprint="fp-a"))
+    insert(conn, item(2, "inbox", "holiday.jpg", fingerprint="fp-b", size=2048))
+    conn.execute(
+        """
+        INSERT INTO similar_media_flags(item_id, similar_item_id, kind, score, created_at)
+        VALUES (1, 2, 'image', 0.91, ?)
+        """,
+        (utc_now(),),
+    )
+
+    written = record_similar_reports(conn, settings)
+
+    assert written == 1
+    # Keyed inbox-first whichever way round the flag was stored, or the panel
+    # would label a long-filed library file "In your inbox".
+    report = reports_for_item(conn, 2)[0]
+    assert report.other_id == 1
+    assert by_tool(report, "czkawka").verdict == SIMILAR
+    assert by_tool(report, "fingerprint").verdict == DIFFERENT
+    assert reports_for_item(conn, 1) == []
+
+
+def test_two_inbox_files_flagged_as_similar_are_not_a_library_comparison(
+    tmp_path: Path,
+) -> None:
+    """Nothing to compare against: neither copy is the one you already keep."""
+    from librairy.duplicates import record_similar_reports
+
+    settings = settings_for(tmp_path)
+    conn = connect(settings)
+    insert(conn, item(1, "inbox", "a.jpg", fingerprint="fp-a"))
+    insert(conn, item(2, "inbox", "b.jpg", fingerprint="fp-b"))
+    conn.execute(
+        """
+        INSERT INTO similar_media_flags(item_id, similar_item_id, kind, score, created_at)
+        VALUES (1, 2, 'image', 0.91, ?)
+        """,
+        (utc_now(),),
+    )
+
+    assert record_similar_reports(conn, settings) == 0
