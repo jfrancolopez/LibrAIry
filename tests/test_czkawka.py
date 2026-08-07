@@ -55,3 +55,29 @@ def test_czkawka_extensions_change_invocation(tmp_path: Path, monkeypatch) -> No
     # extension, excludes every supported type, and silently reports no groups.
     assert calls[0][-4:] == ["-x", "jpg", "-x", "png"]
     assert "jpg,png" not in calls[0]
+
+
+def test_every_root_gets_its_own_directory_flag(tmp_path: Path, monkeypatch) -> None:
+    """czkawka 11 reads a second path after one -d as a stray positional and
+    refuses the command, so the scan never ran once. Same shape as the -x bug
+    above; the argv is the only place this can be caught."""
+    seen: list[list[str]] = []
+
+    class _Done:
+        returncode = 0
+        stderr = ""
+
+    def fake_run(command, **kwargs):  # noqa: ANN001, ANN202, ARG001
+        seen.append(command)
+        Path(command[command.index("-C") + 1]).write_text("[]", encoding="utf-8")
+        return _Done()
+
+    monkeypatch.setattr("librairy.tools.czkawka.shutil.which", lambda _name: "/usr/bin/czkawka_cli")
+    monkeypatch.setattr("librairy.tools.czkawka.subprocess.run", fake_run)
+
+    similar_media([tmp_path / "inbox", tmp_path / "library"], "image", settings_for(tmp_path))
+
+    command = seen[0]
+    assert command.count("-d") == 2
+    directories = [command[i + 1] for i, arg in enumerate(command) if arg == "-d"]
+    assert directories == [(tmp_path / "inbox").as_posix(), (tmp_path / "library").as_posix()]

@@ -110,9 +110,13 @@ def detect_similar_media(
     roots = [settings.inbox_dir, settings.library_dir]
     result = (scan or similar_media)(roots, mode, settings)
     if not result.ok:
-        if result.error and result.error.startswith("missing binary"):
-            _mark_czkawka_unavailable(conn, result.error)
+        # Any failure, not just a missing binary. A rejected command line is
+        # just as dead as an absent tool and used to be swallowed in silence --
+        # which is how a broken -d argument went unnoticed while the comparison
+        # panel reported "nothing flagged" for every pair.
+        _mark_czkawka_unavailable(conn, result.error or "czkawka failed")
         return 0
+    _clear_czkawka_warning(conn)
     if not isinstance(result.data, list):
         return 0
     path_to_item = _path_map(conn, settings)
@@ -241,6 +245,14 @@ def _mark_czkawka_unavailable(conn: sqlite3.Connection, error: str) -> None:
             "INSERT INTO worker_state(key, value) VALUES (?, ?)",
             ("dedup.czkawka.warning", json.dumps(error)),
         )
+
+
+def _clear_czkawka_warning(conn: sqlite3.Connection) -> None:
+    """A scan that ran must clear a warning left by one that did not."""
+    conn.execute(
+        "INSERT OR REPLACE INTO worker_state(key, value) VALUES ('dedup.czkawka.available', 'true')"
+    )
+    conn.execute("DELETE FROM worker_state WHERE key='dedup.czkawka.warning'")
 
 
 def _path_for(settings: Settings, item: Item) -> Path:

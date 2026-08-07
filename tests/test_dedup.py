@@ -186,3 +186,49 @@ def test_disabling_czkawka_skips_scan(tmp_path: Path) -> None:
         raise AssertionError("czkawka should be skipped")
 
     assert detect_similar_media(conn, settings, scan=fail_if_called) == 0
+
+
+def test_a_czkawka_that_refuses_the_command_is_recorded_not_swallowed(tmp_path: Path) -> None:
+    """A rejected command line is as dead as a missing binary.
+
+    Only "missing binary" used to be recorded, so a wrong -d argument left
+    czkawka silently doing nothing for every cycle while the comparison panel
+    reported "nothing flagged" on every pair.
+    """
+    settings = settings_for(tmp_path)
+    conn = connect(settings)
+
+    inserted = detect_similar_media(
+        conn,
+        settings,
+        scan=lambda roots, mode, s: ToolResult(  # noqa: ARG005
+            False, error="error: unexpected argument '/data/library' found"
+        ),
+    )
+
+    assert inserted == 0
+    assert conn.execute(
+        "SELECT value FROM worker_state WHERE key='dedup.czkawka.available'"
+    ).fetchone()[0] == "false"
+    warning = conn.execute(
+        "SELECT value FROM worker_state WHERE key='dedup.czkawka.warning'"
+    ).fetchone()[0]
+    assert "unexpected argument" in warning
+
+
+def test_a_scan_that_runs_clears_an_earlier_warning(tmp_path: Path) -> None:
+    settings = settings_for(tmp_path)
+    conn = connect(settings)
+    detect_similar_media(
+        conn, settings, scan=lambda r, m, s: ToolResult(False, error="broken")  # noqa: ARG005
+    )
+
+    detect_similar_media(conn, settings, scan=lambda r, m, s: ToolResult(True, data=[]))  # noqa: ARG005
+
+    assert conn.execute(
+        "SELECT value FROM worker_state WHERE key='dedup.czkawka.available'"
+    ).fetchone()[0] == "true"
+    assert (
+        conn.execute("SELECT value FROM worker_state WHERE key='dedup.czkawka.warning'").fetchone()
+        is None
+    )

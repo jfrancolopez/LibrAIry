@@ -33,11 +33,14 @@ def similar_media(roots: list[Path], mode: str, settings: Settings) -> ToolResul
         return ToolResult(False, error=f"missing binary: {binary}")
     with tempfile.TemporaryDirectory(prefix="librairy-czkawka-") as temp_dir:
         output_path = Path(temp_dir) / "czkawka.json"
-        command = [
-            binary,
-            mode,
-            "-d",
-            *[posix_path(root) for root in roots],
+        command = [binary, mode]
+        # One directory per -d flag, exactly like -x below. Passing them as a
+        # list after a single -d made czkawka read the second root as a stray
+        # positional and refuse the whole command, so the scan never ran once:
+        # "error: unexpected argument '/data/library' found".
+        for root in roots:
+            command += ["-d", posix_path(root)]
+        command += [
             "-C",
             posix_path(output_path),
             # czkawka exits non-zero when it *finds* something; without this a

@@ -13,8 +13,14 @@ def duplicates(paths: list[Path], settings: Settings) -> ToolResult:
     command = [
         "rmlint",
         "--types=duplicates",
+        # json:stdout, not json:- . rmlint reads everything after the colon as
+        # a *filename*, so "-" wrote the report to a file literally called "-"
+        # in the working directory and left stdout empty. The parse then failed,
+        # the agreed-pairs set came back empty, and every fingerprint match was
+        # recorded as "rmlint disagrees" -- which is the check that has to pass
+        # before a duplicate is staged. Nothing was ever staged.
         "-o",
-        "json:-",
+        "json:stdout",
         *[posix_path(path) for path in paths],
     ]
     return run_json_tool(command, settings)
