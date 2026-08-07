@@ -127,6 +127,8 @@ def detect_similar_media(
             right = path_to_item.get(right_path)
             if left is None or right is None or left.id == right.id:
                 continue
+            if in_disc_structure(left.relpath) or in_disc_structure(right.relpath):
+                continue
             first, second = sorted((left, right), key=lambda item: item.id)
             cursor = conn.execute(
                 """
@@ -174,7 +176,7 @@ def _fingerprint_pairs(conn: sqlite3.Connection) -> list[tuple[Item, Item]]:
     rows = [_item_from_row(row) for row in conn.execute(_DUP_QUERY)]
     groups: dict[str, list[Item]] = {}
     for row in rows:
-        if row.fingerprint:
+        if row.fingerprint and not in_disc_structure(row.relpath):
             groups.setdefault(row.fingerprint, []).append(row)
     pairs: list[tuple[Item, Item]] = []
     for group in groups.values():
@@ -185,6 +187,20 @@ def _fingerprint_pairs(conn: sqlite3.Connection) -> list[tuple[Item, Item]]:
             (keeper, item) for item in group if item.id != keeper.id and item.root == "inbox"
         )
     return pairs
+
+
+# A DVD or Blu-ray rip keeps deliberate copies of its own metadata: every
+# .IFO has a byte-identical .BUP beside it, and a player falls back to the
+# .BUP when the .IFO will not read. They are duplicates by specification, and
+# quarantining one is not tidying up — it is damaging the disc. Found on a real
+# inbox, where two such pairs had been staged for exactly that.
+DISC_DIRECTORIES = frozenset({"VIDEO_TS", "AUDIO_TS", "BDMV", "CERTIFICATE"})
+
+
+def in_disc_structure(relpath: str) -> bool:
+    """True for a file inside a DVD/Blu-ray folder, where copies are the format."""
+    parts = relpath.replace("\\", "/").split("/")[:-1]
+    return any(part.upper() in DISC_DIRECTORIES for part in parts)
 
 
 def _keeper(group: list[Item]) -> Item:

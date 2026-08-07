@@ -232,3 +232,57 @@ def test_a_scan_that_runs_clears_an_earlier_warning(tmp_path: Path) -> None:
         conn.execute("SELECT value FROM worker_state WHERE key='dedup.czkawka.warning'").fetchone()
         is None
     )
+
+
+def test_a_dvd_backup_file_is_not_offered_as_a_duplicate(tmp_path: Path) -> None:
+    """Every .IFO on a DVD has a byte-identical .BUP beside it, on purpose.
+
+    A player falls back to the .BUP when the .IFO will not read, so they are
+    duplicates by specification and quarantining one damages the disc. Found on
+    a real inbox, where two such pairs had been paired for exactly that.
+    """
+    settings = settings_for(tmp_path)
+    conn = connect(settings)
+    disc = "Queen 1979 - DVD5/VIDEO_TS"
+    insert_item(conn, "inbox", f"{disc}/VIDEO_TS.IFO", "same")
+    insert_item(conn, "inbox", f"{disc}/VIDEO_TS.BUP", "same")
+    # A genuine duplicate outside the disc must still be found.
+    insert_item(conn, "library", "Movies/keep.mkv", "other")
+    insert_item(conn, "inbox", "copy.mkv", "other")
+
+    candidates = detect_exact_duplicates(conn, settings, rmlint_check=agreeing_rmlint)
+
+    assert [c.duplicate.relpath for c in candidates] == ["copy.mkv"]
+
+
+def test_czkawka_does_not_flag_files_inside_a_disc_either(tmp_path: Path) -> None:
+    settings = settings_for(tmp_path)
+    conn = connect(settings)
+    insert_item(conn, "inbox", "Disc/VIDEO_TS/VTS_01_1.VOB", None)
+    insert_item(conn, "library", "Movies/Disc/VIDEO_TS/VTS_01_1.VOB", None)
+    group = SimilarMediaGroup(
+        (
+            SimilarMediaFile((settings.inbox_dir / "Disc/VIDEO_TS/VTS_01_1.VOB").as_posix(), 0.99),
+            SimilarMediaFile(
+                (settings.library_dir / "Movies/Disc/VIDEO_TS/VTS_01_1.VOB").as_posix(), 0.99
+            ),
+        )
+    )
+
+    inserted = detect_similar_media(
+        conn, settings, scan=lambda roots, mode, s: ToolResult(True, data=[group])  # noqa: ARG005
+    )
+
+    assert inserted == 0
+
+
+def test_disc_detection_reads_folders_not_filenames() -> None:
+    from librairy.dedup import in_disc_structure
+
+    assert in_disc_structure("Film/VIDEO_TS/VTS_01_0.IFO")
+    assert in_disc_structure("Film/video_ts/VTS_01_0.IFO"), "case varies between rippers"
+    assert in_disc_structure("Disc/BDMV/STREAM/00000.m2ts")
+    # The name alone is not a disc: a stray file called VIDEO_TS.IFO in a
+    # download folder is just a file, and a real duplicate of it is real.
+    assert not in_disc_structure("Downloads/VIDEO_TS.IFO")
+    assert not in_disc_structure("holiday.jpg")
