@@ -155,6 +155,29 @@ Exact duplicates are staged for reversible quarantine review. Similar media flag
 are informational and require human judgment. LibrAIry never deletes duplicate
 files.
 
+## Ripped discs
+
+A DVD folder arrives as `VIDEO_TS.IFO`, `VIDEO_TS.BUP`, a row of `VTS_01_n.VOB`
+and so on. Read one file at a time these are unidentifiable — nothing about
+`VTS_01_3.VOB` says what film it is — so LibrAIry reads the **folder above the
+disc directory** instead, which is the only place anybody wrote the title down,
+and files the whole structure under it:
+
+```
+Queen - 1979-12-26 - The Queen Special on TV - DVD5/VIDEO_TS/VTS_01_1.VOB
+  → Movies/General/Queen-The-Queen-Special-on-TV-(1979)/VIDEO_TS/VTS_01_1.VOB
+```
+
+**The names inside the disc directory are never rewritten.** A player looks for
+`VTS_01_1.VOB` by exactly that name and `VIDEO_TS.IFO` points at its siblings by
+theirs, so a tidied disc folder is one that no longer plays. Everything above
+the disc directory is tidied as usual; from it downwards the names are only made
+safe, never changed. `DVD5`, `Disc 2` and similar are dropped from the title —
+they say how it was written down, not what it is.
+
+Only a disc *directory* counts. A stray `VIDEO_TS.IFO` in a downloads folder is
+just a file.
+
 Files inside a `VIDEO_TS`, `AUDIO_TS`, `BDMV` or `CERTIFICATE` folder are never
 treated as duplicates of each other. A DVD keeps a byte-identical `.BUP` beside
 every `.IFO` on purpose — a player falls back to it when the `.IFO` will not

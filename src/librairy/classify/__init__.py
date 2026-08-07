@@ -6,6 +6,7 @@ from pathlib import Path
 
 from librairy.ai.orchestrator import AIBatchState, apply_ai_if_needed
 from librairy.catalogs import catalog_enabled
+from librairy.classify.disc import classify_disc
 from librairy.classify.documents import classify_document_like
 from librairy.classify.heuristics import classify_path
 from librairy.classify.music import AUDIO_EXTS, classify_music
@@ -114,6 +115,14 @@ def classify_item(
     item: Item | None = None,
     ai_state: AIBatchState | None = None,
 ):
+    # Before anything reads the extension: inside a VIDEO_TS the extension is
+    # the least informative thing about the file. A .VOB is not a video to
+    # identify, it is one slice of a disc whose name is written on the folder
+    # two levels up — and the nine files of one DVD were nine unanswerable
+    # questions scoring 0.3 apiece.
+    disc = classify_disc(relpath, settings=settings)
+    if disc is not None:
+        return disc
     heuristic = classify_path(path, settings)
     if heuristic is not None:
         return _with_ai(conn, settings, item, ai_state, heuristic)

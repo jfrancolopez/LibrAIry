@@ -8,7 +8,7 @@ from pathlib import Path
 from string import Formatter
 from typing import Any
 
-from librairy.naming import slugify, slugify_filename, tidy_relpath
+from librairy.naming import slugify, tidy_relpath
 from librairy.paths import PathValidationError, sanitize_component, validate_dest
 
 CATEGORIES = ("music", "movies", "shows", "photos", "documents", "books", "projects", "misc")
@@ -132,8 +132,11 @@ def _safe_fields(fields: dict[str, Any]) -> dict[str, Any]:
             continue
         text = _strip_hashtags(str(value))
         # clean_name is the filename, so its extension must not be mangled by
-        # the length cap or absorbed into the slug.
-        safe[key] = slugify_filename(text) if key == "clean_name" else slugify(text)
+        # the length cap or absorbed into the slug. tidy_relpath rather than
+        # slugify_filename because a disc files a whole structure under one
+        # proposal — "VIDEO_TS/VTS_01_1.VOB" is one clean_name with a folder in
+        # it, and for an ordinary single-component name the two agree.
+        safe[key] = tidy_relpath(text) if key == "clean_name" else slugify(text)
     return safe
 
 

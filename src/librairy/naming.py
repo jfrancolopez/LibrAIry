@@ -82,6 +82,13 @@ def slugify_filename(name: str, *, fallback: str = "untitled") -> str:
     return f"{slugify(stem, fallback=fallback)}{suffix}"
 
 
+#  The folders an optical disc keeps its structure in. Inside one of these,
+#  filenames are not descriptive text: VTS_01_1.VOB is named that because a
+#  player looks for exactly that, and VIDEO_TS.IFO points at its siblings by
+#  name. Tidying them produces a folder that looks neater and no longer plays.
+DISC_DIRECTORIES = frozenset({"VIDEO_TS", "AUDIO_TS", "BDMV", "CERTIFICATE"})
+
+
 def tidy_relpath(relpath: str) -> str:
     """Every component of a rendered destination, sanitised.
 
@@ -90,12 +97,36 @@ def tidy_relpath(relpath: str) -> str:
     "The-Matrix (1999)" -- half tidy, which is worse than either. Doing it
     once over the finished path is also what stops a new template from
     reintroducing the problem.
+
+    One exception, and it earns itself: from a disc directory downwards the
+    names are a contract with a DVD player rather than a description of
+    anything, so they are only made *safe* -- control characters and
+    separators removed -- and never rewritten.
     """
     parts = [part for part in relpath.split("/") if part]
     if not parts:
         return ""
-    *folders, name = parts
-    return "/".join([slugify(part) for part in folders] + [slugify_filename(name)])
+    tidy: list[str] = []
+    structural = False
+    for index, part in enumerate(parts):
+        structural = structural or part.upper() in DISC_DIRECTORIES
+        if structural:
+            tidy.append(_safe_component(part))
+        elif index == len(parts) - 1:
+            tidy.append(slugify_filename(part))
+        else:
+            tidy.append(slugify(part))
+    return "/".join(tidy)
+
+
+def _safe_component(part: str) -> str:
+    """Safe to be a path component, and otherwise left exactly as it is."""
+    from librairy.paths import PathValidationError, sanitize_component
+
+    try:
+        return sanitize_component(part)
+    except PathValidationError:
+        return slugify(part)
 
 
 def is_clean(name: str) -> bool:

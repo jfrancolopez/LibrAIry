@@ -194,7 +194,10 @@ def _fingerprint_pairs(conn: sqlite3.Connection) -> list[tuple[Item, Item]]:
 # .BUP when the .IFO will not read. They are duplicates by specification, and
 # quarantining one is not tidying up — it is damaging the disc. Found on a real
 # inbox, where two such pairs had been staged for exactly that.
-DISC_DIRECTORIES = frozenset({"VIDEO_TS", "AUDIO_TS", "BDMV", "CERTIFICATE"})
+#  Defined in naming.py, because the same set decides two things about a disc:
+#  that its byte-identical .BUP files are not duplicates of anything, and that
+#  its filenames must survive a move unrewritten.
+from librairy.naming import DISC_DIRECTORIES  # noqa: E402
 
 
 def in_disc_structure(relpath: str) -> bool:
