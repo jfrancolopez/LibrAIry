@@ -6,7 +6,7 @@ from pathlib import Path
 
 from librairy.config import Settings
 
-SCHEMA_VERSION = 14
+SCHEMA_VERSION = 15
 
 
 class DatabaseVersionError(RuntimeError):
@@ -292,6 +292,36 @@ ALTER TABLE groups_new RENAME TO groups;
 CREATE INDEX idx_groups_kind ON groups(kind);
 """
 
+#  What a local model saw when it looked at an image. One row per item, keyed
+#  by the fingerprint it was looking at: re-analysing a file that has not
+#  changed reuses the answer rather than spending another pass of inference on
+#  a picture that is still the same picture.
+#
+#  Kept out of the evidence blob because it is the one piece of analysis that
+#  is worth reading on its own — a caption and the text out of a screenshot are
+#  what a search will want long after the proposal it belonged to is committed
+#  and gone.
+MIGRATION_015 = """
+CREATE TABLE vision_results (
+  item_id      INTEGER PRIMARY KEY REFERENCES items(id),
+  fingerprint  TEXT NOT NULL,
+  provider     TEXT NOT NULL,
+  model        TEXT NOT NULL,
+  category     TEXT,
+  caption      TEXT,
+  subjects     TEXT NOT NULL DEFAULT '[]',
+  tags         TEXT NOT NULL DEFAULT '[]',
+  -- Stored so that re-analysing an unchanged file rebuilds the same filename
+  -- from the cache. Without them the second pass would quietly drop the words
+  -- the first pass added.
+  name_tokens  TEXT NOT NULL DEFAULT '[]',
+  visible_text TEXT,
+  confidence   REAL,
+  created_at   TEXT NOT NULL
+);
+CREATE INDEX idx_vision_results_fingerprint ON vision_results(fingerprint);
+"""
+
 MIGRATIONS = {
     1: MIGRATION_001,
     2: MIGRATION_002,
@@ -307,6 +337,7 @@ MIGRATIONS = {
     12: MIGRATION_012,
     13: MIGRATION_013,
     14: MIGRATION_014,
+    15: MIGRATION_015,
 }
 
 

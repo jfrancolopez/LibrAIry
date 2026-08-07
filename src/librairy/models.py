@@ -14,6 +14,7 @@ EvidenceSource = Literal[
     "library-pattern",
     "hashtag",
     "ai",
+    "vision",
 ]
 
 

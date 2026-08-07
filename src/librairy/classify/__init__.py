@@ -10,6 +10,7 @@ from librairy.classify.disc import classify_disc
 from librairy.classify.documents import classify_document_like
 from librairy.classify.grouping import GroupInput, group_proposals
 from librairy.classify.heuristics import classify_path
+from librairy.classify.images import enrich_with_vision
 from librairy.classify.music import AUDIO_EXTS, classify_music
 from librairy.classify.video import VIDEO_EXTS, classify_video
 from librairy.config import Settings
@@ -25,6 +26,7 @@ CASCADE_EVIDENCE_SOURCES = (
     "tags",
     "catalog",
     "library-pattern",
+    "vision",  # A local model that actually looked at the picture.
     "ai",  # Phase 3 inserts the AI provider source here.
     "fallback",
 )
@@ -158,10 +160,10 @@ def classify_item(
         return disc
     heuristic = classify_path(path, settings)
     if heuristic is not None:
-        return _with_ai(conn, settings, item, ai_state, heuristic)
+        return _enriched(conn, settings, item, ai_state, heuristic)
     suffix = Path(relpath).suffix.lower()
     if suffix in AUDIO_EXTS:
-        return _with_ai(
+        return _enriched(
             conn,
             settings,
             item,
@@ -177,7 +179,7 @@ def classify_item(
             ),
         )
     if suffix in VIDEO_EXTS:
-        return _with_ai(
+        return _enriched(
             conn,
             settings,
             item,
@@ -190,7 +192,7 @@ def classify_item(
             ),
         )
     if suffix:
-        return _with_ai(
+        return _enriched(
             conn,
             settings,
             item,
@@ -199,18 +201,29 @@ def classify_item(
                 relpath, settings=settings, book_lookup=_book_lookup(conn)
             ),
         )
-    return _with_ai(conn, settings, item, ai_state, _unknown(relpath))
+    return _enriched(conn, settings, item, ai_state, _unknown(relpath))
 
 
-def _with_ai(
+def _enriched(
     conn: sqlite3.Connection | None,
     settings: Settings,
     item: Item | None,
     ai_state: AIBatchState | None,
     result,
 ):
+    """Everything that needs the database and the item, in cascade order.
+
+    Vision runs before the text AI on purpose. A model that has looked at the
+    photograph is better evidence than one guessing from `IMG_4821.jpg`, and
+    if it lifts the score over the threshold `apply_ai_if_needed` returns
+    immediately — so on an image the two never both run.
+
+    Discs never arrive here: `classify_item` answers them before this, which
+    is what keeps the names inside a VIDEO_TS untouched.
+    """
     if conn is None or item is None or ai_state is None:
         return result
+    result = enrich_with_vision(conn, settings, item, result, ai_state)
     return apply_ai_if_needed(conn, settings, item, result, ai_state)
 
 

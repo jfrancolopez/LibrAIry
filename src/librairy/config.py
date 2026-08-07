@@ -10,6 +10,9 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 DEFAULT_CZKAWKA_EXTENSIONS = (
     "jpg,png,jpeg,gif,bmp,heic,avif,mp4,mkv,mov,avi,mp3,flac,wav,ogg,txt,pdf,docx"
 )
+#  Which images get looked at: every one LibrAIry can decode, or only the ones
+#  the deterministic pass was not sure about.
+VISION_MODES = ("all", "uncertain")
 
 
 class Settings(BaseSettings):
@@ -59,6 +62,19 @@ class Settings(BaseSettings):
     anthropic_model: str = Field("claude-3-5-haiku-20241022", alias="ANTHROPIC_MODEL")
     gemini_api_key: SecretStr = Field(SecretStr(""), alias="GEMINI_API_KEY")
     gemini_model: str = Field("gemini-1.5-flash", alias="GEMINI_MODEL")
+
+    # Looking at an image costs real seconds of local inference, so the whole
+    # feature is off until asked for. Once it is on, "all" is the mode that
+    # does what people want it for: an ordinary photo scores 0.85 from its
+    # extension alone, comfortably over the threshold, so "uncertain" would
+    # skip almost every photo in a photo library. See docs/using-librairy.md.
+    vision_enabled: bool = Field(False, alias="VISION_ENABLED")
+    vision_mode: str = Field("all", alias="VISION_MODE")
+    # Empty means "whatever chat model that provider is already set to". A
+    # separate box because the model that reads filenames and the model that
+    # looks at photographs have no reason to be the same one.
+    vision_model: str = Field("", alias="VISION_MODEL")
+    vision_max_edge: int = Field(1280, ge=256, le=4096, alias="VISION_MAX_EDGE")
 
     max_files_to_analyze: int = Field(0, ge=0, alias="MAX_FILES_TO_ANALYZE")
     ai_timeout: int = Field(120, ge=1, alias="AI_TIMEOUT")
@@ -360,6 +376,13 @@ class Settings(BaseSettings):
         "PUID=99",
         "PGID=100",
     )
+
+    @field_validator("vision_mode")
+    @classmethod
+    def validate_vision_mode(cls, value: str) -> str:
+        if value not in VISION_MODES:
+            raise ValueError(f"vision mode must be one of: {', '.join(VISION_MODES)}")
+        return value
 
     @field_validator("ai_provider_order", "ignore_patterns", "czkawka_extensions", mode="before")
     @classmethod
