@@ -34,6 +34,8 @@ ACTION_LABELS = {
     "reject": "Set aside",
     "postpone": "Put off",
     "discard": "Sent to quarantine",
+    "mark_delete": "Marked for deletion",
+    "reanalyze": "Sent back for another look",
 }
 
 

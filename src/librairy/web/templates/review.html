@@ -12,17 +12,41 @@
       </p>
     </div>
     <div class="button-row">
-      <button class="btn-primary"
-        hx-post="/review/action"
-        hx-vals='{"action": "approve", "all_matching": "true", "state": "{{ filters.state }}", "min_confidence": "0.85"}'
-        hx-target="#review-list" hx-swap="outerHTML"
-        hx-confirm="Approve every proposal at 0.85 confidence or higher? Nothing moves until you commit."
-        hx-headers='{"x-csrf-token":"{{ request.state.session.csrf_token }}"}'>
-        Approve all confident
-      </button>
-      <a class="btn" href="/review?max_confidence=0.85">Only the doubtful ones</a>
+      {# "Approve all confident" named a threshold you could not see, on a
+         count you could not see either, which makes it a bulk decision taken
+         on trust. Both are in the label now, and the button is not there at
+         all when it would do nothing. #}
+      {% if confident_ready %}
+        <button class="btn-primary"
+          hx-post="/review/action"
+          hx-vals='{"action": "approve", "all_matching": "true", "state": "{{ filters.state }}", "min_confidence": "{{ confident }}"}'
+          hx-target="#review-list" hx-swap="outerHTML"
+          title="Every row whose bar is green — {{ (confident * 100)|round|int }}% or better. Nothing moves until you commit."
+          hx-confirm="Approve {{ confident_ready }} proposal(s) at {{ (confident * 100)|round|int }}% confidence or higher? Nothing moves until you commit."
+          hx-headers='{"x-csrf-token":"{{ request.state.session.csrf_token }}"}'>
+          Approve {{ confident_ready }} at {{ (confident * 100)|round|int }}%+
+        </button>
+      {% endif %}
+      <a class="btn" href="/review?max_confidence={{ confident }}">Only the doubtful ones</a>
     </div>
   </header>
+
+  {# Approving is a decision, not a move, and nothing on this page said where
+     the approved pile had gone or that it was still waiting on one press.
+     Same count as the nav badge, from the same query — two numbers about the
+     same pile are one bug away from disagreeing. #}
+  {% with waiting = approved_waiting() %}
+    {% if waiting %}
+      <section class="status ok notice-row">
+        <p>
+          <strong>{{ waiting }} file{{ 's' if waiting != 1 else '' }} approved and waiting.</strong>
+          Still in the inbox: approving decides, committing moves. One press files
+          {{ 'them' if waiting != 1 else 'it' }} for real.
+        </p>
+        <a class="btn-primary" href="/commit">Commit {{ waiting }}</a>
+      </section>
+    {% endif %}
+  {% endwith %}
 
   {# Four buttons whose names cannot carry their whole meaning. "Not this" in
      particular takes a file out of the queue, which nothing on the row says. #}
@@ -36,47 +60,62 @@
       <li><strong>You commit.</strong> That is the only step that moves a file, and it
         executes exactly the plan you approved.</li>
     </ol>
+    <p class="muted"><strong>Why two steps?</strong> Deciding is fast and reversible;
+      moving a hundred files is neither. Approving builds a list, and Commit shows you
+      that exact list before it touches anything — so a mistake in Review costs one
+      press of Undo instead of a hunt through your library.</p>
     <table class="flow-table">
       <thead><tr><th>Button</th><th>What happens</th><th>Where the file goes</th></tr></thead>
       <tbody>
         <tr>
           <th>Approve</th>
-          <td>The proposal is accepted and joins the next commit.</td>
+          <td>You agree with the name and the place. It joins the next commit.</td>
           <td>Stays in the inbox until you commit, then moves to the library.</td>
         </tr>
         <tr>
-          <th>Not this</th>
-          <td>The guess was wrong. The proposal is set aside and the file leaves the
-            review queue — it is <em>not</em> filed, and no new guess is made for it
-            until you re-analyse.</td>
-          <td>Stays in the inbox, out of the queue.</td>
-        </tr>
-        <tr>
-          <th>Later</th>
-          <td>Skipped for now, still a live proposal. Filter State to
-            <em>Put off for later</em> to find it again.</td>
-          <td>Stays in the inbox.</td>
+          <th>Re-analyse</th>
+          <td>The guess is wrong or thin. The file goes back in the queue for a fresh
+            pass — tags, catalogs, the duplicate detectors and any AI you have switched
+            on. Worth doing after adding catalog keys or an AI provider.</td>
+          <td>Stays in the inbox. A new guess lands within a cycle or two.</td>
         </tr>
         <tr>
           <th>Quarantine</th>
-          <td>You do not want this file in the library. On the next commit it moves out
-            of the inbox to the quarantine folder. <strong>Nothing is ever deleted</strong> —
-            restore it from the Quarantine page whenever you like.</td>
-          <td>Moves to quarantine on commit.</td>
+          <td>Not in the library — set aside indefinitely, whole and unchanged.
+            <strong>Nothing is ever deleted</strong>; put it back from the Quarantine
+            page whenever you like.</td>
+          <td>Moves to the quarantine folder on commit.</td>
+        </tr>
+        <tr>
+          <th><span aria-hidden="true">⋯</span> Later</th>
+          <td>Not now. It drops out of <em>Waiting on you</em> so the queue is the work
+            you have not looked at yet.</td>
+          <td>Stays in the inbox. Filter State to <em>Put off for later</em>.</td>
+        </tr>
+        <tr>
+          <th><span aria-hidden="true">⋯</span> Mark for deletion</th>
+          <td>Done with it. Same move as Quarantine, into one folder inside it —
+            <span class="mono">_to-delete</span> — so everything you have finished with
+            gathers in one place. <strong>LibrAIry still deletes nothing</strong>: you
+            open that folder and empty it yourself.</td>
+          <td>Moves to <span class="mono">quarantine/_to-delete</span> on commit.</td>
         </tr>
       </tbody>
     </table>
     <h3 class="flow-subhead">Reading the confidence bar</h3>
-    <p>Its length is how sure LibrAIry is. What it is <em>made of</em> is the more useful
-      half: 62% earned by a catalog match is a different proposition from 62% assembled
-      out of a filename. Hover any bar for the same thing in words.</p>
+    <p>Length and colour are both the score — how sure LibrAIry is that this name and
+      this place are right. Green is safe to wave through; red wants a look.
+      <em>Approve all</em> takes the green ones.</p>
     <ul class="conf-legend">
-      <li><span class="conf-swatch is-catalog"></span> A public catalog — MusicBrainz, TMDB, AcoustID and friends</li>
-      <li><span class="conf-swatch is-local"></span> The file itself — embedded tags, a folder hashtag, your existing layout</li>
-      <li><span class="conf-swatch is-ai"></span> Local AI, when the evidence above ran out</li>
-      <li><span class="conf-swatch is-cloud"></span> Cloud AI, which you switched on explicitly</li>
-      <li><span class="conf-swatch is-guess"></span> A guess from the name and file type alone</li>
+      <li><span class="conf-swatch is-high"></span> {{ (confident * 100)|round|int }}% and up — a catalog or the file's own tags settled it</li>
+      <li><span class="conf-swatch is-mid"></span> 60–{{ (confident * 100)|round|int }}% — good evidence, worth a glance</li>
+      <li><span class="conf-swatch is-low"></span> under 60%, or no destination yet — read this one</li>
     </ul>
+    <p>Within a bar, the shading says what the score is <em>made of</em>: solid where a
+      public catalog or the file's own tags earned it, fading out through local AI and
+      cloud AI to a plain guess from the filename. 62% off a catalog match is a
+      different proposition from 62% assembled out of a name. Hover any bar for that in
+      words, or open <strong>Why</strong> on the row for the entries themselves.</p>
 
     <p class="muted">Got one wrong? <strong>Undo</strong> appears above the list after
       any decision and takes the whole batch back.
@@ -89,16 +128,19 @@
        that cannot run. Saying so is the difference between a total that looks
        wrong and a total that explains itself. #}
     <section class="status warn notice-row">
+      {# Four lines of explanation for a footnote pushed the first file most of
+         a screen down. Same facts, one line. "Forget them" also sounded like a
+         decision about the files; it is only about these rows. #}
       <p>
-        <strong>{{ vanished }} file{{ 's' if vanished != 1 else '' }} moved or deleted outside LibrAIry</strong>
-        since {{ 'they were' if vanished != 1 else 'it was' }} proposed, so
-        {{ 'they are' if vanished != 1 else 'it is' }} not listed below. If a disk is
-        unmounted this is expected — plug it back in and the next scan picks
-        {{ 'them' if vanished != 1 else 'it' }} up again with the decisions intact.
+        <strong>{{ vanished }} file{{ 's' if vanished != 1 else '' }} moved or deleted outside LibrAIry</strong>,
+        so {{ 'they are' if vanished != 1 else 'it is' }} not listed below. Usually an
+        unmounted disk — plug it back in and the next scan picks
+        {{ 'them' if vanished != 1 else 'it' }} up with the decisions intact. Clearing
+        the leftover row{{ 's' if vanished != 1 else '' }} touches no file anywhere.
       </p>
       <form method="post" action="/review/forget-missing">
         <input type="hidden" name="csrf_token" value="{{ request.state.session.csrf_token }}">
-        <button type="submit">Forget them</button>
+        <button type="submit" title="Removes these entries from Review. The files themselves are not touched.">Clear these entries</button>
       </form>
     </section>
   {% endif %}
@@ -200,10 +242,13 @@
          decision nobody had started making yet. #}
       <div class="toolbar-group" data-selection-only hidden>
         <button type="submit" name="action" value="approve" class="btn-primary" data-needs-selection>Approve</button>
-        <button type="submit" name="action" value="reject" data-needs-selection>Not this</button>
+        <button type="submit" name="action" value="reanalyze" data-needs-selection
+          title="Back in the queue for a fresh pass over catalogs, tools and AI.">Re-analyse</button>
         <button type="submit" name="action" value="postpone" data-needs-selection>Later</button>
         <button type="submit" name="action" value="discard" class="btn-danger" data-needs-selection
           hx-confirm="Move the selected files to Quarantine on the next commit? Nothing is deleted — you can restore them from the Quarantine page.">Quarantine</button>
+        <button type="submit" name="action" value="mark_delete" class="btn-danger" data-needs-selection
+          hx-confirm="Mark the selected files for deletion? On the next commit they move to the delete pile inside quarantine. LibrAIry still never deletes anything — you empty that folder yourself.">Mark for deletion</button>
         <label class="all-matching"><input type="checkbox" name="all_matching" value="true"> all matches, not just this page</label>
       </div>
     </form>

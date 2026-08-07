@@ -42,15 +42,34 @@ Three steps, and only the last one touches a file.
 3. **You commit.** The only step that moves a file, and it executes exactly the
    plan you approved.
 
+**Why two steps?** Deciding is fast and reversible; moving a hundred files is
+neither. Approving builds a list, and Commit shows you that exact list before it
+touches anything — so a mistake in Review costs one press of Undo instead of a
+hunt through your library. Review tells you how many are approved and waiting,
+with a link straight to Commit.
+
 | Button | What happens | Where the file goes |
 | --- | --- | --- |
-| **Approve** | The proposal is accepted and joins the next commit. | Stays in the inbox until you commit, then moves to the library. |
-| **Not this** | The guess was wrong. The proposal is set aside and the file leaves the review queue — it is *not* filed, and no new guess is made for it until you re-analyse. | Stays in the inbox, out of the queue. |
-| **Later** | Skipped for now, still a live proposal. Filter State to *Put off for later* to find it again. | Stays in the inbox. |
-| **Quarantine** | You do not want this in the library. On the next commit it moves out of the inbox to the quarantine folder. Nothing is ever deleted. | Moves to quarantine on commit. |
+| **Approve** | You agree with the name and the place. It joins the next commit. | Stays in the inbox until you commit, then moves to the library. |
+| **Re-analyse** | The guess is wrong or thin. The file goes back in the queue for a fresh pass — tags, catalogs, the duplicate detectors and any AI you have switched on. | Stays in the inbox; a new guess lands within a cycle or two. |
+| **Quarantine** | Not in the library. Set aside indefinitely, whole and unchanged, restorable from the Quarantine page. | Moves to the quarantine folder on commit. |
+| **⋯ Later** | Not now. Drops out of *Waiting on you* so the queue is what you have not looked at yet. | Stays in the inbox. Filter State to *Put off for later*. |
+| **⋯ Mark for deletion** | Done with it. The same move as Quarantine, into one folder inside it. | Moves to `quarantine/_to-delete` on commit. |
 
 The same summary is on the Review page itself, behind **What do these buttons
 do?** next to the heading.
+
+**Re-analyse** replaced *Not this*, which set the guess aside and never guessed
+again — reachable in one click and escapable only from the command line. If you
+add catalog keys or an AI provider after a scan, re-analysing is how the files
+already in the queue get the benefit. The whole queue at once is
+`librairy analyze --reanalyze`.
+
+**Nothing here deletes anything, including Mark for deletion.** It gathers the
+files you have finished with into one folder so that emptying them is a single
+deliberate gesture you make yourself, in your own file manager. The Quarantine
+page has the same button for files already held there, and *Put it back* still
+works from the pile.
 
 ### Undo
 
@@ -66,18 +85,19 @@ library that does not exist.
 
 ### Reading the confidence bar
 
-Each row carries a short bar and a percentage. The **length** is how sure
-LibrAIry is. What the bar is **made of** is the more useful half, because 62%
-earned by a catalog match is a different proposition from 62% assembled out of
-a filename:
+Each row carries a short bar and a percentage. **Length and colour are both the
+score** — how sure LibrAIry is that this name and this place are right:
 
-| Colour | Where that share of the score came from |
+| Colour | Score |
 | --- | --- |
-| Green | A public catalog — MusicBrainz, TMDB, AcoustID and friends |
-| Bright green | The file itself — embedded tags, a folder hashtag, your existing layout |
-| Amber | Local AI, once the evidence above ran out |
-| Orange | Cloud AI, which you switched on explicitly |
-| Grey | A guess from the name and file type alone |
+| Green | 85% and up. A catalog or the file's own tags settled it — this is what *Approve all* takes. |
+| Amber | 60–85%. Good evidence, worth a glance. |
+| Red | Under 60%, or no destination yet. Read this one. |
+
+Within a bar, the **shading** says what the score is made of: solid where a
+public catalog or the file's own tags earned it, fading out through local AI and
+cloud AI to a plain guess from the filename. 62% off a catalog match is a
+different proposition from 62% assembled out of a name.
 
 Hover any bar for the same thing in words. The full breakdown, entry by entry,
 is behind **Why** on the row.
@@ -97,8 +117,8 @@ folder is just a file.
 
 ### Comparing the two copies
 
-Any Review row where the file may already be in your library is marked **you may
-already have this** and gains a **Compare the two copies** button. It opens the
+Any Review row where the file may already be in your library is marked
+**duplicate** and gains a **Compare** button. It opens the
 inbox copy and the library copy side by side, with a preview of each, and below
 them two things:
 

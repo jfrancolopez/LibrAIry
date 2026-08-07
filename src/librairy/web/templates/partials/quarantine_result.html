@@ -1,1 +1,16 @@
-<p id="quarantine-result"><span class="badge badge-ok">{{ result.outcome }}</span>{% if result.dest_relpath %} → {{ result.dest_relpath }}{% endif %}</p>
+{# "ok" is the executor's word for it, not an answer to what a person just
+   pressed. Same outcomes, said out loud. #}
+{% set said = {
+  'ok': 'Done',
+  'already_restored': 'Already put back — nothing to do',
+  'already_marked': 'Already in the delete pile',
+  'missing': 'The file is not where it was last seen, so nothing was moved',
+  'unstaged': 'Kept — it will be filed normally',
+  'approved': 'Approved. It moves out on the next commit',
+  'marked': 'Marked. It moves to the delete pile on the next commit — still not deleted',
+} %}
+<p id="quarantine-result">
+  <span class="badge {{ 'badge-warn' if result.outcome == 'missing' else 'badge-ok' }}">{{ said.get(result.outcome, result.outcome) }}</span>
+  {% if result.dest_relpath %}<span class="mono">{{ result.dest_relpath }}</span>{% endif %}
+  <span class="muted">Reload the page to see the list catch up.</span>
+</p>

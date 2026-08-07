@@ -348,7 +348,9 @@ def test_quick_approve_confident_only_touches_high_confidence(tmp_path: Path) ->
         headers={"x-csrf-token": client.cookies["csrf_token"]},
     )
 
-    assert "Approve all confident" in page
+    # The threshold and the count are both in the label: a bulk approve whose
+    # scope you cannot see is a decision taken on trust.
+    assert "Approve 1 at 85%+" in page
     assert response.status_code == 200
     assert proposal_status(conn, sure) == "approved"
     assert proposal_status(conn, unsure) == "proposed"
@@ -654,3 +656,109 @@ def test_saying_no_to_a_duplicate_is_an_answer_not_a_500(tmp_path: Path) -> None
     assert response.status_code == 200
     assert proposal_status(conn, proposal) == "rejected"
     assert conn.execute("SELECT state FROM items WHERE id=?", (item,)).fetchone()[0] == "pending"
+
+
+def test_reanalyse_puts_the_file_back_in_the_queue_instead_of_a_dead_end(
+    tmp_path: Path,
+) -> None:
+    """"Not this" answered a wrong guess by never guessing again: the file went
+    to 'pending', left the queue, and came back only from the command line.
+    Re-analyse is the answer people actually want — look again, with the keys
+    and tools that were not configured the first time.
+    """
+    client, conn = client_for(tmp_path)
+    proposal = seed_proposal(conn, "unknown.bin", "misc", "Misc/unknown.bin", 0.3, None)
+    item = conn.execute("SELECT item_id FROM proposals WHERE id=?", (proposal,)).fetchone()[0]
+
+    response = client.post(
+        "/review/action",
+        data={"action": "reanalyze", "proposal_id": str(proposal), "state": "proposed"},
+        headers={"x-csrf-token": client.cookies["csrf_token"]},
+    )
+
+    assert response.status_code == 200
+    # 'discovered' is the only state the analyzer looks at, and the proposal
+    # stays live so the old guess is still on screen while it is re-checked.
+    assert conn.execute("SELECT state FROM items WHERE id=?", (item,)).fetchone()[0] == "discovered"
+    assert proposal_status(conn, proposal) == "proposed"
+    assert "looking again" in client.get("/review").text
+
+
+def test_reanalyse_is_undoable_like_every_other_decision(tmp_path: Path) -> None:
+    client, conn = client_for(tmp_path)
+    proposal = seed_proposal(conn, "unknown.bin", "misc", "Misc/unknown.bin", 0.3, None)
+    item = conn.execute("SELECT item_id FROM proposals WHERE id=?", (proposal,)).fetchone()[0]
+    csrf = client.cookies["csrf_token"]
+
+    client.post(
+        "/review/action",
+        data={"action": "reanalyze", "proposal_id": str(proposal), "state": "proposed"},
+        headers={"x-csrf-token": csrf},
+    )
+    undone = client.post("/review/undo", headers={"x-csrf-token": csrf})
+
+    assert "Sent back for another look 1 file" not in undone.text  # the offer is consumed
+    assert conn.execute("SELECT state FROM items WHERE id=?", (item,)).fetchone()[0] == "proposed"
+
+
+def test_mark_for_deletion_gathers_files_in_one_folder_and_still_deletes_nothing(
+    tmp_path: Path,
+) -> None:
+    """Quarantine says "not in my library". It could not say "and I am done
+    with this one", which left emptying it a file-by-file job somewhere else.
+    """
+    client, conn = client_for(tmp_path)
+    proposal = seed_proposal(conn, "junk.bin", "misc", "Misc/junk.bin", 0.4, None)
+
+    response = client.post(
+        "/review/action",
+        data={"action": "mark_delete", "proposal_id": str(proposal), "state": "proposed"},
+        headers={"x-csrf-token": client.cookies["csrf_token"]},
+    )
+
+    assert response.status_code == 200
+    row = conn.execute(
+        "SELECT status, action, dest_root, dest_relpath FROM proposals WHERE id=?", (proposal,)
+    ).fetchone()
+    # A normal quarantine move, aimed at the one folder you empty yourself.
+    assert row["action"] == "quarantine"
+    assert row["dest_root"] == "quarantine"
+    assert row["dest_relpath"].startswith("_to-delete/")
+    assert row["dest_relpath"].endswith("/junk.bin")
+    # Still a plan, still hash-verified on commit, still nothing deleted here.
+    assert row["status"] == "approved"
+
+
+def test_the_bulk_approve_says_its_threshold_and_hides_when_it_would_do_nothing(
+    tmp_path: Path,
+) -> None:
+    """A bulk action whose scope you cannot see is a decision taken on trust."""
+    client, conn = client_for(tmp_path)
+    seed_proposal(conn, "unsure.bin", "misc", "Misc/unsure.bin", 0.4, None)
+
+    doubtful_only = client.get("/review").text
+    seed_proposal(conn, "sure.flac", "music", "Music/sure.flac", 0.95, None)
+    seed_proposal(conn, "also.flac", "music", "Music/also.flac", 0.9, None)
+    with_confident = client.get("/review").text
+
+    assert "at 85%+" not in doubtful_only
+    assert "Approve 2 at 85%+" in with_confident
+
+
+def test_review_says_the_approved_pile_is_still_waiting_on_a_commit(tmp_path: Path) -> None:
+    """"Approve" reads as "file it". It is a decision; the move is one more
+    press, and nothing on the page said so."""
+    client, conn = client_for(tmp_path)
+    proposal = seed_proposal(conn, "sure.flac", "music", "Music/sure.flac", 0.95, None)
+
+    before = client.get("/review").text
+    client.post(
+        "/review/action",
+        data={"action": "approve", "proposal_id": str(proposal), "state": "proposed"},
+        headers={"x-csrf-token": client.cookies["csrf_token"]},
+    )
+    after = client.get("/review").text
+
+    assert "approved and waiting" not in before
+    assert "1 file approved and waiting" in after
+    assert 'href="/commit"' in after

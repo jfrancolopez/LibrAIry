@@ -6,7 +6,12 @@ from dataclasses import asdict
 from librairy.config import Settings
 from librairy.lifecycle import transition_item
 from librairy.planner import utc_now
-from librairy.quarantine import restore_entry
+from librairy.quarantine import (
+    DELETE_PILE,
+    mark_entry_for_deletion,
+    marked_for_deletion,
+    restore_entry,
+)
 from librairy.web.evidence import humanize_evidence
 
 #  What the reason column holds, said the way a person would say it.
@@ -14,21 +19,27 @@ REASONS = {
     "exact_duplicate": "byte-for-byte copy of a file you already have",
     "user_discard": "you said you did not want it",
 }
-UNWANTED = "you marked it as “Don’t want it” in Review"
+UNWANTED = "you sent it here from Review"
 
 
 def quarantine_data(
     conn: sqlite3.Connection, settings: Settings | None = None
 ) -> dict[str, object]:
     entries = _entries(conn)
+    host_dir = str(settings.host_quarantine_dir) if settings else ""
+    live = [entry for entry in entries if not entry["restored_at"]]
     return {
         "staged": _staged(conn),
         "entries": entries,
         "similar_flags": _similar_flags(conn),
         # The one thing the page could not answer: where the files actually
         # are, so you can go and delete them yourself. LibrAIry will not.
-        "host_quarantine_dir": settings.host_quarantine_dir if settings else "",
-        "held": sum(1 for entry in entries if not entry["restored_at"]),
+        "host_quarantine_dir": host_dir,
+        "held": len(live),
+        # The pile you asked for: one folder to point a file manager at, so
+        # emptying it is one deliberate gesture rather than two hundred.
+        "for_deletion": sum(1 for entry in live if entry["marked"]),
+        "delete_pile_dir": f"{host_dir.rstrip('/')}/{DELETE_PILE}" if host_dir else "",
     }
 
 
@@ -40,7 +51,7 @@ def staged_reason(evidence: str | None) -> str:
     """Why a file is queued for quarantine, from the evidence already on it.
 
     Only two things put a file here: the duplicate finder, which writes
-    "exact duplicate of ..." into its evidence, and "Don't want it" in Review,
+    "exact duplicate of ..." into its evidence, and Quarantine in Review,
     which leaves the original evidence untouched. Reading it back beats
     another column that could disagree with the evidence beside it.
     """
@@ -66,6 +77,12 @@ def restore_quarantine(
     return asdict(restore_entry(conn, entry_id, settings))
 
 
+def mark_for_deletion(
+    conn: sqlite3.Connection, settings: Settings, entry_id: int
+) -> dict[str, object]:
+    return asdict(mark_entry_for_deletion(conn, entry_id, settings))
+
+
 def unstage_proposal(conn: sqlite3.Connection, proposal_id: int) -> None:
     row = conn.execute("SELECT item_id FROM proposals WHERE id=?", (proposal_id,)).fetchone()
     if row is None:
@@ -79,6 +96,18 @@ def unstage_proposal(conn: sqlite3.Connection, proposal_id: int) -> None:
         """,
         (utc_now(), proposal_id),
     )
+
+
+def stage_for_deletion(conn: sqlite3.Connection, proposal_id: int) -> None:
+    """Approve a staged quarantine, aimed at the delete pile instead.
+
+    Without this, being finished with a duplicate that has not moved yet costs
+    two commits: one to put it in quarantine and another to move it along.
+    """
+    from librairy.web.review import discard_proposals
+
+    if not discard_proposals(conn, [proposal_id], to_delete_pile=True):
+        raise ValueError("proposal not found")
 
 
 def approve_stage(conn: sqlite3.Connection, proposal_id: int) -> None:
@@ -124,7 +153,15 @@ def _entries(conn: sqlite3.Connection) -> list[dict[str, object]]:
             """
         )
     )
-    return [{**dict(row), "reason_text": reason_text(row["reason"])} for row in rows]
+    return [
+        {
+            **dict(row),
+            "reason_text": reason_text(row["reason"]),
+            "marked": marked_for_deletion(row["item_relpath"]),
+            "size_label": human_size(row["item_size"]),
+        }
+        for row in rows
+    ]
 
 
 def _similar_flags(conn: sqlite3.Connection) -> list[dict[str, object]]:

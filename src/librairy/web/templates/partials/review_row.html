@@ -12,17 +12,21 @@
 
   <div class="proposal-body">
     <header class="proposal-head">
-      <h3 class="proposal-name" title="{{ proposal.item_relpath }}">{{ proposal.item_relpath }}</h3>
+      {# The size is a property of the file, so it belongs to the filename. It
+         was sitting in the confidence cluster, where it read as part of the
+         score. #}
+      <h3 class="proposal-name" title="{{ proposal.item_relpath }}">{{ proposal.item_relpath }}{% if proposal.size_label %}<span class="name-size"> · {{ proposal.size_label }}</span>{% endif %}</h3>
       <span class="proposal-meta">
-        {% if proposal.size_label %}<span class="muted">{{ proposal.size_label }}</span>{% endif %}
+        {% if proposal.rechecking %}<span class="badge badge-info">looking again</span>{% endif %}
         {% if proposal.has_duplicate %}<span class="badge badge-info">duplicate</span>{% endif %}
         {# Always last in the row, so the scores line up into a column you can
            read straight down instead of stopping at each one.
-           Length says how sure; the pieces say what of. A 62% earned by a
-           catalog match is a different proposition from a 62% assembled out
-           of a filename, and that is the thing worth seeing at a glance.
-           Length is also the greyscale-safe signal, so the colours are the
-           third encoding rather than the only one. #}
+           Colour is the score: green is safe to wave through, red wants a
+           look. Within that, the shading says what the score is made of —
+           solid for a catalog or the file's own tags, faded for a guess —
+           because 62% off a catalog match is a different proposition from
+           62% assembled out of a filename. Length carries the number too, so
+           none of this depends on seeing colour. #}
         <span class="conf" role="img" aria-label="{{ proposal.confidence_caption }}"
               title="{{ proposal.confidence_caption }}">
           <span class="conf-track">
@@ -76,11 +80,16 @@
           hx-vals='{"action": "approve", "proposal_id": "{{ proposal.id }}", "state": "{{ proposal.status }}", "sort": "{{ filters.sort }}"}'
           hx-target="#review-list" hx-swap="outerHTML"
           hx-headers='{"x-csrf-token":"{{ csrf }}"}'>Approve</button>
+        {# Was "Not this", which set the guess aside and never guessed again —
+           a dead end in one click, escapable only from the command line. The
+           useful answer to a wrong guess is to look again, now that the keys
+           and tools it needed are configured. #}
         <button type="button"
           hx-post="/review/action"
-          hx-vals='{"action": "reject", "proposal_id": "{{ proposal.id }}", "state": "{{ proposal.status }}", "sort": "{{ filters.sort }}"}'
+          hx-vals='{"action": "reanalyze", "proposal_id": "{{ proposal.id }}", "state": "{{ proposal.status }}", "sort": "{{ filters.sort }}"}'
           hx-target="#review-list" hx-swap="outerHTML"
-          hx-headers='{"x-csrf-token":"{{ csrf }}"}'>Not this</button>
+          title="Wrong? Put it back in the queue for a fresh pass: tags, catalogs, duplicate detectors and AI."
+          hx-headers='{"x-csrf-token":"{{ csrf }}"}'>Re-analyse</button>
         {# "Quarantine" rather than "Don't want it": it is one word, it is what
            actually happens, and it is the name of the page you get it back
            from. Nothing is deleted — the confirm says so. #}
@@ -90,7 +99,31 @@
           hx-target="#review-list" hx-swap="outerHTML"
           hx-confirm="Move this file to Quarantine on the next commit? Nothing is deleted — you can restore it from the Quarantine page."
           hx-headers='{"x-csrf-token":"{{ csrf }}"}'>Quarantine</button>
+        {# Two more answers exist, and neither is worth a permanent button on
+           every row: one is "not now" and the other you use once per clear-out. #}
+        <button type="button" class="btn-ghost btn-more" data-panel-toggle="more-{{ proposal.id }}"
+                aria-label="More for {{ proposal.item_relpath }}" title="Later, or mark for deletion">⋯</button>
       </div>
+    </div>
+
+    {# Two columns, so both buttons are the same width and both explanations
+       start in the same place. #}
+    <div id="more-{{ proposal.id }}" class="proposal-tray" hidden>
+      <button type="button"
+        hx-post="/review/action"
+        hx-vals='{"action": "postpone", "proposal_id": "{{ proposal.id }}", "state": "{{ proposal.status }}", "sort": "{{ filters.sort }}"}'
+        hx-target="#review-list" hx-swap="outerHTML"
+        hx-headers='{"x-csrf-token":"{{ csrf }}"}'>Later</button>
+      <span class="muted">Hides it from <em>Waiting on you</em>. Filter State to
+        <em>Put off for later</em> to bring it back.</span>
+      <button type="button" class="btn-danger"
+        hx-post="/review/action"
+        hx-vals='{"action": "mark_delete", "proposal_id": "{{ proposal.id }}", "state": "{{ proposal.status }}", "sort": "{{ filters.sort }}"}'
+        hx-target="#review-list" hx-swap="outerHTML"
+        hx-confirm="Mark this file for deletion? On the next commit it moves to the delete pile inside quarantine. LibrAIry still never deletes anything — you empty that folder yourself."
+        hx-headers='{"x-csrf-token":"{{ csrf }}"}'>Mark for deletion</button>
+      <span class="muted">Gathers it in <span class="mono">quarantine/_to-delete</span> — one
+        folder for you to empty yourself. Nothing is deleted here.</span>
     </div>
 
     {% if warning %}<p><span class="badge badge-warn">{{ warning }}</span></p>{% endif %}

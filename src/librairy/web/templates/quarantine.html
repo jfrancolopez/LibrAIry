@@ -19,7 +19,8 @@
   <section class="card notice-row">
     <p>
       {% if held %}
-        <strong>{{ held }} file{{ 's' if held != 1 else '' }} held here.</strong>
+        <strong>{{ held }} file{{ 's' if held != 1 else '' }} held here{% if for_deletion %},
+          {{ for_deletion }} marked for deletion{% endif %}.</strong>
       {% else %}
         <strong>Nothing is being held.</strong>
       {% endif %}
@@ -30,6 +31,21 @@
       <p class="mono muted">{{ host_quarantine_dir }}</p>
     {% endif %}
   </section>
+
+  {# Setting a file aside and being finished with it are different answers, and
+     the page only had the first. Without the second, emptying a quarantine of
+     two hundred files means going through it by hand somewhere else. #}
+  {% if for_deletion %}
+    <section class="card notice-row">
+      <p>
+        <strong>{{ for_deletion }} file{{ 's' if for_deletion != 1 else '' }} marked for deletion.</strong>
+        {{ 'They are' if for_deletion != 1 else 'It is' }} gathered in one folder, still
+        whole and still restorable. Delete that folder's contents when you are ready —
+        LibrAIry will not.
+      </p>
+      {% if delete_pile_dir %}<p class="mono muted">{{ delete_pile_dir }}</p>{% endif %}
+    </section>
+  {% endif %}
 
   <section class="metric wide">
     <h2>Waiting on you</h2>
@@ -57,12 +73,17 @@
           <div class="button-row">
             <button class="btn-primary" hx-post="/quarantine/staged/{{ proposal.id }}/approve" hx-target="#quarantine-result" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>Move it out</button>
             <button hx-post="/quarantine/staged/{{ proposal.id }}/unstage" hx-target="#quarantine-result" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>Keep it — file it normally</button>
+            {# Straight to the pile: being finished with a duplicate that has
+               not moved yet was otherwise two commits. #}
+            <button class="btn-danger" hx-post="/quarantine/staged/{{ proposal.id }}/mark-delete" hx-target="#quarantine-result"
+              hx-confirm="Send this to the delete pile on the next commit? Nothing is deleted — it gathers in one folder for you to empty yourself."
+              hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>Mark for deletion</button>
           </div>
         </article>
       {% endfor %}
       <p class="muted">Approved files move on the next commit, like every other move: hash-verified, journaled, undoable.</p>
     {% else %}
-      <p class="muted">Nothing is waiting. Duplicates show up here after a scan, and so does anything you mark <em>Don't want it</em> in Review.</p>
+      <p class="muted">Nothing is waiting. Duplicates show up here after a scan, and so does anything you send here with <em>Quarantine</em> or <em>Mark for deletion</em> in Review.</p>
     {% endif %}
   </section>
 
@@ -74,15 +95,24 @@
         <tbody>
           {% for entry in entries %}
             <tr{% if entry.restored_at %} class="is-idle"{% endif %}>
-              <td class="mono">{{ entry.item_relpath or entry.original_relpath }}</td>
-              <td>{{ entry.reason_text }}</td>
+              <td class="mono">{{ entry.item_relpath or entry.original_relpath }}
+                {% if entry.size_label %}<span class="muted"> · {{ entry.size_label }}</span>{% endif %}</td>
+              <td>{{ entry.reason_text }}
+                {% if entry.marked and not entry.restored_at %}<br><span class="badge badge-warn">marked for deletion</span>{% endif %}</td>
               <td class="muted">
                 {{ entry.quarantined_at }}
                 {% if entry.restored_at %}<br><span class="badge badge-ok">put back {{ entry.restored_at }}</span>{% endif %}
               </td>
               <td>
                 {% if not entry.restored_at %}
-                  <button hx-post="/quarantine/restore/{{ entry.id }}" hx-target="#quarantine-result" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>Put it back</button>
+                  <div class="button-row">
+                    <button hx-post="/quarantine/restore/{{ entry.id }}" hx-target="#quarantine-result" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>Put it back</button>
+                    {% if not entry.marked %}
+                      <button class="btn-danger" hx-post="/quarantine/mark-delete/{{ entry.id }}" hx-target="#quarantine-result"
+                        hx-confirm="Move this into the delete pile? It is still not deleted — it goes to one folder so you can empty that folder yourself."
+                        hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>Mark for deletion</button>
+                    {% endif %}
+                  </div>
                 {% endif %}
               </td>
             </tr>

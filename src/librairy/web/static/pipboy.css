@@ -595,11 +595,9 @@ tbody tr:hover { background: var(--bg-metric); }
   border: var(--border-thin) solid var(--border);
   border-radius: 999px;
 }
-.conf-swatch.is-catalog { background: var(--ok); }
-.conf-swatch.is-local { background: var(--accent-2); }
-.conf-swatch.is-ai { background: var(--accent); }
-.conf-swatch.is-cloud { background: var(--warn); }
-.conf-swatch.is-guess { background: var(--text-dim); }
+.conf-swatch.is-high { background: var(--ok); }
+.conf-swatch.is-mid { background: var(--warn); }
+.conf-swatch.is-low { background: var(--fail); }
 
 /* "You just did a thing, and here is the way back." Present only while there
    is something to take back. */
@@ -678,9 +676,12 @@ tbody tr:hover { background: var(--bg-metric); }
   border-radius: var(--radius-ui);
   background: var(--bg-metric);
 }
-.proposal.conf-high { border-left-color: var(--ok); }
-.proposal.conf-mid { border-left-color: var(--warn); }
-.proposal.conf-low { border-left-color: var(--fail); }
+/* One hue per row, set once and used by the edge, the bar and the score, so
+   the three cannot drift apart into three different opinions. */
+.proposal.conf-high { --conf-hue: var(--ok); }
+.proposal.conf-mid { --conf-hue: var(--warn); }
+.proposal.conf-low { --conf-hue: var(--fail); }
+.proposal.conf-high, .proposal.conf-mid, .proposal.conf-low { border-left-color: var(--conf-hue); }
 .proposal-pick { display: flex; align-items: start; padding-top: 0.2rem; }
 .proposal-body { min-width: 0; display: grid; gap: var(--space-2); }
 
@@ -706,6 +707,10 @@ tbody tr:hover { background: var(--bg-metric); }
   line-clamp: 2;
   overflow: hidden;
 }
+/* The size belongs to the filename — it is a fact about this file, not part of
+   the score it was sitting next to. Dimmed and lighter, so it reads as an
+   annotation on the name rather than a second name. */
+.name-size { font-weight: 400; color: var(--text-dim); white-space: nowrap; }
 /* Wraps: `flex: none` with nowrap held a size, a score and up to two badges on
    one unbreakable line, which pushed the whole page sideways on a phone. */
 .proposal-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
@@ -777,10 +782,42 @@ tbody tr:hover { background: var(--bg-metric); }
   flex: 0 1 auto;
   min-width: 0;
 }
-.proposal-actions button { min-height: 2rem; padding: var(--space-1) var(--space-3); }
+/* Tight horizontally, unchanged vertically: the buttons keep their 2rem target
+   height, and the width they give back goes to the destination path beside
+   them. Six buttons at the old padding pushed 26 of 50 paths onto a second
+   line — one narrow button's worth of padding, spread across the row, was
+   costing 8px on every row in the queue. */
+.proposal-actions button { min-height: 2rem; padding: var(--space-1) var(--space-2); }
 /* Inspect, then decide. The gap is the seam between the two, so Approve is
    always in the same place on every row and the thumb learns it once. */
 .action-gap { width: var(--space-3); }
+/* Two answers that are neither frequent nor urgent — "not now", and "I am done
+   with this" — behind one narrow button, rather than two more permanent
+   buttons on every row of a fifty-row page. */
+/* As narrow as a button can legibly be: every pixel it takes comes off the
+   destination path beside it, which then wraps to a second line and makes the
+   whole row taller. */
+.proposal-actions .btn-more { padding: var(--space-1); min-width: 1.75rem; font-weight: 700; line-height: 1; }
+/* A two-column grid rather than two flex rows: the buttons come out the same
+   width and both explanations start in the same place. */
+.proposal-tray {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: var(--border-thin) dashed var(--border);
+  border-radius: var(--radius-ui);
+  background: var(--bg-input);
+  font-size: var(--text-sm);
+}
+.proposal-tray button { width: 100%; min-height: 2rem; padding: var(--space-1) var(--space-3); }
+/* On a phone the button column left ~100px for the sentence beside it and the
+   tray grew to 435px. Stacked, the same tray is a third of that. */
+@media (max-width: 639px) {
+  .proposal-tray { grid-template-columns: 1fr; }
+  .proposal-tray button { width: auto; justify-self: start; }
+}
 .proposal-edit {
   padding: var(--space-3);
   border: var(--border-thin) solid var(--border);
@@ -825,14 +862,21 @@ tbody tr:hover { background: var(--bg-metric); }
   /* The unearned remainder reads as absence, not as another source. */
   background: var(--bg-input);
 }
-.conf-part { height: 100%; }
-/* Strongest evidence first, and the further down this list a bar's colour
-   sits, the more of it is the machine's own opinion. */
-.conf-part.is-catalog { background: var(--ok); }
-.conf-part.is-local { background: var(--accent-2); }
-.conf-part.is-ai { background: var(--accent); }
-.conf-part.is-cloud { background: var(--warn); }
-.conf-part.is-guess { background: var(--text-dim); }
+/* Colour is the score, not the source. Five hues that ignored the percentage
+   made every bar look equally considered, and left the one question you ask
+   fifty times a page — is this one safe to wave through? — to a decimal.
+   The source survives as shading within that hue: solid where a catalog or
+   the file's own tags earned it, fading out through AI to a plain guess. One
+   glance for the verdict, a closer look for the grounds. */
+.conf-part { height: 100%; background: var(--conf-hue, var(--text-dim)); }
+/* A narrow range on purpose. At 0.3 the faintest step vanished on exactly the
+   rows that need reading — a 30% bar is short *and* usually a guess, and the
+   two compounded into nothing to see. */
+.conf-part.is-catalog { opacity: 1; }
+.conf-part.is-local { opacity: 0.92; }
+.conf-part.is-ai { opacity: 0.8; }
+.conf-part.is-cloud { opacity: 0.7; }
+.conf-part.is-guess { opacity: 0.6; }
 .conf-score {
   min-width: 2.5rem;
   text-align: right;
@@ -841,11 +885,11 @@ tbody tr:hover { background: var(--bg-metric); }
   font-variant-numeric: tabular-nums;
   color: var(--text-dim);
 }
-/* The row's own band already carries the verdict in colour; the score carries
-   it in text. Low ones get the emphasis, since those are the rows to slow
-   down on. */
-.conf-low .conf-score { color: var(--fail); font-weight: 600; }
-.conf-high .conf-score { color: var(--text-dim); }
+/* The number takes the same hue as its bar, so a row is one signal read three
+   ways rather than three signals to reconcile. Low ones get the weight: those
+   are the rows to slow down on. */
+.conf-high .conf-score, .conf-mid .conf-score { color: var(--conf-hue); }
+.conf-low .conf-score { color: var(--conf-hue); font-weight: 600; }
 
 .pager { display: flex; gap: var(--space-4); align-items: center; margin-top: var(--space-4); }
 

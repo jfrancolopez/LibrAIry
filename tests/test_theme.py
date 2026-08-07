@@ -259,17 +259,37 @@ def test_long_names_and_paths_are_clamped_not_wrapped_forever() -> None:
         assert "overflow: hidden" in rule.group(1), selector
 
 
-def test_the_confidence_bar_shows_its_sources_in_distinct_colours() -> None:
-    """The bar's point is that a catalog match and a filename guess look
-    different at a glance. One shared colour would make it a plain meter."""
+def test_the_confidence_bar_is_coloured_by_the_score() -> None:
+    """Colour answers the question asked fifty times a page — is this one safe
+    to wave through? — so it has to follow the percentage. Five hues keyed to
+    the evidence source instead made every bar look equally considered.
+
+    One hue per band, declared once on the row and inherited by the edge, the
+    bar and the number, so the three cannot drift into three opinions.
+    """
+    hues = {}
+    for band in ("high", "mid", "low"):
+        rule = re.search(r"\.proposal\.conf-" + band + r"\s*\{\s*--conf-hue:\s*([^;]+);", CSS)
+        assert rule, f"the {band} band sets no hue"
+        hues[band] = rule.group(1).strip()
+    assert len(set(hues.values())) == 3, f"two bands share a colour: {hues}"
+    assert "background: var(--conf-hue" in re.search(r"\.conf-part\s*\{([^}]*)\}", CSS).group(1)
+    # And the legend explains those three, not the five it used to.
+    for band, hue in hues.items():
+        legend = re.search(r"\.conf-swatch\.is-" + band + r"\s*\{\s*background:\s*([^;]+);", CSS)
+        assert legend and legend.group(1).strip() == hue, f"legend disagrees for {band}"
+
+
+def test_what_a_score_is_made_of_survives_as_shading() -> None:
+    """Colour went to the score, but "62% off a catalog match" and "62% off a
+    filename" are still different propositions. The sources keep their own
+    step within the row's hue."""
     kinds = ("catalog", "local", "ai", "cloud", "guess")
-    colours = {}
+    steps = {}
     for kind in kinds:
-        rule = re.search(r"\.conf-part\.is-" + kind + r"\s*\{\s*background:\s*([^;]+);", CSS)
-        assert rule, f"the {kind} segment has no colour"
-        colours[kind] = rule.group(1).strip()
-    assert len(set(colours.values())) == len(kinds), f"segments share a colour: {colours}"
-    # And the legend that explains them uses the same ones.
-    for kind, colour in colours.items():
-        legend = re.search(r"\.conf-swatch\.is-" + kind + r"\s*\{\s*background:\s*([^;]+);", CSS)
-        assert legend and legend.group(1).strip() == colour, f"legend disagrees for {kind}"
+        rule = re.search(r"\.conf-part\.is-" + kind + r"\s*\{\s*opacity:\s*([^;]+);", CSS)
+        assert rule, f"the {kind} segment has no shade"
+        steps[kind] = float(rule.group(1))
+    assert len(set(steps.values())) == len(kinds), f"segments share a shade: {steps}"
+    # Strongest evidence solid, weakest faintest — the order is the meaning.
+    assert list(steps.values()) == sorted(steps.values(), reverse=True), steps

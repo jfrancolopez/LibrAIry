@@ -95,8 +95,10 @@ from librairy.web.history import (
 from librairy.web.params import OptionalFloat, OptionalInt, PageNumber
 from librairy.web.quarantine import (
     approve_stage,
+    mark_for_deletion,
     quarantine_data,
     restore_quarantine,
+    stage_for_deletion,
     unstage_proposal,
 )
 from librairy.web.review import (
@@ -849,6 +851,21 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             {"result": result},
         )
 
+    @app.post("/quarantine/mark-delete/{entry_id}", response_class=HTMLResponse)
+    def quarantine_mark_delete(request: Request, entry_id: int) -> HTMLResponse:
+        """Gather a held file into the delete pile. Still never deletes.
+
+        Quarantine answers "not in my library". It had no way to say "and I am
+        done with this one", which left emptying it a file-by-file job in a
+        file manager.
+        """
+        result = mark_for_deletion(conn, settings, entry_id)
+        return TEMPLATES.TemplateResponse(
+            request,
+            "partials/quarantine_result.html",
+            {"result": result},
+        )
+
     @app.post("/quarantine/staged/{proposal_id}/unstage", response_class=HTMLResponse)
     def quarantine_unstage(request: Request, proposal_id: int) -> HTMLResponse:
         unstage_proposal(conn, proposal_id)
@@ -856,6 +873,17 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             request,
             "partials/quarantine_result.html",
             {"result": {"outcome": "unstaged", "entry_id": proposal_id}},
+        )
+
+    @app.post("/quarantine/staged/{proposal_id}/mark-delete", response_class=HTMLResponse)
+    def quarantine_stage_delete(request: Request, proposal_id: int) -> HTMLResponse:
+        """Approve a staged quarantine straight into the delete pile, so being
+        finished with a duplicate is one commit rather than two."""
+        stage_for_deletion(conn, proposal_id)
+        return TEMPLATES.TemplateResponse(
+            request,
+            "partials/quarantine_result.html",
+            {"result": {"outcome": "marked", "entry_id": proposal_id}},
         )
 
     @app.post("/quarantine/staged/{proposal_id}/approve", response_class=HTMLResponse)

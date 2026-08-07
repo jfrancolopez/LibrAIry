@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -12,7 +12,7 @@ from librairy.lifecycle import transition_item, vanished_count
 from librairy.paths import PathValidationError, sanitize_component, validate_dest
 from librairy.planner import utc_now
 from librairy.proposals import decode_evidence
-from librairy.quarantine import quarantine_operation
+from librairy.quarantine import deletion_operation, quarantine_operation
 from librairy.review_undo import latest as latest_undo
 from librairy.review_undo import record as record_undo
 from librairy.review_undo import snapshot_proposals
@@ -47,6 +47,10 @@ SORTS = {
     "newest": ("Newest first", "i.first_seen_at DESC, p.id DESC"),
 }
 DEFAULT_SORT = "confidence"
+
+# What "Approve all confident" means, in one place, so the button can say it.
+# A threshold nobody can see is a bulk action taken on trust.
+CONFIDENT = 0.85
 
 # The state filter was a free-text box over a database enum: type a sixth word
 # and you got an empty list with nothing to say why.
@@ -111,7 +115,18 @@ def review_data(conn: sqlite3.Connection, filters: ReviewFilters) -> dict[str, o
         # Nothing in the portal could take a decision back, and "Not this" in
         # particular dropped a file out of the queue with no way to return it.
         "undo": latest_undo(conn),
+        # "Approve all confident" gave no clue which rows it meant, so the only
+        # honest way to use it was not to.
+        "confident": CONFIDENT,
+        "confident_ready": _confident_count(conn, filters),
     }
+
+
+def _confident_count(conn: sqlite3.Connection, filters: ReviewFilters) -> int:
+    if filters.state != "proposed":
+        return 0
+    floor = max(CONFIDENT, filters.min_confidence or 0.0)
+    return _proposal_count(conn, replace(filters, min_confidence=floor))
 
 
 def apply_review_action(
@@ -122,8 +137,14 @@ def apply_review_action(
     proposal_ids: list[int] | None = None,
     all_matching: bool = False,
 ) -> int:
-    if action == "discard":
+    if action in {"discard", "mark_delete"}:
         return discard_proposals(
+            conn,
+            _matching_ids(conn, filters) if all_matching else proposal_ids or [],
+            to_delete_pile=action == "mark_delete",
+        )
+    if action == "reanalyze":
+        return reanalyze_proposals(
             conn,
             _matching_ids(conn, filters) if all_matching else proposal_ids or [],
         )
@@ -178,7 +199,46 @@ def destination_folders(conn: sqlite3.Connection) -> list[str]:
     return sorted(seen)
 
 
-def discard_proposals(conn: sqlite3.Connection, proposal_ids: list[int]) -> int:
+def reanalyze_proposals(conn: sqlite3.Connection, proposal_ids: list[int]) -> int:
+    """Look again, with everything.
+
+    This replaced "Not this", which answered a wrong guess by setting the file
+    aside and never guessing again — a dead end reachable in one click and
+    escapable only from the command line. The useful thing to say to a wrong
+    guess is *try harder*: the item goes back to 'discovered', so the next
+    worker cycle runs the whole cascade over it again — tags, catalogs,
+    library patterns, the duplicate detectors and any AI provider now
+    configured. Keys added after the first scan are the usual reason a second
+    pass does better than the first.
+
+    The proposal row is left alone rather than superseded. `upsert_proposal`
+    updates the live proposal in place, so the old guess stays visible, marked
+    as being re-checked, until a better one lands on top of it.
+    """
+    if not proposal_ids:
+        return 0
+    rows = conn.execute(
+        f"""
+        SELECT p.id, p.item_id
+        FROM proposals p JOIN items i ON i.id = p.item_id
+        WHERE p.status IN ('proposed', 'postponed') AND i.missing_since IS NULL
+          AND p.id IN ({_placeholders(proposal_ids)})
+        """,  # noqa: S608 - placeholders are generated from the id count
+        proposal_ids,
+    ).fetchall()
+    record_undo(conn, "reanalyze", snapshot_proposals(conn, [int(row["id"]) for row in rows]))
+    for row in rows:
+        transition_item(conn, row["item_id"], "discovered")
+        conn.execute(
+            "UPDATE proposals SET status='proposed', updated_at=? WHERE id=?",
+            (utc_now(), row["id"]),
+        )
+    return len(rows)
+
+
+def discard_proposals(
+    conn: sqlite3.Connection, proposal_ids: list[int], *, to_delete_pile: bool = False
+) -> int:
     """"I don't want this file" — which means quarantine, not delete.
 
     LibrAIry does not delete, and this is the one place a person is most likely
@@ -191,6 +251,11 @@ def discard_proposals(conn: sqlite3.Connection, proposal_ids: list[int]) -> int:
     Nothing moves here. The proposal is retargeted at quarantine and approved,
     so the move goes through the same planner and executor as everything else:
     hash-verified, journaled, undoable.
+
+    `to_delete_pile` aims it at the shelf inside quarantine for files you have
+    finished with, so the ones you mean to remove gather in one folder instead
+    of mixed in with the ones you are only setting aside. Still not a delete,
+    and still restorable.
     """
     if not proposal_ids:
         return 0
@@ -204,9 +269,14 @@ def discard_proposals(conn: sqlite3.Connection, proposal_ids: list[int]) -> int:
     ).fetchall()
     # This one rewrites the destination as well as the status, so the snapshot
     # is the only record of where the file was originally going.
-    record_undo(conn, "discard", snapshot_proposals(conn, [int(row["id"]) for row in rows]))
+    record_undo(
+        conn,
+        "mark_delete" if to_delete_pile else "discard",
+        snapshot_proposals(conn, [int(row["id"]) for row in rows]),
+    )
     for row in rows:
-        operation = quarantine_operation(row["relpath"])
+        stage = deletion_operation if to_delete_pile else quarantine_operation
+        operation = stage(row["relpath"])
         conn.execute(
             """
             UPDATE proposals
@@ -346,6 +416,10 @@ def _proposal_rows(
             # The comparison itself is loaded on demand — it carries two
             # previews, and a page of fifty rows must not fetch a hundred.
             "has_duplicate": int(row["item_id"]) in compared,
+            # Re-analyse puts the item back to 'discovered' and leaves the old
+            # guess on screen until the worker replaces it in place. Without
+            # saying so, pressing it looks like it did nothing.
+            "rechecking": row["item_state"] == "discovered",
         }
         for row in rows
     ]

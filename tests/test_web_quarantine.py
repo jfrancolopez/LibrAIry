@@ -43,7 +43,7 @@ def test_quarantine_restore_round_trips_file_and_journals(tmp_path: Path) -> Non
     )
 
     assert response.status_code == 200
-    assert "ok</span> → dupe.txt" in response.text
+    assert "Done</span>" in response.text and "dupe.txt" in response.text
     assert (settings.inbox_dir / "dupe.txt").read_text(encoding="utf-8") == "dupe"
     assert not (settings.quarantine_dir / "2026-07-22/dupe.txt").exists()
     assert (
@@ -81,7 +81,7 @@ def test_staged_quarantine_approve_and_unstage_actions(tmp_path: Path) -> None:
         headers={"x-csrf-token": client.cookies["csrf_token"]},
     )
     assert approve.status_code == 200
-    assert "approved" in approve.text
+    assert "Approved. It moves out on the next commit" in approve.text
     assert proposal_status(conn, proposal_id) == "approved"
 
     conn.execute("UPDATE proposals SET status='proposed' WHERE id=?", (proposal_id,))
@@ -98,7 +98,7 @@ def test_staged_quarantine_approve_and_unstage_actions(tmp_path: Path) -> None:
     )
 
     assert unstage.status_code == 200
-    assert "unstaged" in unstage.text
+    assert "Kept — it will be filed normally" in unstage.text
     row = conn.execute(
         "SELECT action, dest_root FROM proposals WHERE id=?", (proposal_id,)
     ).fetchone()
@@ -170,3 +170,68 @@ def test_quarantine_staged_rows_show_from_to_and_why(tmp_path: Path) -> None:
     assert "Why?" in page
     # Humanized, not a bracket code.
     assert "duplicate: same fingerprint" in page
+
+
+def test_marking_a_held_file_for_deletion_gathers_it_without_deleting_it(
+    tmp_path: Path,
+) -> None:
+    """The out-tray had one answer — "put it back" — so being finished with a
+    file meant going through quarantine by hand in a file manager. This is the
+    other answer: one folder to empty deliberately, yourself.
+    """
+    client, conn, settings = client_for(tmp_path)
+    entry_id = seed_executed_quarantine(conn, settings)
+
+    response = client.post(
+        f"/quarantine/mark-delete/{entry_id}",
+        headers={"x-csrf-token": client.cookies["csrf_token"]},
+    )
+
+    assert response.status_code == 200
+    moved = settings.quarantine_dir / "_to-delete/2026-07-22/dupe.txt"
+    assert moved.read_text(encoding="utf-8") == "dupe"
+    assert not (settings.quarantine_dir / "2026-07-22/dupe.txt").exists()
+    assert conn.execute("SELECT relpath FROM items WHERE root='quarantine'").fetchone()[0] == (
+        "_to-delete/2026-07-22/dupe.txt"
+    )
+    assert (
+        conn.execute("SELECT action FROM history ORDER BY id DESC LIMIT 1").fetchone()[0]
+        == "mark_for_deletion"
+    )
+    assert "marked for deletion" in client.get("/quarantine").text
+
+
+def test_a_file_in_the_delete_pile_can_still_be_put_back(tmp_path: Path) -> None:
+    """Marked is not deleted, and the entry remembers where the file came from
+    rather than where it is sitting now."""
+    client, conn, settings = client_for(tmp_path)
+    entry_id = seed_executed_quarantine(conn, settings)
+    csrf = client.cookies["csrf_token"]
+
+    client.post(f"/quarantine/mark-delete/{entry_id}", headers={"x-csrf-token": csrf})
+    restored = client.post(f"/quarantine/restore/{entry_id}", headers={"x-csrf-token": csrf})
+
+    assert restored.status_code == 200
+    assert (settings.inbox_dir / "dupe.txt").read_text(encoding="utf-8") == "dupe"
+    assert not (settings.quarantine_dir / "_to-delete/2026-07-22/dupe.txt").exists()
+
+
+def test_a_staged_duplicate_can_go_straight_to_the_delete_pile(tmp_path: Path) -> None:
+    """Otherwise being finished with a duplicate that has not moved yet costs
+    two commits: one into quarantine, another to move it along."""
+    client, conn, _ = client_for(tmp_path)
+    proposal_id = seed_staged_quarantine(conn)
+
+    response = client.post(
+        f"/quarantine/staged/{proposal_id}/mark-delete",
+        headers={"x-csrf-token": client.cookies["csrf_token"]},
+    )
+
+    assert response.status_code == 200
+    row = conn.execute(
+        "SELECT status, action, dest_root, dest_relpath FROM proposals WHERE id=?", (proposal_id,)
+    ).fetchone()
+    assert row["status"] == "approved"
+    assert row["action"] == "quarantine"
+    assert row["dest_relpath"].startswith("_to-delete/")
+    assert "still not deleted" in response.text
