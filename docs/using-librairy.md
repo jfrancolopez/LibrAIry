@@ -102,6 +102,33 @@ different proposition from 62% assembled out of a name.
 Hover any bar for the same thing in words. The full breakdown, entry by entry,
 is behind **Why** on the row.
 
+### Other options
+
+"Why is it this?" and "what else could it be?" are the same moment, so the
+second question lives at the bottom of the answer to the first. **Why → Other
+options** asks every AI provider you have switched on — all of them, about this
+one file, right now — and lists what each said, with the destination it would
+give the file and a **Use this** button.
+
+Analysis does not work this way, deliberately. During a scan it stops at the
+first answer good enough to act on, because asking four providers about fifty
+thousand files to discard three of the answers is a lot of electricity for
+nothing. Choosing between them is a different question, asked about one file at
+a time, so it happens on demand and nothing is stored. A local model can take
+twenty or thirty seconds to answer; the panel says *asking…* while it waits.
+
+Two consequences worth knowing:
+
+- **It is always current.** A provider or catalog key you added five minutes ago
+  is included, without re-analysing anything.
+- **A low-scoring answer still shows its destination.** During a scan anything
+  under the confidence threshold has its destination stripped, because nothing
+  that unsure should file itself. Picking one by hand is a different act, and an
+  option that cannot say where the file would land is not a choice.
+
+Providers that fail or decline are listed too, with the reason. A silently
+shorter list would read as agreement.
+
 ## Duplicates
 
 Exact duplicates are staged for reversible quarantine review. Similar media flags

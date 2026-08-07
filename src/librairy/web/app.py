@@ -21,6 +21,7 @@ from librairy.ai.lmstudio import diagnose as lmstudio_diagnose
 from librairy.ai.lmstudio import is_chat_model, normalize_host
 from librairy.ai.lmstudio import probe as lmstudio_probe
 from librairy.ai.lmstudio import try_classify as lmstudio_try_classify
+from librairy.alternatives import options_for_proposal
 from librairy.backup import request_backup_now
 from librairy.catalog_probe import UnknownCatalog, probe_catalog
 from librairy.catalogs import catalog_enabled
@@ -703,6 +704,21 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             request,
             "partials/duplicate_compare.html",
             duplicate_comparison(conn, settings, item_id),
+        )
+
+    @app.get("/review/options/{proposal_id}", response_class=HTMLResponse)
+    def review_options(request: Request, proposal_id: int) -> HTMLResponse:
+        """What else was suggested for this one file.
+
+        Analysis keeps the winner and drops the rest, which is right for a scan
+        and leaves Review with one guess and nothing to compare it against.
+        Asked on demand so nothing is stored, and so a provider or key added
+        five minutes ago is included without re-analysing anything.
+        """
+        return TEMPLATES.TemplateResponse(
+            request,
+            "partials/proposal_options.html",
+            {"options": options_for_proposal(conn, settings, proposal_id)},
         )
 
     @app.post("/review/forget-missing", include_in_schema=False)

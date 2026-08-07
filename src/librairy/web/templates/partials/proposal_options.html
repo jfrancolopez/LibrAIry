@@ -1,0 +1,42 @@
+{# What else was on the table. Fetched when you press for it, about this one
+   file, and never stored: five candidates per file across a whole library is a
+   lot of rows nobody reads, and a fresh ask includes the provider you switched
+   on five minutes ago. #}
+<div class="options-panel">
+  <p class="muted">{{ options.summary }}</p>
+
+  {% if options.alternatives %}
+    <ul class="option-list">
+      {% for option in options.alternatives %}
+        <li class="option conf-{{ option.band }}">
+          <div class="option-head">
+            <span class="badge {{ 'badge-warn' if option.kind == 'cloud' else 'badge-info' }}">{{ option.source_label }}</span>
+            <span class="conf-score">{{ option.confidence_pct }}%</span>
+          </div>
+          <p class="option-dest mono">
+            {% if option.dest_relpath %}library/{{ option.dest_relpath }}{% else %}<span class="badge badge-warn">no destination</span>{% endif %}
+          </p>
+          {% if option.detail %}<p class="muted">{{ option.detail }}</p>{% endif %}
+          {# Straight through the ordinary edit endpoint, so a choice made here
+             is validated and contained exactly like a path typed by hand — and
+             the swapped row shows the result, which closes this panel. #}
+          <button type="button" class="btn-primary"
+            hx-post="/review/proposals/{{ options.proposal_id }}/edit"
+            hx-vals='{"category": "{{ option.category }}", "clean_name": "{{ option.clean_name }}", "dest_relpath": "{{ option.dest_relpath or '' }}"}'
+            hx-target="#proposal-{{ options.proposal_id }}" hx-swap="outerHTML"
+            hx-headers='{"x-csrf-token":"{{ request.state.session.csrf_token }}"}'
+            {% if not option.dest_relpath %}disabled{% endif %}>Use this</button>
+        </li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+
+  {% if options.problems %}
+    <ul class="option-problems">
+      {% for problem in options.problems %}
+        {# A provider that failed is information. A silently shorter list is not. #}
+        <li class="muted">{{ problem }}</li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+</div>

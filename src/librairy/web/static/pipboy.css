@@ -837,6 +837,36 @@ tbody tr:hover { background: var(--bg-metric); }
 }
 .why-list li { list-style: none; overflow-wrap: anywhere; }
 
+/* htmx toggles .htmx-request on whatever hx-indicator points at; without a
+   rule for it the indicator is simply always on screen. */
+.htmx-indicator { opacity: 0; transition: opacity 0.15s ease-in; }
+.htmx-request .htmx-indicator,
+.htmx-request.htmx-indicator { opacity: 1; }
+
+/* "Why is it this?" and "what else could it be?" are one moment, so the second
+   question lives at the bottom of the answer to the first. */
+.why-more { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin: var(--space-3) 0 0; }
+.why-more button { min-height: 2rem; padding: var(--space-1) var(--space-3); }
+.options-panel { margin-top: var(--space-3); display: grid; gap: var(--space-2); }
+.option-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
+.option {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border: var(--border-thin) solid var(--border);
+  border-radius: var(--radius-ui);
+  background: var(--bg-metric);
+}
+/* Each option scores itself. Inheriting the row's hue drew an 85% option in
+   the 30% row's red — the one number meant to say "this one is better". */
+.option.conf-high { --conf-hue: var(--ok); }
+.option.conf-mid { --conf-hue: var(--warn); }
+.option.conf-low { --conf-hue: var(--fail); }
+.option-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.option-dest { margin: 0; overflow-wrap: anywhere; }
+.option button { justify-self: start; min-height: 2rem; padding: var(--space-1) var(--space-3); }
+.option-problems { list-style: none; margin: 0; padding: 0; font-size: var(--text-sm); }
+
 /* Confidence, and what it is made of.
    The old control was a number in a box with a gradient behind it: three
    encodings of one fact (box, badge word, decimal) and no answer to the

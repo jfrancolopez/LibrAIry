@@ -85,6 +85,63 @@ def apply_ai_if_needed(
     return current
 
 
+@dataclass(frozen=True)
+class ProviderAnswer:
+    """What one provider said, kept whether or not it won."""
+
+    config: ProviderConfig
+    classification: AIClassification | None
+    problem: str | None = None
+
+
+def every_provider_answer(
+    conn: sqlite3.Connection,
+    settings: Settings,
+    item: Item,
+    current,
+    *,
+    providers: list[Provider] | None = None,
+) -> list[ProviderAnswer]:
+    """Ask every enabled provider and keep all the answers.
+
+    `apply_ai_if_needed` stops at the first answer over the threshold, which
+    during a scan is the cheapest correct thing to do — and it is why Review
+    can only ever show you one AI's opinion. Choosing between them is a
+    different question, asked about one file at a time and only when you press
+    for it, so here every provider is asked and nothing is discarded.
+
+    Providers that fail or decline are kept too, with the reason. "Ollama had
+    nothing to say" is information; a silently shorter list is not.
+    """
+    chain = providers if providers is not None else _providers(conn, settings)
+    view = build_view(item, {}, tuple(current.evidence))
+    answers: list[ProviderAnswer] = []
+    for provider in chain:
+        started = time.monotonic()
+        try:
+            answer = provider.classify(view, settings.ai_timeout)
+        except (OSError, RuntimeError) as exc:
+            upsert_provider_status(
+                conn, provider.config, HealthResult(False, error=exc.__class__.__name__)
+            )
+            answers.append(ProviderAnswer(provider.config, None, exc.__class__.__name__))
+            continue
+        if answer is None:
+            answers.append(ProviderAnswer(provider.config, None, "no answer"))
+            continue
+        latency = max(0, round((time.monotonic() - started) * 1000))
+        upsert_provider_status(
+            conn, provider.config, HealthResult(True, latency_ms=latency), used=True
+        )
+        answers.append(
+            ProviderAnswer(
+                provider.config,
+                _classification_from_answer(settings, item, current, answer, provider.config),
+            )
+        )
+    return answers
+
+
 def _providers(conn: sqlite3.Connection, settings: Settings) -> list[Provider]:
     providers: list[Provider] = []
     for config in provider_chain(conn, settings):

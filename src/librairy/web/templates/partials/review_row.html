@@ -161,6 +161,20 @@
           <li class="muted">No evidence recorded.</li>
         {% endfor %}
       </ul>
+      {# "Why is it this?" and "what else could it be?" are the same moment.
+         A permanent button on the row would be a fourth thing to aim at and
+         another slice off the destination path; here it costs nothing until
+         you are already asking. #}
+      <p class="why-more">
+        <button type="button" class="btn-ghost"
+          hx-get="/review/options/{{ proposal.id }}"
+          hx-target="#options-{{ proposal.id }}"
+          hx-swap="innerHTML"
+          hx-indicator="#options-wait-{{ proposal.id }}">Other options</button>
+        <span class="muted">Asks every AI provider you have switched on, about this file, now.</span>
+        <span id="options-wait-{{ proposal.id }}" class="htmx-indicator muted">asking…</span>
+      </p>
+      <div id="options-{{ proposal.id }}"></div>
     </div>
 
     <div id="preview-{{ proposal.id }}" class="proposal-preview"></div>
