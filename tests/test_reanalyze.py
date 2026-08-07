@@ -150,3 +150,32 @@ def test_a_folder_named_after_a_uuid_is_not_a_photo_event(tmp_path: Path) -> Non
 
     assert group_proposals(conn, [noise])[0].group_id is None
     assert group_proposals(conn, [named])[0].group_id is not None
+
+
+def test_two_years_of_screenshots_are_two_differently_named_groups(tmp_path: Path) -> None:
+    """They file under different folders, so they are two groups — and both
+    were headed "Screenshots", which reads as one heading repeated twice."""
+    from librairy.classify.grouping import GroupInput, group_proposals
+
+    settings = _settings(tmp_path)
+    conn = connect(settings)
+
+    def shot(item_id: int, year: int) -> GroupInput:
+        return GroupInput(
+            item_id=item_id,
+            relpath=f"Photos/{year}/Screenshots/shot.png",
+            category="photos",
+            clean_name="shot.png",
+            dest_relpath=f"Photos/{year}/Screenshots/shot.png",
+            fields={"event": "Screenshots", "year": year},
+        )
+
+    first = group_proposals(conn, [shot(1, 2022)])[0].group_id
+    second = group_proposals(conn, [shot(2, 2023)])[0].group_id
+
+    assert first != second
+    labels = {
+        row["label"]
+        for row in conn.execute("SELECT label FROM groups WHERE id IN (?, ?)", (first, second))
+    }
+    assert labels == {"Screenshots 2022", "Screenshots 2023"}

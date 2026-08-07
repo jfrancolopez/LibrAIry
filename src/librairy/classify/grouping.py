@@ -84,7 +84,12 @@ def _group_descriptor(proposal: GroupInput) -> tuple[str | None, str, str | None
         # anybody is looking for. Better no group than a heading of noise.
         if not _meaningful(event):
             return None, "", None
-        return "photo_event", event, _parent(proposal.dest_relpath)
+        # Two years of screenshots are two groups — they file under different
+        # folders — and both were headed "Screenshots", which on screen is one
+        # heading repeated for no visible reason.
+        return "photo_event", _dated(event, proposal.fields.get("year")), _parent(
+            proposal.dest_relpath
+        )
     if proposal.category == "projects":
         project = str(proposal.fields.get("project", proposal.clean_name))
         return "project", project, _parent(proposal.dest_relpath)
@@ -97,6 +102,11 @@ _NOISE = re.compile(
     r"(?i)^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
     r"|[0-9a-f]{16,}|\d+)$"
 )
+
+
+def _dated(label: str, year: object) -> str:
+    text = str(year or "").strip()
+    return f"{label} {text}" if text.isdigit() and text != "0" else label
 
 
 def _meaningful(label: str) -> bool:
