@@ -38,6 +38,7 @@ def test_fresh_db_migrates_to_current_schema(tmp_path: Path) -> None:
         "similar_media_flags",
         "quarantine_entries",
         "duplicate_reports",
+        "review_undo",
         "search_fts",
     }
     assert expected_tables <= tables
@@ -122,7 +123,13 @@ def test_migration_011_closes_proposals_for_files_already_filed(tmp_path: Path) 
     # and rewinding one step from whatever the head happens to be replays some
     # other migration instead. Rewinding replays 011 *and everything after it*,
     # so anything a later migration creates has to be put back first.
-    conn.executescript("DROP TABLE IF EXISTS duplicate_reports; PRAGMA user_version=10;")
+    conn.executescript(
+        """
+        DROP TABLE IF EXISTS duplicate_reports;
+        DROP TABLE IF EXISTS review_undo;
+        PRAGMA user_version=10;
+        """
+    )
     conn.close()
 
     reopened = connect(settings)

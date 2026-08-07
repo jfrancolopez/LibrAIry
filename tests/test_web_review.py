@@ -318,9 +318,14 @@ def test_review_rows_carry_confidence_bands_and_row_actions(tmp_path: Path) -> N
 
     # Colour band is paired with a text label, never colour alone.
     assert "conf-high" in page
-    assert "confident" in page
     assert "conf-low" in page
-    assert "needs a look" in page
+    # The badge word is gone: the bar's length and the score carry it without
+    # colour, and three encodings of one number was the thing taking up room.
+    assert "95%" in page
+    assert "30%" in page
+    # Tags are the file speaking for itself; a bare filename guess is not.
+    assert 'conf-part is-local' in page
+    assert 'conf-part is-guess' in page
     # Per-row decisions, CSP-safe (htmx attributes, no inline handlers).
     assert 'hx-vals=\'{"action": "approve"' in page
     assert "onclick=" not in page

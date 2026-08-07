@@ -15,9 +15,23 @@
       <h3 class="proposal-name" title="{{ proposal.item_relpath }}">{{ proposal.item_relpath }}</h3>
       <span class="proposal-meta">
         {% if proposal.size_label %}<span class="muted">{{ proposal.size_label }}</span>{% endif %}
-        <span class="confidence" style="--score: {{ (conf * 100)|round|int }}%">{{ '%.2f'|format(conf) }}</span>
-        <span class="badge {{ 'badge-ok' if band == 'conf-high' else ('badge-fail' if band == 'conf-low' else 'badge-warn') }}">{{ 'confident' if band == 'conf-high' else ('needs a look' if band == 'conf-low' else 'probable') }}</span>
         {% if proposal.has_duplicate %}<span class="badge badge-info">duplicate</span>{% endif %}
+        {# Always last in the row, so the scores line up into a column you can
+           read straight down instead of stopping at each one.
+           Length says how sure; the pieces say what of. A 62% earned by a
+           catalog match is a different proposition from a 62% assembled out
+           of a filename, and that is the thing worth seeing at a glance.
+           Length is also the greyscale-safe signal, so the colours are the
+           third encoding rather than the only one. #}
+        <span class="conf" role="img" aria-label="{{ proposal.confidence_caption }}"
+              title="{{ proposal.confidence_caption }}">
+          <span class="conf-track">
+            {% for segment in proposal.confidence_segments %}
+              <span class="conf-part is-{{ segment.kind }}" style="width: {{ segment.width_pct }}%"></span>
+            {% endfor %}
+          </span>
+          <span class="conf-score">{{ (conf * 100)|round|int }}%</span>
+        </span>
       </span>
     </header>
 
@@ -27,8 +41,10 @@
       <p class="proposal-dest">
         <span class="dest-arrow" aria-hidden="true">→</span>
         {% if proposal.dest_relpath %}
+          {# The full path in the title, because the visible one is clamped to
+             two lines and a long one is exactly when you want to read it. #}
           <button type="button" class="mono dest-path" data-panel-toggle="edit-{{ proposal.id }}"
-                  title="Click to change where this goes">{{ proposal.dest_root }}/{{ proposal.dest_relpath }}</button>
+                  title="{{ proposal.dest_root }}/{{ proposal.dest_relpath }} — click to change">{{ proposal.dest_root }}/{{ proposal.dest_relpath }}</button>
         {% else %}
           <button type="button" class="badge badge-warn dest-path" data-panel-toggle="edit-{{ proposal.id }}"
                   title="Click to set a destination">no destination yet</button>

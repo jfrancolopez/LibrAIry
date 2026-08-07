@@ -13,9 +13,12 @@ from librairy.paths import PathValidationError, sanitize_component, validate_des
 from librairy.planner import utc_now
 from librairy.proposals import decode_evidence
 from librairy.quarantine import quarantine_operation
+from librairy.review_undo import latest as latest_undo
+from librairy.review_undo import record as record_undo
+from librairy.review_undo import snapshot_proposals
 from librairy.search import sync_search_item
 from librairy.taxonomy import CATEGORIES, render_destination
-from librairy.web.evidence import humanize_evidence
+from librairy.web.evidence import confidence_caption, confidence_segments, humanize_evidence
 
 PAGE_SIZE = 50
 DEFAULT_CATEGORY_FIELDS = {
@@ -105,6 +108,9 @@ def review_data(conn: sqlite3.Connection, filters: ReviewFilters) -> dict[str, o
         # Filtered out of the list above; without a number the totals would
         # simply be wrong and nothing would say why.
         "vanished": vanished_count(conn),
+        # Nothing in the portal could take a decision back, and "Not this" in
+        # particular dropped a file out of the queue with no way to return it.
+        "undo": latest_undo(conn),
     }
 
 
@@ -137,6 +143,9 @@ def apply_review_action(
         sql,
         targets,
     ).fetchall()
+    # Photographed before anything changes, so one press of Undo puts the whole
+    # batch back — approving forty by accident is exactly when you need it.
+    record_undo(conn, action, snapshot_proposals(conn, [int(row["id"]) for row in rows]))
     for row in rows:
         transition_item(conn, row["item_id"], item_state)
         conn.execute(
@@ -193,6 +202,9 @@ def discard_proposals(conn: sqlite3.Connection, proposal_ids: list[int]) -> int:
         """,  # noqa: S608 - placeholders are generated from the id count
         proposal_ids,
     ).fetchall()
+    # This one rewrites the destination as well as the status, so the snapshot
+    # is the only record of where the file was originally going.
+    record_undo(conn, "discard", snapshot_proposals(conn, [int(row["id"]) for row in rows]))
     for row in rows:
         operation = quarantine_operation(row["relpath"])
         conn.execute(
@@ -320,7 +332,12 @@ def _proposal_rows(
         {
             **dict(row),
             "evidence_lines": evidence_lines(row["evidence"]),
-            "evidence_views": humanize_evidence(row["evidence"]),
+            "evidence_views": (views := humanize_evidence(row["evidence"])),
+            # The score broken into where it came from. A bar of one length
+            # says how sure; the same bar in pieces says why, which is what
+            # actually decides whether this row needs a closer look.
+            "confidence_segments": confidence_segments(views, row["confidence"]),
+            "confidence_caption": confidence_caption(views, row["confidence"]),
             "size_label": human_size(row["item_size"]),
             # Advisories, not classification: a wallet or a hidden file should
             # not disappear into a bulk approve unnoticed.

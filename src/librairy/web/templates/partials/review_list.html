@@ -1,6 +1,19 @@
 {% set qs = 'state=' ~ filters.state ~ '&category=' ~ (filters.category or '') ~ '&sort=' ~ filters.sort %}
 <div id="review-list" class="review-list">
   {% if toast %}<p><span class="badge badge-ok">{{ toast }}</span></p>{% endif %}
+  {% if notice %}<p class="status ok">{{ notice }}</p>{% endif %}
+
+  {# Sits inside the swapped fragment, so it appears the moment there is
+     something to take back and disappears the moment there is not. #}
+  {% if undo %}
+    <div class="undo-bar">
+      <span>{{ undo.summary }}.</span>
+      <button type="button" class="btn"
+        hx-post="/review/undo"
+        hx-target="#review-list" hx-swap="outerHTML"
+        hx-headers='{"x-csrf-token":"{{ request.state.session.csrf_token }}"}'>Undo</button>
+    </div>
+  {% endif %}
 
   {# One datalist for the whole page rather than one per card: the same few
      hundred folder names repeated fifty times is a lot of HTML for nothing. #}

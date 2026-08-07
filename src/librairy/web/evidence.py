@@ -25,12 +25,92 @@ _SOURCE_LABEL = {
 }
 
 
+# How much a source is worth trusting, which is a different question from how
+# much weight it carried. A catalog match and a filename guess can both be 0.6.
+TRUST = {
+    "acoustid": "catalog",
+    "musicbrainz": "catalog",
+    "tmdb": "catalog",
+    "tvmaze": "catalog",
+    "discogs": "catalog",
+    "lastfm": "catalog",
+    "openlibrary": "catalog",
+    "coverart": "catalog",
+    "tags": "local",
+    "library-pattern": "local",
+    "hashtag": "local",
+    "heuristic": "guess",
+}
+TRUST_LABELS = {
+    "catalog": "a public catalog",
+    "local": "the file itself",
+    "guess": "its name and type",
+    "ai": "local AI",
+    "cloud": "cloud AI",
+}
+
+
 @dataclass(frozen=True)
 class EvidenceView:
     label: str
     text: str
     weight_pct: int
     cloud: bool = False
+    #  catalog | local | guess | ai | cloud
+    kind: str = "guess"
+
+
+@dataclass(frozen=True)
+class Segment:
+    """One slice of the confidence bar: where a share of the score came from."""
+
+    kind: str
+    label: str
+    width_pct: int
+
+
+def confidence_segments(views: list[EvidenceView], confidence: float) -> list[Segment]:
+    """The score, broken into where it came from.
+
+    A bar of one length says how sure the machine is. The same bar in pieces
+    says *why*, which is the thing that actually decides whether to look
+    closer: 0.62 earned by a catalog match is a different proposition from
+    0.62 assembled out of a filename.
+
+    Widths are the sources' shares of the total, scaled to the score — so the
+    bar is as long as the confidence and reads as one object.
+    """
+    score = max(0, min(100, round(confidence * 100)))
+    if not views or score == 0:
+        return [Segment("guess", "nothing recorded", score)] if score else []
+    by_kind: dict[str, int] = {}
+    for view in views:
+        by_kind[view.kind] = by_kind.get(view.kind, 0) + max(view.weight_pct, 1)
+    total = sum(by_kind.values())
+    #  Strongest first, so the bar reads left to right as best evidence first.
+    order = ["catalog", "local", "ai", "cloud", "guess"]
+    segments = [
+        Segment(kind, TRUST_LABELS.get(kind, kind), round(score * weight / total))
+        for kind, weight in sorted(
+            by_kind.items(), key=lambda pair: order.index(pair[0]) if pair[0] in order else 99
+        )
+    ]
+    #  Rounding must not make the bar disagree with the number beside it.
+    drift = score - sum(segment.width_pct for segment in segments)
+    if drift and segments:
+        first = segments[0]
+        segments[0] = Segment(first.kind, first.label, first.width_pct + drift)
+    return [segment for segment in segments if segment.width_pct > 0]
+
+
+def confidence_caption(views: list[EvidenceView], confidence: float) -> str:
+    """The bar in words, for a tooltip and for a screen reader."""
+    score = max(0, min(100, round(confidence * 100)))
+    segments = confidence_segments(views, confidence)
+    if not segments:
+        return f"{score}% confident, with nothing recorded to back it up"
+    leader = max(segments, key=lambda segment: segment.width_pct)
+    return f"{score}% confident, mostly from {leader.label}"
 
 
 def humanize_evidence(payload: str) -> list[EvidenceView]:
@@ -48,7 +128,7 @@ def humanize_evidence(payload: str) -> list[EvidenceView]:
             provider = model.split("/", 1)[0] if model else "model"
             label = f"AI · {provider}"
             text = f"{entry.field}: {reason}" if reason else f"suggested {entry.field}"
-            views.append(EvidenceView(label, text, weight_pct, cloud))
+            views.append(EvidenceView(label, text, weight_pct, cloud, "cloud" if cloud else "ai"))
             continue
         label = _SOURCE_LABEL.get(entry.source, entry.source.replace("-", " ").title())
         if entry.source == "heuristic" and entry.field == "category":
@@ -61,5 +141,6 @@ def humanize_evidence(payload: str) -> list[EvidenceView]:
             text = f"Fits your existing layout: {entry.detail}"
         else:
             text = f"{entry.field}: {entry.detail}"
-        views.append(EvidenceView(label, text, weight_pct, cloud=False))
+        kind = TRUST.get(entry.source, "guess")
+        views.append(EvidenceView(label, text, weight_pct, cloud=False, kind=kind))
     return views

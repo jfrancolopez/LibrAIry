@@ -7,7 +7,9 @@
       <h1>Review</h1>
       {# The match count lives in the pager, inside the swapped fragment.
          Repeating it here would go stale the moment you filter. #}
-      <p class="muted">Nothing moves until you approve it and commit.</p>
+      <p class="muted">Nothing moves until you approve it and commit.
+        <button type="button" class="btn-link" data-panel-toggle="review-help">What do these buttons do?</button>
+      </p>
     </div>
     <div class="button-row">
       <button class="btn-primary"
@@ -21,6 +23,66 @@
       <a class="btn" href="/review?max_confidence=0.85">Only the doubtful ones</a>
     </div>
   </header>
+
+  {# Four buttons whose names cannot carry their whole meaning. "Not this" in
+     particular takes a file out of the queue, which nothing on the row says. #}
+  <div id="review-help" class="review-help" hidden>
+    <ol class="flow-steps">
+      <li><strong>You drop files in the inbox.</strong> LibrAIry reads them, asks the
+        catalogs and tools, and proposes a name and a place. It never asks you anything
+        while it works.</li>
+      <li><strong>You decide here.</strong> Nothing on disk has moved yet — every button
+        below only changes what the plan says.</li>
+      <li><strong>You commit.</strong> That is the only step that moves a file, and it
+        executes exactly the plan you approved.</li>
+    </ol>
+    <table class="flow-table">
+      <thead><tr><th>Button</th><th>What happens</th><th>Where the file goes</th></tr></thead>
+      <tbody>
+        <tr>
+          <th>Approve</th>
+          <td>The proposal is accepted and joins the next commit.</td>
+          <td>Stays in the inbox until you commit, then moves to the library.</td>
+        </tr>
+        <tr>
+          <th>Not this</th>
+          <td>The guess was wrong. The proposal is set aside and the file leaves the
+            review queue — it is <em>not</em> filed, and no new guess is made for it
+            until you re-analyse.</td>
+          <td>Stays in the inbox, out of the queue.</td>
+        </tr>
+        <tr>
+          <th>Later</th>
+          <td>Skipped for now, still a live proposal. Filter State to
+            <em>Put off for later</em> to find it again.</td>
+          <td>Stays in the inbox.</td>
+        </tr>
+        <tr>
+          <th>Quarantine</th>
+          <td>You do not want this file in the library. On the next commit it moves out
+            of the inbox to the quarantine folder. <strong>Nothing is ever deleted</strong> —
+            restore it from the Quarantine page whenever you like.</td>
+          <td>Moves to quarantine on commit.</td>
+        </tr>
+      </tbody>
+    </table>
+    <h3 class="flow-subhead">Reading the confidence bar</h3>
+    <p>Its length is how sure LibrAIry is. What it is <em>made of</em> is the more useful
+      half: 62% earned by a catalog match is a different proposition from 62% assembled
+      out of a filename. Hover any bar for the same thing in words.</p>
+    <ul class="conf-legend">
+      <li><span class="conf-swatch is-catalog"></span> A public catalog — MusicBrainz, TMDB, AcoustID and friends</li>
+      <li><span class="conf-swatch is-local"></span> The file itself — embedded tags, a folder hashtag, your existing layout</li>
+      <li><span class="conf-swatch is-ai"></span> Local AI, when the evidence above ran out</li>
+      <li><span class="conf-swatch is-cloud"></span> Cloud AI, which you switched on explicitly</li>
+      <li><span class="conf-swatch is-guess"></span> A guess from the name and file type alone</li>
+    </ul>
+
+    <p class="muted">Got one wrong? <strong>Undo</strong> appears above the list after
+      any decision and takes the whole batch back.
+      Once a file has been committed, undo lives on the History page instead — that one
+      moves the file back.</p>
+  </div>
 
   {% if vanished %}
     {# These are hidden from the list because approving one produces a commit

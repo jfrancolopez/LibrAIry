@@ -31,6 +31,57 @@ The header carries a small activity pill on every page:
 The pill refreshes itself every three seconds and costs two indexed counts, so
 leaving tabs open is cheap.
 
+## The review flow
+
+Three steps, and only the last one touches a file.
+
+1. **You drop files in the inbox.** LibrAIry reads them, asks the catalogs and
+   tools, and proposes a name and a place. It never stops to ask you anything.
+2. **You decide in Review.** Nothing on disk has moved yet — every button here
+   only changes what the plan says.
+3. **You commit.** The only step that moves a file, and it executes exactly the
+   plan you approved.
+
+| Button | What happens | Where the file goes |
+| --- | --- | --- |
+| **Approve** | The proposal is accepted and joins the next commit. | Stays in the inbox until you commit, then moves to the library. |
+| **Not this** | The guess was wrong. The proposal is set aside and the file leaves the review queue — it is *not* filed, and no new guess is made for it until you re-analyse. | Stays in the inbox, out of the queue. |
+| **Later** | Skipped for now, still a live proposal. Filter State to *Put off for later* to find it again. | Stays in the inbox. |
+| **Quarantine** | You do not want this in the library. On the next commit it moves out of the inbox to the quarantine folder. Nothing is ever deleted. | Moves to quarantine on commit. |
+
+The same summary is on the Review page itself, behind **What do these buttons
+do?** next to the heading.
+
+### Undo
+
+After any decision an **Undo** bar appears above the list, naming what it will
+take back — "Approved 12 files". One press restores the whole batch, including
+the destination that Quarantine overwrote.
+
+This is not the same as History's undo. Undo here reverses a decision made
+*before* anything moved, so it only touches database rows. Once a file has been
+committed it is on disk somewhere new, and only History can move it back —
+Undo refuses those and says so rather than flipping a status to describe a
+library that does not exist.
+
+### Reading the confidence bar
+
+Each row carries a short bar and a percentage. The **length** is how sure
+LibrAIry is. What the bar is **made of** is the more useful half, because 62%
+earned by a catalog match is a different proposition from 62% assembled out of
+a filename:
+
+| Colour | Where that share of the score came from |
+| --- | --- |
+| Green | A public catalog — MusicBrainz, TMDB, AcoustID and friends |
+| Bright green | The file itself — embedded tags, a folder hashtag, your existing layout |
+| Amber | Local AI, once the evidence above ran out |
+| Orange | Cloud AI, which you switched on explicitly |
+| Grey | A guess from the name and file type alone |
+
+Hover any bar for the same thing in words. The full breakdown, entry by entry,
+is behind **Why** on the row.
+
 ## Duplicates
 
 Exact duplicates are staged for reversible quarantine review. Similar media flags

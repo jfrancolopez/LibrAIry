@@ -29,6 +29,7 @@ from librairy.db import connect
 from librairy.dedup import DedupConfigError
 from librairy.lifecycle import forget_vanished
 from librairy.logging import configure_logging
+from librairy.review_undo import undo_last
 from librairy.search import (
     DEFAULT_SEARCH_ROOT,
     SEARCH_SCOPES,
@@ -668,6 +669,24 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             request,
             "partials/review_list.html",
             review_data(conn, filters),
+        )
+
+    @app.post("/review/undo", response_class=HTMLResponse)
+    async def review_undo(request: Request) -> Response:
+        """Take back the last review decision. Never touches a file.
+
+        Distinct from History's undo, which reverses a commit and moves files
+        on disk. This reverses a decision made before anything moved, and
+        refuses anything already committed rather than describing a library
+        that does not exist.
+        """
+        await _request_form(request)
+        result = undo_last(conn)
+        filters = filters_from_query()
+        return TEMPLATES.TemplateResponse(
+            request,
+            "partials/review_list.html",
+            {**review_data(conn, filters), "notice": result.message},
         )
 
     @app.get("/review/duplicates/{item_id}", response_class=HTMLResponse)

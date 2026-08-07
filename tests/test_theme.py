@@ -245,3 +245,31 @@ def test_the_header_status_pill_can_be_cut_short() -> None:
     assert "inline-block" in body
     assert "text-overflow: ellipsis" in body
     assert "max-width" in body
+
+
+def test_long_names_and_paths_are_clamped_not_wrapped_forever() -> None:
+    """A UUID-named attachment three folders deep wrapped to eight lines, and
+    one such row measured 496px — half a screen to say one filename. The whole
+    value stays in the title attribute either way.
+    """
+    for selector in (".proposal-name", ".dest-path"):
+        rule = re.search(re.escape(selector) + r"\s*\{([^}]*)\}", CSS)
+        assert rule, f"{selector} lost its rule"
+        assert "line-clamp: 2" in rule.group(1), selector
+        assert "overflow: hidden" in rule.group(1), selector
+
+
+def test_the_confidence_bar_shows_its_sources_in_distinct_colours() -> None:
+    """The bar's point is that a catalog match and a filename guess look
+    different at a glance. One shared colour would make it a plain meter."""
+    kinds = ("catalog", "local", "ai", "cloud", "guess")
+    colours = {}
+    for kind in kinds:
+        rule = re.search(r"\.conf-part\.is-" + kind + r"\s*\{\s*background:\s*([^;]+);", CSS)
+        assert rule, f"the {kind} segment has no colour"
+        colours[kind] = rule.group(1).strip()
+    assert len(set(colours.values())) == len(kinds), f"segments share a colour: {colours}"
+    # And the legend that explains them uses the same ones.
+    for kind, colour in colours.items():
+        legend = re.search(r"\.conf-swatch\.is-" + kind + r"\s*\{\s*background:\s*([^;]+);", CSS)
+        assert legend and legend.group(1).strip() == colour, f"legend disagrees for {kind}"

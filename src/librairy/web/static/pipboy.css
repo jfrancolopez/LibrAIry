@@ -568,6 +568,53 @@ tbody tr:hover { background: var(--bg-metric); }
 /* Review's own filters: one group inside the toolbar, not a grid of six above
    it. Sort is the one people reach for, so it stays out; the rest fold away. */
 .review-filters { flex: 0 1 auto; }
+
+/* The flow, on the page it describes. Four button names cannot carry their
+   own meaning — "Not this" takes a file out of the queue and nothing on the
+   row says so. */
+.review-help {
+  margin: 0 0 var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: var(--border-thin) solid var(--border);
+  border-radius: var(--radius-ui);
+  background: var(--bg-metric);
+  font-size: var(--text-sm);
+}
+.flow-steps { margin: 0 0 var(--space-3); padding-left: var(--space-4); display: grid; gap: var(--space-1); }
+.flow-table { width: 100%; }
+.flow-table th { text-align: left; vertical-align: top; }
+.flow-table tbody th { white-space: nowrap; padding-right: var(--space-3); }
+.flow-table td { vertical-align: top; }
+.flow-subhead { margin: var(--space-4) 0 var(--space-2); font-size: var(--text-base); }
+.conf-legend { list-style: none; margin: 0 0 var(--space-3); padding: 0; display: grid; gap: var(--space-1); }
+.conf-legend li { display: flex; align-items: center; gap: var(--space-2); }
+.conf-swatch {
+  flex: none;
+  width: 1.5rem;
+  height: 0.5rem;
+  border: var(--border-thin) solid var(--border);
+  border-radius: 999px;
+}
+.conf-swatch.is-catalog { background: var(--ok); }
+.conf-swatch.is-local { background: var(--accent-2); }
+.conf-swatch.is-ai { background: var(--accent); }
+.conf-swatch.is-cloud { background: var(--warn); }
+.conf-swatch.is-guess { background: var(--text-dim); }
+
+/* "You just did a thing, and here is the way back." Present only while there
+   is something to take back. */
+.undo-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: var(--border-thin) solid var(--accent);
+  border-radius: var(--radius-ui);
+  background: var(--bg-metric);
+  font-size: var(--text-sm);
+}
 /* .field carries a 12px block margin for stacked forms; inside a one-line bar
    that is 24px of nothing, and it set the height of the whole toolbar. */
 .review-toolbar .field { margin: 0; }
@@ -644,11 +691,20 @@ tbody tr:hover { background: var(--bg-metric); }
   justify-content: space-between;
   gap: var(--space-2);
 }
+/* Two lines, then an ellipsis. A UUID-named attachment three folders deep
+   wraps to eight lines otherwise, and one such row was 496px tall — half a
+   screen to say one filename. The whole value stays in the title attribute,
+   and the preview shows it in full. */
 .proposal-name {
   margin: 0;
   font-size: var(--text-base);
   font-weight: 600;
   overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
 }
 /* Wraps: `flex: none` with nowrap held a size, a score and up to two badges on
    one unbreakable line, which pushed the whole page sideways on a phone. */
@@ -681,6 +737,12 @@ tbody tr:hover { background: var(--bg-metric); }
 .dest-path {
   min-width: 0;
   overflow-wrap: anywhere;
+  /* Same two-line cap as the filename above it, for the same reason. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
   text-align: left;
   background: none;
   border: 0;
@@ -738,15 +800,52 @@ tbody tr:hover { background: var(--bg-metric); }
 }
 .why-list li { list-style: none; overflow-wrap: anywhere; }
 
-.confidence {
-  display: inline-block;
-  min-width: 3.5rem;
-  text-align: center;
-  background: linear-gradient(90deg, var(--accent-soft) var(--score), transparent 0);
-  border: var(--border-thin) solid var(--border);
-  border-radius: var(--radius-ui);
-  padding: 0.15rem 0.4rem;
+/* Confidence, and what it is made of.
+   The old control was a number in a box with a gradient behind it: three
+   encodings of one fact (box, badge word, decimal) and no answer to the
+   question that matters, which is not "how sure" but "sure on what grounds".
+   A 62% earned by a catalog match is a different proposition from a 62%
+   assembled out of a filename.
+   So: one bar, as long as the score, cut into the sources that paid for it.
+   Fixed width and a fixed-width number, so fifty rows line up into a column
+   you can read down instead of fifty boxes of different sizes. */
+.conf {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  cursor: help;
 }
+.conf-track {
+  display: flex;
+  width: 4.5rem;
+  height: 0.5rem;
+  overflow: hidden;
+  border: var(--border-thin) solid var(--border);
+  border-radius: 999px;
+  /* The unearned remainder reads as absence, not as another source. */
+  background: var(--bg-input);
+}
+.conf-part { height: 100%; }
+/* Strongest evidence first, and the further down this list a bar's colour
+   sits, the more of it is the machine's own opinion. */
+.conf-part.is-catalog { background: var(--ok); }
+.conf-part.is-local { background: var(--accent-2); }
+.conf-part.is-ai { background: var(--accent); }
+.conf-part.is-cloud { background: var(--warn); }
+.conf-part.is-guess { background: var(--text-dim); }
+.conf-score {
+  min-width: 2.5rem;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+}
+/* The row's own band already carries the verdict in colour; the score carries
+   it in text. Low ones get the emphasis, since those are the rows to slow
+   down on. */
+.conf-low .conf-score { color: var(--fail); font-weight: 600; }
+.conf-high .conf-score { color: var(--text-dim); }
 
 .pager { display: flex; gap: var(--space-4); align-items: center; margin-top: var(--space-4); }
 
