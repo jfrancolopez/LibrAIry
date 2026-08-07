@@ -115,6 +115,22 @@ silently to the next evidence source.
 
 No catalog is ever sent a file path.
 
+**Testing a key.** Each catalog card has a **Test it** button. It asks that
+catalog one question with a known answer — TMDB about *The Matrix*, TVmaze about
+*Breaking Bad*, MusicBrainz about *OK Computer* — and reports what came back.
+
+It exists because a catalog swallows its own errors on purpose: a service being
+down must degrade to the next evidence source, not stop an analysis batch. That
+makes a rejected key indistinguishable from "never heard of that film". When the
+test comes back empty it repeats the request at the HTTP level purely to say
+which it was: **Key rejected** (401/403), **Rate limited** (429), **Service is
+down** (5xx), **Cannot reach it** (network or DNS), or **Reachable, no match** —
+which is a pass, because the connection and the key are both fine.
+
+AcoustID is the exception: it answers questions about audio fingerprints and
+nothing else, so its test fingerprints one of your own audio files and looks it
+up. With no audio on hand it says so rather than guessing.
+
 **TMDB and TVmaze together.** TMDB is asked first — it needs a key, so having one is a
 deliberate choice — and its show name wins any disagreement. TVmaze is also asked, for
 episodes only, because it answers something TMDB's search endpoint does not: the

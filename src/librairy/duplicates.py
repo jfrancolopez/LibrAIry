@@ -512,6 +512,12 @@ def record_similar_reports(conn: sqlite3.Connection, settings: Settings) -> int:
         duplicate, keeper = (left, right) if left.root == "inbox" else (right, left)
         if duplicate.root == keeper.root:
             continue
+        # A byte-identical pair belongs to the exact pass, which ran first and
+        # knows what rmlint said. Rewriting its report from here would replace
+        # "rmlint agrees" with "rmlint not asked" -- the same pair, described
+        # with less evidence than we actually have.
+        if duplicate.fingerprint and duplicate.fingerprint == keeper.fingerprint:
+            continue
         save_report(conn, compare(conn, settings, duplicate, keeper, rmlint=NOT_ASKED))
         written += 1
     return written

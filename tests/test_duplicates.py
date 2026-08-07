@@ -360,3 +360,31 @@ def test_two_inbox_files_flagged_as_similar_are_not_a_library_comparison(
     )
 
     assert record_similar_reports(conn, settings) == 0
+
+
+def test_the_similar_pass_does_not_overwrite_the_exact_pass(tmp_path: Path) -> None:
+    """Both passes see the same pair when the copies are byte-identical.
+
+    The exact one ran first and knows rmlint agreed; rewriting its report from
+    the czkawka pass replaced that with "rmlint not asked" -- the same pair,
+    described with less evidence than we actually had.
+    """
+    from librairy.duplicates import record_similar_reports, save_report
+
+    settings = settings_for(tmp_path)
+    conn = connect(settings)
+    left = item(1, "library", "Photos/holiday.jpg", fingerprint="shared")
+    right = item(2, "inbox", "holiday.jpg", fingerprint="shared")
+    insert(conn, left)
+    insert(conn, right)
+    conn.execute(
+        """
+        INSERT INTO similar_media_flags(item_id, similar_item_id, kind, score, created_at)
+        VALUES (1, 2, 'image', 0.99, ?)
+        """,
+        (utc_now(),),
+    )
+    save_report(conn, compare(conn, settings, right, left, rmlint=SAME))
+
+    assert record_similar_reports(conn, settings) == 0
+    assert by_tool(reports_for_item(conn, 2)[0], "rmlint").verdict == SAME

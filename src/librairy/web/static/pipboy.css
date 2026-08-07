@@ -597,7 +597,9 @@ tbody tr:hover { background: var(--bg-metric); }
   font-weight: 600;
   overflow-wrap: anywhere;
 }
-.proposal-meta { display: flex; align-items: center; gap: var(--space-2); flex: none; }
+/* Wraps: `flex: none` with nowrap held a size, a score and up to two badges on
+   one unbreakable line, which pushed the whole page sideways on a phone. */
+.proposal-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 
 .proposal-dest {
   display: flex;
@@ -649,7 +651,11 @@ tbody tr:hover { background: var(--bg-metric); }
   gap: var(--space-1);
   font-size: var(--text-sm);
 }
-.why-list li { list-style: none; }
+/* Once the button row wraps, the details ends up as narrow as its summary
+   while the reasons inside stay at their min-content width — and push the
+   whole page sideways. It gets its own line instead. */
+.why { flex: 1 1 14rem; min-width: 0; }
+.why-list li { list-style: none; overflow-wrap: anywhere; }
 
 .confidence {
   display: inline-block;

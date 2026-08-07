@@ -33,7 +33,47 @@ leaving tabs open is cheap.
 
 ## Duplicates
 
-Exact duplicates are staged for reversible quarantine review. Similar media flags are informational and require human judgment. LibrAIry never deletes duplicate files.
+Exact duplicates are staged for reversible quarantine review. Similar media flags
+are informational and require human judgment. LibrAIry never deletes duplicate
+files.
+
+### Comparing the two copies
+
+Any Review row where the file may already be in your library is marked **you may
+already have this** and gains a **Compare the two copies** button. It opens the
+inbox copy and the library copy side by side, with a preview of each, and below
+them two things:
+
+**What each check found.** Three detectors run, each answering a different
+question, and the panel keeps all three answers rather than collapsing them into
+one verdict:
+
+| Check | Answers |
+| --- | --- |
+| BLAKE2b fingerprint | Are these the same bytes? |
+| rmlint | Does a second, independent implementation agree? |
+| czkawka | Do they *look* the same, whatever the bytes say? |
+| file size | Which is bigger — for one recording, usually which is better |
+| ffprobe / exiftool | Duration, bitrate, resolution, codec, camera, date taken |
+
+A detector that is switched off in Settings → Library says **not asked**, which
+is deliberately not the same as **agrees**. When the fingerprint and rmlint
+disagree, nothing is staged and the panel says so — that combination is rare
+enough to be worth a human look.
+
+**Side by side.** Every property measured on both copies, with the rows that
+differ marked. This is what answers "which one do I keep?" — a 320 kbps rip
+against a 128 kbps one, or a full-size photo against a resize, are not questions
+a hash can settle.
+
+The recommendation stops where v1 stops. When the copies are identical it says
+to quarantine the inbox one. When the *inbox* copy looks better, it says to
+reject the quarantine proposal and keep both, because nothing in LibrAIry
+overwrites anything: the better copy is filed alongside and the older one stays
+where it is until you remove it yourself.
+
+Comparisons are built during the worker cycle and loaded when you press the
+button, so a page of fifty rows does not fetch a hundred previews.
 
 ## Accessing Files
 
