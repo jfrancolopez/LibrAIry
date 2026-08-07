@@ -19,8 +19,12 @@ def fingerprint(path: Path, settings: Settings) -> ToolResult:
     if shutil.which("fpcalc") is None:
         return ToolResult(False, error="missing binary: fpcalc")
     try:
+        # No -plain. That flag prints the fingerprint and nothing else, so the
+        # duration came back None, and AcoustID refuses a lookup without one --
+        # the whole fingerprint path was dead while every mocked test passed.
+        # The default output is the DURATION=/FINGERPRINT= pair parsed below.
         result = subprocess.run(
-            ["fpcalc", "-plain", posix_path(path)],
+            ["fpcalc", posix_path(path)],
             text=True,
             capture_output=True,
             timeout=settings.ai_timeout,

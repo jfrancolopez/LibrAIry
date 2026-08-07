@@ -158,3 +158,29 @@ def test_unfingerprintable_file_returns_none(tmp_path, monkeypatch) -> None:
     )
 
     assert acoustid.lookup_for_settings(settings)("track.flac", settings) is None
+
+
+def test_fpcalc_is_asked_for_the_duration_as_well_as_the_fingerprint() -> None:
+    """-plain prints the fingerprint alone, and AcoustID needs a duration too.
+
+    With -plain the parsed duration was always None, `_fingerprint_file`
+    therefore always returned None, and no lookup was ever made -- a catalog
+    that was configured, keyed, and completely dead. Nothing mocked can catch
+    that, so the argv itself is the assertion.
+    """
+    import inspect
+
+    from librairy.tools import fpcalc
+
+    source = inspect.getsource(fpcalc.fingerprint)
+    assert '"-plain"' not in source
+    assert "DURATION=" in inspect.getsource(fpcalc.parse_fpcalc)
+
+
+def test_parse_fpcalc_reads_the_default_two_line_output() -> None:
+    from librairy.tools.fpcalc import parse_fpcalc
+
+    printed = parse_fpcalc("DURATION=298\nFINGERPRINT=AQADtEkSJVKi\n")
+
+    assert printed.duration == 298
+    assert printed.fingerprint == "AQADtEkSJVKi"

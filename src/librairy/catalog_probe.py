@@ -54,10 +54,18 @@ class ProbeResult:
 @dataclass(frozen=True)
 class _Probe:
     query: str
-    ask: Callable[[], str]
+    #  Takes the opener so a test can serve the response. Every client binds
+    #  `opener=urlopen` as a default argument at import time, so patching the
+    #  module attribute does nothing -- it has to be passed in.
+    ask: Callable[[object | None], str]
     #  Used only when `ask` comes back empty, to tell a bad key from a miss.
     diagnose_url: Callable[[], str] | None = None
     diagnose_headers: dict[str, str] = field(default_factory=dict)
+
+
+def _net(opener) -> dict[str, object]:
+    """Client kwargs. Empty in production: the clients' own defaults are right."""
+    return {"opener": opener, "sleeper": lambda _seconds: None} if opener else {}
 
 
 def probe_catalog(
@@ -82,7 +90,7 @@ def probe_catalog(
 
     started = time.monotonic()
     try:
-        answer = probe.ask()
+        answer = probe.ask(opener)
     except _Untestable as exc:
         return ProbeResult(slug, False, "Nothing to test with", str(exc), probe.query)
     elapsed = time.monotonic() - started
@@ -179,9 +187,9 @@ def _tmdb(_conn, settings: Settings) -> _Probe:
 
     key = _key(settings, "tmdb")
 
-    def ask() -> str:
+    def ask(opener) -> str:
         tmdb.reset_cache()
-        match = tmdb.search("The Matrix", api_key=key, year=1999)
+        match = tmdb.search("The Matrix", api_key=key, year=1999, **_net(opener))
         if not match:
             return ""
         return f"Found “{match.get('title')}” ({str(match.get('release_date'))[:4]})."
@@ -199,9 +207,9 @@ def _tmdb(_conn, settings: Settings) -> _Probe:
 def _tvmaze(_conn, _settings) -> _Probe:
     from librairy.tools import tvmaze
 
-    def ask() -> str:
+    def ask(opener) -> str:
         tvmaze.reset_cache()
-        match = tvmaze.search_show("Breaking Bad", season=1, episode=1)
+        match = tvmaze.search_show("Breaking Bad", season=1, episode=1, **_net(opener))
         if not match:
             return ""
         episode = match.get("episode_name")
@@ -218,9 +226,9 @@ def _tvmaze(_conn, _settings) -> _Probe:
 def _musicbrainz(_conn, _settings) -> _Probe:
     from librairy.tools import musicbrainz
 
-    def ask() -> str:
+    def ask(opener) -> str:
         musicbrainz.reset_cache()
-        mbid = musicbrainz.search_release("Radiohead", "OK Computer")
+        mbid = musicbrainz.search_release("Radiohead", "OK Computer", **_net(opener))
         return f"Found the release, MusicBrainz id {mbid}." if mbid else ""
 
     return _Probe(
@@ -238,9 +246,9 @@ def _discogs(_conn, settings: Settings) -> _Probe:
 
     token = _key(settings, "discogs")
 
-    def ask() -> str:
+    def ask(opener) -> str:
         discogs.reset_cache()
-        match = discogs.search_release("Radiohead - Karma Police")
+        match = discogs.search_release("Radiohead - Karma Police", token=token, **_net(opener))
         if not match:
             return ""
         genre = f", filed under {match['genre']}" if match.get("genre") else ""
@@ -262,9 +270,9 @@ def _lastfm(_conn, settings: Settings) -> _Probe:
 
     key = _key(settings, "lastfm")
 
-    def ask() -> str:
+    def ask(opener) -> str:
         lastfm.reset_cache()
-        genre = lastfm.top_genre("Radiohead", album="OK Computer")
+        genre = lastfm.top_genre("Radiohead", album="OK Computer", api_key=key, **_net(opener))
         return f"Genre for OK Computer came back as “{genre}”." if genre else ""
 
     return _Probe(
@@ -287,9 +295,9 @@ def _lastfm(_conn, settings: Settings) -> _Probe:
 def _openlibrary(_conn, _settings) -> _Probe:
     from librairy.tools import openlibrary
 
-    def ask() -> str:
+    def ask(opener) -> str:
         openlibrary.reset_cache()
-        match = openlibrary.search_book("Dune", "Frank Herbert")
+        match = openlibrary.search_book("Dune", "Frank Herbert", **_net(opener))
         if not match:
             return ""
         year = f", first published {match.year}" if match.year else ""
@@ -305,15 +313,17 @@ def _openlibrary(_conn, _settings) -> _Probe:
 def _coverart(_conn, settings: Settings) -> _Probe:
     from librairy.tools import coverart, musicbrainz
 
-    def ask() -> str:
+    def ask(opener) -> str:
         musicbrainz.reset_cache()
-        mbid = musicbrainz.search_release("Radiohead", "OK Computer")
+        mbid = musicbrainz.search_release("Radiohead", "OK Computer", **_net(opener))
         if not mbid:
             raise _Untestable(
                 "Cover Art Archive is looked up by MusicBrainz release id, and "
                 "MusicBrainz did not answer. Test MusicBrainz first."
             )
-        path = coverart.cover_path(settings.appdata_dir, mbid)
+        path = coverart.cover_path(
+            settings.appdata_dir, mbid, **({"opener": opener} if opener else {})
+        )
         if path is None:
             return ""
         return f"Downloaded the sleeve for OK Computer, {path.stat().st_size // 1024} KB."
@@ -334,17 +344,24 @@ def _acoustid(conn: sqlite3.Connection, settings: Settings) -> _Probe:
     key = _key(settings, "acoustid")
     track = _an_audio_file(conn, settings)
 
-    def ask() -> str:
+    def ask(opener) -> str:
         if track is None:
             raise _Untestable(
                 "AcoustID identifies music from its audio, so this test needs a real "
                 "audio file. Drop one in the inbox, let it scan, and test again."
             )
         printed = fingerprint(track, settings)
-        if not printed.ok or printed.data is None:
-            raise _Untestable(f"fpcalc could not fingerprint {track.name}: {printed.error}")
+        # ToolResult carries a plain dict, not the dataclass.
+        data = printed.data if isinstance(printed.data, dict) else {}
+        if not printed.ok or not data.get("fingerprint") or not data.get("duration"):
+            raise _Untestable(
+                f"fpcalc could not fingerprint {track.name}: "
+                f"{printed.error or 'no duration in its output'}"
+            )
         acoustid.reset_cache()
-        match = acoustid.lookup(printed.data.fingerprint, int(printed.data.duration), api_key=key)
+        match = acoustid.lookup(
+            str(data["fingerprint"]), int(data["duration"]), api_key=key, **_net(opener)
+        )
         if not match:
             return ""
         return (
