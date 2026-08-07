@@ -189,7 +189,8 @@ def move_provider(conn: sqlite3.Connection, settings: Settings, kind: str, direc
 
 
 def provider_header(conn: sqlite3.Connection, settings: Settings) -> str:
-    chain = provider_chain(conn, settings)
+    """One line for the site header. Read-only: it is on every page render."""
+    chain = provider_chain(conn, settings, record=False)
     if not chain:
         return "AI: heuristics-only"
     first = chain[0]

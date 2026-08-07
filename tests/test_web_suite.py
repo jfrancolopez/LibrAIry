@@ -120,3 +120,29 @@ def test_static_assets_are_revalidated_not_guessed(tmp_path: Path) -> None:
     assert response.status_code == 200
     assert response.headers["cache-control"] == "no-cache"
     assert response.headers.get("etag"), "revalidation needs a validator to be cheap"
+
+
+def test_drawing_a_page_never_writes_to_the_database(tmp_path: Path) -> None:
+    """The site header mirrored every AI provider into provider_status as a
+    side effect of being rendered. A page view that collides with the worker
+    holding the write lock is then a 500 on whatever page you were reading —
+    seen live as "System Fault" on Review during a scan.
+    """
+    client, conn = client_for(tmp_path)
+    client.post("/setup", data={"password": "correct horse battery"})
+    writes: list[str] = []
+
+    def watch(sql: str) -> None:
+        if sql.lstrip()[:6].upper() in {"INSERT", "UPDATE", "DELETE"}:
+            writes.append(" ".join(sql.split())[:90])
+
+    conn.set_trace_callback(watch)
+    try:
+        for page in ("/dashboard", "/review", "/browse", "/health", "/quarantine"):
+            assert client.get(page).status_code == 200, page
+    finally:
+        conn.set_trace_callback(None)
+
+    # Touching the session is the one legitimate write on a GET.
+    unexpected = [sql for sql in writes if "sessions" not in sql.lower()]
+    assert unexpected == [], f"rendering wrote to the database: {unexpected}"

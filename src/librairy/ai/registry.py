@@ -8,15 +8,27 @@ from librairy.ai.status import upsert_provider_status
 from librairy.config import Settings
 
 
-def provider_chain(conn: sqlite3.Connection, settings: Settings) -> list[ProviderConfig]:
+def provider_chain(
+    conn: sqlite3.Connection, settings: Settings, *, record: bool = True
+) -> list[ProviderConfig]:
+    """The enabled providers, in the order they will be asked.
+
+    `record=False` for anything on a render path. This used to mirror every
+    provider into provider_status as a side effect of being *asked a question*,
+    which meant drawing the site header wrote to SQLite on every page view —
+    and a page view that collides with a worker holding the write lock is a
+    500 on whatever page you happened to be reading. Seen live as "System
+    Fault" on Review while a scan was running.
+    """
     providers = configured_providers(conn, settings)
     order = provider_order(conn, settings)
     ordered = sorted(
         providers, key=lambda provider: order.index(provider.kind) if provider.kind in order else 99
     )
     enabled = [provider for provider in ordered if provider.enabled]
-    for provider in providers:
-        upsert_provider_status(conn, provider)
+    if record:
+        for provider in providers:
+            upsert_provider_status(conn, provider)
     return enabled
 
 
