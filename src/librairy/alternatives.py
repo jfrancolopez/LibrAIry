@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from librairy.ai.orchestrator import every_provider_answer
 from librairy.config import Settings
 from librairy.models import Item
+from librairy.settings_service import effective_settings
 from librairy.taxonomy import render_destination
 
 
@@ -97,6 +98,11 @@ def options_for_proposal(
     ).fetchone()
     if row is None:
         raise ValueError(f"proposal not found: {proposal_id}")
+    # The keys typed into Settings live in the database, and the Settings
+    # object the web app was constructed with only knows the environment.
+    # Without this the panel asked no catalogs at all on a portal-configured
+    # install — seen live, where every key was set and every catalog silent.
+    settings = effective_settings(conn, settings)
     item = Item(
         id=int(row["item_id"]),
         root=row["root"],
@@ -112,10 +118,11 @@ def options_for_proposal(
     options = [_current_option(row)]
     asked: list[str] = []
     problems: list[str] = []
-    ai_options, ai_asked, ai_problems = _ai_options(conn, settings, item, row)
-    options.extend(ai_options)
-    asked.extend(ai_asked)
-    problems.extend(ai_problems)
+    for gather in (_catalog_options, _ai_options):
+        found, said, went_wrong = gather(conn, settings, item, row)
+        options.extend(found)
+        asked.extend(said)
+        problems.extend(went_wrong)
     return OptionSet(
         proposal_id=int(row["id"]),
         item_id=int(row["item_id"]),
@@ -141,6 +148,170 @@ def _current_option(row: sqlite3.Row) -> Option:
     )
 
 
+CATALOG_LABELS = {
+    "tmdb": "TMDB",
+    "tvmaze": "TVmaze",
+    "acoustid": "AcoustID",
+    "musicbrainz": "MusicBrainz",
+    "discogs": "Discogs",
+    "lastfm": "Last.fm",
+    "openlibrary": "Open Library",
+}
+
+
+def _catalog_options(
+    conn: sqlite3.Connection, settings: Settings, item: Item, row: sqlite3.Row
+) -> tuple[list[Option], list[str], list[str]]:
+    """Each catalog asked on its own, so each gets to give its own answer.
+
+    A scan asks them as one cascade and keeps whatever comes out of the far
+    end, which is the right way to get one answer but hides the disagreement
+    that makes the question interesting: MusicBrainz and Discogs can put the
+    same track under two different genres, and the genre is the first folder in
+    the path. Running the same classifier once per catalog costs a few extra
+    lookups on one file and reuses every rule about how an answer becomes a
+    destination, rather than re-deriving them here.
+    """
+    from librairy.classify import _audio_tags, _book_lookup, _tmdb_lookup, _tvmaze_lookup
+    from librairy.classify.documents import classify_document_like
+    from librairy.classify.music import AUDIO_EXTS, classify_music
+    from librairy.classify.video import VIDEO_EXTS, classify_video
+
+    relpath = item.relpath
+    suffix = relpath.rsplit(".", 1)[-1].lower() if "." in relpath else ""
+    suffix = f".{suffix}" if suffix else ""
+    runs: list[tuple[str, object]] = []
+    if suffix in VIDEO_EXTS:
+        tmdb, tvmaze = _tmdb_lookup(conn, settings), _tvmaze_lookup(conn, settings)
+        if tmdb:
+            runs.append(
+                ("tmdb", lambda: classify_video(relpath, settings=settings, tmdb_lookup=tmdb))
+            )
+        if tvmaze:
+            runs.append(
+                ("tvmaze", lambda: classify_video(relpath, settings=settings, tvmaze_lookup=tvmaze))
+            )
+    elif suffix in AUDIO_EXTS:
+        runs.extend(_audio_runs(conn, settings, item, classify_music, _audio_tags))
+    elif suffix:
+        book = _book_lookup(conn)
+        if book:
+            runs.append(
+                (
+                    "openlibrary",
+                    lambda: classify_document_like(relpath, settings=settings, book_lookup=book),
+                )
+            )
+    return _run_catalogs(settings, runs)
+
+
+def _audio_runs(conn, settings, item, classify_music, read_tags):  # noqa: ANN001, ANN202
+    from librairy.classify import (
+        _acoustid_lookup,
+        _discogs_lookup,
+        _lastfm_lookup,
+        _musicbrainz_lookup,
+    )
+
+    root = {"inbox": settings.inbox_dir, "library": settings.library_dir}.get(
+        item.root, settings.quarantine_dir
+    )
+    tags = read_tags(root / item.relpath, settings)
+    relpath = item.relpath
+    musicbrainz = _musicbrainz_lookup(conn, settings)
+    acoustid = _acoustid_lookup(conn, settings)
+    discogs = _discogs_lookup(conn, settings)
+    lastfm = _lastfm_lookup(conn, settings)
+    runs: list[tuple[str, object]] = []
+    # AcoustID only means anything paired with MusicBrainz, which resolves the
+    # id it returns into an actual recording.
+    if acoustid and musicbrainz:
+        runs.append(
+            (
+                "acoustid",
+                lambda: classify_music(
+                    relpath,
+                    settings=settings,
+                    tags=tags,
+                    acoustid_lookup=acoustid,
+                    musicbrainz_lookup=musicbrainz,
+                ),
+            )
+        )
+    if discogs:
+        runs.append(
+            (
+                "discogs",
+                lambda: classify_music(
+                    relpath, settings=settings, tags=tags, discogs_lookup=discogs
+                ),
+            )
+        )
+    if lastfm:
+        runs.append(
+            (
+                "lastfm",
+                lambda: classify_music(relpath, settings=settings, tags=tags, genre_lookup=lastfm),
+            )
+        )
+    return runs
+
+
+def _run_catalogs(
+    settings: Settings, runs: list[tuple[str, object]]
+) -> tuple[list[Option], list[str], list[str]]:
+    options: list[Option] = []
+    asked: list[str] = []
+    problems: list[str] = []
+    for slug, run in runs:
+        label = CATALOG_LABELS.get(slug, slug)
+        asked.append(label)
+        try:
+            result = run()  # type: ignore[operator]
+        except Exception as exc:  # noqa: BLE001 - one catalog failing is not the panel failing
+            problems.append(f"{label}: {exc.__class__.__name__}")
+            continue
+        # The classifiers swallow a lookup that fails or draws a blank and fall
+        # back to the filename, which is right during a scan and wrong here: an
+        # option labelled "TMDB" that TMDB did not produce is a lie about where
+        # the suggestion came from. If the catalog left no evidence of its own,
+        # it had nothing to say.
+        if not any(entry.source in _sources_of(slug) for entry in tuple(result.evidence)):
+            problems.append(f"{label}: no match")
+            continue
+        dest = getattr(result, "dest_relpath", None) or _rendered(settings, result)
+        options.append(
+            Option(
+                source=slug,
+                source_label=label,
+                kind="catalog",
+                title=result.clean_name,
+                detail=_catalog_detail(result, slug),
+                category=result.category,
+                clean_name=result.clean_name,
+                dest_relpath=dest,
+                confidence=result.confidence,
+            )
+        )
+    return options, asked, problems
+
+
+def _sources_of(slug: str) -> frozenset[str]:
+    """AcoustID never speaks alone: it returns an id, and MusicBrainz turns
+    that id into a recording, so either name in the evidence is that run."""
+    if slug == "acoustid":
+        return frozenset({"acoustid", "musicbrainz"})
+    return frozenset({slug})
+
+
+def _catalog_detail(result, slug: str) -> str:
+    """What that catalog contributed, not the whole cascade behind it."""
+    for entry in reversed(tuple(result.evidence)):
+        if entry.source in _sources_of(slug):
+            return f"{entry.field}: {entry.detail}"
+    return ""
+
+
 @dataclass(frozen=True)
 class _Current:
     """The minimum `every_provider_answer` needs of a classification."""
@@ -149,7 +320,7 @@ class _Current:
     evidence: tuple = ()
 
 
-def _ai_options(
+def _ai_options(  # noqa: ARG001 - `item` and `row` match the gatherer signature
     conn: sqlite3.Connection, settings: Settings, item: Item, row: sqlite3.Row
 ) -> tuple[list[Option], list[str], list[str]]:
     options: list[Option] = []

@@ -106,16 +106,28 @@ is behind **Why** on the row.
 
 "Why is it this?" and "what else could it be?" are the same moment, so the
 second question lives at the bottom of the answer to the first. **Why → Other
-options** asks every AI provider you have switched on — all of them, about this
-one file, right now — and lists what each said, with the destination it would
-give the file and a **Use this** button.
+options** asks every catalog and every AI provider you have switched on — each
+one separately, about this one file, right now — and lists what each said, with
+the destination it would give the file and a **Use this** button.
 
-Analysis does not work this way, deliberately. During a scan it stops at the
-first answer good enough to act on, because asking four providers about fifty
-thousand files to discard three of the answers is a lot of electricity for
-nothing. Choosing between them is a different question, asked about one file at
-a time, so it happens on demand and nothing is stored. A local model can take
+Analysis does not work this way, deliberately. During a scan the catalogs are
+one cascade and the providers stop at the first answer good enough to act on,
+because asking everything about fifty thousand files to discard most of the
+answers is a lot of electricity for nothing. It also hides the disagreement
+that makes the question worth asking: TMDB and your local model can name the
+same film slightly differently, and MusicBrainz and Discogs can file the same
+track under two different genres — and the genre is the first folder in the
+path. Choosing between them is a different question, asked about one file at a
+time, so it happens on demand and nothing is stored. A local model can take
 twenty or thirty seconds to answer; the panel says *asking…* while it waits.
+
+A real example, on a movie whose filename had defeated the heuristics:
+
+| Asked | Said |
+| --- | --- |
+| TMDB | 86% — `Movies/General/An-American-Carol-(2008)/An-American-Carol-(2008).mp4` |
+| Local AI | 85% — `Movies/General/An-American-Carol-(2008)/An-American-Carol.mp4` |
+| TVmaze | no match |
 
 Two consequences worth knowing:
 
@@ -126,8 +138,16 @@ Two consequences worth knowing:
   that unsure should file itself. Picking one by hand is a different act, and an
   option that cannot say where the file would land is not a choice.
 
-Providers that fail or decline are listed too, with the reason. A silently
-shorter list would read as agreement.
+Anything that fails or finds nothing is listed too, with the reason. A silently
+shorter list would read as agreement. In particular, a catalog that drew a
+blank is reported as *no match* rather than being credited with the guess the
+classifier falls back to — a row labelled TMDB that TMDB did not produce would
+undermine the one thing this panel is for.
+
+The button next to it in the row, **Re-analyse**, is the same machinery aimed
+the other way: it hands the file back to the worker to pick a new winner. Use
+*Other options* to choose an answer yourself, and *Re-analyse* to let LibrAIry
+choose again.
 
 ## Duplicates
 

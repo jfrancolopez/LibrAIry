@@ -171,7 +171,8 @@
           hx-target="#options-{{ proposal.id }}"
           hx-swap="innerHTML"
           hx-indicator="#options-wait-{{ proposal.id }}">Other options</button>
-        <span class="muted">Asks every AI provider you have switched on, about this file, now.</span>
+        <span class="muted">Asks every catalog and AI provider you have switched on, about
+          this file, now — each one separately, so you can see where they disagree.</span>
         <span id="options-wait-{{ proposal.id }}" class="htmx-indicator muted">asking…</span>
       </p>
       <div id="options-{{ proposal.id }}"></div>

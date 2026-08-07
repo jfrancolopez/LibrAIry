@@ -51,28 +51,39 @@ def answer(category: str, title: str, confidence: float, rationale: str) -> AIAn
     )
 
 
-def setup(tmp_path: Path) -> tuple[Settings, object, int]:
+def setup(tmp_path: Path, relpath: str = "the.matrix.1999.mkv") -> tuple[Settings, object, int]:
     settings = Settings(
         APPDATA_DIR=tmp_path / "appdata",
         INBOX_DIR=tmp_path / "inbox",
         LIBRARY_DIR=tmp_path / "library",
         QUARANTINE_DIR=tmp_path / "quarantine",
+        # The classifier will not call a keyless catalog however the lookup is
+        # injected, so a key has to exist for the catalog path to run at all.
+        TMDB_KEY="test-key",
         _env_file=None,
     )
     conn = connect(settings)
+    # Catalogs off: these tests are about the AI side, and a keyless catalog
+    # left on would reach the real network from a unit test.
+    for slug in ("tmdb", "tvmaze", "musicbrainz", "discogs", "lastfm", "openlibrary", "acoustid"):
+        conn.execute(
+            "INSERT OR REPLACE INTO settings(key, value) VALUES (?, 'false')",
+            (f"catalog.{slug}.enabled",),
+        )
     conn.execute(
         """
         INSERT INTO items(id, root, relpath, size, mtime_ns, fingerprint, state,
                           first_seen_at, last_seen_at)
-        VALUES (1, 'inbox', 'the.matrix.1999.mkv', 10, 1, 'fp', 'proposed', 'now', 'now')
-        """
+        VALUES (1, 'inbox', ?, 10, 1, 'fp', 'proposed', 'now', 'now')
+        """,
+        (relpath,),
     )
     proposal_id = upsert_proposal(
         conn,
         item_id=1,
         category="misc",
-        clean_name="the.matrix.1999.mkv",
-        dest_relpath="Misc/the.matrix.1999.mkv",
+        clean_name=relpath,
+        dest_relpath=f"Misc/{relpath}",
         confidence=0.35,
         evidence=[EvidenceEntry("heuristic", "category", "guessed from the name", 0.35)],
     )
@@ -226,3 +237,124 @@ def test_an_option_scores_itself_rather_than_inheriting_the_row(
     bands = [option.band for option in options.alternatives]
 
     assert bands == ["high", "mid", "low"]
+
+
+def enable(conn, *slugs: str) -> None:
+    for slug in slugs:
+        conn.execute(
+            "INSERT OR REPLACE INTO settings(key, value) VALUES (?, 'true')",
+            (f"catalog.{slug}.enabled",),
+        )
+
+
+def test_each_catalog_answers_for_itself_rather_than_as_one_cascade(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """A scan asks the catalogs as a cascade and keeps what comes out of the
+    far end, which hides the disagreement that makes the question worth asking:
+    two catalogs can put the same file in two different places.
+    """
+    settings, conn, proposal_id = setup(tmp_path, "Some.Show.S01E02.mkv")
+    enable(conn, "tmdb", "tvmaze")
+    monkeypatch.setattr("librairy.ai.orchestrator._providers", lambda _c, _s: [])
+    monkeypatch.setattr(
+        "librairy.classify._tmdb_lookup",
+        lambda _c, _s: lambda _parsed, _settings: {"name": "Some Show", "genre_ids": []},
+    )
+    monkeypatch.setattr(
+        "librairy.classify._tvmaze_lookup",
+        lambda _c, _s: lambda _parsed, _settings: {"name": "Matrix", "genres": ["Drama"]},
+    )
+
+    options = options_for_proposal(conn, settings, proposal_id)
+
+    assert options.asked == ["TMDB", "TVmaze"]
+    # Two catalogs, two answers, two different destinations — which is the
+    # disagreement a single cascaded answer hides.
+    assert [option.source_label for option in options.alternatives] == ["TMDB", "TVmaze"]
+    assert options.alternatives[0].dest_relpath != options.alternatives[1].dest_relpath
+
+
+def test_one_catalog_falling_over_does_not_take_the_panel_with_it(
+    tmp_path: Path, monkeypatch
+) -> None:
+    settings, conn, proposal_id = setup(tmp_path, "Some.Show.S01E02.mkv")
+    enable(conn, "tmdb", "tvmaze")
+    monkeypatch.setattr("librairy.ai.orchestrator._providers", lambda _c, _s: [])
+
+    def explode(_conn, _settings):
+        def lookup(_parsed, _inner):
+            raise TimeoutError("tmdb is having a day")
+
+        return lookup
+
+    monkeypatch.setattr("librairy.classify._tmdb_lookup", explode)
+    monkeypatch.setattr(
+        "librairy.classify._tvmaze_lookup",
+        lambda _c, _s: lambda _parsed, _settings: {"name": "Matrix", "genres": ["Drama"]},
+    )
+
+    options = options_for_proposal(conn, settings, proposal_id)
+
+    assert "TMDB: TimeoutError" in options.problems
+    assert [option.source_label for option in options.alternatives] == ["TVmaze"]
+
+
+def test_a_catalog_switched_off_is_not_asked(tmp_path: Path, monkeypatch) -> None:
+    """The toggle in Settings is the whole gate — no key, no call, no row."""
+    settings, conn, proposal_id = setup(tmp_path)
+    monkeypatch.setattr("librairy.ai.orchestrator._providers", lambda _c, _s: [])
+
+    options = options_for_proposal(conn, settings, proposal_id)
+
+    assert options.asked == []
+    assert "Settings → Catalogs" in options.summary
+
+
+def test_a_catalog_that_found_nothing_is_not_credited_with_the_filename_guess(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """The classifiers swallow a miss and fall back to the filename, which is
+    right during a scan. Here it would put a catalog's name on an answer the
+    catalog did not give — the one thing the panel exists to tell you."""
+    settings, conn, proposal_id = setup(tmp_path, "Some.Show.S01E02.mkv")
+    enable(conn, "tmdb")
+    monkeypatch.setattr("librairy.ai.orchestrator._providers", lambda _c, _s: [])
+    monkeypatch.setattr(
+        "librairy.classify._tmdb_lookup", lambda _c, _s: lambda _parsed, _settings: None
+    )
+
+    options = options_for_proposal(conn, settings, proposal_id)
+
+    assert options.alternatives == []
+    assert options.problems == ["TMDB: no match"]
+
+
+def test_keys_typed_into_settings_reach_the_panel(tmp_path: Path, monkeypatch) -> None:
+    """The Settings object the web app holds knows only the environment. A key
+    saved in the portal lives in the database, and without merging the two the
+    panel asked no catalogs at all on a portal-configured install — which is
+    exactly how it behaved the first time it met a real one."""
+    settings, conn, proposal_id = setup(tmp_path, "Some.Show.S01E02.mkv")
+    from pydantic import SecretStr
+
+    # No key in the environment: the portal is the only place it exists.
+    settings = settings.model_copy(update={"tmdb_key": SecretStr("")})
+    enable(conn, "tmdb")
+    conn.execute(
+        "INSERT OR REPLACE INTO settings(key, value) VALUES ('secret.tmdb', ?)",
+        ('"from-the-portal"',),
+    )
+    monkeypatch.setattr("librairy.ai.orchestrator._providers", lambda _c, _s: [])
+    seen: list[str] = []
+
+    def lookup_factory(_conn, inner_settings):
+        seen.append(inner_settings.tmdb_key.get_secret_value())
+        return lambda _parsed, _settings: {"name": "Some Show", "genre_ids": []}
+
+    monkeypatch.setattr("librairy.classify._tmdb_lookup", lookup_factory)
+
+    options = options_for_proposal(conn, settings, proposal_id)
+
+    assert seen == ["from-the-portal"]
+    assert [option.source_label for option in options.alternatives] == ["TMDB"]
