@@ -40,8 +40,13 @@ EMBEDDED_UUID_RE = re.compile(
 
 
 def is_noise(label: str) -> bool:
-    """Whether this is a machine's placeholder rather than anybody's name."""
-    text = label.strip()
+    """Whether this is a machine's placeholder rather than anybody's name.
+
+    The UUID comes out first, so the forms that pair one with a number —
+    iMessage writes `78726114145__D68BA48A-94F5-4023-8D03-F6400AD555F3` — are
+    recognised as the noise they are rather than as a name with a long suffix.
+    """
+    text = EMBEDDED_UUID_RE.sub(" ", label).strip(" -_.")
     return not text or bool(NOISE_RE.match(text))
 # Kept because they carry meaning in the names people already use: "(2005)"
 # for a year, "_" as a deliberate separator, "." before an extension.

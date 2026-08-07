@@ -173,9 +173,17 @@ def local_vision_provider(
 def apply_vision(settings: Settings, item: Item, result, answer: VisionResult, model: str):
     """Fold one vision answer into a classification result."""
     fields = dict(result.fields)
-    clean_name = _named(result.clean_name, answer)
-    if clean_name != result.clean_name:
-        fields["clean_name"] = clean_name
+    # The filename the destination is actually rendered from. For most
+    # classifiers that is `result.clean_name`, but the screenshot branch puts
+    # a group label ("Screenshots") there and keeps the real filename in the
+    # fields — so reading the wrong one meant screenshots were silently the
+    # one kind of image that never gained a description, by accident rather
+    # than by decision.
+    current = str(fields.get("clean_name") or result.clean_name)
+    named = _named(current, answer)
+    if named != current:
+        fields["clean_name"] = named
+    clean_name = named if result.clean_name == current else result.clean_name
     mapped = CATEGORY_MAP.get(answer.category or "")
     agrees = mapped is not None and mapped == result.category
     confidence = result.confidence

@@ -412,7 +412,12 @@ def _result(tmp_path: Path, relpath: str, **overrides):
         "evidence": (EvidenceEntry("heuristic", "category", "image extension", 0.85),),
         "fields": {"clean_name": Path(relpath).name, "year": 2024, "event": "Unsorted"},
     }
-    return HeuristicResult(**{**base, **overrides})
+    merged = {**base, **overrides}
+    # The fields carry the filename the destination is rendered from, so a
+    # test that overrides clean_name has to override both or it is testing a
+    # state the classifiers never produce.
+    merged["fields"] = {**merged["fields"], "clean_name": merged["clean_name"]}
+    return HeuristicResult(**merged)
 
 
 def _apply(tmp_path: Path, relpath: str, payload: dict, **overrides):
@@ -445,6 +450,14 @@ def test_a_name_that_is_only_a_uuid_is_replaced_not_prefixed(tmp_path: Path) -> 
     half. A UUID is not a disambiguator anybody can use, and the executor
     already refuses to overwrite anything."""
     name = "A2F98891-E89A-40A4-803A-31ECD1F1A488.jpeg"
+    out = _apply(tmp_path, name, FULL_ANSWER, clean_name=name)
+
+    assert out.clean_name == "baby-orange-cat.jpeg"
+
+
+def test_a_number_paired_with_a_uuid_is_noise_too(tmp_path: Path) -> None:
+    """iMessage's other shape, straight off the live inbox."""
+    name = "78726114145__D68BA48A-94F5-4023-8D03-F6400AD555F3.jpeg"
     out = _apply(tmp_path, name, FULL_ANSWER, clean_name=name)
 
     assert out.clean_name == "baby-orange-cat.jpeg"
@@ -607,6 +620,23 @@ def test_a_photo_is_described_and_renamed(tmp_path: Path, monkeypatch) -> None:
     assert seen.caption.startswith("A baby")
     assert seen.subjects == ("baby", "cat")
     assert seen.model == "a-model"
+
+
+def test_a_screenshot_is_renamed_too(tmp_path: Path, monkeypatch) -> None:
+    """The screenshot heuristic keeps the real filename in the fields and a
+    group label in clean_name, so reading clean_name meant screenshots were
+    the one kind of image that never gained a description — by accident."""
+    conn, settings = _scanned(tmp_path, name="Screenshot 2025-04-17 at 9.30.49 AM.png")
+    _answered(
+        monkeypatch,
+        {"caption": "An artist biography.", "filename_tokens": ["micah-edwards", "music"]},
+    )
+
+    analyze_items(conn, settings)
+
+    row = conn.execute("SELECT * FROM proposals").fetchone()
+    assert row["dest_relpath"].endswith("screenshot-2025-04-17-093049-micah-edwards-music.png")
+    assert row["clean_name"] == "Screenshots", "the group label is not a filename"
 
 
 def test_a_screenshot_keeps_its_text(tmp_path: Path, monkeypatch) -> None:
