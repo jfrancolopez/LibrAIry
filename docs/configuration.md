@@ -40,6 +40,7 @@ Configuration has two layers. Boot-time environment variables define paths, port
 | `BATCH_SIZE` | Default files per worker analysis batch. DB setting can override. |
 | `IGNORE_PATTERNS` | Extra ignored filename/path patterns. |
 | `CZKAWKA_EXTENSIONS` | Extensions scanned by czkawka. |
+| `CZKAWKA_SIMILARITY` | How alike two files must look to be flagged as similar: `strict` (default, visually identical only), `balanced` (catches resizes and re-encodes), `loose` (catches crops and heavy edits, and will group unrelated photographs). Similar files are only ever flagged for you to judge — nothing acts on them. |
 | `LIBRARY_INDEX_TTL` | Legacy index TTL, safe to leave default. |
 | `DASHBOARD_PORT` | Web portal port inside the app and host mapping default. |
 | `FILE_STABILITY_SECONDS` | How long files must stop changing before scanning. |

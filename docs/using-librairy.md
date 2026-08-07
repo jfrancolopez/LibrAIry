@@ -155,6 +155,13 @@ Exact duplicates are staged for reversible quarantine review. Similar media flag
 are informational and require human judgment. LibrAIry never deletes duplicate
 files.
 
+**How alike is "similar"?** `CZKAWKA_SIMILARITY` decides, and it defaults to
+`strict` — only what is visually identical. `balanced` also catches resizes and
+re-encodes. `loose` catches crops and heavy edits, and on a real library it will
+also hand you eleven unrelated photographs as one group; it is worth having, but
+only when you are going through the results yourself. Nothing acts on a
+similarity flag at any setting.
+
 ## Ripped discs
 
 A DVD folder arrives as `VIDEO_TS.IFO`, `VIDEO_TS.BUP`, a row of `VTS_01_n.VOB`

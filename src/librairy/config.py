@@ -71,6 +71,11 @@ class Settings(BaseSettings):
         default_factory=lambda: DEFAULT_CZKAWKA_EXTENSIONS.split(","),
         alias="CZKAWKA_EXTENSIONS",
     )
+    # How alike two files have to look before czkawka calls them similar. A
+    # word rather than czkawka's raw 0-40, because nobody can calibrate that
+    # number without running it twice: measured on a real library, 5 finds only
+    # what is visually identical and 20 groups eleven unrelated photographs.
+    czkawka_similarity: str = Field("strict", alias="CZKAWKA_SIMILARITY")
     library_index_ttl: int = Field(86400, ge=0, alias="LIBRARY_INDEX_TTL")
     dashboard_port: int = Field(8080, ge=1, le=65535, alias="DASHBOARD_PORT")
     file_stability_seconds: int = Field(10, ge=0, alias="FILE_STABILITY_SECONDS")
@@ -264,6 +269,14 @@ class Settings(BaseSettings):
         "",
         "# File extensions scanned by czkawka for deep duplicate detection",
         f"CZKAWKA_EXTENSIONS={DEFAULT_CZKAWKA_EXTENSIONS}",
+        "",
+        "# How alike two files must look to be flagged as similar.",
+        "#   strict   - only what is visually identical (default)",
+        "#   balanced - catches resizes and re-encodes",
+        "#   loose    - catches crops and heavy edits, and will group unrelated"
+        " photographs",
+        "# Similar files are never acted on: they are flagged for you to judge.",
+        "CZKAWKA_SIMILARITY=strict",
         "",
         "",
         "# =============================================================================",

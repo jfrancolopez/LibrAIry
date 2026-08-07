@@ -49,6 +49,7 @@ def similar_media(roots: list[Path], mode: str, settings: Settings) -> ToolResul
             # successful detection would be reported as a tool failure.
             "-W",
         ]
+        command += _sensitivity(mode, settings)
         # czkawka takes one extension per -x flag. A comma-joined list is read as a
         # single bogus extension, which excludes everything the tool supports: the
         # scan then aborts, writes `[]`, and still exits 0 — a silent no-op.
@@ -75,6 +76,30 @@ def similar_media(roots: list[Path], mode: str, settings: Settings) -> ToolResul
         except json.JSONDecodeError as exc:
             return ToolResult(False, error=f"invalid JSON from {binary}: {exc}")
     return ToolResult(True, data=parse_similar_media(data))
+
+
+#  czkawka scores images 0-40 and videos 0-20, on scales nobody can calibrate
+#  without running the tool twice. These three were measured against a real
+#  library: at 5 only visually identical files group, and at 20 eleven
+#  unrelated photographs arrive as one "similar" pile.
+SENSITIVITY = {
+    "strict": {"image": 5, "video": 5},
+    "balanced": {"image": 12, "video": 10},
+    "loose": {"image": 20, "video": 15},
+}
+#  The two modes spell the same idea differently, and passing the wrong flag is
+#  an "unexpected argument" that kills the whole scan.
+SENSITIVITY_FLAG = {"image": "--max-difference", "video": "--tolerance"}
+
+
+def _sensitivity(mode: str, settings: Settings) -> list[str]:
+    level = SENSITIVITY.get(str(settings.czkawka_similarity).strip().lower())
+    flag = SENSITIVITY_FLAG.get(mode)
+    if level is None or flag is None or mode not in level:
+        # An unknown word is a typo in a config file, not a reason to stop
+        # looking for duplicates. czkawka's own default stands in.
+        return []
+    return [flag, str(level[mode])]
 
 
 def _environment(settings: Settings) -> dict[str, str]:

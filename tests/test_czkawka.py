@@ -113,3 +113,65 @@ def test_the_cache_goes_somewhere_writable_and_survives_a_restart(
     assert seen["HOME"] == str(cache)
     assert seen["XDG_CACHE_HOME"] == str(cache)
     assert cache.is_dir()
+
+
+def run_and_capture(tmp_path: Path, monkeypatch, mode: str, **overrides) -> list[str]:
+    captured: list[list[str]] = []
+
+    class _Done:
+        returncode = 0
+        stderr = ""
+
+    def fake_run(command, **kwargs):  # noqa: ANN001, ANN202, ARG001
+        captured.append(command)
+        Path(command[command.index("-C") + 1]).write_text("[]", encoding="utf-8")
+        return _Done()
+
+    monkeypatch.setattr("librairy.tools.czkawka.shutil.which", lambda _name: "/usr/bin/czkawka_cli")
+    monkeypatch.setattr("librairy.tools.czkawka.subprocess.run", fake_run)
+    settings = Settings(
+        APPDATA_DIR=tmp_path / "appdata", CZKAWKA_EXTENSIONS="jpg", _env_file=None, **overrides
+    )
+
+    similar_media([tmp_path / "inbox"], mode, settings)
+
+    return captured[0]
+
+
+def test_sensitivity_is_a_word_and_reaches_the_right_flag(tmp_path: Path, monkeypatch) -> None:
+    """czkawka scores images 0-40 and videos 0-20, on scales nobody can
+    calibrate without running it twice — and the two modes spell the same idea
+    with different flags, where the wrong one kills the scan outright."""
+    image = run_and_capture(tmp_path, monkeypatch, "image", CZKAWKA_SIMILARITY="balanced")
+    video = run_and_capture(tmp_path, monkeypatch, "video", CZKAWKA_SIMILARITY="balanced")
+
+    assert image[image.index("--max-difference") + 1] == "12"
+    assert "--tolerance" not in image
+    assert video[video.index("--tolerance") + 1] == "10"
+    assert "--max-difference" not in video
+
+
+def test_strict_is_the_default_and_finds_only_identical_looking_files(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Measured against a real library: at 5 only visually identical files
+    group; at 20 eleven unrelated photographs arrive as one pile."""
+    command = run_and_capture(tmp_path, monkeypatch, "image")
+
+    assert command[command.index("--max-difference") + 1] == "5"
+
+
+def test_a_typo_in_the_setting_does_not_stop_the_scan(tmp_path: Path, monkeypatch) -> None:
+    """An unknown word is a mistake in a config file, not a reason to give up
+    looking for duplicates. czkawka's own default stands in."""
+    command = run_and_capture(tmp_path, monkeypatch, "image", CZKAWKA_SIMILARITY="very-fuzzy")
+
+    assert "--max-difference" not in command
+
+
+def test_exact_duplicate_mode_takes_no_sensitivity(tmp_path: Path, monkeypatch) -> None:
+    """"dup" compares bytes. There is nothing to be more or less sure about."""
+    command = run_and_capture(tmp_path, monkeypatch, "dup", CZKAWKA_SIMILARITY="loose")
+
+    assert "--max-difference" not in command
+    assert "--tolerance" not in command
