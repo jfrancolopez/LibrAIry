@@ -108,3 +108,13 @@ def test_release_workflow_publishes_supply_chain_attestations() -> None:
     assert "actions/attest-build-provenance@v2" in release
     assert "subject-digest: ${{ steps.build.outputs.digest }}" in release
     assert "id: build" in release
+
+
+def test_the_entrypoint_gives_the_dropped_user_a_writable_home() -> None:
+    """setpriv keeps the environment, so HOME stayed /root — mode 700, owned by
+    root. Anything writing a cache under $HOME then failed as PUID, which is
+    how czkawka spent every worker cycle panicking with an empty stderr."""
+    entrypoint = (ROOT / "docker-entrypoint.sh").read_text(encoding="utf-8")
+
+    assert "export HOME=/app" in entrypoint
+    assert entrypoint.index("export HOME=/app") < entrypoint.index("exec setpriv")

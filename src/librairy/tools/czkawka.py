@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import tempfile
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -59,6 +61,7 @@ def similar_media(roots: list[Path], mode: str, settings: Settings) -> ToolResul
                 capture_output=True,
                 timeout=settings.ai_timeout,
                 check=False,
+                env=_environment(settings),
             )
         except subprocess.TimeoutExpired:
             return ToolResult(False, error=f"timeout: {binary}")
@@ -72,6 +75,27 @@ def similar_media(roots: list[Path], mode: str, settings: Settings) -> ToolResul
         except json.JSONDecodeError as exc:
             return ToolResult(False, error=f"invalid JSON from {binary}: {exc}")
     return ToolResult(True, data=parse_similar_media(data))
+
+
+def _environment(settings: Settings) -> dict[str, str]:
+    """czkawka's cache, on the appdata volume rather than under $HOME.
+
+    Two reasons. It has to be somewhere writable — the container drops to
+    PUID:PGID with HOME still pointing at root's home, and czkawka panics on a
+    cache it cannot create, exiting 101 with an empty stderr. And it is worth
+    keeping: the cache holds a perceptual hash per image, which is the entire
+    cost of the scan. Under HOME it was thrown away with every `docker compose
+    up`; here it survives, and the second scan of a large library is instant.
+    """
+    cache = settings.appdata_dir / "cache" / "czkawka"
+    with suppress(OSError):
+        cache.mkdir(parents=True, exist_ok=True)
+    return {
+        **os.environ,
+        "HOME": str(cache),
+        "XDG_CACHE_HOME": str(cache),
+        "XDG_CONFIG_HOME": str(cache),
+    }
 
 
 def parse_similar_media(data: Any) -> list[SimilarMediaGroup]:

@@ -48,6 +48,13 @@ chown -R "${PUID}:${PGID}" /data/inbox /data/library /data/quarantine /data/appd
   chown -R "${PUID}:${PGID}" /data/appdata
 ) &
 
+# setpriv keeps the environment, so HOME would still say /root after the drop
+# — a directory mode 700 and owned by root. Anything that writes a dotfile or a
+# cache under $HOME then fails as PUID, which is how czkawka spent every cycle
+# panicking on a cache it could not create, with an empty stderr and an exit
+# code of 101. /app is chowned to PUID:PGID above.
+export HOME=/app
+
 # setpriv replaces gosu: same exec-and-drop behaviour, but it comes from
 # util-linux instead of a Go binary Debian builds against an ancient toolchain.
 exec setpriv --reuid="${PUID}" --regid="${PGID}" --init-groups -- "$@"

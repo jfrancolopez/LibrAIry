@@ -81,3 +81,35 @@ def test_every_root_gets_its_own_directory_flag(tmp_path: Path, monkeypatch) -> 
     assert command.count("-d") == 2
     directories = [command[i + 1] for i, arg in enumerate(command) if arg == "-d"]
     assert directories == [(tmp_path / "inbox").as_posix(), (tmp_path / "library").as_posix()]
+
+
+def test_the_cache_goes_somewhere_writable_and_survives_a_restart(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """The container drops to PUID:PGID with HOME still pointing at root's home.
+
+    czkawka then panics on a cache it cannot create -- exit 101, empty stderr,
+    every cycle. Pointing it at appdata fixes that and keeps the perceptual
+    hashes, which are the entire cost of a scan, across `docker compose up`.
+    """
+    seen: dict[str, str] = {}
+
+    class _Done:
+        returncode = 0
+        stderr = ""
+
+    def fake_run(command, **kwargs):  # noqa: ANN001, ANN202
+        seen.update(kwargs["env"])
+        Path(command[command.index("-C") + 1]).write_text("[]", encoding="utf-8")
+        return _Done()
+
+    monkeypatch.setattr("librairy.tools.czkawka.shutil.which", lambda _name: "/usr/bin/czkawka_cli")
+    monkeypatch.setattr("librairy.tools.czkawka.subprocess.run", fake_run)
+    settings = settings_for(tmp_path)
+
+    similar_media([tmp_path / "inbox"], "image", settings)
+
+    cache = settings.appdata_dir / "cache" / "czkawka"
+    assert seen["HOME"] == str(cache)
+    assert seen["XDG_CACHE_HOME"] == str(cache)
+    assert cache.is_dir()
