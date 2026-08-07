@@ -22,6 +22,7 @@ from librairy.ai.lmstudio import is_chat_model, normalize_host
 from librairy.ai.lmstudio import probe as lmstudio_probe
 from librairy.ai.lmstudio import try_classify as lmstudio_try_classify
 from librairy.backup import request_backup_now
+from librairy.catalog_probe import UnknownCatalog, probe_catalog
 from librairy.catalogs import catalog_enabled
 from librairy.config import Settings
 from librairy.db import connect
@@ -466,6 +467,23 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         except ValueError as exc:
             return _settings_error(request, str(exc))
         return _settings_redirect(request)
+
+    @app.post("/settings/catalogs/{slug}/test", response_class=HTMLResponse)
+    async def settings_catalog_test(request: Request, slug: str) -> Response:
+        """Ask one catalog one real question, and say plainly what came back.
+
+        Without this, a pasted key is unverifiable: every catalog swallows its
+        errors so that a service being down cannot stop an analysis batch, and
+        a rejected key therefore looks exactly like "no match for that film".
+        """
+        await _request_form(request)
+        try:
+            result = probe_catalog(conn, settings, slug)
+        except UnknownCatalog as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return TEMPLATES.TemplateResponse(
+            request, "partials/catalog_test.html", {"result": result}
+        )
 
     @app.post("/settings/catalogs/{slug}/toggle", response_class=HTMLResponse)
     async def settings_catalog_toggle(request: Request, slug: str) -> Response:

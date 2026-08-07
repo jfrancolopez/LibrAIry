@@ -317,12 +317,24 @@
           </form>
         {% endif %}
 
-        <form class="catalog-toggle" method="post"
-              action="/settings/catalogs/{{ entry.info.slug }}/toggle">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-          <button type="submit" class="btn">{{ 'Turn off' if entry.enabled else 'Turn on' }}</button>
+        {# A pasted key is unverifiable otherwise: catalogs swallow their errors
+           on purpose, so a rejected key reads exactly like "no match". #}
+        <div id="catalog-test-{{ entry.info.slug }}" class="catalog-test"></div>
+
+        <div class="catalog-actions">
+          <form class="catalog-toggle" method="post"
+                action="/settings/catalogs/{{ entry.info.slug }}/toggle">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button type="submit" class="btn">{{ 'Turn off' if entry.enabled else 'Turn on' }}</button>
+          </form>
+          <button type="button" class="btn"
+                  hx-post="/settings/catalogs/{{ entry.info.slug }}/test"
+                  hx-target="#catalog-test-{{ entry.info.slug }}"
+                  hx-swap="outerHTML"
+                  hx-indicator="#catalog-test-{{ entry.info.slug }}"
+                  hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>Test it</button>
           <span class="muted">{{ 'Consulted during analysis.' if entry.enabled else 'Skipped — no requests are made.' }}</span>
-        </form>
+        </div>
       </section>
     {% endfor %}
   </div>

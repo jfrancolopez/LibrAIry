@@ -874,7 +874,7 @@ tbody tr:hover { background: var(--bg-metric); }
 /* The LM Studio steps are instructions, not a collapsible aside. */
 .setup-steps-open { margin: 0 0 var(--space-3); }
 
-.catalog-toggle {
+.catalog-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -883,6 +883,21 @@ tbody tr:hover { background: var(--bg-metric); }
   border-top: 1px solid var(--border);
   font-size: var(--text-sm);
 }
+.catalog-toggle { display: contents; }
+
+/* Empty until you press Test, and it must take up no room until then. */
+.catalog-test:empty { display: none; }
+.catalog-test {
+  margin: var(--space-3) 0 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-metric);
+  font-size: var(--text-sm);
+}
+.catalog-test p { margin: 0 0 var(--space-2); }
+.catalog-test p:last-child { margin-bottom: 0; }
+.catalog-test.htmx-request { opacity: 0.6; }
 
 /* ---- Browse ----------------------------------------------------------- */
 .crumbs {

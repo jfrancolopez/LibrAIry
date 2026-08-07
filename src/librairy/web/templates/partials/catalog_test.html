@@ -1,0 +1,10 @@
+{# Swapped in place of the button's sibling div, so the answer lands on the
+   card you pressed rather than at the top of the page. #}
+<div id="catalog-test-{{ result.slug }}" class="catalog-test">
+  <p>
+    <span class="badge {{ 'badge-ok' if result.ok else 'badge-fail' }}">{{ result.headline }}</span>
+    {% if result.seconds %}<span class="muted">{{ '%.1f'|format(result.seconds) }}s</span>{% endif %}
+  </p>
+  {% if result.query %}<p class="muted">Asked about {{ result.query }}.</p>{% endif %}
+  <p class="{{ 'status ok' if result.ok else 'status warn' }}">{{ result.detail }}</p>
+</div>

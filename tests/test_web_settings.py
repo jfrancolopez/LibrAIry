@@ -1081,3 +1081,40 @@ def test_switching_an_ollama_machine_off_actually_switches_it_off(tmp_path: Path
     off = [p for p in configured_providers(conn, settings) if p.name == "lan-beast"]
 
     assert off and off[0].enabled is False
+
+
+def test_catalog_test_button_reports_the_answer_on_the_card(tmp_path: Path, monkeypatch) -> None:
+    """The card must show what came back, not just that something happened."""
+    from librairy.tools import tvmaze
+
+    monkeypatch.setattr(
+        tvmaze,
+        "search_show",
+        lambda *a, **k: {
+            "name": "Breaking Bad",
+            "first_air_date": "2008-01-20",
+            "episode_name": "Pilot",
+        },
+    )
+    client, _conn, _settings = client_for(tmp_path)
+
+    response = client.post(
+        "/settings/catalogs/tvmaze/test",
+        headers={"x-csrf-token": client.cookies["csrf_token"]},
+    )
+
+    assert response.status_code == 200
+    assert 'id="catalog-test-tvmaze"' in response.text
+    assert "Breaking Bad" in response.text
+    assert "Pilot" in response.text
+
+
+def test_testing_an_unknown_catalog_is_a_404_not_a_traceback(tmp_path: Path) -> None:
+    client, _conn, _settings = client_for(tmp_path)
+
+    response = client.post(
+        "/settings/catalogs/nosuchcatalog/test",
+        headers={"x-csrf-token": client.cookies["csrf_token"]},
+    )
+
+    assert response.status_code == 404
