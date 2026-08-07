@@ -68,7 +68,7 @@ def prompt_for(view: object) -> str:
 
 
 def validate_ai_response(text: str) -> ValidationResult:
-    payload = _extract_json(text)
+    payload = extract_json(text)
     if payload is None:
         return ValidationResult(None, "invalid-json")
     try:
@@ -77,7 +77,13 @@ def validate_ai_response(text: str) -> ValidationResult:
         return ValidationResult(None, exc.errors()[0]["type"])
 
 
-def _extract_json(text: str) -> dict | None:
+def extract_json(text: str) -> dict | None:
+    """The one JSON object in a model's reply, however it chose to wrap it.
+
+    Shared with the image path, which faces exactly the same problem: a local
+    model asked for JSON returns JSON inside a code fence, after an apology, or
+    with a note underneath.
+    """
     match = FENCE_RE.search(text.strip())
     candidate = match.group(1) if match else text
     try:
