@@ -45,6 +45,16 @@ SORTS = {
 }
 DEFAULT_SORT = "confidence"
 
+# The state filter was a free-text box over a database enum: type a sixth word
+# and you got an empty list with nothing to say why.
+STATES = {
+    "proposed": "Waiting on you",
+    "postponed": "Put off for later",
+    "approved": "Approved, not yet committed",
+    "rejected": "Rejected",
+    "committed": "Already filed",
+}
+
 
 @dataclass(frozen=True)
 class ReviewFilters:
@@ -60,6 +70,18 @@ class ReviewFilters:
     def grouped(self) -> bool:
         return self.sort == DEFAULT_SORT
 
+    @property
+    def narrowed(self) -> bool:
+        """Anything beyond the default view. Keeps the filter panel open when
+        it is doing something, so a short list never looks like an empty one."""
+        return bool(
+            self.category
+            or self.state != "proposed"
+            or self.min_confidence is not None
+            or self.max_confidence is not None
+            or self.has_destination is not None
+        )
+
 
 def review_data(conn: sqlite3.Connection, filters: ReviewFilters) -> dict[str, object]:
     rows = _proposal_rows(conn, filters)
@@ -68,6 +90,8 @@ def review_data(conn: sqlite3.Connection, filters: ReviewFilters) -> dict[str, o
         "filters": filters,
         "groups": _group_rows(rows) if filters.grouped else _flat_group(rows),
         "sorts": SORTS,
+        "states": STATES,
+        "filtered": filters.narrowed,
         "categories": CATEGORIES,
         "dest_folders": destination_folders(conn),
         "total": total,

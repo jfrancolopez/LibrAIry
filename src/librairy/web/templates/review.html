@@ -41,41 +41,79 @@
     </section>
   {% endif %}
 
-  <form
-    class="filter-bar filter-grid"
-    hx-get="/review/list"
-    hx-target="#review-list"
-    hx-swap="outerHTML"
-  >
-    <label class="field">Category <input name="category" value="{{ filters.category or '' }}" placeholder="any"></label>
-    <label class="field">State <input name="state" value="{{ filters.state }}"></label>
-    <label class="field field-narrow">Confidence from
-      <input name="min_confidence" type="number" step="0.05" min="0" max="1" placeholder="0.00"></label>
-    <label class="field field-narrow">to
-      <input name="max_confidence" type="number" step="0.05" min="0" max="1" placeholder="1.00"></label>
-    <label class="field field-narrow">Destination
-      <select name="has_destination">
-        <option value="">any</option>
-        <option value="yes">has one</option>
-        <option value="no">missing</option>
-      </select>
-    </label>
-    {# Sorting reruns the same request, so it belongs in the same form as the
-       filters rather than in a control of its own that forgets them. #}
-    <label class="field">Sort by
-      <select name="sort" hx-get="/review/list" hx-target="#review-list" hx-swap="outerHTML"
-              hx-include="closest form" hx-trigger="change">
-        {% for key, option in sorts.items() %}
-          <option value="{{ key }}"{% if key == filters.sort %} selected{% endif %}>{{ option[0] }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <button type="submit">Filter</button>
-  </form>
-
-  {# One toolbar for everything you do to a selection, sticky so it stays with
-     you instead of scrolling away forty rows up. #}
+  {# One bar for everything you do to this list — how it is sorted, what is
+     filtered out of it, and what happens to a selection. Three separate bands
+     cost 183px above the first file; sticky, so it stays with you instead of
+     scrolling away forty rows up. #}
   <div class="review-toolbar" data-preview-bar>
+    {# Sorting is the control people reach for; the five filters are not, and
+       as a permanent grid they cost 117px of screen above the first file. Sort
+       stays out, the rest fold away — and unfold on their own when something
+       is filtered, so a narrowed list never looks like an empty one. #}
+    <form
+      class="review-filters"
+      hx-get="/review/list"
+      hx-target="#review-list"
+      hx-swap="outerHTML"
+    >
+      <label class="field field-inline">Sort
+        <select name="sort" hx-get="/review/list" hx-target="#review-list" hx-swap="outerHTML"
+                hx-include="closest form" hx-trigger="change">
+          {% for key, option in sorts.items() %}
+            <option value="{{ key }}"{% if key == filters.sort %} selected{% endif %}>{{ option[0] }}</option>
+          {% endfor %}
+        </select>
+      </label>
+
+      <details class="filter-more"{% if filtered %} open{% endif %}>
+        <summary>Filters{% if filtered %} <span class="badge badge-info">on</span>{% endif %}</summary>
+        <div class="filter-grid">
+          <label class="field">Category
+            <select name="category">
+              <option value="">any</option>
+              {% for name in categories %}
+                <option value="{{ name }}"{% if name == filters.category %} selected{% endif %}>{{ name }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          {# A menu, not a free-text box. It is one of five words, and typing a
+             sixth returned an empty list with nothing to say why. #}
+          <label class="field">State
+            <select name="state">
+              {% for key, label in states.items() %}
+                <option value="{{ key }}"{% if key == filters.state %} selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label class="field field-narrow">Confidence from
+            <input name="min_confidence" type="number" step="0.05" min="0" max="1" placeholder="0.00"
+                   value="{{ filters.min_confidence if filters.min_confidence is not none else '' }}"></label>
+          <label class="field field-narrow">to
+            <input name="max_confidence" type="number" step="0.05" min="0" max="1" placeholder="1.00"
+                   value="{{ filters.max_confidence if filters.max_confidence is not none else '' }}"></label>
+          <label class="field field-narrow">Destination
+            <select name="has_destination">
+              <option value="">any</option>
+              <option value="yes"{% if filters.has_destination is sameas true %} selected{% endif %}>has one</option>
+              <option value="no"{% if filters.has_destination is sameas false %} selected{% endif %}>missing</option>
+            </select>
+          </label>
+          <div class="filter-actions">
+            <button type="submit" class="btn-primary">Apply</button>
+            <a class="btn" href="/review">Clear</a>
+          </div>
+        </div>
+      </details>
+
+      {# View controls, beside the other view controls. Left of the bar is how
+         you look at the list; right of it is what you do to a selection. #}
+      <span class="toolbar-group toolbar-secondary">
+        <button type="button" data-preview-all="expand">Preview all</button>
+        <button type="button" data-preview-all="collapse">Collapse</button>
+        <span class="muted" data-preview-status></span>
+      </span>
+    </form>
+
     <form
       id="review-actions"
       hx-post="/review/action"
@@ -92,21 +130,21 @@
       <input type="hidden" name="sort" value="{{ filters.sort }}">
       <div class="toolbar-group">
         {# Outside every .review-group, so review.js scopes it to the page. #}
-        <label class="all-matching"><input type="checkbox" class="select-all"> Select all shown</label>
+        <label class="all-matching"><input type="checkbox" class="select-all"> Select all</label>
+        <strong class="selected-count" data-selected-count></strong>
+      </div>
+      {# Hidden until there is a selection to act on. Five disabled buttons and
+         a scope checkbox held a permanent second line in a sticky bar for a
+         decision nobody had started making yet. #}
+      <div class="toolbar-group" data-selection-only hidden>
         <button type="submit" name="action" value="approve" class="btn-primary" data-needs-selection>Approve</button>
         <button type="submit" name="action" value="reject" data-needs-selection>Not this</button>
         <button type="submit" name="action" value="postpone" data-needs-selection>Later</button>
         <button type="submit" name="action" value="discard" class="btn-danger" data-needs-selection
-          hx-confirm="Move the selected files to Quarantine on the next commit? Nothing is deleted — you can restore them from the Quarantine page.">Don't want them</button>
-        <strong class="selected-count" data-selected-count></strong>
+          hx-confirm="Move the selected files to Quarantine on the next commit? Nothing is deleted — you can restore them from the Quarantine page.">Quarantine</button>
+        <label class="all-matching"><input type="checkbox" name="all_matching" value="true"> all matches, not just this page</label>
       </div>
-      <label class="all-matching"><input type="checkbox" name="all_matching" value="true"> every match, not just this page</label>
     </form>
-    <div class="toolbar-group toolbar-secondary">
-      <button type="button" data-preview-all="expand">Expand previews</button>
-      <button type="button" data-preview-all="collapse">Collapse</button>
-      <span class="muted" data-preview-status></span>
-    </div>
   </div>
 
   {% include "partials/review_list.html" %}

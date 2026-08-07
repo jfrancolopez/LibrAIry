@@ -1,9 +1,9 @@
 {% set conf = proposal.confidence %}
 {% set band = 'conf-high' if conf >= 0.85 and proposal.dest_relpath else ('conf-low' if conf < 0.6 or not proposal.dest_relpath else 'conf-mid') %}
-{# A card, not a table row. The old row squeezed three buttons, an edit form and
-   the whole preview into a 15rem cell, which is why an opened preview was a
-   thin column of picture surrounded by empty page. Everything about one file
-   now sits in one block that owns the full width when it needs it. #}
+{% set csrf = request.state.session.csrf_token %}
+{# Two bands, not four. Where a file is going and what you can do about it are
+   one decision, so they share a line; the row was 136px tall for a filename, a
+   path and six buttons, which is five files on a screen. #}
 <article id="proposal-{{ proposal.id }}" class="proposal {{ band }}">
   <label class="proposal-pick">
     <input form="review-actions" id="row-{{ proposal.id }}" name="proposal_id" type="checkbox"
@@ -17,20 +17,65 @@
         {% if proposal.size_label %}<span class="muted">{{ proposal.size_label }}</span>{% endif %}
         <span class="confidence" style="--score: {{ (conf * 100)|round|int }}%">{{ '%.2f'|format(conf) }}</span>
         <span class="badge {{ 'badge-ok' if band == 'conf-high' else ('badge-fail' if band == 'conf-low' else 'badge-warn') }}">{{ 'confident' if band == 'conf-high' else ('needs a look' if band == 'conf-low' else 'probable') }}</span>
-        {% if proposal.has_duplicate %}<span class="badge badge-info">you may already have this</span>{% endif %}
+        {% if proposal.has_duplicate %}<span class="badge badge-info">duplicate</span>{% endif %}
       </span>
     </header>
 
-    {# The one thing worth seeing at a glance: where this file is going. #}
-    <p class="proposal-dest">
-      <span class="dest-arrow" aria-hidden="true">→</span>
-      {% if proposal.dest_relpath %}
-        <span class="mono dest-path">{{ proposal.dest_root }}/{{ proposal.dest_relpath }}</span>
-      {% else %}
-        <span class="badge badge-warn">no destination yet</span>
-      {% endif %}
-      <button type="button" class="btn-link" data-panel-toggle="edit-{{ proposal.id }}">Change…</button>
-    </p>
+    <div class="proposal-line">
+      {# The destination is the control that changes it. A "Change…" link beside
+         a path is a second thing to aim at for the same job. #}
+      <p class="proposal-dest">
+        <span class="dest-arrow" aria-hidden="true">→</span>
+        {% if proposal.dest_relpath %}
+          <button type="button" class="mono dest-path" data-panel-toggle="edit-{{ proposal.id }}"
+                  title="Click to change where this goes">{{ proposal.dest_root }}/{{ proposal.dest_relpath }}</button>
+        {% else %}
+          <button type="button" class="badge badge-warn dest-path" data-panel-toggle="edit-{{ proposal.id }}"
+                  title="Click to set a destination">no destination yet</button>
+        {% endif %}
+      </p>
+
+      <div class="proposal-actions">
+        {# Look before you leap, then leap: the two inspect buttons sit left of
+           the decisions, in the order you would use them. #}
+        {% if proposal.has_duplicate %}
+          {# Compare already contains this file's own preview, so a separate
+             Preview button next to it is a second button for the same picture. #}
+          <button type="button" class="btn-ghost"
+            hx-get="/review/duplicates/{{ proposal.item_id }}"
+            hx-target="#preview-{{ proposal.id }}"
+            hx-swap="innerHTML">Compare</button>
+        {% else %}
+          <button type="button" class="btn-ghost"
+            hx-get="/preview/items/{{ proposal.item_id }}"
+            hx-target="#preview-{{ proposal.id }}"
+            hx-swap="innerHTML">Preview</button>
+        {% endif %}
+        <button type="button" class="btn-ghost" data-panel-toggle="why-{{ proposal.id }}">Why</button>
+
+        <span class="action-gap"></span>
+
+        <button type="button" class="btn-primary"
+          hx-post="/review/action"
+          hx-vals='{"action": "approve", "proposal_id": "{{ proposal.id }}", "state": "{{ proposal.status }}", "sort": "{{ filters.sort }}"}'
+          hx-target="#review-list" hx-swap="outerHTML"
+          hx-headers='{"x-csrf-token":"{{ csrf }}"}'>Approve</button>
+        <button type="button"
+          hx-post="/review/action"
+          hx-vals='{"action": "reject", "proposal_id": "{{ proposal.id }}", "state": "{{ proposal.status }}", "sort": "{{ filters.sort }}"}'
+          hx-target="#review-list" hx-swap="outerHTML"
+          hx-headers='{"x-csrf-token":"{{ csrf }}"}'>Not this</button>
+        {# "Quarantine" rather than "Don't want it": it is one word, it is what
+           actually happens, and it is the name of the page you get it back
+           from. Nothing is deleted — the confirm says so. #}
+        <button type="button" class="btn-danger"
+          hx-post="/review/action"
+          hx-vals='{"action": "discard", "proposal_id": "{{ proposal.id }}", "state": "{{ proposal.status }}", "sort": "{{ filters.sort }}"}'
+          hx-target="#review-list" hx-swap="outerHTML"
+          hx-confirm="Move this file to Quarantine on the next commit? Nothing is deleted — you can restore it from the Quarantine page."
+          hx-headers='{"x-csrf-token":"{{ csrf }}"}'>Quarantine</button>
+      </div>
+    </div>
 
     {% if warning %}<p><span class="badge badge-warn">{{ warning }}</span></p>{% endif %}
     {% if proposal.flags %}
@@ -44,7 +89,7 @@
                 hx-post="/review/proposals/{{ proposal.id }}/edit"
                 hx-vals='{"category": "{{ proposal.category }}", "clean_name": "{{ proposal.unhidden_name }}", "dest_relpath": "{{ proposal.dest_relpath or '' }}"}'
                 hx-target="#proposal-{{ proposal.id }}" hx-swap="outerHTML"
-                hx-headers='{"x-csrf-token":"{{ request.state.session.csrf_token }}"}'
+                hx-headers='{"x-csrf-token":"{{ csrf }}"}'
               >Rename to {{ proposal.unhidden_name }}</button>
             {% endif %}
           </li>
@@ -52,51 +97,21 @@
       </ul>
     {% endif %}
 
-    <div class="proposal-actions">
-      <button type="button" class="btn-primary"
-        hx-post="/review/action"
-        hx-vals='{"action": "approve", "proposal_id": "{{ proposal.id }}", "state": "{{ proposal.status }}", "sort": "{{ filters.sort }}"}'
-        hx-target="#review-list" hx-swap="outerHTML"
-        hx-headers='{"x-csrf-token":"{{ request.state.session.csrf_token }}"}'>Approve</button>
-      <button type="button"
-        hx-post="/review/action"
-        hx-vals='{"action": "reject", "proposal_id": "{{ proposal.id }}", "state": "{{ proposal.status }}", "sort": "{{ filters.sort }}"}'
-        hx-target="#review-list" hx-swap="outerHTML"
-        hx-headers='{"x-csrf-token":"{{ request.state.session.csrf_token }}"}'>Not this</button>
-      {# Quarantine, not deletion — see discard_proposals. The confirm says so. #}
-      <button type="button" class="btn-danger"
-        hx-post="/review/action"
-        hx-vals='{"action": "discard", "proposal_id": "{{ proposal.id }}", "state": "{{ proposal.status }}", "sort": "{{ filters.sort }}"}'
-        hx-target="#review-list" hx-swap="outerHTML"
-        hx-confirm="Move this file to Quarantine on the next commit? Nothing is deleted — you can restore it from the Quarantine page."
-        hx-headers='{"x-csrf-token":"{{ request.state.session.csrf_token }}"}'>Don't want it</button>
-      <span class="spacer"></span>
-      {% if proposal.has_duplicate %}
-        {# The one row where a preview of this file alone is not the question.
-           The question is which of two copies you want. #}
-        <button type="button" class="btn-ghost"
-          hx-get="/review/duplicates/{{ proposal.item_id }}"
-          hx-target="#preview-{{ proposal.id }}"
-          hx-swap="innerHTML">Compare the two copies</button>
-      {% endif %}
-      <button type="button" class="btn-ghost"
-        hx-get="/preview/items/{{ proposal.item_id }}"
-        hx-target="#preview-{{ proposal.id }}"
-        hx-swap="innerHTML">Preview</button>
-      <details class="why">
-        <summary>Why this?</summary>
-        <ul class="why-list">
-          {% for view in proposal.evidence_views %}
-            <li>
-              <span class="badge {{ 'badge-warn' if view.cloud else 'badge-info' }}">{{ view.label }}</span>
-              {{ view.text }}
-              <span class="muted">{{ view.weight_pct }}%</span>
-            </li>
-          {% else %}
-            <li class="muted">No evidence recorded.</li>
-          {% endfor %}
-        </ul>
-      </details>
+    {# A panel like the others rather than a <details>. Inside the button row a
+       details is as narrow as its summary while its contents keep their own
+       width, which pushed the page sideways on a phone. #}
+    <div id="why-{{ proposal.id }}" class="why" hidden>
+      <ul class="why-list">
+        {% for view in proposal.evidence_views %}
+          <li>
+            <span class="badge {{ 'badge-warn' if view.cloud else 'badge-info' }}">{{ view.label }}</span>
+            {{ view.text }}
+            <span class="muted">{{ view.weight_pct }}%</span>
+          </li>
+        {% else %}
+          <li class="muted">No evidence recorded.</li>
+        {% endfor %}
+      </ul>
     </div>
 
     <div id="preview-{{ proposal.id }}" class="proposal-preview"></div>
@@ -107,7 +122,7 @@
         hx-post="/review/proposals/{{ proposal.id }}/edit"
         hx-target="#proposal-{{ proposal.id }}"
         hx-swap="outerHTML"
-        hx-headers='{"x-csrf-token":"{{ request.state.session.csrf_token }}"}'
+        hx-headers='{"x-csrf-token":"{{ csrf }}"}'
       >
         {# A category is one of eight things, so it is a menu. It was a free-text
            box that rejected anything but those eight without saying which. #}

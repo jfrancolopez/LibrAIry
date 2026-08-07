@@ -204,3 +204,44 @@ def test_no_class_is_styled_as_two_different_components() -> None:
 
     for selector, bodies in sized.items():
         assert len(bodies) == 1, f"{selector} sets height in {len(bodies)} separate rules"
+
+
+def test_the_hidden_attribute_actually_hides() -> None:
+    """`hidden` is only `display: none` in the UA stylesheet.
+
+    Any component rule that sets a display beats it, and the element stays
+    laid out -- present, invisible to nobody, still taking its space. That is
+    how a bulk-action group marked `hidden` kept holding a line in the Review
+    toolbar. Two components had already been patched for it one at a time.
+    """
+    css = CSS
+
+    assert "[hidden] { display: none !important; }" in css
+    # And no one goes back to patching it per component.
+    per_component = re.findall(r"\.[\w-]+\[hidden\]\s*\{[^}]*display\s*:", css)
+    assert per_component == [], f"covered by the global rule already: {per_component}"
+
+
+def test_long_paths_can_break() -> None:
+    """A file path is one long word with no break opportunity in it.
+
+    Left alone it sets the minimum width of whatever contains it, which is how
+    History and Quarantine scrolled sideways on a phone.
+    """
+    assert ".mono:not(pre) { overflow-wrap: anywhere; }" in CSS
+
+
+def test_the_header_status_pill_can_be_cut_short() -> None:
+    """`white-space: nowrap` on the provider pill made the header 495px wide,
+    so every page in the portal scrolled sideways on a phone — a header bug
+    that reads as a bug on whatever page you happen to be looking at.
+
+    It needs `display: inline-block` for the cap to bite at all: max-width and
+    overflow are ignored on a non-replaced inline box, which is what an <a> is.
+    """
+    rule = re.search(r"\.provider-pill\s*\{([^}]*)\}", CSS)
+    assert rule, "the provider pill lost its rule"
+    body = rule.group(1)
+    assert "inline-block" in body
+    assert "text-overflow: ellipsis" in body
+    assert "max-width" in body

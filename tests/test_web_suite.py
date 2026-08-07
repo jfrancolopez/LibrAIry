@@ -106,3 +106,17 @@ def test_the_rarely_used_pages_move_behind_one_more_menu(tmp_path: Path) -> None
     assert "nav-more" in page
     for href in ("/quarantine", "/history", "/health", "/access"):
         assert f'href="{href}"' in page
+
+
+def test_static_assets_are_revalidated_not_guessed(tmp_path: Path) -> None:
+    """StaticFiles sends an ETag but no Cache-Control, which leaves the browser
+    free to invent a lifetime. Pull a new image and a returning tab keeps the
+    old stylesheet against the new HTML — an update that appears to do nothing
+    and then fixes itself hours later, so it never gets reported."""
+    client, _conn = client_for(tmp_path)
+
+    response = client.get("/static/pipboy.css")
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-cache"
+    assert response.headers.get("etag"), "revalidation needs a validator to be cheap"

@@ -67,7 +67,7 @@ def test_review_evidence_labels_cloud_marker_and_pending_edit(tmp_path: Path) ->
     # Evidence renders as plain-language "why" lines, not bracket codes.
     assert "Looks like unknown item fallback" in response.text
     assert "AI · openai" in response.text
-    assert "Why this?" in response.text
+    assert ">Why</button>" in response.text
     assert "no destination yet" in response.text
     assert "Destination" in response.text
 
@@ -429,7 +429,7 @@ def test_each_group_offers_a_select_all_box(tmp_path: Path) -> None:
     page = client.get("/review").text
 
     assert 'class="select-all"' in page
-    assert "Select all shown" in page
+    assert "Select all" in page
 
 
 def test_sorting_by_size_flattens_the_groups_and_orders_by_size(tmp_path: Path) -> None:
@@ -577,7 +577,7 @@ def test_a_duplicate_row_offers_the_comparison_and_says_what_each_tool_found(
     page = client.get("/review")
     panel = client.get(f"/review/duplicates/{inbox_id}")
 
-    assert "you may already have this" in page.text
+    assert ">duplicate</span>" in page.text
     assert f'hx-get="/review/duplicates/{inbox_id}"' in page.text
     assert panel.status_code == 200
     assert "BLAKE2b fingerprint" in panel.text
@@ -594,7 +594,7 @@ def test_a_row_with_no_duplicate_does_not_advertise_a_comparison(tmp_path: Path)
 
     page = client.get("/review")
 
-    assert "you may already have this" not in page.text
+    assert ">duplicate</span>" not in page.text
     assert "/review/duplicates/" not in page.text
 
 

@@ -129,6 +129,25 @@ def _backup_categories(form) -> str:  # noqa: ANN001 - starlette FormData
 
 PACKAGE_DIR = Path(__file__).parent
 TEMPLATES = Jinja2Templates(directory=PACKAGE_DIR / "templates")
+
+
+class RevalidatedStatics(StaticFiles):
+    """CSS and JS that a container upgrade actually replaces.
+
+    StaticFiles sends an ETag and a Last-Modified but no Cache-Control, which
+    leaves the browser free to guess a lifetime and never ask again. Pull a new
+    image and a returning tab keeps the old stylesheet against the new HTML —
+    the update appears to have done nothing, in a way that clears itself hours
+    later and so never gets reported as a bug.
+
+    `no-cache` is not "do not cache": it caches and revalidates, so an
+    unchanged file still costs one conditional request answered with a 304.
+    """
+
+    def file_response(self, *args, **kwargs):  # noqa: ANN002, ANN003, ANN201
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
 EXEMPT_PATHS = {"/", "/login", "/setup", "/healthz"}
 
 
@@ -142,7 +161,7 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
     app.state.conn = conn
     app.state.settings = settings
     app.state.commit_state = commit_state
-    app.mount("/static", StaticFiles(directory=PACKAGE_DIR / "static"), name="static")
+    app.mount("/static", RevalidatedStatics(directory=PACKAGE_DIR / "static"), name="static")
     TEMPLATES.env.globals["provider_header"] = lambda: provider_header(conn, settings)
     TEMPLATES.env.globals["app_version"] = __version__
     TEMPLATES.env.globals["welcome_banner_visible"] = lambda request: welcome_banner_visible(

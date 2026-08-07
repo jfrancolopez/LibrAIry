@@ -31,6 +31,11 @@
     document.querySelectorAll("[data-needs-selection]").forEach(function (button) {
       button.disabled = selected === 0;
     });
+    // Five disabled buttons held a permanent line in a sticky bar for a
+    // selection that does not exist yet. They appear when they can be used.
+    document.querySelectorAll("[data-selection-only]").forEach(function (group) {
+      group.hidden = selected === 0;
+    });
   }
 
   function syncHeaders() {
