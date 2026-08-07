@@ -8,6 +8,7 @@ from pathlib import Path
 from librairy.classify.photo_names import photo_name
 from librairy.config import Settings
 from librairy.models import EvidenceEntry
+from librairy.naming import is_noise
 from librairy.taxonomy import RenderResult, clean_name_from_title, render_destination
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".heic", ".webp", ".bmp", ".tiff", ".avif"}
@@ -273,7 +274,11 @@ def _event_from_parent(path: Path, settings: Settings) -> str:
     except OSError:
         pass
     name = parent.name.strip()
-    if not name or name.lower() in GENERIC_IMAGE_PARENTS:
+    # A UUID is not an event. iMessage gives every attachment its own folder
+    # named after one, which filed thirty-two photographs into thirty-two
+    # separate folders called Photos/Unknown/01B583D3-1D28-4B3A-…/ — the same
+    # noise the grouping already learned to ignore, one layer further down.
+    if not name or name.lower() in GENERIC_IMAGE_PARENTS or is_noise(name):
         return "Unsorted"
     return _clean(name)
 

@@ -37,7 +37,7 @@ from librairy.ai.registry import provider_chain
 from librairy.ai.vision import VISION_EXTENSIONS, VisionResult, describe_image
 from librairy.config import Settings
 from librairy.models import EvidenceEntry, Item
-from librairy.naming import slugify
+from librairy.naming import EMBEDDED_UUID_RE, is_noise, slugify
 from librairy.planner import utc_now
 
 LOGGER = logging.getLogger(__name__)
@@ -209,9 +209,6 @@ DEVICE_WORDS = frozenset({
     "shot", "scr", "snap", "snapshot", "vlcsnap", "capture", "untitled",
     "unnamed", "download", "downloaded", "copy", "new", "file", "at", "am", "pm",
 })
-_UUID = re.compile(
-    r"(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
-)
 _HEX_BLOB = re.compile(r"(?i)^[0-9a-f]{8,}$")
 _WORDS = re.compile(r"[-_. ]+")
 # Enough to say what the picture is; more turns a filename into a sentence.
@@ -225,8 +222,11 @@ def says_nothing(stem: str) -> bool:
     say nothing. `Wedding-Day`, `budget-2026` and `IMG-holiday` all say
     something, and something is never overwritten.
     """
-    text = stem.strip()
-    if not text or _UUID.match(text):
+    # A UUID is taken out whole first. Split on separators it becomes seven
+    # chunks, three of which are four hex characters — too short to tell from
+    # a word, so "123F" read as meaningful and the stem looked informative.
+    text = EMBEDDED_UUID_RE.sub(" ", stem).strip()
+    if not text:
         return True
     for word in _WORDS.split(text):
         if not word or word.isdigit() or _HEX_BLOB.match(word):
@@ -257,6 +257,13 @@ def _named(clean_name: str, answer: VisionResult) -> str:
     words = "-".join(tokens)
     if words.lower() in stem.lower():
         return clean_name
+    # A stem that is nothing but a UUID or a bare number is replaced outright
+    # rather than kept as a prefix: 36 characters of hex in front of
+    # "woman-portrait" is worse than either half alone, and a UUID is not a
+    # disambiguator anybody can use. `IMG_4821` is kept, because the camera's
+    # sequence number is how you find that photo again on the phone.
+    if is_noise(stem):
+        stem = ""
     stem = f"{stem}-{words}" if stem else words
     return f"{slugify(stem)}{suffix}"
 

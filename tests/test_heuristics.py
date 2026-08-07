@@ -292,3 +292,20 @@ def test_loose_print_file_uses_its_own_name_as_the_project(tmp_path: Path) -> No
     assert result is not None
     assert result.category == "projects"
     assert result.fields["project"] == "bracket-v2"
+
+
+def test_a_uuid_folder_is_not_a_photo_event(tmp_path: Path) -> None:
+    """Thirty-two iMessage attachments made thirty-two folders named after
+    UUIDs, each becoming its own Photos/Unknown/01B583D3-1D28-…/ destination.
+    The grouping learned to ignore that noise; the destination had not."""
+    settings = settings_for(tmp_path)
+    folder = tmp_path / "inbox" / "01B583D3-1D28-4B3A-A5DD-9471447CFA27"
+    folder.mkdir(parents=True)
+    photo = folder / "IMG_1423.jpeg"
+    photo.write_bytes(b"x")
+
+    result = classify_path(photo, settings)
+
+    assert result.fields["event"] == "Unsorted"
+    assert "01B583D3" not in (result.dest_relpath or "")
+    assert "01B583D3" not in result.clean_name

@@ -74,3 +74,22 @@ def test_a_twelve_hour_stamp_is_converted_not_copied() -> None:
     assert photo_name("Screen Shot 2024-06-12 at 12.05.00 AM", ".png").name == (
         "screenshot-2024-06-12-000500.png"
     )
+
+
+def test_a_uuid_folder_is_not_an_event_name() -> None:
+    """iMessage gives every attachment its own folder named after a UUID.
+
+    Found on a real inbox: this appended it, so a photograph arrived as
+    `IMG_1423-0373923B-123F-4ABF-9B6E-2229413CEED4.jpeg` — longer than the
+    original, no more informative, and impossible to read out loud.
+    """
+    named = photo_name("IMG_1423", ".jpeg", event="0373923B-123F-4ABF-9B6E-2229413CEED4")
+
+    assert named.name == "IMG_1423.jpeg"
+    assert not named.renamed
+
+
+def test_a_real_folder_name_is_still_used() -> None:
+    named = photo_name("IMG_1423", ".jpeg", event="Italy")
+
+    assert named.name == "IMG_1423-Italy.jpeg"

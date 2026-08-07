@@ -26,7 +26,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from librairy.naming import slugify
+from librairy.naming import is_noise, slugify
 
 # One pattern for every layout above: eight-digit or dash-separated date,
 # optionally followed by a time using -, _, ., :, or the h/m/s of VLC.
@@ -153,4 +153,12 @@ def _stamp_text(stamp: re.Match[str]) -> str:
 
 
 def _is_specific(event: str) -> bool:
-    return event.strip().lower() not in _GENERIC_EVENTS
+    """Whether the folder name is worth carrying into the filename.
+
+    A generic dumping ground says nothing, and neither does a UUID — an
+    iMessage export gave every attachment a folder named after one, and this
+    dutifully appended it, producing
+    `IMG_1423-0373923B-123F-4ABF-9B6E-2229413CEED4.jpeg`. Longer than the
+    original, no more informative, and impossible to read.
+    """
+    return event.strip().lower() not in _GENERIC_EVENTS and not is_noise(event)

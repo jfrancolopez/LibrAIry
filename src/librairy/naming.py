@@ -18,6 +18,31 @@ import unicodedata
 from pathlib import PurePosixPath
 
 SEPARATOR = "-"
+
+#  A UUID, a long hex blob, or a bare number. This is how a phone or a
+#  messaging app names a folder when it has nothing to say about the contents,
+#  and it is never worth carrying into a name a person has to read.
+#
+#  Lives here, in the naming module, because three places need the same answer
+#  and each of them getting it separately is how an iMessage export ended up
+#  filed as Photos/Unknown/01B583D3-1D28-4B3A-A5DD-9471447CFA27/ with the same
+#  UUID appended to every filename inside it.
+NOISE_RE = re.compile(
+    r"(?i)^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+    r"|[0-9a-f]{16,}|\d+)$"
+)
+#  The same UUID, found anywhere inside a longer string rather than being the
+#  whole of it: "IMG_1423-0373923B-123F-4ABF-9B6E-2229413CEED4" is a filename
+#  that already went wrong once.
+EMBEDDED_UUID_RE = re.compile(
+    r"(?i)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+)
+
+
+def is_noise(label: str) -> bool:
+    """Whether this is a machine's placeholder rather than anybody's name."""
+    text = label.strip()
+    return not text or bool(NOISE_RE.match(text))
 # Kept because they carry meaning in the names people already use: "(2005)"
 # for a year, "_" as a deliberate separator, "." before an extension.
 KEEP = frozenset("-_.()")

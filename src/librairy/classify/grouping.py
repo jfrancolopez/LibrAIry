@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import re
 import sqlite3
 from dataclasses import dataclass, replace
 
 from librairy.classify.hashtags import extract_hashtags
+from librairy.naming import is_noise
 from librairy.planner import utc_now
 
 
@@ -96,21 +96,13 @@ def _group_descriptor(proposal: GroupInput) -> tuple[str | None, str, str | None
     return None, "", None
 
 
-#  A UUID, a hex blob, or a bare number. These are how a phone or a messaging
-#  app names a folder when it has nothing to say about the contents.
-_NOISE = re.compile(
-    r"(?i)^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
-    r"|[0-9a-f]{16,}|\d+)$"
-)
-
-
 def _dated(label: str, year: object) -> str:
     text = str(year or "").strip()
     return f"{label} {text}" if text.isdigit() and text != "0" else label
 
 
 def _meaningful(label: str) -> bool:
-    return bool(label.strip()) and not _NOISE.match(label.strip())
+    return not is_noise(label)
 
 
 def _ensure_group(conn: sqlite3.Connection, kind: str, label: str, dest_base: str | None) -> int:

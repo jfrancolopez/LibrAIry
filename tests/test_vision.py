@@ -440,6 +440,23 @@ def test_a_filename_a_person_wrote_is_left_alone(tmp_path: Path) -> None:
     assert out.clean_name == "wedding-day.jpg"
 
 
+def test_a_name_that_is_only_a_uuid_is_replaced_not_prefixed(tmp_path: Path) -> None:
+    """36 characters of hex in front of "baby-orange-cat" is worse than either
+    half. A UUID is not a disambiguator anybody can use, and the executor
+    already refuses to overwrite anything."""
+    name = "A2F98891-E89A-40A4-803A-31ECD1F1A488.jpeg"
+    out = _apply(tmp_path, name, FULL_ANSWER, clean_name=name)
+
+    assert out.clean_name == "baby-orange-cat.jpeg"
+
+
+def test_a_camera_sequence_number_is_kept_as_a_prefix(tmp_path: Path) -> None:
+    """Unlike a UUID: IMG_4821 is how you find that photo again on the phone."""
+    out = _apply(tmp_path, "IMG_4821.jpg", FULL_ANSWER, clean_name="IMG_4821.jpg")
+
+    assert out.clean_name == "IMG_4821-baby-orange-cat.jpg"
+
+
 def test_a_capture_timestamp_survives_the_rename(tmp_path: Path) -> None:
     """The date is what makes a photo folder sort. It is added to, not replaced."""
     out = _apply(
@@ -456,6 +473,16 @@ def test_a_uuid_says_nothing_and_a_word_says_something() -> None:
     assert says_nothing("PXL-20240612-101112")
     assert not says_nothing("wedding-day")
     assert not says_nothing("IMG-holiday")
+
+
+def test_a_uuid_buried_in_a_longer_name_still_says_nothing() -> None:
+    """Found live. Split on separators a UUID becomes seven chunks, three of
+    them four hex characters — "123F" is indistinguishable from a word at that
+    length, so the whole stem read as informative and the description was
+    never added."""
+    assert says_nothing("IMG_1423-0373923B-123F-4ABF-9B6E-2229413CEED4")
+    assert says_nothing("78726114145__D68BA48A-94F5-4023-8D03-F6400AD555F3")
+    assert not says_nothing("holiday-0373923B-123F-4ABF-9B6E-2229413CEED4")
 
 
 def test_filename_tokens_go_through_the_sanitizer(tmp_path: Path) -> None:
