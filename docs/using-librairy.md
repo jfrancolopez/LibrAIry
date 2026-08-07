@@ -37,6 +37,13 @@ Exact duplicates are staged for reversible quarantine review. Similar media flag
 are informational and require human judgment. LibrAIry never deletes duplicate
 files.
 
+Files inside a `VIDEO_TS`, `AUDIO_TS`, `BDMV` or `CERTIFICATE` folder are never
+treated as duplicates of each other. A DVD keeps a byte-identical `.BUP` beside
+every `.IFO` on purpose — a player falls back to it when the `.IFO` will not
+read — so quarantining one damages the disc rather than tidying it. The folder
+is what signals this, not the filename: a stray `VIDEO_TS.IFO` in a downloads
+folder is just a file.
+
 ### Comparing the two copies
 
 Any Review row where the file may already be in your library is marked **you may
