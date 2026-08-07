@@ -199,6 +199,28 @@ def destination_folders(conn: sqlite3.Connection) -> list[str]:
     return sorted(seen)
 
 
+#  "3 proposal(s) updated" is the database's account of what happened, not an
+#  answer to what was just pressed -- and after Re-analyse, which leaves the old
+#  guess on screen on purpose, it reads as nothing having happened at all.
+ACTION_TOASTS = {
+    "approve": "{n} approved. Nothing has moved yet — commit to file {them}.",
+    "reject": "{n} set aside.",
+    "postpone": "{n} put off. Filter State to “Put off for later” to find {them} again.",
+    "discard": "{n} headed for quarantine on the next commit. Nothing is deleted.",
+    "mark_delete": "{n} marked for deletion. {They} move to quarantine/_to-delete on the "
+    "next commit — LibrAIry still deletes nothing.",
+    "reanalyze": "{n} back in the queue. The old guess stays until a better one lands, "
+    "usually within a cycle or two.",
+}
+
+
+def action_toast(action: str, changed: int) -> str:
+    plural = changed != 1
+    noun = f"{changed} file{'s' if plural else ''}"
+    template = ACTION_TOASTS.get(action, "{n} updated.")
+    return template.format(n=noun, them="them" if plural else "it", They="They" if plural else "It")
+
+
 def reanalyze_proposals(conn: sqlite3.Connection, proposal_ids: list[int]) -> int:
     """Look again, with everything.
 

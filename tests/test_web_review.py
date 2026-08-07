@@ -762,3 +762,28 @@ def test_review_says_the_approved_pile_is_still_waiting_on_a_commit(tmp_path: Pa
     assert "approved and waiting" not in before
     assert "1 file approved and waiting" in after
     assert 'href="/commit"' in after
+
+
+def test_the_toast_says_what_just_happened_not_how_many_rows_changed(tmp_path: Path) -> None:
+    """"1 proposal(s) updated" is the database's account of the press. After
+    Re-analyse, which leaves the old guess on screen on purpose, it reads as
+    nothing having happened."""
+    client, conn = client_for(tmp_path)
+    proposal = seed_proposal(conn, "unknown.bin", "misc", "Misc/unknown.bin", 0.3, None)
+    csrf = client.cookies["csrf_token"]
+
+    looking = client.post(
+        "/review/action",
+        data={"action": "reanalyze", "proposal_id": str(proposal), "state": "proposed"},
+        headers={"x-csrf-token": csrf},
+    )
+    client.post("/review/undo", headers={"x-csrf-token": csrf})
+    approved = client.post(
+        "/review/action",
+        data={"action": "approve", "proposal_id": str(proposal), "state": "proposed"},
+        headers={"x-csrf-token": csrf},
+    )
+
+    assert "1 file back in the queue" in looking.text
+    assert "The old guess stays until a better one lands" in looking.text
+    assert "1 file approved. Nothing has moved yet" in approved.text

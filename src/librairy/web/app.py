@@ -102,6 +102,7 @@ from librairy.web.quarantine import (
     unstage_proposal,
 )
 from librairy.web.review import (
+    action_toast,
     apply_review_action,
     duplicate_comparison,
     edit_proposal,
@@ -748,7 +749,7 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         return TEMPLATES.TemplateResponse(
             request,
             "partials/review_list.html",
-            {"toast": f"{changed} proposal(s) updated", **review_data(conn, filters)},
+            {"toast": action_toast(action, changed), **review_data(conn, filters)},
         )
 
     @app.post("/review/proposals/{proposal_id}/edit", response_class=HTMLResponse)
