@@ -88,6 +88,37 @@ panel at a real library and reading what it said.
   after a UUID is no longer a photo event — iMessage attachments arrived as
   thirty-two separate "events".
 
+### Added — image understanding
+
+- **A local model can look at your pictures.** Optional, off by default, and
+  switched on in Settings → Image understanding. It returns a caption, the
+  subjects in the frame, tags, and any text it can read, kept separately from
+  the caption. All of it appears under *Why* behind a **described** badge, and
+  all of it goes into the search index — so `wifi` finds the screenshot of the
+  Wi-Fi settings.
+- **Images never reach a cloud provider.** Not an opt-in; there is no setting
+  that permits it. Cloud AI keeps reading filenames and is never offered a
+  picture.
+- **The model does not file anything.** It never changes a category: a *receipt*
+  the deterministic pass called a photo is shown in *Why* as a disagreement,
+  four lines above the category dropdown that can settle it. It only ever adds
+  to a filename, and only one that says nothing — `IMG_4821.jpg` becomes
+  `IMG-4821-baby-with-cat.jpg`, while `IMG-20240612-101112.jpg` keeps the
+  capture time that makes a photo folder sort. Agreement is worth 0.05 up to a
+  0.92 ceiling; disagreement is worth nothing, so a file deliberately held below
+  the threshold stays there.
+- Works with LM Studio and Ollama, on whatever model you point it at — the test
+  model was `gemma-4-e4b`, which is not a requirement and not a recommendation.
+  A model with no vision has the server refuse the request, which is logged with
+  the server's own words rather than becoming a silent absence of captions.
+- **ffmpeg flattens transparency onto black**, so a screenshot with an alpha
+  channel reached the model as a solid black rectangle and was accurately
+  described as one. Found by looking at what was actually sent. Everything is
+  composited onto white first, and EXIF rotation is applied explicitly rather
+  than left to a build-dependent default.
+- Re-analysing a file that has not changed replays the stored description
+  instead of spending another pass of inference on the same picture.
+
 ### Added — discs
 
 - **A ripped DVD files as one thing.** Its nine files were nine unanswerable

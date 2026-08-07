@@ -149,6 +149,64 @@ the other way: it hands the file back to the worker to pick a new winner. Use
 *Other options* to choose an answer yourself, and *Re-analyse* to let LibrAIry
 choose again.
 
+### Image understanding
+
+Off until you switch it on, in **Settings → Image understanding**. Once it is
+on, a model running on your own hardware opens each picture and says what is in
+it: a caption, the things it contains, some tags, and any text it can read. The
+row grows a **described** badge and everything it found appears under *Why*.
+
+```
+What the picture shows
+  A screenshot of a phone's Wi-Fi settings, listing nearby networks.
+  In it     phone settings
+  Tags      wifi, network, settings
+  Kind      screenshot
+  Read by   google/gemma-4-e4b, on your own hardware
+  ▸ Text in the image
+```
+
+**Images never go to a cloud provider.** Not as an opt-in — there is no setting
+that permits it. Cloud AI, if you have it enabled, carries on reading filenames
+and is simply never offered a picture. A redacted filename is a few words; a
+photograph of your kitchen is a photograph of your kitchen.
+
+What it changes, and the list is deliberately short:
+
+- **It never changes the category.** If the model says *receipt* about something
+  filed under Photos, *Why* says so — `screenshot — not photos` — and stops
+  there. The category dropdown is four lines below in the same panel, so the
+  useful thing to do with a disagreement is show it to you. Nothing is filed on
+  the strength of a caption.
+- **It only ever adds to a filename, and only when the name says nothing.**
+  `IMG_4821.jpg` becomes `IMG-4821-baby-with-cat.jpg`. A name with a real word
+  in it is left alone, and `IMG-20240612-101112.jpg` keeps its capture time —
+  that timestamp is what makes a photo folder sort. The words go through the
+  same sanitising as every other name.
+- **Agreement nudges the score up by 0.05, to a ceiling of 0.92.** Disagreement
+  changes nothing, so a file deliberately held below the threshold — album art
+  beside its album, say — stays there.
+- **It all becomes searchable.** Caption, subjects, tags and the text out of the
+  image go into the index, so searching `wifi` finds the screenshot of the Wi-Fi
+  settings.
+
+Two settings worth understanding:
+
+- **Which images.** *Every image* is what you want it on for. *Only ones the
+  scan was unsure about* sounds thriftier, but an ordinary photo already scores
+  0.85 from its extension alone — comfortably over the threshold — so that mode
+  skips almost every photo in a photo library.
+- **Model.** Empty means the same model your local provider already uses. A
+  model has to be able to *see*, and plenty of excellent text models cannot; one
+  that cannot logs the server's own refusal and changes nothing else. Point this
+  at a small vision model to keep it separate from the one reading filenames.
+
+JPEG, PNG, WEBP, GIF and BMP. HEIC is not supported — ffmpeg cannot open it, and
+adding an image library to decode it is a bigger change than this feature is
+worth. Expect a few seconds per image on a small model and considerably longer
+on a large one; a re-analysis of an unchanged file reuses the stored answer
+instead of looking again.
+
 ## Duplicates
 
 Exact duplicates are staged for reversible quarantine review. Similar media flags

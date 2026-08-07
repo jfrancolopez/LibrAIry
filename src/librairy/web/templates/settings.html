@@ -432,6 +432,53 @@
 <h2>Local AI — nothing leaves your network</h2>
 <p class="muted">Either of these can run on this machine or on any other machine you own. No account, no key, no bill.</p>
 
+{# Its own card rather than a row in the big settings form: this is the one
+   setting that makes analysis spend seconds per file, and it deserves to say
+   so where you switch it on. Same escape hatch as LM Studio's — the fields
+   join a form declared outside the outer one, because HTML has no nested
+   forms. #}
+<section class="card">
+  <h3>Image understanding</h3>
+  <p class="muted">Has a model on your own hardware look at each picture and say what
+    is in it: a caption, the things in it, tags, and any text it can read. Everything
+    it finds shows up under <em>Why</em> in Review and becomes searchable.</p>
+  <p class="muted"><strong>Local only.</strong> Pictures are never sent to a cloud
+    provider — not as an opt-in, not at all. Cloud AI stays switched on for filenames
+    if you have it enabled; it is simply never offered an image.</p>
+  <label><input type="checkbox" name="vision_enabled" form="vision-form"
+    {% if settings_view.vision.enabled %}checked{% endif %}> Look at images during analysis</label>
+  <div class="field-row">
+    <label class="field">Which images
+      <select name="vision_mode" form="vision-form">
+        {% for mode in vision_modes %}
+          <option value="{{ mode }}"{% if mode == settings_view.vision.mode %} selected{% endif %}>
+            {{ "every image" if mode == "all" else "only ones the rest of the scan was unsure about" }}
+          </option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="field">Model
+      <input name="vision_model" form="vision-form" value="{{ settings_view.vision.model }}"
+             placeholder="leave empty to use the provider's own model">
+    </label>
+  </div>
+  {% if vision_provider %}
+    <p class="muted">Will ask <strong>{{ vision_provider }}</strong>. A model has to be able
+      to see — plenty of good ones cannot, and one that cannot says so in the log and
+      changes nothing else.</p>
+  {% else %}
+    <p><span class="badge badge-warn">no local provider</span>
+      <span class="muted">Set up LM Studio or Ollama below first. Cloud providers cannot
+        be used for this.</span></p>
+  {% endif %}
+  <p class="muted">Expect a few seconds per image on a small model, much longer on a large
+    one. JPEG, PNG, WEBP, GIF and BMP; anything else is skipped.</p>
+  <form id="vision-form" method="post" action="/settings/vision" hx-post="/settings/vision" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="button-row"><button type="submit" class="btn-primary">Save</button></div>
+  </form>
+</section>
+
 <div class="local-ai">
 <section class="card">
   <h3>LM Studio</h3>

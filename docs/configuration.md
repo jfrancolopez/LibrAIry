@@ -34,6 +34,10 @@ Configuration has two layers. Boot-time environment variables define paths, port
 | `ANTHROPIC_MODEL` | Anthropic model name. |
 | `GEMINI_API_KEY` | Optional Gemini key. Never rendered in HTML. |
 | `GEMINI_MODEL` | Gemini model name. |
+| `VISION_ENABLED` | Have a local model look at each image and describe it. Off by default: it costs seconds of inference per file. Usually changed in Settings → Image understanding. |
+| `VISION_MODE` | `all` (every image LibrAIry can decode) or `uncertain` (only images the rest of the scan was unsure about). Note that an ordinary photo already scores 0.85 from its extension alone, so `uncertain` skips almost every photo in a photo library. |
+| `VISION_MODEL` | Model to look at images with. Empty means whatever model that provider is already set to. Set it to run a small vision model separately from the one reading filenames. |
+| `VISION_MAX_EDGE` | Longest edge of the copy sent to the model, 256–4096. Bigger is slower and rarely better; raise it only if text in screenshots comes back misread. |
 | `MAX_FILES_TO_ANALYZE` | Legacy cap, `0` means unlimited. |
 | `AI_TIMEOUT` | AI request timeout seconds. |
 | `MAX_AI_RETRIES` | Retry count per AI provider. |

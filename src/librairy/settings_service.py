@@ -25,7 +25,7 @@ from librairy.backup import (
     last_backup_run,
 )
 from librairy.catalogs import CATALOGS, CATALOGS_BY_SLUG, catalog_enabled, catalog_status
-from librairy.config import Settings
+from librairy.config import VISION_MODES, Settings
 from librairy.dedup import DedupConfigError, dedup_options, set_dedup_option
 from librairy.planner import utc_now
 from librairy.secrets_store import (
@@ -68,6 +68,7 @@ class RuntimeSettingsView:
     content_search_enabled: bool
     backup: dict[str, object]
     appearance: dict[str, str]
+    vision: dict[str, object]
 
 
 def settings_page_data(conn: sqlite3.Connection, settings: Settings) -> dict[str, object]:
@@ -91,6 +92,8 @@ def settings_page_data(conn: sqlite3.Connection, settings: Settings) -> dict[str
         "host_appdata_dir": settings.host_appdata_dir,
         "auth_required": settings.auth_required,
         "lmstudio": lmstudio_view(conn, settings),
+        "vision_modes": VISION_MODES,
+        "vision_provider": _vision_provider_name(conn, settings),
         "theme_options": THEME_NAMES,
         "comfort_themes": COMFORT_THEMES,
         "theme_labels": THEME_LABELS,
@@ -308,7 +311,35 @@ def runtime_settings(conn: sqlite3.Connection, settings: Settings) -> RuntimeSet
             ),
         },
         appearance=appearance_settings(conn),
+        vision=vision_settings(conn, settings),
     )
+
+
+def _vision_provider_name(conn: sqlite3.Connection, settings: Settings) -> str:
+    """Which provider would actually be asked, named on the card.
+
+    "Enabled" and "will do something" are different states, and the gap
+    between them is where every one of this project's dead features has lived.
+    """
+    from librairy.classify.images import local_vision_provider
+
+    config = local_vision_provider(conn, settings)
+    return f"{config.name} ({config.model})" if config is not None else ""
+
+
+def vision_settings(conn: sqlite3.Connection, settings: Settings) -> dict[str, object]:
+    """Image understanding, with anything saved from the portal winning.
+
+    Same shape as every other runtime setting: the environment provides the
+    default and the portal can change it without a restart, because "look at
+    my photos" is a thing you turn on to try and turn off again if it is too
+    slow on your hardware.
+    """
+    return {
+        "enabled": _setting_bool(conn, "vision.enabled", settings.vision_enabled),
+        "mode": str(_setting_value(conn, "vision.mode", settings.vision_mode)),
+        "model": str(_setting_value(conn, "vision.model", settings.vision_model)),
+    }
 
 
 def appearance_settings(conn: sqlite3.Connection) -> dict[str, str]:
@@ -337,6 +368,9 @@ def effective_settings(conn: sqlite3.Connection, settings: Settings) -> Settings
             "backup_daily_at": str(view.backup["daily_at"]),
             "backup_include_db_snapshot": bool(view.backup["include_db_snapshot"]),
             "backup_categories": str(view.backup["categories"]),
+            "vision_enabled": bool(view.vision["enabled"]),
+            "vision_mode": str(view.vision["mode"]),
+            "vision_model": str(view.vision["model"]),
         }
     )
 
@@ -493,6 +527,21 @@ def lmstudio_view(conn: sqlite3.Connection, settings: Settings) -> dict[str, str
     host = _setting_value(conn, "ai.lmstudio.host", "") or settings.lmstudio_host
     model = _setting_value(conn, "ai.lmstudio.model", "") or settings.lmstudio_model
     return {"host": str(host), "model": str(model)}
+
+
+def save_vision(
+    conn: sqlite3.Connection, *, enabled: bool, mode: str, model: str
+) -> None:
+    if mode not in VISION_MODES:
+        raise SettingsValidationError(f"vision mode must be one of: {', '.join(VISION_MODES)}")
+    for key, value in (
+        ("vision.enabled", enabled),
+        ("vision.mode", mode),
+        ("vision.model", model.strip()),
+    ):
+        old = _setting_value(conn, key, None)
+        _set_json(conn, key, value)
+        _journal_if_changed(conn, key, old, value)
 
 
 def save_lmstudio(conn: sqlite3.Connection, *, host: str, model: str) -> None:
