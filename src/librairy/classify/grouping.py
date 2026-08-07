@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import sqlite3
 from dataclasses import dataclass, replace
 
@@ -62,6 +63,11 @@ def project_folder_input(
 
 
 def _group_descriptor(proposal: GroupInput) -> tuple[str | None, str, str | None]:
+    # A disc says so outright rather than being inferred from its category: its
+    # forty files are all "movies" with the same fields, and what makes them
+    # one thing is the folder they were ripped into.
+    if proposal.group_key and proposal.group_key.startswith("disc:"):
+        return "disc", proposal.group_key.split(":", 1)[1], _parent(proposal.dest_relpath)
     if proposal.category == "music":
         artist = str(proposal.fields.get("artist", "Unknown Artist"))
         album = str(proposal.fields.get("album", "Singles"))
@@ -72,12 +78,29 @@ def _group_descriptor(proposal: GroupInput) -> tuple[str | None, str, str | None
         return "season", f"{show} Season {season:02d}", _parent(proposal.dest_relpath)
     if proposal.category == "photos":
         hints = extract_hashtags(proposal.relpath)
-        event = str(proposal.fields.get("event") or hints.nearest or "Photo Event")
+        event = str(proposal.fields.get("event") or hints.nearest or "")
+        # An iMessage attachment lives in a folder named after a UUID, and
+        # "photo event 01B583D3-1D28-4B3A-A5DD-9471447CFA27" is not a thing
+        # anybody is looking for. Better no group than a heading of noise.
+        if not _meaningful(event):
+            return None, "", None
         return "photo_event", event, _parent(proposal.dest_relpath)
     if proposal.category == "projects":
         project = str(proposal.fields.get("project", proposal.clean_name))
         return "project", project, _parent(proposal.dest_relpath)
     return None, "", None
+
+
+#  A UUID, a hex blob, or a bare number. These are how a phone or a messaging
+#  app names a folder when it has nothing to say about the contents.
+_NOISE = re.compile(
+    r"(?i)^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+    r"|[0-9a-f]{16,}|\d+)$"
+)
+
+
+def _meaningful(label: str) -> bool:
+    return bool(label.strip()) and not _NOISE.match(label.strip())
 
 
 def _ensure_group(conn: sqlite3.Connection, kind: str, label: str, dest_base: str | None) -> int:

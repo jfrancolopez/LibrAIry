@@ -32,6 +32,9 @@ def test_review_renders_groups_filters_and_htmx_pagination(tmp_path: Path) -> No
     album = insert_group(conn, "album", "Kind of Blue")
     event = insert_group(conn, "photo_event", "Italy")
     seed_proposal(conn, "music/a.flac", "music", "Music/A.flac", 0.95, album)
+    seed_proposal(conn, "music/b.flac", "music", "Music/B.flac", 0.94, album)
+    # One file with a group of its own: a heading, a select-all and a section
+    # margin for a decision you were going to make one row at a time anyway.
     seed_proposal(conn, "photos/a.jpg", "photos", "Photos/A.jpg", 0.75, event)
     seed_proposal(conn, "docs/a.txt", "documents", None, 0.4, None)
 
@@ -39,8 +42,8 @@ def test_review_renders_groups_filters_and_htmx_pagination(tmp_path: Path) -> No
     filtered = client.get("/review/list?category=music")
 
     assert "Kind of Blue" in page.text
-    assert "1 shown" in page.text
-    assert "Italy" in page.text
+    assert "2 shown" in page.text
+    assert "Italy" not in page.text
     assert "hx-get=\"/review/list\"" in page.text
     assert "music/a.flac" in filtered.text
     assert "photos/a.jpg" not in filtered.text
@@ -787,3 +790,23 @@ def test_the_toast_says_what_just_happened_not_how_many_rows_changed(tmp_path: P
     assert "1 file back in the queue" in looking.text
     assert "The old guess stays until a better one lands" in looking.text
     assert "1 file approved. Nothing has moved yet" in approved.text
+
+
+def test_a_group_of_one_gets_no_heading(tmp_path: Path) -> None:
+    """Grouping earns its furniture by letting you decide an album at once. For
+    a single file it is a heading, a select-all and a section margin over a
+    decision you were going to make one row at a time regardless — and on real
+    data every iMessage attachment arrived as its own "photo event"."""
+    client, conn = client_for(tmp_path)
+    alone = insert_group(conn, "photo_event", "A Folder Named Once")
+    together = insert_group(conn, "album", "Kind of Blue")
+    seed_proposal(conn, "photos/a.jpg", "photos", "Photos/A.jpg", 0.8, alone)
+    seed_proposal(conn, "music/a.flac", "music", "Music/A.flac", 0.9, together)
+    seed_proposal(conn, "music/b.flac", "music", "Music/B.flac", 0.9, together)
+
+    page = client.get("/review").text
+
+    assert "Kind of Blue" in page
+    assert "A Folder Named Once" not in page
+    # The file is still on the page, just without ceremony around it.
+    assert "photos/a.jpg" in page

@@ -6,7 +6,7 @@ from pathlib import Path
 
 from librairy.config import Settings
 
-SCHEMA_VERSION = 13
+SCHEMA_VERSION = 14
 
 
 class DatabaseVersionError(RuntimeError):
@@ -272,6 +272,26 @@ CREATE TABLE review_undo (
 );
 """
 
+#  A ripped disc is a group like an album is a group, and it is not any of the
+#  five kinds already listed. Calling it an "archive" to avoid a migration would
+#  put a wrong word in the data forever to save one table rebuild.
+MIGRATION_014 = """
+CREATE TABLE groups_new (
+  id         INTEGER PRIMARY KEY,
+  kind       TEXT NOT NULL CHECK (kind IN
+               ('album','season','photo_event','project','archive','disc')),
+  label      TEXT NOT NULL,
+  dest_base  TEXT,
+  created_at TEXT NOT NULL
+);
+INSERT INTO groups_new(id, kind, label, dest_base, created_at)
+  SELECT id, kind, label, dest_base, created_at FROM groups;
+DROP TABLE groups;
+ALTER TABLE groups_new RENAME TO groups;
+-- Dropping the table took its index with it.
+CREATE INDEX idx_groups_kind ON groups(kind);
+"""
+
 MIGRATIONS = {
     1: MIGRATION_001,
     2: MIGRATION_002,
@@ -286,6 +306,7 @@ MIGRATIONS = {
     11: MIGRATION_011,
     12: MIGRATION_012,
     13: MIGRATION_013,
+    14: MIGRATION_014,
 }
 
 

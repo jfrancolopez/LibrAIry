@@ -555,7 +555,24 @@ def _group_rows(rows: list[dict[str, Any]]) -> list[dict[str, object]]:
         group_rows = group["rows"]
         assert isinstance(group_rows, list)
         group_rows.append(row)
-    return groups
+    return _fold_singletons(groups)
+
+
+def _fold_singletons(groups: list[dict[str, object]]) -> list[dict[str, object]]:
+    """A group of one is not a group.
+
+    The point of a group is deciding a whole album at once; a heading, a
+    select-all checkbox and a section margin above a single file is three
+    pieces of furniture for a decision you were going to make anyway. It also
+    changes as files arrive, so it belongs here rather than in the database:
+    the second track of an album turns its group real without re-analysing the
+    first. Loose files gather into one section at the end.
+    """
+    real = [group for group in groups if len(group["rows"]) > 1]  # type: ignore[arg-type]
+    loose = [row for group in groups if len(group["rows"]) == 1 for row in group["rows"]]  # type: ignore[arg-type]
+    if loose:
+        real.append({"kind": "ungrouped", "label": "Ungrouped", "rows": loose})
+    return real
 
 
 def _where(filters: ReviewFilters) -> tuple[str, list[object]]:

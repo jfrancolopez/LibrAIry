@@ -8,6 +8,7 @@ from librairy.ai.orchestrator import AIBatchState, apply_ai_if_needed
 from librairy.catalogs import catalog_enabled
 from librairy.classify.disc import classify_disc
 from librairy.classify.documents import classify_document_like
+from librairy.classify.grouping import GroupInput, group_proposals
 from librairy.classify.heuristics import classify_path
 from librairy.classify.music import AUDIO_EXTS, classify_music
 from librairy.classify.video import VIDEO_EXTS, classify_video
@@ -95,6 +96,7 @@ def analyze_items(
             dest_relpath=result.dest_relpath,
             confidence=result.confidence,
             evidence=list(result.evidence),
+            group_id=_group_id(conn, item, result),
         )
         if result.dest_relpath:
             proposed += 1
@@ -104,6 +106,37 @@ def analyze_items(
             transition_item(conn, item["id"], "pending")
         conn.execute("UPDATE proposals SET updated_at=updated_at WHERE id=?", (proposal_id,))
     return AnalyzeSummary(len(items), proposed, pending, requeued)
+
+
+def _group_id(conn: sqlite3.Connection, item: sqlite3.Row, result) -> int | None:
+    """The album, season, event or disc this file belongs to.
+
+    `group_proposals` has existed since phase 2 and nothing ever called it, so
+    `proposals.group_id` was NULL for every proposal ever made — 243 of them on
+    the author's machine and not one group row. Review's default sort is
+    "keeps albums and seasons together", which meant every file landed in
+    "Ungrouped" and the whole premise of the default view was dead. Only the
+    tests, which seeded groups by hand, ever saw it work.
+
+    Per item rather than per batch: `_ensure_group` finds-or-creates on
+    (kind, label, dest_base), so calling it one file at a time still gathers an
+    album into one group, without holding a batch of classifications in memory.
+    """
+    grouped = group_proposals(
+        conn,
+        [
+            GroupInput(
+                item_id=int(item["id"]),
+                relpath=item["relpath"],
+                category=result.category,
+                clean_name=result.clean_name,
+                dest_relpath=result.dest_relpath,
+                fields=dict(result.fields),
+                group_key=getattr(result, "group_key", None),
+            )
+        ],
+    )
+    return grouped[0].group_id
 
 
 def classify_item(

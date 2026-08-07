@@ -97,3 +97,56 @@ def test_reanalyze_supersedes_rather_than_duplicating_proposals(tmp_path: Path) 
         "SELECT COUNT(*) AS n FROM proposals WHERE status != 'superseded'"
     ).fetchone()["n"]
     assert live == 2, "each item must keep exactly one live proposal"
+
+
+def test_analysis_actually_puts_files_into_groups(tmp_path: Path) -> None:
+    """`group_proposals` has existed since phase 2 and nothing ever called it.
+    Every proposal ever made had a NULL group_id — 243 of them on the author's
+    machine, and not one group row — so Review's default sort, which is
+    "keeps albums and seasons together", put everything in Ungrouped. Only the
+    tests, which seeded groups by hand, ever saw it work.
+    """
+    settings = _settings(tmp_path)
+    conn = connect(settings)
+    disc = settings.inbox_dir / "A Concert DVD5/VIDEO_TS"
+    disc.mkdir(parents=True)
+    for name in ("VIDEO_TS.IFO", "VTS_01_1.VOB", "VTS_01_2.VOB"):
+        (disc / name).write_text(name, encoding="utf-8")
+    scan_root(conn, "inbox", settings.inbox_dir, settings)
+
+    analyze_items(conn, settings)
+
+    groups = conn.execute(
+        """
+        SELECT g.kind, g.label, COUNT(*) AS files
+        FROM proposals p JOIN groups g ON g.id = p.group_id
+        GROUP BY g.id
+        """
+    ).fetchall()
+    # One disc, one group, all three files in it.
+    assert [(row["kind"], row["label"], row["files"]) for row in groups] == [
+        ("disc", "A Concert DVD5", 3)
+    ]
+
+
+def test_a_folder_named_after_a_uuid_is_not_a_photo_event(tmp_path: Path) -> None:
+    """iMessage keeps attachments in folders named after UUIDs, so every one of
+    them arrived as its own "photo event" — a heading of noise per file."""
+    from librairy.classify.grouping import GroupInput, group_proposals
+
+    settings = _settings(tmp_path)
+    conn = connect(settings)
+    noise, named = (
+        GroupInput(
+            item_id=index,
+            relpath=f"{folder}/photo.jpg",
+            category="photos",
+            clean_name="photo.jpg",
+            dest_relpath=f"Photos/2024/{folder}/photo.jpg",
+            fields={"event": folder},
+        )
+        for index, folder in enumerate(("01B583D3-1D28-4B3A-A5DD-9471447CFA27", "Italy"), start=1)
+    )
+
+    assert group_proposals(conn, [noise])[0].group_id is None
+    assert group_proposals(conn, [named])[0].group_id is not None
