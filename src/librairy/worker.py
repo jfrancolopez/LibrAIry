@@ -231,10 +231,38 @@ def _set_worker_state(conn: sqlite3.Connection, key: str, value) -> None:
     )
 
 
+# States where the file is still in the queue at all.
+STAGEABLE = frozenset({"discovered", "proposed", "pending"})
+# ...but the item state cannot tell "analysis found nothing" from "the owner
+# said no" — both land in 'pending'. The proposal status can, so it is what
+# actually decides. Re-staging a rejected duplicate would argue with an answer
+# already given, once a cycle, forever.
+DECIDED = ("approved", "rejected", "postponed", "committed")
+
+
+def _owner_has_decided(conn: sqlite3.Connection, item_id: int) -> bool:
+    placeholders = ",".join("?" for _ in DECIDED)
+    row = conn.execute(
+        f"""
+        SELECT 1 FROM proposals
+        WHERE item_id = ? AND status != 'superseded' AND status IN ({placeholders})
+        """,  # noqa: S608 - placeholders are generated from a module constant
+        (item_id, *DECIDED),
+    ).fetchone()
+    return row is not None
+
+
 def _stage_quarantine_proposals(conn: sqlite3.Connection, candidates) -> int:
     staged = 0
     for candidate in candidates:
-        if candidate.status != "confirmed" or candidate.duplicate.state != "discovered":
+        # 'proposed' as well as 'discovered': the duplicate check runs before
+        # analysis, so a file whose twin only turned up on a later cycle -- or
+        # while the rmlint cross-check was broken -- was already classified and
+        # could never be staged. Undecided either way; nothing the owner has
+        # answered is touched.
+        if candidate.status != "confirmed" or candidate.duplicate.state not in STAGEABLE:
+            continue
+        if _owner_has_decided(conn, candidate.duplicate.id):
             continue
         op = quarantine_operation(candidate.duplicate.relpath)
         upsert_proposal(

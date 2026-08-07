@@ -228,3 +228,65 @@ def test_idle_sleep_ends_early_when_the_inbox_changes(tmp_path: Path, monkeypatc
 
     # Returned on the changed signature rather than serving the full minute.
     assert slept < 60.0
+
+
+def test_a_duplicate_found_after_classification_is_still_staged(tmp_path: Path) -> None:
+    """The dedup pass runs before analysis, so a twin that turns up on a later
+    cycle finds the file already 'proposed'. Requiring 'discovered' meant it
+    could never be staged — which is what happened to four real duplicate pairs
+    while the rmlint cross-check was silently returning nothing.
+    """
+    settings = settings_for(tmp_path)
+    for directory in (settings.inbox_dir, settings.library_dir, settings.quarantine_dir):
+        directory.mkdir()
+    (settings.inbox_dir / "copy.txt").write_text("same", encoding="utf-8")
+    conn = connect(settings)
+    set_dedup_option(conn, "use_rmlint", False)
+
+    # First cycle: nothing to match against, so it gets an ordinary proposal.
+    run_once(conn, settings)
+    first = conn.execute("SELECT state FROM items WHERE root='inbox'").fetchone()[0]
+    assert first in {"proposed", "pending"}, "either way, nobody has decided anything"
+
+    # The twin appears in the library, and the next cycle notices.
+    from librairy.scanner import scan_root
+
+    (settings.library_dir / "original.txt").write_text("same", encoding="utf-8")
+    scan_root(conn, "library", settings.library_dir, settings)
+    summary = run_once(conn, settings)
+
+    assert summary.duplicate_candidates == 1
+    proposal = conn.execute(
+        "SELECT action, dest_root FROM proposals WHERE status='proposed'"
+    ).fetchone()
+    assert proposal["action"] == "quarantine"
+    assert proposal["dest_root"] == "quarantine"
+
+
+def test_a_rejected_duplicate_is_not_staged_again_next_cycle(tmp_path: Path) -> None:
+    """"Not this" on a quarantine proposal lands the item in 'pending'. If that
+    were stageable the worker would re-propose it every cycle, arguing with an
+    answer the owner already gave."""
+    settings = settings_for(tmp_path)
+    for directory in (settings.inbox_dir, settings.library_dir, settings.quarantine_dir):
+        directory.mkdir()
+    (settings.inbox_dir / "copy.txt").write_text("same", encoding="utf-8")
+    (settings.library_dir / "original.txt").write_text("same", encoding="utf-8")
+    conn = connect(settings)
+    set_dedup_option(conn, "use_rmlint", False)
+    from librairy.scanner import scan_root
+
+    scan_root(conn, "library", settings.library_dir, settings)
+    run_once(conn, settings)
+    proposal_id = conn.execute("SELECT id FROM proposals WHERE action='quarantine'").fetchone()[0]
+
+    from librairy.web.review import ReviewFilters, apply_review_action
+
+    apply_review_action(conn, "reject", ReviewFilters(), proposal_ids=[proposal_id])
+    summary = run_once(conn, settings)
+
+    assert summary.duplicate_candidates == 0, "a rejected duplicate must stay rejected"
+    assert (
+        conn.execute("SELECT status FROM proposals WHERE id=?", (proposal_id,)).fetchone()[0]
+        == "rejected"
+    )

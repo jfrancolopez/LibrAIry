@@ -623,3 +623,29 @@ def test_the_comparison_panel_survives_a_file_that_is_no_longer_there(tmp_path: 
 
     assert response.status_code == 200
     assert "could not be read" in response.text
+
+
+def test_saying_no_to_a_duplicate_is_an_answer_not_a_500(tmp_path: Path) -> None:
+    """Review shows the same four buttons on a duplicate row as on any other,
+    and two of them had nowhere legal to go: quarantine-proposed -> pending
+    ("Not this") and -> postponed ("Later") both raised LifecycleError.
+    """
+    from librairy.lifecycle import transition_item
+
+    client, conn = client_for(tmp_path)
+    proposal = seed_proposal(conn, "dupe.txt", "misc", "quarantine/dupe.txt", 1.0, None)
+    item = conn.execute("SELECT item_id FROM proposals WHERE id=?", (proposal,)).fetchone()[0]
+    conn.execute("UPDATE proposals SET action='quarantine', dest_root='quarantine' WHERE id=?",
+                 (proposal,))
+    conn.execute("UPDATE items SET state='discovered' WHERE id=?", (item,))
+    transition_item(conn, item, "quarantine-proposed")
+
+    response = client.post(
+        "/review/action",
+        data={"action": "reject", "proposal_id": str(proposal), "state": "proposed"},
+        headers={"x-csrf-token": client.cookies["csrf_token"]},
+    )
+
+    assert response.status_code == 200
+    assert proposal_status(conn, proposal) == "rejected"
+    assert conn.execute("SELECT state FROM items WHERE id=?", (item,)).fetchone()[0] == "pending"

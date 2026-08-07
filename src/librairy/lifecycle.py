@@ -26,11 +26,35 @@ LEGAL_TRANSITIONS = {
         "quarantined",
     },
     "unstable": {"discovered"},
-    "proposed": {"approved", "pending", "postponed", "discovered", "committed"},
+    # A duplicate found after a file was already classified supersedes the
+    # guess. 'proposed' is the machine's opinion, not the owner's decision, so
+    # revising it costs nobody anything -- and without this a duplicate that
+    # arrived a cycle late could never be staged at all. Deciding states
+    # ('pending' after a rejection, 'postponed', 'approved') are not here on
+    # purpose: re-staging one would undo an answer the owner already gave.
+    "proposed": {
+        "approved",
+        "pending",
+        "postponed",
+        "discovered",
+        "committed",
+        "quarantine-proposed",
+    },
     "approved": {"committed", "quarantined", "discovered"},
-    "pending": {"discovered", "postponed", "proposed"},
+    "pending": {"discovered", "postponed", "proposed", "quarantine-proposed"},
     "postponed": {"discovered", "proposed"},
-    "quarantine-proposed": {"approved", "quarantined", "discovered", "proposed"},
+    # Review offers the same four buttons on a duplicate row as on any other,
+    # and two of them had nowhere legal to go: "Not this" (-> pending) and
+    # "Later" (-> postponed) both raised LifecycleError, so saying "no, keep
+    # it" to a duplicate was a 500 rather than an answer.
+    "quarantine-proposed": {
+        "approved",
+        "quarantined",
+        "discovered",
+        "proposed",
+        "pending",
+        "postponed",
+    },
     "quarantined": {"discovered"},
     "committed": {"discovered"},
 }
