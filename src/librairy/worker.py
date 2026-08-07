@@ -26,6 +26,7 @@ from librairy.dedup import (
     detect_similar_media,
     hash_size_colliding_library_files,
 )
+from librairy.duplicates import record_reports
 from librairy.lifecycle import transition_item
 from librairy.locks import acquire_lock
 from librairy.models import EvidenceEntry
@@ -89,11 +90,13 @@ class Worker:
             scan = scan_root(self.conn, "inbox", settings.inbox_dir, settings)
             _set_worker_state(self.conn, "current_phase", "dedup")
             library_hashed = hash_size_colliding_library_files(self.conn, settings)
-            duplicate_candidates = _stage_quarantine_proposals(
-                self.conn,
-                detect_exact_duplicates(self.conn, settings),
-            )
+            candidates = detect_exact_duplicates(self.conn, settings)
+            duplicate_candidates = _stage_quarantine_proposals(self.conn, candidates)
             similar_flags = detect_similar_media(self.conn, settings)
+            # After czkawka, deliberately: the comparison reports what every
+            # detector concluded, and czkawka's answer only exists once its
+            # scan has run. Before it, every pair would read "nothing flagged".
+            record_reports(self.conn, settings, candidates)
             _set_worker_state(self.conn, "current_phase", "analyze")
             analysis = analyze_items(self.conn, settings, settings.batch_size)
             _set_worker_state(self.conn, "current_phase", "content")

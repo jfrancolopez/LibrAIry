@@ -1,0 +1,65 @@
+{# The two copies, what every detector concluded, and the numbers that decide
+   it. Loaded on demand: two previews per comparison is too much to render for
+   fifty rows nobody has opened. #}
+<div class="dupe-compare">
+  {% for pair in comparisons %}
+    {% set report = pair.report %}
+    <section class="dupe {{ 'is-' ~ report.verdict }}">
+      <header class="dupe-head">
+        <span class="badge {{ 'badge-ok' if report.verdict == 'identical' else ('badge-warn' if report.verdict == 'similar' else 'badge-fail') }}">
+          {{ {'identical': 'the same file', 'similar': 'two versions', 'unclear': 'needs your eye'}.get(report.verdict, report.verdict) }}
+        </span>
+        <p class="dupe-summary">{{ report.summary }}</p>
+      </header>
+
+      <p class="status {{ 'ok' if report.verdict == 'identical' else 'warn' }}">{{ report.recommendation }}</p>
+
+      <div class="dupe-sides">
+        {% for side in (pair.inbox, pair.library) %}
+          <div class="dupe-side">
+            <h4>{{ 'In your inbox' if loop.first else 'Already in your library' }}</h4>
+            <p class="mono dupe-path">{{ side.root }}/{{ side.relpath }}</p>
+            {% if side.preview %}
+              {% with preview = side.preview %}{% include "partials/preview_card.html" %}{% endwith %}
+            {% else %}
+              <p class="muted">No preview — the file could not be read from here.</p>
+            {% endif %}
+          </div>
+        {% endfor %}
+      </div>
+
+      {# Each tool answers a different question, and one of them saying "same"
+         is not the same as all of them saying it. #}
+      <h4 class="dupe-subhead">What each check found</h4>
+      <ul class="dupe-findings">
+        {% for finding in report.findings %}
+          <li class="finding is-{{ finding.verdict }}">
+            <span class="finding-tool">{{ finding.label }}</span>
+            <span class="badge {{ {'same': 'badge-ok', 'different': 'badge-warn', 'similar': 'badge-info'}.get(finding.verdict, '') }}">{{ finding.headline }}</span>
+            <span class="muted finding-detail">{{ finding.detail }}</span>
+          </li>
+        {% endfor %}
+      </ul>
+
+      <h4 class="dupe-subhead">Side by side</h4>
+      <table class="dupe-facts">
+        <thead>
+          <tr><th>Property</th><th>Inbox copy</th><th>Library copy</th></tr>
+        </thead>
+        <tbody>
+          {% for fact in report.facts %}
+            <tr class="{{ 'is-diff' if not fact.same }}">
+              <th>{{ fact.label }}</th>
+              <td>{{ fact.inbox }}</td>
+              <td>{{ fact.library }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <p class="muted">Checked {{ report.checked_at[:16]|replace('T', ' ') }} UTC.
+        Rows that differ are marked; everything else matched.</p>
+    </section>
+  {% else %}
+    <p class="muted">No comparison recorded for this file.</p>
+  {% endfor %}
+</div>

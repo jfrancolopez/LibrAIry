@@ -5,14 +5,10 @@ from pathlib import PurePosixPath
 from urllib.parse import urlencode
 
 from librairy.config import Settings
+from librairy.mediakind import IMAGE_EXTENSIONS, VIDEO_EXTENSIONS
 from librairy.proposals import decode_evidence
 from librairy.search import host_path
-from librairy.web.thumbs import (
-    IMAGE_EXTENSIONS,
-    VIDEO_EXTENSIONS,
-    PreviewError,
-    preview_for_item,
-)
+from librairy.web.thumbs import PreviewError, preview_for_item
 
 CATEGORIES = ("music", "movies", "shows", "photos", "documents", "books", "projects", "misc")
 PAGE_SIZE = 50

@@ -6,6 +6,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from librairy.config import Settings
+from librairy.duplicates import items_with_reports, reports_for_item
 from librairy.flags import flags_for, unhidden_name
 from librairy.lifecycle import transition_item, vanished_count
 from librairy.paths import PathValidationError, sanitize_component, validate_dest
@@ -290,6 +291,7 @@ def _proposal_rows(
         """,  # noqa: S608 - _order_by only ever returns a value from SORTS
         params,
     ).fetchall()
+    compared = items_with_reports(conn, [int(row["item_id"]) for row in rows])
     return [
         {
             **dict(row),
@@ -300,9 +302,47 @@ def _proposal_rows(
             # not disappear into a bulk approve unnoticed.
             "flags": flags_for(row["item_relpath"]),
             "unhidden_name": unhidden_name(row["item_relpath"]),
+            # The comparison itself is loaded on demand — it carries two
+            # previews, and a page of fifty rows must not fetch a hundred.
+            "has_duplicate": int(row["item_id"]) in compared,
         }
         for row in rows
     ]
+
+
+def duplicate_comparison(conn: sqlite3.Connection, settings: Settings, item_id: int) -> dict:
+    """The inbox copy against each library copy it was matched with.
+
+    Both sides get the same preview machinery the rest of Review uses, because
+    "which of these two do I want?" is a question you answer by looking, and
+    the numbers underneath are there to settle it when looking is not enough.
+    """
+    from librairy.web.thumbs import PreviewError, preview_for_item
+
+    comparisons = []
+    for report in reports_for_item(conn, item_id):
+        sides = []
+        for side, other in (("inbox copy", report.item_id), ("library copy", report.other_id)):
+            row = conn.execute(
+                "SELECT root, relpath FROM items WHERE id=?", (other,)
+            ).fetchone()
+            try:
+                preview = preview_for_item(conn, settings, other)
+            except PreviewError:
+                # A vanished or unreadable file still deserves its column and
+                # its facts; only the picture is missing.
+                preview = None
+            sides.append(
+                {
+                    "side": side,
+                    "item_id": other,
+                    "root": row["root"] if row else "",
+                    "relpath": row["relpath"] if row else "",
+                    "preview": preview,
+                }
+            )
+        comparisons.append({"report": report, "inbox": sides[0], "library": sides[1]})
+    return {"item_id": item_id, "comparisons": comparisons}
 
 
 def _order_by(filters: ReviewFilters) -> str:

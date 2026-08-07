@@ -6,7 +6,7 @@ from pathlib import Path
 
 from librairy.config import Settings
 
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 12
 
 
 class DatabaseVersionError(RuntimeError):
@@ -251,6 +251,17 @@ WHERE status='proposed'
   );
 """
 
+MIGRATION_012 = """
+CREATE TABLE duplicate_reports (
+  item_id    INTEGER NOT NULL REFERENCES items(id),
+  other_id   INTEGER NOT NULL REFERENCES items(id),
+  payload    TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (item_id, other_id)
+);
+CREATE INDEX idx_duplicate_reports_other ON duplicate_reports(other_id);
+"""
+
 MIGRATIONS = {
     1: MIGRATION_001,
     2: MIGRATION_002,
@@ -263,6 +274,7 @@ MIGRATIONS = {
     9: MIGRATION_009,
     10: MIGRATION_010,
     11: MIGRATION_011,
+    12: MIGRATION_012,
 }
 
 

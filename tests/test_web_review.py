@@ -516,3 +516,110 @@ def test_the_category_field_is_a_menu_of_the_categories_that_exist(tmp_path: Pat
     assert '<select name="category">' in body
     for category in ("music", "movies", "shows", "photos", "documents", "books"):
         assert f'<option value="{category}"' in body
+
+
+def test_a_duplicate_row_offers_the_comparison_and_says_what_each_tool_found(
+    tmp_path: Path,
+) -> None:
+    """One sentence of evidence was all a duplicate used to get.
+
+    The row has to advertise that there is a second copy, and the panel has to
+    name every detector separately -- "rmlint agreed" and "rmlint was switched
+    off" are different amounts of evidence and used to read the same.
+    """
+    from librairy.duplicates import SAME, compare, save_report
+    from librairy.models import Item
+
+    client, conn = client_for(tmp_path)
+    proposal = seed_proposal(conn, "song.mp3", "misc", "quarantine/song.mp3", 1.0, None)
+    inbox_id = conn.execute(
+        "SELECT item_id FROM proposals WHERE id=?", (proposal,)
+    ).fetchone()[0]
+    library_id = conn.execute(
+        """
+        INSERT INTO items(root, relpath, size, mtime_ns, fingerprint, first_seen_at, last_seen_at)
+        VALUES ('library', 'Music/song.mp3', 1, 1, 'song.mp3', 'now', 'now')
+        RETURNING id
+        """
+    ).fetchone()[0]
+
+    def as_item(item_id: int, root: str, relpath: str) -> Item:
+        return Item(
+            id=item_id,
+            root=root,
+            relpath=relpath,
+            size=1,
+            mtime_ns=1,
+            fingerprint="song.mp3",
+            state="discovered",
+            first_seen_at="now",
+            last_seen_at="now",
+            missing_since=None,
+        )
+
+    settings = Settings(
+        APPDATA_DIR=tmp_path / "appdata",
+        INBOX_DIR=tmp_path / "inbox",
+        LIBRARY_DIR=tmp_path / "library",
+        _env_file=None,
+    )
+    save_report(
+        conn,
+        compare(
+            conn,
+            settings,
+            as_item(inbox_id, "inbox", "song.mp3"),
+            as_item(library_id, "library", "Music/song.mp3"),
+            rmlint=SAME,
+        ),
+    )
+
+    page = client.get("/review")
+    panel = client.get(f"/review/duplicates/{inbox_id}")
+
+    assert "you may already have this" in page.text
+    assert f'hx-get="/review/duplicates/{inbox_id}"' in page.text
+    assert panel.status_code == 200
+    assert "BLAKE2b fingerprint" in panel.text
+    assert "rmlint" in panel.text
+    assert "czkawka" in panel.text
+    assert "Already in your library" in panel.text
+    assert "Music/song.mp3" in panel.text
+    assert "Quarantine the inbox copy" in panel.text
+
+
+def test_a_row_with_no_duplicate_does_not_advertise_a_comparison(tmp_path: Path) -> None:
+    client, conn = client_for(tmp_path)
+    seed_proposal(conn, "unique.mp3", "music", "Music/unique.mp3", 0.9, None)
+
+    page = client.get("/review")
+
+    assert "you may already have this" not in page.text
+    assert "/review/duplicates/" not in page.text
+
+
+def test_the_comparison_panel_survives_a_file_that_is_no_longer_there(tmp_path: Path) -> None:
+    """A preview that cannot be rendered must cost the picture, not the page."""
+    client, conn = client_for(tmp_path)
+    conn.executescript(
+        """
+        INSERT INTO items(id, root, relpath, size, mtime_ns, first_seen_at, last_seen_at)
+        VALUES (7, 'inbox', 'gone.mp3', 1, 1, 'now', 'now'),
+               (8, 'library', 'Music/gone.mp3', 1, 1, 'now', 'now');
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO duplicate_reports(item_id, other_id, payload, created_at)
+        VALUES (7, 8, ?, 'now')
+        """,
+        (
+            '{"item_id": 7, "other_id": 8, "verdict": "identical", "summary": "s",'
+            ' "recommendation": "r", "findings": [], "facts": [], "checked_at": "now"}',
+        ),
+    )
+
+    response = client.get("/review/duplicates/7")
+
+    assert response.status_code == 200
+    assert "could not be read" in response.text

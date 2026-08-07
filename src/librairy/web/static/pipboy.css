@@ -1305,6 +1305,55 @@ kbd {
   .preview-card { grid-template-columns: 1fr; }
 }
 
+/* ---- Duplicate comparison --------------------------------------------- */
+.dupe {
+  display: grid;
+  gap: var(--space-3);
+  margin: var(--space-3) 0;
+  padding: var(--space-3);
+  background: var(--bg-metric);
+  border: var(--border-thin) solid var(--border);
+  border-left: 3px solid var(--warn);
+  border-radius: var(--radius-ui);
+}
+.dupe.is-identical { border-left-color: var(--ok); }
+.dupe.is-unclear { border-left-color: var(--fail); }
+.dupe-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2); }
+.dupe-summary { margin: 0; flex: 1 1 20rem; }
+.dupe-subhead { margin: 0; font-size: var(--text-sm); text-transform: uppercase; letter-spacing: 0.05em; }
+
+/* Two columns, because the whole point is reading them against each other.
+   Below 900px they stack — side by side in 180px each is worse than scrolling. */
+.dupe-sides { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
+.dupe-side { min-width: 0; }
+.dupe-side h4 { margin: 0 0 var(--space-1); }
+.dupe-path { font-size: var(--text-sm); overflow-wrap: anywhere; margin: 0 0 var(--space-2); color: var(--text-muted); }
+
+.dupe-findings { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
+.finding {
+  display: grid;
+  grid-template-columns: minmax(8rem, max-content) max-content 1fr;
+  gap: var(--space-2);
+  align-items: baseline;
+  font-size: var(--text-sm);
+}
+.finding-tool { font-family: var(--font-mono); }
+.finding-detail { min-width: 0; }
+/* A detector that was switched off or missing is context, not a result. */
+.finding.is-not-asked, .finding.is-unavailable { opacity: 0.7; }
+
+.dupe-facts { width: 100%; font-size: var(--text-sm); }
+.dupe-facts th { text-align: left; }
+.dupe-facts tbody th { font-weight: 600; white-space: nowrap; }
+.dupe-facts td { overflow-wrap: anywhere; }
+/* The rows that differ are the reason this table exists. */
+.dupe-facts tr.is-diff td { color: var(--warn); font-weight: 600; }
+
+@media (max-width: 900px) {
+  .dupe-sides { grid-template-columns: 1fr; }
+  .finding { grid-template-columns: 1fr; gap: var(--space-1); }
+}
+
 .compare-card {
   display: grid;
   gap: var(--space-2);

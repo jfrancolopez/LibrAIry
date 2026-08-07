@@ -82,10 +82,20 @@ def detect_exact_duplicates(
                 duplicate=duplicate,
                 keeper=keeper,
                 status="confirmed" if confirmed else "review",
-                reason="exact_duplicate" if confirmed else "fingerprint_rmlint_disagreement",
+                # "Confirmed" covers two different situations: rmlint agreed,
+                # or rmlint was never asked. The comparison in Review says
+                # which, because "two tools agree" and "one tool is switched
+                # off" are not the same amount of evidence.
+                reason=_reason(confirmed, asked=agreed is not None),
             )
         )
     return candidates
+
+
+def _reason(confirmed: bool, *, asked: bool) -> str:
+    if not confirmed:
+        return "fingerprint_rmlint_disagreement"
+    return "exact_duplicate" if asked else "exact_duplicate_no_rmlint"
 
 
 def detect_similar_media(

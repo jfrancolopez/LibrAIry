@@ -10,18 +10,12 @@ from pathlib import Path
 
 from librairy.catalogs import catalog_enabled
 from librairy.config import Settings
-from librairy.content.extract import TEXT_SUFFIXES
+from librairy.humanize import human_bytes
+from librairy.mediakind import kind_for
 from librairy.paths import PathValidationError, validate_dest
 from librairy.web.theme import ThemeSwatch, normalize_theme, swatch_for
 
 LOGGER = logging.getLogger(__name__)
-IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".heic", ".avif", ".webp"}
-VIDEO_EXTENSIONS = {".mp4", ".mkv", ".mov", ".avi", ".webm", ".m4v"}
-AUDIO_EXTENSIONS = {".mp3", ".flac", ".wav", ".ogg", ".m4a", ".aac"}
-# Anything librairy.content.extract can pull text out of, kept in step with it
-# rather than listed twice -- the two lists had drifted, and .csv, .tsv and
-# .log were previewed as documents with nothing in the body.
-DOCUMENT_EXTENSIONS = TEXT_SUFFIXES | {".pdf", ".docx", ".epub"}
 # poppler renders the first page of a PDF straight to a JPEG. It is already in
 # the image for pdftotext, so this costs nothing extra to ship.
 PAGE_RENDER_EXTENSIONS = {".pdf"}
@@ -146,17 +140,6 @@ def preview_for_item(conn, settings: Settings, item_id: int, *, bulk: bool = Fal
 
 def _size_fact(size: int | None) -> str:
     return f"size: {human_bytes(size)}"
-
-
-def human_bytes(size: int | None) -> str:
-    if not size or size < 0:
-        return "unknown"
-    value = float(size)
-    for unit in ("B", "KB", "MB", "GB", "TB"):
-        if value < 1024 or unit == "TB":
-            return f"{value:.0f} {unit}" if unit == "B" else f"{value:.1f} {unit}"
-        value /= 1024
-    return "unknown"
 
 
 def _text_snippet(path: Path) -> str | None:
@@ -463,16 +446,7 @@ def _item_row(conn, item_id: int):
 
 
 def _kind(path: Path) -> str:
-    suffix = path.suffix.lower()
-    if suffix in IMAGE_EXTENSIONS:
-        return "image"
-    if suffix in VIDEO_EXTENSIONS:
-        return "video"
-    if suffix in AUDIO_EXTENSIONS:
-        return "audio"
-    if suffix in DOCUMENT_EXTENSIONS:
-        return "document"
-    return "unsupported"
+    return kind_for(path)
 
 
 def _root_path(settings: Settings, root: str) -> Path:

@@ -98,7 +98,13 @@ from librairy.web.quarantine import (
     restore_quarantine,
     unstage_proposal,
 )
-from librairy.web.review import apply_review_action, edit_proposal, filters_from_query, review_data
+from librairy.web.review import (
+    apply_review_action,
+    duplicate_comparison,
+    edit_proposal,
+    filters_from_query,
+    review_data,
+)
 from librairy.web.thumbs import (
     PreviewError,
     media_for_item,
@@ -643,6 +649,19 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             request,
             "partials/review_list.html",
             review_data(conn, filters),
+        )
+
+    @app.get("/review/duplicates/{item_id}", response_class=HTMLResponse)
+    def review_duplicates(request: Request, item_id: int) -> HTMLResponse:
+        """The inbox copy against the copy already filed, with both previews.
+
+        "Exact duplicate of library:…" is a sentence, not evidence. This is
+        what each detector actually concluded and what the two files measure.
+        """
+        return TEMPLATES.TemplateResponse(
+            request,
+            "partials/duplicate_compare.html",
+            duplicate_comparison(conn, settings, item_id),
         )
 
     @app.post("/review/forget-missing", include_in_schema=False)

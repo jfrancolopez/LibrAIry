@@ -37,6 +37,7 @@ def test_fresh_db_migrates_to_current_schema(tmp_path: Path) -> None:
         "worker_state",
         "similar_media_flags",
         "quarantine_entries",
+        "duplicate_reports",
         "search_fts",
     }
     assert expected_tables <= tables
@@ -62,6 +63,7 @@ def test_fresh_db_migrates_to_current_schema(tmp_path: Path) -> None:
         "idx_similar_media_flags_item_id",
         "idx_quarantine_entries_item_id",
         "idx_quarantine_entries_restored_at",
+        "idx_duplicate_reports_other",
         "idx_content_extractions_error",
         "idx_backup_queue_state",
         "idx_backup_queue_item_id",
@@ -116,7 +118,11 @@ def test_migration_011_closes_proposals_for_files_already_filed(tmp_path: Path) 
                 'proposed', 'move', 'library', '[]', 'now', 'now');
         """
     )
-    conn.execute(f"PRAGMA user_version={SCHEMA_VERSION - 1}")
+    # Pinned to 10, not SCHEMA_VERSION - 1: this is about migration 011 alone,
+    # and rewinding one step from whatever the head happens to be replays some
+    # other migration instead. Rewinding replays 011 *and everything after it*,
+    # so anything a later migration creates has to be put back first.
+    conn.executescript("DROP TABLE IF EXISTS duplicate_reports; PRAGMA user_version=10;")
     conn.close()
 
     reopened = connect(settings)

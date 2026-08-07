@@ -17,6 +17,7 @@
         {% if proposal.size_label %}<span class="muted">{{ proposal.size_label }}</span>{% endif %}
         <span class="confidence" style="--score: {{ (conf * 100)|round|int }}%">{{ '%.2f'|format(conf) }}</span>
         <span class="badge {{ 'badge-ok' if band == 'conf-high' else ('badge-fail' if band == 'conf-low' else 'badge-warn') }}">{{ 'confident' if band == 'conf-high' else ('needs a look' if band == 'conf-low' else 'probable') }}</span>
+        {% if proposal.has_duplicate %}<span class="badge badge-info">you may already have this</span>{% endif %}
       </span>
     </header>
 
@@ -70,6 +71,14 @@
         hx-confirm="Move this file to Quarantine on the next commit? Nothing is deleted — you can restore it from the Quarantine page."
         hx-headers='{"x-csrf-token":"{{ request.state.session.csrf_token }}"}'>Don't want it</button>
       <span class="spacer"></span>
+      {% if proposal.has_duplicate %}
+        {# The one row where a preview of this file alone is not the question.
+           The question is which of two copies you want. #}
+        <button type="button" class="btn-ghost"
+          hx-get="/review/duplicates/{{ proposal.item_id }}"
+          hx-target="#preview-{{ proposal.id }}"
+          hx-swap="innerHTML">Compare the two copies</button>
+      {% endif %}
       <button type="button" class="btn-ghost"
         hx-get="/preview/items/{{ proposal.item_id }}"
         hx-target="#preview-{{ proposal.id }}"
