@@ -1,5 +1,127 @@
 # Changelog
 
+## Unreleased
+
+Review becomes usable on a real queue, and four detectors that had never worked
+start working. Most of what follows was found by pointing the new comparison
+panel at a real library and reading what it said.
+
+### Fixed — three duplicate detectors had never once run
+
+- **rmlint wrote its JSON to a file literally named `-`.** The flag was
+  `-o json:-`, which rmlint reads as a filename, not stdout. Every fingerprint
+  match was therefore recorded as "rmlint disagrees", and because a disagreement
+  blocks staging, **no exact duplicate had ever been staged for quarantine**.
+- **czkawka never ran.** It was passed `-d dirA dirB`; czkawka 11 wants one `-d`
+  per root and refused the whole command. Fixed, it then exited 101 with empty
+  stderr — a panic on a cache directory it could not create, because the
+  container drops privileges with `HOME` still pointing at root's home. Its cache
+  now lives on the appdata volume, which also keeps the perceptual hashes (the
+  entire cost of a scan) across restarts. Any czkawka failure is now recorded
+  instead of swallowed.
+- **AcoustID had never identified a file.** `fpcalc -plain` prints the
+  fingerprint and nothing else, so the duration came back empty and AcoustID
+  refuses a lookup without one. The whole fingerprint path was dead while every
+  mocked test passed; the guard is now an assertion on the argv, since nothing
+  mocked can catch this.
+- **Three catalog clients were called wrongly** — Discogs without its token,
+  Last.fm without its key, AcoustID handed a dict where it wanted a fingerprint.
+  Each looked like "no match". The wiring tests now inject an opener and make a
+  real request shape, because `lambda *a, **k` mocks accept any call at all.
+- **Grouping had never run.** `group_proposals` was written in phase 2 and
+  nothing ever called it, so every proposal carried a NULL group_id and Review's
+  default sort — whose premise is "keeps albums and seasons together" — put
+  everything in Ungrouped.
+
+### Added — Review
+
+- **Compare duplicates.** Any row that may already be in your library opens the
+  two copies side by side, with a preview of each, what all three detectors
+  concluded and every property that differs — duration, bitrate, resolution,
+  camera, date taken. A detector switched off says *not asked*, which is
+  deliberately not the same as *agrees*.
+- **Undo.** After any decision an Undo bar names what it will take back
+  ("Approved 12 files") and one press restores the whole batch, destinations
+  included. Distinct from History's undo, which moves files back on disk;
+  anything already committed is refused rather than described wrongly.
+- **Other options** (behind *Why*). Asks every catalog and every AI provider you
+  have switched on, each separately, about that one file, and lists what each
+  said with the destination it would give the file and a *Use this* button.
+  Nothing is stored: a provider or key added five minutes ago is included, with
+  no re-analysis. An answer below the confidence threshold still shows its
+  destination — during a scan that gets stripped, but choosing one by hand is a
+  different act. Anything that fails or finds nothing is listed with its reason,
+  and a catalog that drew a blank is never credited with the filename fallback.
+- **Re-analyse**, replacing *Not this*. The old button set the guess aside and
+  never guessed again — a dead end in one click, escapable only from the command
+  line. This hands the file back for a fresh pass over tags, catalogs, duplicate
+  detectors and AI.
+- **Mark for deletion**, gathering files into `quarantine/_to-delete` — one
+  folder to empty yourself, in one deliberate gesture. Available on a Review row,
+  on a held quarantine file, and on a staged duplicate that has not moved yet.
+  **Nothing is deleted by LibrAIry, at any point**; *Put it back* still works
+  from the pile.
+- **A Test button on every catalog**, making one real request, because a rejected
+  key and no match look identical from the outside. It reports "Key rejected",
+  "Rate limited", "Service is down" or "Reachable, no match".
+- **What do these buttons do?** — the three-step flow and every button's effect,
+  next to the Review heading and in `docs/using-librairy.md`.
+
+### Changed — Review
+
+- **Confidence is one bar, coloured by the score** — green from 85%, amber from
+  60%, red below or with no destination — with the sources it is made of kept as
+  shading within that hue. It replaces a decimal, a badge word and a colour band
+  that were three encodings of one number, none of which answered *is this safe
+  to wave through?*
+- **The rows are half the height.** Worst case 496px → 123px, median 136px → 98px,
+  and the furniture above the first file 489px → 345px. Long names and paths clamp
+  at two lines with the full value in the title.
+- Bulk approve names its threshold and its count — *Approve 40 at 85%+* — and is
+  absent when it would do nothing. *Forget them* became *Clear these entries*,
+  which is what it does. Each action now says what it did rather than "n
+  proposal(s) updated".
+- **Review says how many files are approved and waiting**, with a link to Commit.
+  Approving is a decision; nothing on the page said the move was one more press.
+- A group of one is no longer a group: a heading, a select-all and a section
+  margin over a decision you were making one row at a time anyway. A folder named
+  after a UUID is no longer a photo event — iMessage attachments arrived as
+  thirty-two separate "events".
+
+### Added — discs
+
+- **A ripped DVD files as one thing.** Its nine files were nine unanswerable
+  questions at 0.30 apiece; the title is on the folder above `VIDEO_TS`, and the
+  whole structure files under it. **The names inside a disc directory are never
+  rewritten** — a player looks for `VTS_01_1.VOB` by that exact name — so a tidied
+  disc folder is one that no longer plays.
+- A disc's byte-identical `.BUP` files are no longer treated as duplicates of
+  their `.IFO`s. The pairing is the format, not clutter; quarantining one damages
+  the disc.
+
+### Added — configuration
+
+- `CZKAWKA_SIMILARITY`: `strict` (default), `balanced` or `loose`. czkawka scores
+  0-40 for images and 0-20 for videos, on scales nobody can calibrate without
+  running the tool twice — measured on a real library, 5 finds only what is
+  visually identical and 20 groups eleven unrelated photographs.
+
+### Fixed — portal
+
+- **"System Fault" on any page during a scan.** Drawing the site header mirrored
+  every AI provider into `provider_status` as a side effect of being asked which
+  providers exist — 25 writes per five page views — and a page view that collides
+  with the worker holding the write lock is a 500 on whatever you were reading.
+  Rendering is read-only now, with a test that traces the connection across five
+  pages.
+- **Static assets carry `Cache-Control: no-cache`.** `StaticFiles` sent an ETag
+  and no Cache-Control, leaving the browser to invent a lifetime: a container
+  upgrade kept the old stylesheet against the new HTML, an update that appears to
+  do nothing and then fixes itself hours later.
+- Saying "no" to a duplicate was always a 500 — `quarantine-proposed → pending`
+  was not a legal transition.
+- The header no longer overflows on a phone.
+
 ## v1.2.0 - 2026-08-04
 
 Container hardening release. `docker scout quickview` goes from 7C/36H/55M/143L and a
