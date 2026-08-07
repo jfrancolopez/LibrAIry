@@ -17,6 +17,11 @@ LOCAL_EVIDENCE_SOURCES = frozenset(
         "library-pattern",
         "hashtag",
         "ai",
+        # A local model that opened the file and looked at the picture. Its own
+        # source rather than "ai", because Review draws them differently and
+        # because "it read the name" and "it saw the thing" are not the same
+        # claim about a file.
+        "vision",
     }
 )
 # Every catalog is a legal evidence source by definition, derived from the
