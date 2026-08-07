@@ -570,9 +570,42 @@ def _fold_singletons(groups: list[dict[str, object]]) -> list[dict[str, object]]
     """
     real = [group for group in groups if len(group["rows"]) > 1]  # type: ignore[arg-type]
     loose = [row for group in groups if len(group["rows"]) == 1 for row in group["rows"]]  # type: ignore[arg-type]
+    for group in real:
+        _shorten_names(group)
     if loose:
         real.append({"kind": "ungrouped", "label": "Ungrouped", "rows": loose})
     return real
+
+
+def _shorten_names(group: dict[str, object]) -> None:
+    """Inside a named group, show only what tells the rows apart.
+
+    A DVD's nine rows each began with the same 52-character folder — the same
+    one already spelled out in the heading above them — and ended in the twelve
+    characters that actually differ. The full path stays in the title attribute
+    and in the destination underneath.
+    """
+    rows = group["rows"]
+    assert isinstance(rows, list)
+    if group["kind"] in ("ungrouped", "sorted"):
+        return
+    parents = [PurePosixPath(row["item_relpath"]).parent.as_posix() for row in rows]
+    shared = _common_prefix(parents)
+    if not shared:
+        return
+    for row in rows:
+        row["display_name"] = row["item_relpath"][len(shared) + 1 :]
+
+
+def _common_prefix(paths: list[str]) -> str:
+    parts = [path.split("/") for path in paths]
+    shared: list[str] = []
+    for index in range(min(len(part) for part in parts)):
+        step = parts[0][index]
+        if any(part[index] != step for part in parts):
+            break
+        shared.append(step)
+    return "/".join(shared) if shared and shared != ["."] else ""
 
 
 def _where(filters: ReviewFilters) -> tuple[str, list[object]]:

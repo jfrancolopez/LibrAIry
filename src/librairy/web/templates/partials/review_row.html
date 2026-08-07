@@ -15,7 +15,7 @@
       {# The size is a property of the file, so it belongs to the filename. It
          was sitting in the confidence cluster, where it read as part of the
          score. #}
-      <h3 class="proposal-name" title="{{ proposal.item_relpath }}">{{ proposal.item_relpath }}{% if proposal.size_label %}<span class="name-size"> · {{ proposal.size_label }}</span>{% endif %}</h3>
+      <h3 class="proposal-name" title="{{ proposal.item_relpath }}">{{ proposal.display_name or proposal.item_relpath }}{% if proposal.size_label %}<span class="name-size"> · {{ proposal.size_label }}</span>{% endif %}</h3>
       <span class="proposal-meta">
         {% if proposal.rechecking %}<span class="badge badge-info">looking again</span>{% endif %}
         {% if proposal.has_duplicate %}<span class="badge badge-info">duplicate</span>{% endif %}

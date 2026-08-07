@@ -810,3 +810,26 @@ def test_a_group_of_one_gets_no_heading(tmp_path: Path) -> None:
     assert "A Folder Named Once" not in page
     # The file is still on the page, just without ceremony around it.
     assert "photos/a.jpg" in page
+
+
+def test_a_grouped_row_shows_only_what_tells_it_apart(tmp_path: Path) -> None:
+    """A DVD's nine rows each began with the same 52-character folder — the one
+    already spelled out in the heading above them — and ended in the twelve
+    characters that differ."""
+    client, conn = client_for(tmp_path)
+    disc = insert_group(conn, "disc", "A Concert DVD5")
+    for name in ("VIDEO_TS.IFO", "VTS_01_1.VOB", "VTS_01_2.VOB"):
+        seed_proposal(
+            conn,
+            f"A Concert DVD5/VIDEO_TS/{name}",
+            "movies",
+            f"Movies/General/A-Concert-(0)/VIDEO_TS/{name}",
+            0.82,
+            disc,
+        )
+
+    page = client.get("/review").text
+
+    assert ">VTS_01_1.VOB<" in page
+    # The whole path is still there to hover, and still in the destination.
+    assert 'title="A Concert DVD5/VIDEO_TS/VTS_01_1.VOB"' in page
