@@ -18,6 +18,10 @@
       <h3 class="proposal-name" title="{{ proposal.item_relpath }}">{{ proposal.display_name or proposal.item_relpath }}{% if proposal.size_label %}<span class="name-size"> · {{ proposal.size_label }}</span>{% endif %}</h3>
       <span class="proposal-meta">
         {% if proposal.rechecking %}<span class="badge badge-info">looking again</span>{% endif %}
+        {# Says there is something in Why worth opening. Without it the caption
+           and the text out of a screenshot are behind a button that looks
+           identical on the forty rows that have neither. #}
+        {% if proposal.vision %}<span class="badge badge-info" title="A local model looked at this picture — open Why to read what it saw">described</span>{% endif %}
         {% if proposal.has_duplicate %}<span class="badge badge-info">duplicate</span>{% endif %}
         {# Always last in the row, so the scores line up into a column you can
            read straight down instead of stopping at each one.
@@ -161,6 +165,39 @@
           <li class="muted">No evidence recorded.</li>
         {% endfor %}
       </ul>
+      {% if proposal.vision %}
+        {# The picture in words. Inside Why rather than on the row: it is two
+           or three lines at best and a screenshot's entire text at worst,
+           and the row is a decision, not a document. #}
+        <div class="vision">
+          <h4>What the picture shows</h4>
+          {% if proposal.vision.caption %}<p class="vision-caption">{{ proposal.vision.caption }}</p>{% endif %}
+          <dl class="vision-facts">
+            {% if proposal.vision.subjects %}
+              <dt>In it</dt><dd>{{ proposal.vision.subjects|join(', ') }}</dd>
+            {% endif %}
+            {% if proposal.vision.tags %}
+              <dt>Tags</dt><dd>{{ proposal.vision.tags|join(', ') }}</dd>
+            {% endif %}
+            {% if proposal.vision.category %}
+              <dt>Kind</dt>
+              <dd>{{ proposal.vision.category }}{% if proposal.vision_disagrees %}
+                <span class="badge badge-warn">not {{ proposal.category }}</span>
+                <span class="muted">— change the category below if you agree; nothing was
+                  moved on the strength of this.</span>{% endif %}</dd>
+            {% endif %}
+            <dt>Read by</dt><dd class="muted">{{ proposal.vision.model }}, on your own hardware</dd>
+          </dl>
+          {% if proposal.vision.visible_text %}
+            {# Kept apart from the caption on purpose: one is the model's
+               description and the other is what the image actually says. #}
+            <details class="vision-text">
+              <summary>Text in the image</summary>
+              <pre>{{ proposal.vision.visible_text }}</pre>
+            </details>
+          {% endif %}
+        </div>
+      {% endif %}
       {# "Why is it this?" and "what else could it be?" are the same moment.
          A permanent button on the row would be a fourth thing to aim at and
          another slice off the destination path; here it costs nothing until

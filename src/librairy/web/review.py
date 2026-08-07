@@ -5,6 +5,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+from librairy.classify.images import vision_disagrees, vision_for_items
 from librairy.config import Settings
 from librairy.duplicates import items_with_reports, reports_for_item
 from librairy.flags import flags_for, unhidden_name
@@ -419,10 +420,20 @@ def _proposal_rows(
         """,  # noqa: S608 - _order_by only ever returns a value from SORTS
         params,
     ).fetchall()
-    compared = items_with_reports(conn, [int(row["item_id"]) for row in rows])
+    item_ids = [int(row["item_id"]) for row in rows]
+    compared = items_with_reports(conn, item_ids)
+    seen = vision_for_items(conn, item_ids)
     return [
         {
             **dict(row),
+            # What a local model saw in the picture, when one was asked. Lives
+            # inside Why: a caption and a screenshot's text are worth reading
+            # once, and worth nothing on every row of a page of fifty.
+            "vision": (looked := seen.get(int(row["item_id"]))),
+            # Surfaced, never acted on. The category dropdown is already in
+            # the edit panel below, so the useful thing to do with "that is a
+            # receipt, not a photo" is say it and leave the file alone.
+            "vision_disagrees": vision_disagrees(looked, row["category"]),
             "evidence_lines": evidence_lines(row["evidence"]),
             "evidence_views": (views := humanize_evidence(row["evidence"])),
             # The score broken into where it came from. A bar of one length

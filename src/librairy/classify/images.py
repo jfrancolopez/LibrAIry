@@ -303,6 +303,10 @@ def stored_vision(
         return None
     if fingerprint is not None and row["fingerprint"] != (fingerprint or ""):
         return None
+    return _from_row(row)
+
+
+def _from_row(row: sqlite3.Row) -> StoredVision:
     return StoredVision(
         provider=row["provider"],
         model=row["model"],
@@ -315,6 +319,36 @@ def stored_vision(
         confidence=row["confidence"],
         created_at=row["created_at"],
     )
+
+
+def vision_disagrees(stored: StoredVision | None, category: str) -> bool:
+    """Whether the model thinks this belongs somewhere else than it is filed.
+
+    Only a mapped image kind counts. "other" maps to nothing and is not a
+    disagreement — it is the model saying it has no opinion.
+    """
+    if stored is None:
+        return False
+    mapped = CATEGORY_MAP.get(stored.category or "")
+    return mapped is not None and mapped != category
+
+
+def vision_for_items(
+    conn: sqlite3.Connection, item_ids: list[int]
+) -> dict[int, StoredVision]:
+    """Every stored description for one page of rows, in one query.
+
+    Review draws fifty rows at a time and each one may or may not have been
+    looked at; asking per row would be fifty queries to decorate a page.
+    """
+    if not item_ids:
+        return {}
+    placeholders = ",".join("?" for _ in item_ids)
+    rows = conn.execute(
+        f"SELECT * FROM vision_results WHERE item_id IN ({placeholders})",  # noqa: S608
+        item_ids,
+    ).fetchall()
+    return {int(row["item_id"]): _from_row(row) for row in rows}
 
 
 def _as_answer(stored: StoredVision) -> VisionResult:

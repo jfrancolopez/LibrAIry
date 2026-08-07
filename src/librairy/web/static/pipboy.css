@@ -867,6 +867,44 @@ tbody tr:hover { background: var(--bg-metric); }
 .option button { justify-self: start; min-height: 2rem; padding: var(--space-1) var(--space-3); }
 .option-problems { list-style: none; margin: 0; padding: 0; font-size: var(--text-sm); }
 
+/* What a local model saw in the picture. Same card as an alternative option,
+   because it is the same kind of thing: something a machine said, offered for
+   you to read rather than acted on. */
+.vision {
+  margin-top: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: var(--border-thin) solid var(--border);
+  border-radius: var(--radius-ui);
+  background: var(--bg-metric);
+  font-size: var(--text-sm);
+}
+.vision h4 { margin: 0 0 var(--space-1); font-size: var(--text-sm); }
+.vision-caption { margin: 0 0 var(--space-2); }
+/* Label and value on one line each, labels in a column you can read down. */
+.vision-facts {
+  display: grid;
+  grid-template-columns: minmax(4rem, auto) 1fr;
+  gap: var(--space-1) var(--space-2);
+  margin: 0;
+}
+.vision-facts dt { color: var(--text-dim); }
+.vision-facts dd { margin: 0; overflow-wrap: anywhere; }
+.vision-text { margin-top: var(--space-2); }
+.vision-text summary { cursor: pointer; color: var(--text-dim); }
+/* A receipt's text is longer than any row should ever be, so it scrolls in
+   its own box rather than stretching the page sideways. */
+.vision-text pre {
+  margin: var(--space-1) 0 0;
+  max-height: 14rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 639px) {
+  .vision-facts { grid-template-columns: 1fr; gap: 0 0; }
+  .vision-facts dt { margin-top: var(--space-1); }
+}
+
 /* Confidence, and what it is made of.
    The old control was a number in a box with a gradient behind it: three
    encodings of one fact (box, badge word, decimal) and no answer to the
@@ -903,6 +941,9 @@ tbody tr:hover { background: var(--bg-metric); }
    rows that need reading — a 30% bar is short *and* usually a guess, and the
    two compounded into nothing to see. */
 .conf-part.is-catalog { opacity: 1; }
+/* Between a catalog and the file's own tags: a model that opened the file and
+   looked at the picture is not reading a name, and it is not an authority. */
+.conf-part.is-vision { opacity: 0.96; }
 .conf-part.is-local { opacity: 0.92; }
 .conf-part.is-ai { opacity: 0.8; }
 .conf-part.is-cloud { opacity: 0.7; }

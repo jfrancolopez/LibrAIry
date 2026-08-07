@@ -22,6 +22,7 @@ _SOURCE_LABEL = {
     "library-pattern": "Your library",
     "hashtag": "Folder hashtag",
     "ai": "AI",
+    "vision": "Looked at it",
 }
 
 
@@ -39,11 +40,16 @@ TRUST = {
     "tags": "local",
     "library-pattern": "local",
     "hashtag": "local",
+    #  Its own kind. A model that opened the file and looked at the picture is
+    #  not guessing from a name, and it is not a public catalog either — and
+    #  the whole point of the segmented bar is that those are different things.
+    "vision": "vision",
     "heuristic": "guess",
 }
 TRUST_LABELS = {
     "catalog": "a public catalog",
     "local": "the file itself",
+    "vision": "looking at the picture",
     "guess": "its name and type",
     "ai": "local AI",
     "cloud": "cloud AI",
@@ -88,7 +94,7 @@ def confidence_segments(views: list[EvidenceView], confidence: float) -> list[Se
         by_kind[view.kind] = by_kind.get(view.kind, 0) + max(view.weight_pct, 1)
     total = sum(by_kind.values())
     #  Strongest first, so the bar reads left to right as best evidence first.
-    order = ["catalog", "local", "ai", "cloud", "guess"]
+    order = ["catalog", "vision", "local", "ai", "cloud", "guess"]
     segments = [
         Segment(kind, TRUST_LABELS.get(kind, kind), round(score * weight / total))
         for kind, weight in sorted(
@@ -131,6 +137,13 @@ def humanize_evidence(payload: str) -> list[EvidenceView]:
             views.append(EvidenceView(label, text, weight_pct, cloud, "cloud" if cloud else "ai"))
             continue
         label = _SOURCE_LABEL.get(entry.source, entry.source.replace("-", " ").title())
+        if entry.source == "vision":
+            #  "model: a baby holding an orange cat" — the model's name is
+            #  worth showing once, and the sentence is the evidence.
+            model, _, said = entry.detail.partition(":")
+            text = f"{said.strip() or entry.detail} ({model.strip()})"
+            views.append(EvidenceView(label, text, weight_pct, cloud=False, kind="vision"))
+            continue
         if entry.source == "heuristic" and entry.field == "category":
             text = f"Looks like {entry.detail}"
         elif entry.source in {"musicbrainz", "tmdb", "acoustid", "openlibrary"}:

@@ -60,10 +60,13 @@ def scope_to_root(scope: str | None) -> str | None:
 def sync_search_item(conn: sqlite3.Connection, item_id: int) -> None:
     row = conn.execute(
         """
-        SELECT i.*, p.clean_name, p.category, p.evidence, g.kind AS group_kind
+        SELECT i.*, p.clean_name, p.category, p.evidence, g.kind AS group_kind,
+               v.caption AS vision_caption, v.subjects AS vision_subjects,
+               v.tags AS vision_tags, v.visible_text AS vision_text
         FROM items i
         LEFT JOIN proposals p ON p.item_id = i.id AND p.status != 'superseded'
         LEFT JOIN groups g ON g.id = p.group_id
+        LEFT JOIN vision_results v ON v.item_id = i.id
         WHERE i.id=?
         """,
         (item_id,),
@@ -290,6 +293,11 @@ def _fields_from_row(row: sqlite3.Row) -> dict[str, str]:
     evidence = _evidence(row["evidence"])
     name = row["relpath"].replace("/", " ")
     tags = " ".join(entry["detail"] for entry in evidence if entry.get("source") == "hashtag")
+    # A caption, the things in the picture, and the text read out of it, in the
+    # column that already holds "other words about this file". Searching "wifi"
+    # and getting the screenshot of the Wi-Fi settings is the whole reason to
+    # have looked at it. It costs one LEFT JOIN and needs no separate index.
+    tags = " ".join(part for part in (tags, _vision_words(row)) if part)
     by_field = {str(entry.get("field")): str(entry.get("detail")) for entry in evidence}
     return {
         "name": name,
@@ -303,6 +311,26 @@ def _fields_from_row(row: sqlite3.Row) -> dict[str, str]:
         "event": by_field.get("event", ""),
         "category": row["category"] or _category_from_path(row["relpath"]),
     }
+
+
+def _vision_words(row: sqlite3.Row) -> str:
+    """Everything a model said about an image, flattened for the index.
+
+    Tolerant of a row that has no vision columns at all: `sync_search_item` is
+    not the only shape of row this helper has ever been handed.
+    """
+    keys = row.keys() if hasattr(row, "keys") else ()
+    if "vision_caption" not in keys:
+        return ""
+    parts = [row["vision_caption"] or "", row["vision_text"] or ""]
+    for column in ("vision_subjects", "vision_tags"):
+        try:
+            value = json.loads(row[column] or "[]")
+        except (TypeError, ValueError):
+            continue
+        if isinstance(value, list):
+            parts.append(" ".join(str(item) for item in value))
+    return " ".join(part for part in parts if part.strip())
 
 
 def _evidence(payload: str | None) -> list[dict[str, Any]]:
