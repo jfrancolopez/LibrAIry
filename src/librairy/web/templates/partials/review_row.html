@@ -52,9 +52,11 @@
           {# The full path in the title, because the visible one is clamped to
              two lines and a long one is exactly when you want to read it. #}
           <button type="button" class="mono dest-path" data-panel-toggle="edit-{{ proposal.id }}"
+                  data-panel-focus="dest_relpath"
                   title="{{ proposal.dest_root }}/{{ proposal.dest_relpath }} — click to change">{{ proposal.dest_root }}/{{ proposal.dest_relpath }}</button>
         {% else %}
           <button type="button" class="badge badge-warn dest-path" data-panel-toggle="edit-{{ proposal.id }}"
+                  data-panel-focus="dest_relpath"
                   title="Click to set a destination">no destination yet</button>
         {% endif %}
       </p>
@@ -108,6 +110,41 @@
         <button type="button" class="btn-ghost btn-more" data-panel-toggle="more-{{ proposal.id }}"
                 aria-label="More for {{ proposal.item_relpath }}" title="Later, or mark for deletion">⋯</button>
       </div>
+    </div>
+
+    {# Directly under the path it edits, and above the preview. It used to
+       render last, below the preview: you clicked a destination at the top of
+       the row and a form appeared past a photograph, which reads as editing
+       the picture. What a control changes should be the thing above it. #}
+    <div id="edit-{{ proposal.id }}" class="proposal-edit" hidden>
+      <form
+        class="edit-form"
+        hx-post="/review/proposals/{{ proposal.id }}/edit"
+        hx-target="#proposal-{{ proposal.id }}"
+        hx-swap="outerHTML"
+        hx-headers='{"x-csrf-token":"{{ csrf }}"}'
+      >
+        {# A category is one of eight things, so it is a menu. It was a free-text
+           box that rejected anything but those eight without saying which. #}
+        <label class="field">Category
+          <select name="category">
+            {% for name in categories %}
+              <option value="{{ name }}"{% if name == proposal.category %} selected{% endif %}>{{ name }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="field">File name
+          <input name="clean_name" value="{{ proposal.clean_name }}">
+        </label>
+        <label class="field field-wide">Destination, under {{ proposal.dest_root }}/
+          <input name="dest_relpath" value="{{ proposal.dest_relpath or '' }}"
+                 list="dest-folders" placeholder="leave empty to rebuild it from the category">
+        </label>
+        <div class="edit-actions">
+          <button type="submit" class="btn-primary">Save</button>
+          <button type="button" class="btn-ghost" data-panel-toggle="edit-{{ proposal.id }}">Cancel</button>
+        </div>
+      </form>
     </div>
 
     {# Two columns, so both buttons are the same width and both explanations
@@ -216,36 +253,5 @@
     </div>
 
     <div id="preview-{{ proposal.id }}" class="proposal-preview"></div>
-
-    <div id="edit-{{ proposal.id }}" class="proposal-edit" hidden>
-      <form
-        class="edit-form"
-        hx-post="/review/proposals/{{ proposal.id }}/edit"
-        hx-target="#proposal-{{ proposal.id }}"
-        hx-swap="outerHTML"
-        hx-headers='{"x-csrf-token":"{{ csrf }}"}'
-      >
-        {# A category is one of eight things, so it is a menu. It was a free-text
-           box that rejected anything but those eight without saying which. #}
-        <label class="field">Category
-          <select name="category">
-            {% for name in categories %}
-              <option value="{{ name }}"{% if name == proposal.category %} selected{% endif %}>{{ name }}</option>
-            {% endfor %}
-          </select>
-        </label>
-        <label class="field">File name
-          <input name="clean_name" value="{{ proposal.clean_name }}">
-        </label>
-        <label class="field field-wide">Destination, under {{ proposal.dest_root }}/
-          <input name="dest_relpath" value="{{ proposal.dest_relpath or '' }}"
-                 list="dest-folders" placeholder="leave empty to rebuild it from the category">
-        </label>
-        <div class="edit-actions">
-          <button type="submit" class="btn-primary">Save</button>
-          <button type="button" class="btn-ghost" data-panel-toggle="edit-{{ proposal.id }}">Cancel</button>
-        </div>
-      </form>
-    </div>
   </div>
 </article>

@@ -833,3 +833,81 @@ def test_a_grouped_row_shows_only_what_tells_it_apart(tmp_path: Path) -> None:
     assert ">VTS_01_1.VOB<" in page
     # The whole path is still there to hover, and still in the destination.
     assert 'title="A Concert DVD5/VIDEO_TS/VTS_01_1.VOB"' in page
+
+
+def test_the_editor_renders_above_the_preview_it_is_not_editing(tmp_path: Path) -> None:
+    """Source order is the whole point of this control's placement.
+
+    The edit form used to render last, below the preview: you clicked a
+    destination at the top of the row and a form appeared underneath a
+    photograph, which reads as editing the picture. What a control changes
+    should be the thing directly above it.
+    """
+    client, conn = client_for(tmp_path)
+    item_id = insert_item(conn, "holiday.jpg")
+    upsert_proposal(
+        conn, item_id=item_id, category="photos", clean_name="holiday.jpg",
+        dest_relpath="Photos/2024/Trip/holiday.jpg", confidence=0.9,
+        evidence=[EvidenceEntry("heuristic", "category", "image extension", 0.9)],
+    )
+
+    page = client.get("/review").text
+
+    dest = page.index('class="proposal-dest"')
+    editor = page.index('class="proposal-edit"')
+    preview = page.index('class="proposal-preview"')
+    assert dest < editor < preview, "destination, then its editor, then the preview"
+
+
+def test_clicking_the_destination_focuses_the_destination_field(tmp_path: Path) -> None:
+    client, conn = client_for(tmp_path)
+    item_id = insert_item(conn, "holiday.jpg")
+    upsert_proposal(
+        conn, item_id=item_id, category="photos", clean_name="holiday.jpg",
+        dest_relpath="Photos/2024/Trip/holiday.jpg", confidence=0.9,
+        evidence=[EvidenceEntry("heuristic", "category", "image extension", 0.9)],
+    )
+
+    page = client.get("/review").text
+
+    assert 'data-panel-focus="dest_relpath"' in page
+    # And the field it names is really in the panel it opens.
+    assert 'name="dest_relpath"' in page
+
+
+def test_editing_still_validates_and_saves_from_its_new_position(tmp_path: Path) -> None:
+    """Placement only. Every containment and sanitising rule is unchanged."""
+    client, conn = client_for(tmp_path)
+    item_id = insert_item(conn, "holiday.jpg")
+    proposal_id = upsert_proposal(
+        conn, item_id=item_id, category="photos", clean_name="holiday.jpg",
+        dest_relpath="Photos/2024/Trip/holiday.jpg", confidence=0.9,
+        evidence=[EvidenceEntry("heuristic", "category", "image extension", 0.9)],
+    )
+
+    saved = client.post(
+        f"/review/proposals/{proposal_id}/edit",
+        data={"category": "photos", "clean_name": "beach.jpg",
+              "dest_relpath": "Photos/2024/Trip/beach.jpg"},
+        headers={"x-csrf-token": client.cookies["csrf_token"]},
+    )
+    escape = client.post(
+        f"/review/proposals/{proposal_id}/edit",
+        data={"category": "photos", "clean_name": "beach.jpg",
+              "dest_relpath": "../../etc/passwd"},
+        headers={"x-csrf-token": client.cookies["csrf_token"]},
+    )
+
+    assert saved.status_code == 200
+    row = conn.execute(
+        "SELECT clean_name, dest_relpath FROM proposals WHERE id=?", (proposal_id,)
+    ).fetchone()
+    assert row["clean_name"] == "beach.jpg"
+    assert row["dest_relpath"] == "Photos/2024/Trip/beach.jpg"
+    assert escape.status_code >= 400, "a path out of the library is refused"
+    assert (
+        conn.execute(
+            "SELECT dest_relpath FROM proposals WHERE id=?", (proposal_id,)
+        ).fetchone()["dest_relpath"]
+        == "Photos/2024/Trip/beach.jpg"
+    ), "and leaves the stored destination alone"

@@ -74,10 +74,17 @@
     var panel = document.getElementById(trigger.dataset.panelToggle);
     if (!panel) return;
     panel.hidden = !panel.hidden;
-    if (!panel.hidden) {
-      var first = panel.querySelector("select, input");
-      if (first) first.focus();
-    }
+    if (panel.hidden) return;
+    // data-panel-focus names the field this particular trigger is about, so
+    // clicking a destination path lands the cursor in the destination box
+    // rather than in the category menu that happens to come first.
+    var wanted = trigger.dataset.panelFocus;
+    var field =
+      (wanted && panel.querySelector('[name="' + wanted + '"]')) ||
+      panel.querySelector("select, input");
+    if (!field) return;
+    field.focus();
+    if (field.select) field.select();
   });
 
   // htmx does not swap error responses, so a Preview button whose file has
