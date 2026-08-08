@@ -336,3 +336,112 @@ def test_the_media_route_serves_a_playable_file_with_ranges(tmp_path: Path) -> N
     assert response.headers["content-type"] == "audio/mpeg"
     # Range support is what lets you scrub instead of waiting for the whole file.
     assert response.headers.get("accept-ranges") == "bytes"
+
+
+def test_an_image_preview_offers_a_full_screen_view(tmp_path: Path) -> None:
+    client, conn, settings = client_for(tmp_path)
+    image = insert_file(conn, settings, "photo.jpg", b"not really a jpeg")
+
+    card = client.get(f"/preview/items/{image}").text
+
+    assert "data-lightbox" in card
+    # The viewer is pointed at a larger render of the same file, through the
+    # same endpoint — never at a path on the host.
+    assert f'data-lightbox-image="/preview/items/{image}/thumb?size=large"' in card
+    assert "/data/" not in card and tmp_path.as_posix() not in card
+    # And the picture itself is a control, so clicking it does the obvious.
+    assert "is-expandable" in card
+
+
+def test_a_playable_video_offers_the_original_to_the_viewer(tmp_path: Path) -> None:
+    client, conn, settings = client_for(tmp_path)
+    video = insert_file(conn, settings, "clip.mp4", b"not really a video")
+
+    card = client.get(f"/preview/items/{video}").text
+
+    assert f'data-lightbox-video="/preview/items/{video}/media"' in card
+    assert 'data-lightbox-type="video/mp4"' in card
+    # The frame in the row is not clickable: a click on a video is play/pause.
+    assert "is-expandable" not in card
+
+
+def test_a_file_with_no_preview_has_no_full_screen_button(tmp_path: Path) -> None:
+    """A button that opens an empty window is worse than no button."""
+    client, conn, settings = client_for(tmp_path)
+    other = insert_file(conn, settings, "archive.7z", b"binary")
+
+    card = client.get(f"/preview/items/{other}").text
+
+    assert "data-lightbox" not in card
+    assert "preview-expand" not in card
+
+
+def test_the_large_render_is_served_and_is_its_own_cache_entry(tmp_path: Path) -> None:
+    client, conn, settings = client_for(tmp_path)
+    image = insert_file(conn, settings, "photo.jpg", b"not really a jpeg")
+
+    small = client.get(f"/preview/items/{image}/thumb")
+    large = client.get(f"/preview/items/{image}/thumb?size=large")
+
+    assert small.status_code == 200
+    assert large.status_code == 200
+
+
+def test_only_the_two_sizes_that_exist_can_be_asked_for(tmp_path: Path) -> None:
+    """`size` is a word looked up in a table, not a number off a query string.
+
+    Otherwise the endpoint is an invitation to ask this box to render 40000
+    pixels wide, repeatedly, from the other side of a LAN.
+    """
+    client, conn, settings = client_for(tmp_path)
+    image = insert_file(conn, settings, "photo.jpg", b"not really a jpeg")
+
+    for size in ("huge", "4000", "../etc", "-1"):
+        assert client.get(f"/preview/items/{image}/thumb?size={size}").status_code == 403
+
+
+def test_review_carries_the_viewer_and_its_close_control(tmp_path: Path) -> None:
+    client, _conn, _settings = client_for(tmp_path)
+
+    page = client.get("/review").text
+
+    assert 'id="lightbox"' in page
+    assert "<dialog" in page, "a real dialog, so Escape and focus are the browser's job"
+    assert "data-lightbox-close" in page
+    assert "Close full screen preview" in page
+    assert "/static/lightbox.js" in page
+
+
+def test_the_viewer_does_not_rely_on_the_close_event_to_stop_a_video() -> None:
+    """Measured in this project's own browser: showModal() then close() opens
+    and closes the dialog correctly and fires no `close` event at all. Hanging
+    the teardown off that event left a video playing to nobody behind a shut
+    viewer, which is the one thing a media modal must never do.
+
+    A source assertion rather than a behavioural one — there is no browser in
+    this test stack — but it pins the shape of the fix so it cannot quietly
+    revert to a single `close` listener.
+    """
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "src/librairy/web/static/lightbox.js"
+    ).read_text(encoding="utf-8")
+
+    assert "function dismiss()" in source
+    # Every way out runs the same teardown.
+    for exit_path in ('event.key === "Escape"', "data-lightbox-close", "=== stage"):
+        assert exit_path in source
+    # And the teardown really does stop and detach the player.
+    teardown = source[source.index("function dismiss()") : source.index("dialog.addEventListener")]
+    assert "player.pause()" in teardown
+    assert "stage.replaceChildren()" in teardown
+
+
+def test_the_viewer_never_autoplays() -> None:
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "src/librairy/web/static/lightbox.js"
+    ).read_text(encoding="utf-8")
+
+    assert "autoplay" not in source.replace("// No autoplay", "")
+    assert 'player.preload = "metadata"' in source

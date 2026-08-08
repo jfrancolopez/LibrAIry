@@ -123,6 +123,27 @@ panel at a real library and reading what it said.
   on a held quarantine file, and on a staged duplicate that has not moved yet.
   **Nothing is deleted by LibrAIry, at any point**; *Put it back* still works
   from the pile.
+- **Previews open full screen.** Click the picture, or the expand control in its
+  corner. Images fit the window with their aspect ratio intact and toggle to
+  actual size, with the real pixel dimensions read off the file; video keeps the
+  browser's own controls and never autoplays. Escape, the close button and the
+  space around the media all close it, and clicking the media itself does not.
+  It is a real `<dialog>`, so focus trapping and returning focus to the control
+  you came from are the browser's job.
+  - The row still shows the 320px thumbnail; full screen asks for a 1600px
+    render through the same endpoint, so it is sharp without shipping a
+    48-megapixel original to answer "is this the right picture?". `size` is a
+    word looked up in a table of the two sizes that exist, not a number off a
+    query string.
+  - **The `close` event cannot be relied on.** Measured in this project's own
+    browser: `showModal()` then `close()` opens and closes the dialog correctly
+    and fires no `close` at all. Hanging the teardown off it left a video
+    playing to nobody behind a shut viewer. Every exit runs one teardown now.
+- **The filename editor moved above the preview.** It rendered last: you clicked
+  a destination at the top of the row and a form appeared underneath a
+  photograph, which reads as editing the picture. Clicking a destination also
+  puts the cursor in the destination box rather than the category menu that
+  happens to come first. Same form, endpoint, validation and containment checks.
 - **A Test button on every catalog**, making one real request, because a rejected
   key and no match look identical from the outside. It reports "Key rejected",
   "Rate limited", "Service is down" or "Reachable, no match".

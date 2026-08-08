@@ -1576,7 +1576,31 @@ kbd {
 .preview-card.is-document { grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); }
 .preview-card.is-textonly { grid-template-columns: 1fr; }
 .preview-card.is-textonly .preview-media { display: none; }
-.preview-media { display: grid; gap: var(--space-2); align-content: start; min-width: 0; }
+.preview-media {
+  display: grid;
+  gap: var(--space-2);
+  align-content: start;
+  min-width: 0;
+  /* Anchors the expand button in the corner of the media. */
+  position: relative;
+}
+/* A picture is its own "see it bigger" control, so it says so on hover. */
+.preview-media img.is-expandable { cursor: zoom-in; }
+.preview-expand {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  z-index: 1;
+  min-height: 0;
+  line-height: 1;
+  padding: var(--space-1) var(--space-2);
+  background: var(--bg-panel);
+  border: var(--border-thin) solid var(--border);
+  border-radius: var(--radius-ui);
+  color: var(--text);
+  cursor: pointer;
+}
+.preview-expand:hover, .preview-expand:focus-visible { background: var(--bg-metric); }
 .preview-media img {
   width: 100%;
   height: auto;
@@ -2062,4 +2086,88 @@ kbd {
   --ok: #b8bb26;
   --warn: #fe8019;
   --fail: #fb4934;
+}
+
+/* Full screen preview.
+   A real <dialog>, so it sits in the browser's top layer — above the scanline
+   overlay without a z-index fight, and with Escape, focus trapping and focus
+   restoration already handled.
+
+   Deliberately plain around the media. Every glow and scanline this interface
+   wears elsewhere is a thing between you and the photograph you opened this to
+   look at, and the one job here is seeing the file clearly. The frame stays
+   LibrAIry; the picture is left alone. */
+.lightbox {
+  width: 100%;
+  height: 100%;
+  max-width: 100vw;
+  max-height: 100vh;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+}
+.lightbox::backdrop {
+  background: var(--bg);
+  opacity: 0.94;
+}
+.lightbox-frame {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: var(--space-2);
+  height: 100%;
+  padding: var(--space-3);
+  /* Sized from the frame, not the dialog, so the media never has to share its
+     row with the bars. */
+  box-sizing: border-box;
+}
+.lightbox-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.lightbox-title {
+  margin: 0;
+  font-size: var(--text-base);
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.lightbox-close {
+  flex: none;
+  font-size: var(--text-lg);
+  line-height: 1;
+  padding: var(--space-1) var(--space-3);
+  background: var(--bg-panel);
+  border: var(--border-thin) solid var(--border);
+  border-radius: var(--radius-ui);
+  color: var(--text);
+  cursor: pointer;
+}
+.lightbox-close:hover, .lightbox-close:focus-visible { background: var(--bg-metric); }
+.lightbox-foot { font-size: var(--text-sm); }
+/* min-height: 0 is what lets a grid row actually shrink, and without it the
+   image pushes the footer off the bottom of the viewport. */
+.lightbox-stage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  overflow: auto;
+}
+.lightbox-image, .lightbox-video {
+  max-width: 100%;
+  max-height: 100%;
+  /* contain, never cover: a preview that crops is a preview that lies about
+     what is in the file. */
+  object-fit: contain;
+}
+/* Actual size: the image stops fitting and the stage scrolls instead. */
+.lightbox-stage.is-actual { align-items: start; justify-content: start; }
+.lightbox-stage.is-actual .lightbox-image { max-width: none; max-height: none; }
+@media (max-width: 639px) {
+  .lightbox-frame { padding: var(--space-2); gap: var(--space-1); }
+  .lightbox-title { font-size: var(--text-sm); }
 }

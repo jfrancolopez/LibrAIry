@@ -2,7 +2,27 @@
    picture rather than a stamp in a narrow column. #}
 {% set has_media = preview.thumb_url or preview.media_url %}
 <aside class="preview-card{% if not has_media %} is-textonly{% elif preview.kind == 'document' %} is-document{% endif %}">
+  {# Fullscreen is offered only when there is something worth enlarging: a
+     picture, or a video the browser can play. A file with no preview must not
+     grow a button that opens an empty window. #}
+  {% set can_expand = preview.large_url or (preview.media_url and preview.kind == 'video') %}
   <div class="preview-media">
+    {% if can_expand %}
+      {# Everything the viewer needs travels on the button. It carries URLs the
+         server already generated — never a filesystem path. #}
+      <button type="button" class="preview-expand"
+              data-lightbox
+              data-lightbox-title="{{ preview.title }}"
+              data-lightbox-kind="{{ preview.kind }}"
+              {% if preview.large_url %}data-lightbox-image="{{ preview.large_url }}"{% endif %}
+              {% if preview.media_url and preview.kind == 'video' %}
+              data-lightbox-video="{{ preview.media_url }}"
+              data-lightbox-type="{{ preview.media_type }}"
+              {% endif %}
+              data-lightbox-facts="{{ preview.facts|join(' · ') }}"
+              aria-label="View {{ preview.title }} full screen"
+              title="View full screen">⛶</button>
+    {% endif %}
     {% if preview.media_url and preview.kind == 'video' %}
       {# preload="none" — a page of previews must not start fetching gigabytes
          of video nobody has pressed play on. #}
@@ -11,7 +31,11 @@
         <source src="{{ preview.media_url }}" type="{{ preview.media_type }}">
       </video>
     {% elif preview.thumb_url %}
-      <img src="{{ preview.thumb_url }}" alt="Preview for {{ preview.title }}">
+      {# The picture is its own expand control — clicking a photograph to see
+         it bigger needs no explaining. A video is not clickable this way: the
+         click you make on a video is play/pause. #}
+      <img src="{{ preview.thumb_url }}" alt="Preview for {{ preview.title }}"
+           {% if can_expand %}class="is-expandable"{% endif %}>
     {% endif %}
     {% if preview.media_url and preview.kind == 'audio' %}
       <audio controls preload="none">

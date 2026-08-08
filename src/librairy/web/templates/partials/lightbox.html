@@ -1,0 +1,24 @@
+{# One viewer for the whole page, not one per row.
+
+   A real <dialog>: Escape, the backdrop, focus trapping and returning focus to
+   whatever opened it are all the browser's job, and it does them better than a
+   hand-rolled overlay would. Nothing here needs a framework.
+
+   It lives outside #review-list so an htmx swap of the list cannot pull the
+   open viewer out from under you. #}
+<dialog id="lightbox" class="lightbox" aria-labelledby="lightbox-title">
+  <div class="lightbox-frame">
+    <header class="lightbox-bar">
+      <h2 class="lightbox-title" id="lightbox-title" data-lightbox-title></h2>
+      <button type="button" class="lightbox-close" data-lightbox-close
+              aria-label="Close full screen preview" title="Close (Esc)">×</button>
+    </header>
+    {# The empty space around the media closes the viewer; the media itself
+       does not, so a mis-aimed click on a photograph is not a dismissal. #}
+    <div class="lightbox-stage" data-lightbox-stage></div>
+    <footer class="lightbox-bar lightbox-foot">
+      <p class="muted" data-lightbox-facts></p>
+      <button type="button" class="btn-ghost" data-lightbox-zoom hidden>Actual size</button>
+    </footer>
+  </div>
+</dialog>

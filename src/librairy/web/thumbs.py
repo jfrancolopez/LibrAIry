@@ -27,6 +27,14 @@ PAGE_RENDER_EXTENSIONS = {".pdf"}
 PREVIEW_TEXT_CHARS = 4000
 PREVIEW_TEXT_LINES = 80
 THUMBNAIL_WIDTH = 320
+# What the fullscreen viewer asks for. 320px is right for a row and dreadful
+# blown up, and the original can be a 48-megapixel phone photo — several
+# megabytes to answer "is this the right picture?". This is a bounded middle:
+# sharp on any laptop screen, and a render ffmpeg does in one pass.
+LARGE_THUMBNAIL_WIDTH = 1600
+# The only two sizes a caller may ask for. A width straight off the query
+# string would be an invitation to ask for 40000 and make the box render it.
+THUMBNAIL_WIDTHS = {"": THUMBNAIL_WIDTH, "large": LARGE_THUMBNAIL_WIDTH}
 THUMBNAIL_TIMEOUT_SECONDS = 20
 
 # What a browser can play from the original file, with no transcoding. Anything
@@ -58,6 +66,9 @@ class Preview:
     # First few hundred characters of a document, so "is this the right file?"
     # can be answered without leaving the page.
     body: str | None = None
+    # A bigger render of the same thing, for the fullscreen viewer. None when
+    # there is nothing worth enlarging.
+    large_url: str | None = None
     # Set only when the browser can play the original file as-is.
     media_url: str | None = None
     media_type: str | None = None
@@ -104,6 +115,7 @@ def preview_for_item(conn, settings: Settings, item_id: int, *, bulk: bool = Fal
             title,
             f"/preview/items/{item_id}/thumb",
             facts,
+            large_url=f"/preview/items/{item_id}/thumb?size=large",
             media_url=f"/preview/items/{item_id}/media" if playable else None,
             media_type=playable,
             no_play_reason=reason,
@@ -128,6 +140,7 @@ def preview_for_item(conn, settings: Settings, item_id: int, *, bulk: bool = Fal
             title,
             f"/preview/items/{item_id}/thumb" if page else None,
             (f"type: {path.suffix.lstrip('.') or 'document'}", _size_fact(row["size"])),
+            large_url=f"/preview/items/{item_id}/thumb?size=large" if page else None,
             body=_text_snippet(path),
         )
     return Preview(
@@ -253,17 +266,30 @@ def _audio_tags(path: Path, settings: Settings) -> dict[str, str]:
     return {str(key).lower(): str(value) for key, value in tags.items()}
 
 
-def thumbnail_for_item(conn, settings: Settings, item_id: int) -> Path:
+def thumbnail_for_item(
+    conn, settings: Settings, item_id: int, *, size: str = ""
+) -> Path:
+    """One item's thumbnail, at one of the two sizes that exist.
+
+    `size` comes off a query string, so it is looked up in a table rather than
+    parsed: the set of renders a stranger can ask this box to perform is the
+    two we chose.
+    """
+    width = THUMBNAIL_WIDTHS.get(size)
+    if width is None:
+        raise PreviewForbidden(f"unknown preview size: {size}")
     row = _item_row(conn, item_id)
     path = resolve_item_path(settings, row["root"], row["relpath"])
     kind = _kind(path)
     if kind == "audio":
+        # Cover art arrives at whatever size the archive serves; there is no
+        # larger version of it to fetch.
         cover = _cover_for_audio(conn, settings, item_id, path)
         if cover is None:
             raise PreviewNotFound("no cover art for this release")
         return cover
     if kind == "document":
-        page = _page_thumbnail(settings, path, row["fingerprint"] or f"item-{item_id}")
+        page = _page_thumbnail(settings, path, row["fingerprint"] or f"item-{item_id}", width)
         if page is None:
             raise PreviewNotFound("no page image for this document")
         return page
@@ -275,6 +301,7 @@ def thumbnail_for_item(conn, settings: Settings, item_id: int) -> Path:
         kind,
         row["fingerprint"] or f"item-{item_id}",
         theme=_active_theme(conn),
+        width=width,
     )
 
 
@@ -285,18 +312,22 @@ def get_thumbnail(
     fingerprint: str,
     *,
     theme: str | None = None,
+    width: int = THUMBNAIL_WIDTH,
 ) -> Path:
     thumbs = settings.appdata_dir / "thumbs"
     thumbs.mkdir(parents=True, exist_ok=True)
     stem = _safe_fingerprint(fingerprint)
+    # The default size keeps its old filename, so an upgrade does not throw
+    # away every thumbnail already cached.
+    size = "" if width == THUMBNAIL_WIDTH else f"-{width}"
 
     # A real picture of the file, rendered by ffmpeg. This is what makes Browse
     # usable for photos — a placeholder that says "IMAGE PREVIEW" tells you
     # nothing a filename did not already.
-    raster = thumbs / f"{stem}-{kind}.jpg"
+    raster = thumbs / f"{stem}-{kind}{size}.jpg"
     if raster.exists():
         return raster
-    if _render_thumbnail(source, raster, kind, settings):
+    if _render_thumbnail(source, raster, kind, settings, width):
         return raster
 
     # No ffmpeg, or a file it cannot decode. The drawn placeholder is themed, so
@@ -312,7 +343,9 @@ def thumbnail_media_type(path: Path) -> str:
     return "image/jpeg" if path.suffix.lower() == ".jpg" else "image/svg+xml"
 
 
-def _page_thumbnail(settings: Settings, source: Path, fingerprint: str) -> Path | None:
+def _page_thumbnail(
+    settings: Settings, source: Path, fingerprint: str, width: int = THUMBNAIL_WIDTH
+) -> Path | None:
     """The first page of a document as a picture, or None.
 
     A cover is how anyone recognises a PDF -- the first line of its text is
@@ -326,7 +359,8 @@ def _page_thumbnail(settings: Settings, source: Path, fingerprint: str) -> Path 
         return None
     thumbs = settings.appdata_dir / "thumbs"
     thumbs.mkdir(parents=True, exist_ok=True)
-    target = thumbs / f"{_safe_fingerprint(fingerprint)}-page.jpg"
+    size = "" if width == THUMBNAIL_WIDTH else f"-{width}"
+    target = thumbs / f"{_safe_fingerprint(fingerprint)}-page{size}.jpg"
     if target.exists():
         return target
     # -singlefile makes pdftoppm write exactly <prefix>.jpg rather than
@@ -335,7 +369,7 @@ def _page_thumbnail(settings: Settings, source: Path, fingerprint: str) -> Path 
     prefix = target.with_suffix("")
     command = [
         "pdftoppm", "-jpeg", "-r", "72", "-f", "1", "-l", "1",
-        "-scale-to", str(THUMBNAIL_WIDTH), "-singlefile", str(source), str(prefix),
+        "-scale-to", str(width), "-singlefile", str(source), str(prefix),
     ]
     try:
         result = subprocess.run(  # noqa: S603 - fixed argv, no shell
@@ -350,7 +384,9 @@ def _page_thumbnail(settings: Settings, source: Path, fingerprint: str) -> Path 
     return target
 
 
-def _render_thumbnail(source: Path, target: Path, kind: str, settings: Settings) -> bool:
+def _render_thumbnail(
+    source: Path, target: Path, kind: str, settings: Settings, width: int = THUMBNAIL_WIDTH
+) -> bool:
     """Scale `source` down into `target` with ffmpeg. False if that is not possible.
 
     Never upscales, and keeps dimensions even so the JPEG encoder is happy.
@@ -359,7 +395,7 @@ def _render_thumbnail(source: Path, target: Path, kind: str, settings: Settings)
     """
     if shutil.which("ffmpeg") is None:
         return False
-    scale = f"scale='min({THUMBNAIL_WIDTH},iw)':-2"
+    scale = f"scale='min({width},iw)':-2"
     command = ["ffmpeg", "-y", "-loglevel", "error"]
     if kind == "video":
         # A frame from a little way in; frame zero is often black.

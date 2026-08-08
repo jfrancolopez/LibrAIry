@@ -851,9 +851,15 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         return FileResponse(path, media_type=media_type)
 
     @app.get("/preview/items/{item_id}/thumb")
-    def preview_thumb(item_id: int) -> FileResponse:
+    def preview_thumb(item_id: int, size: str = "") -> FileResponse:
+        """The row-sized render, or `?size=large` for the fullscreen viewer.
+
+        `size` is a word, not a number: `thumbnail_for_item` looks it up in a
+        table of the two sizes that exist, so this cannot be talked into
+        rendering an arbitrary one.
+        """
         try:
-            path = thumbnail_for_item(conn, settings, item_id)
+            path = thumbnail_for_item(conn, settings, item_id, size=size)
         except PreviewError as exc:
             raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
         return FileResponse(
