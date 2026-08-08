@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 from configparser import ConfigParser
 from dataclasses import dataclass
@@ -14,12 +15,9 @@ from librairy.planner import utc_now
 from librairy.taxonomy import CATEGORIES
 from librairy.tools.rclone import RcloneStatus, check_command, copy_command, rclone_status, run
 
+LOGGER = logging.getLogger(__name__)
+
 MAX_BACKUP_ATTEMPTS = 3
-
-
-@dataclass(frozen=True)
-class BackupQueueResult:
-    queued: int
 
 
 @dataclass(frozen=True)
@@ -28,6 +26,8 @@ class BackupRunSummary:
     failed: int = 0
     paused: bool = False
     warning: str = ""
+    #  Whether the index went up with the files this time.
+    snapshot: bool = False
 
 
 # The schedule was stored and never read: the worker drained the queue on
@@ -260,35 +260,6 @@ def enqueue_backup_item(
     return cursor.rowcount == 1
 
 
-def enqueue_plan_outputs(
-    conn: sqlite3.Connection,
-    settings: Settings,
-    plan_id: str,
-) -> BackupQueueResult:
-    queued = 0
-    rows = conn.execute(
-        """
-        SELECT op.item_id, op.final_relpath, op.src_fingerprint
-        FROM plan_ops op
-        WHERE op.plan_id=?
-          AND op.dest_root='library'
-          AND op.result IN ('done','renamed_collision')
-          AND op.final_relpath IS NOT NULL
-        """,
-        (plan_id,),
-    ).fetchall()
-    for row in rows:
-        if enqueue_backup_item(
-            conn,
-            settings,
-            item_id=row["item_id"],
-            relpath=row["final_relpath"],
-            fingerprint=row["src_fingerprint"],
-        ):
-            queued += 1
-    return BackupQueueResult(queued)
-
-
 def run_backup_once(
     conn: sqlite3.Connection,
     settings: Settings,
@@ -313,7 +284,57 @@ def run_backup_once(
             copied += 1
         else:
             failed += 1
-    return BackupRunSummary(copied=copied, failed=failed)
+    return BackupRunSummary(
+        copied=copied,
+        failed=failed,
+        snapshot=_copy_snapshot(conn, settings) if copied else False,
+    )
+
+
+#  Where the index lands on the remote. Leading underscore so it sorts away
+#  from the library's own folders, the same convention quarantine's delete pile
+#  uses.
+SNAPSHOT_REMOTE_RELPATH = "_librairy/librairy.db"
+
+
+def _copy_snapshot(conn: sqlite3.Connection, settings: Settings) -> bool:
+    """Send a consistent copy of the index up with the files. Never raises.
+
+    `snapshot_database` was written, tested, given a default-on setting, a
+    documented environment variable and a checkbox reading "Include SQLite
+    snapshot" — and never called by anything. So every backup ever taken
+    contained the files and not the index: restore onto a new machine and you
+    have your library and no history, no undo journal, no quarantine records
+    and no record of what came from where. The one thing a backup is for is
+    the case where the original is gone.
+
+    Only when files actually moved. The worker polls on a timer, and
+    re-uploading the database every poll to say nothing changed is how you
+    make somebody's metered connection hate this feature.
+    """
+    if not settings.backup_include_db_snapshot:
+        return False
+    staging = settings.appdata_dir / "backup" / "librairy.db"
+    try:
+        snapshot_database(settings, staging)
+        remote = _remote_path(settings.backup_remote, SNAPSHOT_REMOTE_RELPATH)
+        copy = run(
+            copy_command(
+                rclone_config_path(settings),
+                staging,
+                remote,
+                settings.backup_bandwidth_limit,
+            )
+        )
+    except (OSError, sqlite3.Error) as exc:
+        LOGGER.warning("index snapshot failed: %s", exc)
+        return False
+    finally:
+        staging.unlink(missing_ok=True)
+    if copy.returncode != 0:
+        LOGGER.warning("index snapshot upload failed: %s", copy.stderr.strip()[:200])
+        return False
+    return True
 
 
 def _copy_and_verify(conn: sqlite3.Connection, settings: Settings, row: sqlite3.Row) -> bool:

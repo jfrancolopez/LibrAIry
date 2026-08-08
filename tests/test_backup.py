@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 from subprocess import CompletedProcess
 
@@ -170,7 +171,10 @@ def test_backup_runner_copies_verifies_and_marks_done(tmp_path: Path, monkeypatc
     assert row["state"] == "done"
     assert row["attempts"] == 0
     assert row["last_error"] is None
-    assert [command[1] for command in commands] == ["copy", "check"]
+    # The third is the index going up behind the files — see the snapshot
+    # tests below for why that is not optional.
+    assert [command[1] for command in commands] == ["copy", "check", "copy"]
+    assert summary.snapshot is True
 
 
 def test_backup_runner_retries_then_stops_after_failures(tmp_path: Path, monkeypatch) -> None:
@@ -328,3 +332,128 @@ def test_category_sizes_report_what_each_choice_costs(tmp_path: Path) -> None:
     # Every category is listed, including the empty ones you might file into later.
     assert set(sizes) == set(CATEGORIES)
     assert sizes["movies"].files == 0
+
+
+def _queued_backup(tmp_path: Path, **overrides):
+    """One library file, queued, with a working rclone remote."""
+    settings = settings_for(
+        tmp_path, BACKUP_ENABLED=True, BACKUP_REMOTE="remote:library", **overrides
+    )
+    settings.library_dir.mkdir(parents=True, exist_ok=True)
+    config = settings.appdata_dir / "rclone" / "rclone.conf"
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text("[remote]\n", encoding="utf-8")
+    source = settings.library_dir / "Documents/a.txt"
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_text("a", encoding="utf-8")
+    conn = connect(settings)
+    conn.execute(
+        """
+        INSERT INTO items(
+          id, root, relpath, size, mtime_ns, fingerprint, first_seen_at, last_seen_at
+        )
+        VALUES (1, 'library', 'Documents/a.txt', 1, 1, 'fp', 'now', 'now')
+        """
+    )
+    enqueue_backup_item(conn, settings, item_id=1, relpath="Documents/a.txt", fingerprint="fp")
+    return conn, settings
+
+
+def _recording_rclone(monkeypatch, commands: list, returncode: int = 0):
+    monkeypatch.setattr("librairy.backup.rclone_status", lambda path: AvailableStatus())
+
+    def fake_run(command: list[str]):
+        commands.append(command)
+        return CompletedProcess(command, returncode, stdout="ok", stderr="nope")
+
+    monkeypatch.setattr("librairy.backup.run", fake_run)
+
+
+def test_the_index_goes_up_with_the_files(tmp_path: Path, monkeypatch) -> None:
+    """snapshot_database was written, tested, given a default-on setting, a
+    documented environment variable and a checkbox reading "Include SQLite
+    snapshot" — and called by nothing. Every backup ever taken held the files
+    and not the index, so restoring onto a new machine gave you a library with
+    no history, no undo journal and no quarantine records. The one case a
+    backup exists for is the one where the original is gone.
+    """
+    conn, settings = _queued_backup(tmp_path)
+    commands: list[list[str]] = []
+    _recording_rclone(monkeypatch, commands)
+
+    summary = run_backup_once(conn, settings)
+
+    assert summary.snapshot is True
+    uploads = [c for c in commands if c[1] == "copy"]
+    assert any("_librairy/librairy.db" in " ".join(c) for c in uploads)
+
+
+def test_the_snapshot_is_a_real_readable_database(tmp_path: Path, monkeypatch) -> None:
+    """Copied with sqlite's own backup API, so it is consistent even though
+    the worker is writing to the live file at the time."""
+    conn, settings = _queued_backup(tmp_path)
+    captured: dict = {}
+
+    monkeypatch.setattr("librairy.backup.rclone_status", lambda path: AvailableStatus())
+
+    def fake_run(command: list[str]):
+        if command[1] == "copy" and "librairy.db" in " ".join(command):
+            staged = Path(command[2])
+            captured["exists"] = staged.exists()
+            snapshot = sqlite3.connect(staged)
+            captured["items"] = snapshot.execute("SELECT COUNT(*) FROM items").fetchone()[0]
+            snapshot.close()
+        return CompletedProcess(command, 0, stdout="ok", stderr="")
+
+    monkeypatch.setattr("librairy.backup.run", fake_run)
+
+    run_backup_once(conn, settings)
+
+    assert captured["exists"] is True
+    assert captured["items"] == 1, "the snapshot has the rows the live index has"
+    staging = settings.appdata_dir / "backup" / "librairy.db"
+    assert not staging.exists(), "and it does not outlive the upload"
+
+
+def test_turning_the_snapshot_off_turns_it_off(tmp_path: Path, monkeypatch) -> None:
+    conn, settings = _queued_backup(tmp_path, BACKUP_INCLUDE_DB_SNAPSHOT=False)
+    commands: list[list[str]] = []
+    _recording_rclone(monkeypatch, commands)
+
+    summary = run_backup_once(conn, settings)
+
+    assert summary.copied == 1
+    assert summary.snapshot is False
+    assert not any("librairy.db" in " ".join(c) for c in commands)
+
+
+def test_an_idle_run_does_not_re_upload_the_index(tmp_path: Path, monkeypatch) -> None:
+    """The worker polls on a timer. Sending the database every poll to say
+    nothing changed is how you make a metered connection hate this."""
+    conn, settings = _queued_backup(tmp_path)
+    commands: list[list[str]] = []
+    _recording_rclone(monkeypatch, commands)
+    run_backup_once(conn, settings)
+    commands.clear()
+
+    summary = run_backup_once(conn, settings)
+
+    assert summary.copied == 0
+    assert summary.snapshot is False
+    assert commands == []
+
+
+def test_a_failed_snapshot_does_not_fail_the_backup(tmp_path: Path, monkeypatch) -> None:
+    conn, settings = _queued_backup(tmp_path)
+    monkeypatch.setattr("librairy.backup.rclone_status", lambda path: AvailableStatus())
+
+    def fake_run(command: list[str]):
+        ok = 1 if "librairy.db" in " ".join(command) else 0
+        return CompletedProcess(command, ok, stdout="", stderr="remote is full")
+
+    monkeypatch.setattr("librairy.backup.run", fake_run)
+
+    summary = run_backup_once(conn, settings)
+
+    assert summary.copied == 1, "the files still went up"
+    assert summary.snapshot is False

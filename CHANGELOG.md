@@ -33,6 +33,41 @@ panel at a real library and reading what it said.
   default sort — whose premise is "keeps albums and seasons together" — put
   everything in Ungrouped.
 
+### Fixed — a backup that did not contain the index
+
+- **`BACKUP_INCLUDE_DB_SNAPSHOT` did nothing.** `snapshot_database` was written,
+  tested, given a default-on setting, a documented environment variable and a
+  checkbox reading "Include SQLite snapshot" — and called by nothing. Every
+  backup ever taken held the files and not the index, so restoring onto a new
+  machine gave you a library with no history, no undo journal, no quarantine
+  records and no record of where anything came from. The one case a backup
+  exists for is the one where the original is gone. The index now goes up to
+  `_librairy/librairy.db` behind the files, on runs that actually copied
+  something — the worker polls on a timer, and re-sending the database every
+  poll to say nothing changed is not a thing to do to a metered connection.
+- Found by auditing every function in `src/` for callers, after `group_proposals`
+  turned out to have sat dead for seven phases. Ten had none; this was the one
+  that mattered. `with_dest_base` and `enqueue_plan_outputs` were deleted — dead
+  code that looks like a feature is exactly how the first one hid.
+
+### Fixed — home videos
+
+- **A clip off a phone is no longer looked up as a film.** Seventeen `.MOV`
+  files — the largest group of unfiled items in a real inbox — were being handed
+  to TMDB as titles. A UUID matches nothing, so they came back at 0.65, under
+  the threshold, proposing to file a home video as
+  `Movies/General/255Bea56-53F5-4D71-B0F4-A2F78Cfd5667-(0)/`. `IMG_0585.MOV` and
+  `IMG_0585.jpeg` left the same phone a second apart, and only one of them was
+  going to Photos. A video named after a camera prefix or a UUID is now filed
+  exactly like a photo. A bare number is deliberately not enough — `1917.mp4` is
+  a film, and TMDB is the thing that can say so.
+- **A UUID is no longer treated as the name of anything.** An iMessage export
+  gave every attachment a folder named after one, which was appended to each
+  filename (`IMG_1423-0373923B-123F-4ABF-9B6E-2229413CEED4.jpeg`) *and* used as
+  the destination folder (`Photos/Unknown/01B583D3-1D28-…/`). The grouping had
+  learned to ignore that noise; the naming and the destination had not. One
+  `is_noise` in `naming.py` now answers for all three.
+
 ### Added — Review
 
 - **Compare duplicates.** Any row that may already be in your library opens the

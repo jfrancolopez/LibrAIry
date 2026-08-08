@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 
 from librairy.classify.hashtags import extract_hashtags
 from librairy.naming import is_noise
@@ -137,9 +137,3 @@ def _parent(relpath: str | None) -> str | None:
     if relpath is None or "/" not in relpath:
         return None
     return relpath.rsplit("/", 1)[0]
-
-
-def with_dest_base(proposal: GroupInput, dest_base: str) -> GroupInput:
-    if proposal.dest_relpath is None:
-        return proposal
-    return replace(proposal, dest_relpath=f"{dest_base}/{proposal.clean_name}")
