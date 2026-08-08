@@ -290,3 +290,24 @@ def test_a_rejected_duplicate_is_not_staged_again_next_cycle(tmp_path: Path) -> 
         conn.execute("SELECT status FROM proposals WHERE id=?", (proposal_id,)).fetchone()[0]
         == "rejected"
     )
+
+
+def test_the_worker_keeps_the_thumbnail_cache_within_its_budget(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """prune_cache was written with a byte budget and never called, so the
+    thumbnail cache only ever grew: one JPEG per image and per video ever
+    previewed, kept forever on the same volume as the index."""
+    settings = settings_for(tmp_path)
+    thumbs = settings.appdata_dir / "thumbs"
+    thumbs.mkdir(parents=True, exist_ok=True)
+    for index in range(6):
+        (thumbs / f"{index}.jpg").write_bytes(b"x" * 1000)
+    monkeypatch.setattr(worker_module, "THUMBNAIL_CACHE_BYTES", 2500)
+    conn = connect(settings)
+
+    run_once(conn, settings)
+
+    remaining = sorted(path.name for path in thumbs.glob("*.jpg"))
+    assert len(remaining) <= 3, remaining
+    assert sum(path.stat().st_size for path in thumbs.glob("*.jpg")) <= 2500

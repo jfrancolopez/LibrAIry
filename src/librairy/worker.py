@@ -35,9 +35,14 @@ from librairy.proposals import upsert_proposal
 from librairy.quarantine import quarantine_operation
 from librairy.scanner import scan_root
 from librairy.settings_service import effective_settings
+from librairy.web.thumbs import prune_cache
 
 IDLE_SLEEP_SECONDS = 5.0
 BUSY_SLEEP_SECONDS = 0.5
+#  What the thumbnail cache is allowed to occupy. Each entry is a 320px JPEG,
+#  so this is room for tens of thousands of them and still small beside any
+#  library worth organising. Regenerating one costs a single ffmpeg call.
+THUMBNAIL_CACHE_BYTES = 512 * 1024 * 1024
 MAX_SLEEP_SECONDS = 60.0
 # How often, while idle, to check whether the inbox changed under us.
 INBOX_POLL_SECONDS = 2.0
@@ -106,6 +111,12 @@ class Worker:
             analysis = analyze_items(self.conn, settings, settings.batch_size)
             _set_worker_state(self.conn, "current_phase", "content")
             content = process_content_extractions(self.conn, settings, settings.batch_size)
+            # prune_cache was written with a byte budget and never called by
+            # anything, so the thumbnail cache only ever grew: one JPEG per
+            # image and per video ever previewed, kept forever on the same
+            # volume as the index. Oldest-first, and it only ever deletes
+            # files LibrAIry generated under appdata/thumbs.
+            prune_cache(settings, THUMBNAIL_CACHE_BYTES)
             _set_worker_state(self.conn, "current_phase", "backup")
             # The schedule used to be stored and never read, so every cycle
             # drained the queue whatever the setting said.

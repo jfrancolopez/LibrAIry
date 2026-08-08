@@ -45,10 +45,16 @@ panel at a real library and reading what it said.
   `_librairy/librairy.db` behind the files, on runs that actually copied
   something — the worker polls on a timer, and re-sending the database every
   poll to say nothing changed is not a thing to do to a metered connection.
+- **The thumbnail cache had no upper bound.** `prune_cache` was written with a
+  byte budget and never called, so one JPEG per image and per video ever
+  previewed accumulated forever, on the same volume as the index. The worker now
+  holds it to 512 MB, oldest first; it only ever removes files LibrAIry
+  generated under `appdata/thumbs`, and regenerating one costs a single ffmpeg
+  call.
 - Found by auditing every function in `src/` for callers, after `group_proposals`
-  turned out to have sat dead for seven phases. Ten had none; this was the one
-  that mattered. `with_dest_base` and `enqueue_plan_outputs` were deleted — dead
-  code that looks like a feature is exactly how the first one hid.
+  turned out to have sat dead for seven phases. Ten had none. `with_dest_base`
+  and `enqueue_plan_outputs` were deleted — dead code that looks like a feature
+  is exactly how the first one hid.
 
 ### Fixed — "fits your existing layout" had never once fitted anything
 
