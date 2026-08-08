@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
@@ -31,17 +32,17 @@ def rebuild_pattern_map(conn: sqlite3.Connection) -> None:
     ).fetchall()
     seen: set[tuple[str, str]] = set()
     for row in rows:
-        pattern = _pattern_from_relpath(row["relpath"])
-        if pattern is None or (pattern.kind, pattern.key) in seen:
-            continue
-        seen.add((pattern.kind, pattern.key))
-        conn.execute(
-            """
-            INSERT INTO library_patterns(kind, key, dest_base, updated_at)
-            VALUES (?, ?, ?, ?)
-            """,
-            (pattern.kind, pattern.key, pattern.dest_base, utc_now()),
-        )
+        for pattern in _patterns_from_relpath(row["relpath"]):
+            if (pattern.kind, pattern.key) in seen:
+                continue
+            seen.add((pattern.kind, pattern.key))
+            conn.execute(
+                """
+                INSERT INTO library_patterns(kind, key, dest_base, updated_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (pattern.kind, pattern.key, pattern.dest_base, utc_now()),
+            )
 
 
 def find_pattern(conn: sqlite3.Connection, kind: str, key: str) -> LibraryPattern | None:
@@ -55,20 +56,64 @@ def find_pattern(conn: sqlite3.Connection, kind: str, key: str) -> LibraryPatter
     return LibraryPattern(row["kind"], row["key"], row["dest_base"])
 
 
+#  What the templates call the thing that owns a folder, per category.
+PATTERN_KINDS = {"music": "artist", "shows": "show", "movies": "movie"}
+
+
+def pattern_key(category: str, fields: dict[str, object]) -> tuple[str, str] | None:
+    """The (kind, name) this file would be filed under, or None.
+
+    Movies are keyed on the folder name the template builds — `The Matrix
+    (1999)` — because that is the folder an existing library actually has.
+    """
+    kind = PATTERN_KINDS.get(category)
+    if kind is None:
+        return None
+    if kind == "movie":
+        title = str(fields.get("title") or "").strip()
+        year = fields.get("year") or 0
+        name = f"{title} ({year})" if title and year else title
+    else:
+        name = str(fields.get(kind) or "").strip()
+    return (kind, name) if name else None
+
+
 def apply_library_pattern(
     conn: sqlite3.Connection,
     *,
     kind: str,
     key: str,
-    clean_name: str,
+    relpath: str,
 ) -> tuple[str | None, EvidenceEntry | None]:
+    """Re-root `relpath` onto the folder your library already uses, if it has one.
+
+    Only the part of the path *above and including* the artist/show/movie is
+    replaced; everything below it is kept. This used to return
+    `f"{dest_base}/{clean_name}"`, which threw away the album:
+    `Music/Rock/Queen/A-Night-at-the-Opera/01-track.mp3` came back as
+    `Music/Queen/01-track.mp3`, flattening an album into an artist folder. It
+    was never called by anything, so nobody found out.
+
+    Returns `(None, None)` when there is no matching folder, or when the
+    rendered path has no segment for the key — in which case the template's
+    own answer stands.
+    """
     pattern = find_pattern(conn, kind, key)
     if pattern is None:
         return None, None
-    return (
-        f"{pattern.dest_base}/{clean_name}",
-        EvidenceEntry("library-pattern", "dest_base", pattern.dest_base, 0.9),
-    )
+    target = _normalize(key)
+    parts = relpath.split("/")
+    for index, part in enumerate(parts[:-1]):
+        if _normalize(part) != target:
+            continue
+        rebased = "/".join([pattern.dest_base, *parts[index + 1 :]])
+        if rebased == relpath:
+            return None, None
+        return (
+            rebased,
+            EvidenceEntry("library-pattern", "dest_base", pattern.dest_base, 0.9),
+        )
+    return None, None
 
 
 def _ensure_pattern_table(conn: sqlite3.Connection) -> None:
@@ -85,18 +130,43 @@ def _ensure_pattern_table(conn: sqlite3.Connection) -> None:
     )
 
 
-def _pattern_from_relpath(relpath: str) -> LibraryPattern | None:
+TOP_LEVEL_KINDS = {"Music": "artist", "Shows": "show", "Movies": "movie"}
+#  A season folder is not the name of a show. Without this, a conventional
+#  Shows/Breaking Bad/Season 01/ library registers "season01" as a show.
+_SEASON = re.compile(r"(?i)^season\s*\d+$")
+#  How deep an owner folder can sit under its top level: directly under it in a
+#  conventional library, one lower in a genre-first one. Stopping at two is
+#  what keeps an album from being registered as an artist.
+MAX_PATTERN_DEPTH = 2
+
+
+def _patterns_from_relpath(relpath: str) -> list[LibraryPattern]:
+    """Every folder in this path that could be an artist, a show or a film.
+
+    Both candidate depths are recorded rather than guessed between, because
+    there is no way to tell `Music/Queen/Album/` from `Music/Rock/Queen/` by
+    shape alone — and the old code guessed, always picking depth 1, so every
+    genre-first library registered its *genres* as artist names. The lookup is
+    by the real artist name, so recording both and letting the name decide is
+    both simpler and right.
+    """
     parts = Path(relpath).parts
-    if len(parts) >= 3 and parts[0] == "Music":
-        artist = parts[1]
-        return LibraryPattern("artist", _normalize(artist), f"Music/{artist}")
-    if len(parts) >= 3 and parts[0] == "Shows":
-        show = parts[1]
-        return LibraryPattern("show", _normalize(show), f"Shows/{show}")
-    if len(parts) >= 2 and parts[0] == "Movies":
-        movie = parts[1]
-        return LibraryPattern("movie", _normalize(movie), f"Movies/{movie}")
-    return None
+    kind = TOP_LEVEL_KINDS.get(parts[0]) if parts else None
+    if kind is None:
+        return []
+    patterns = []
+    for depth in range(1, MAX_PATTERN_DEPTH + 1):
+        # A folder only owns something if there is a file below it, and the
+        # last component is the filename.
+        if depth > len(parts) - 2:
+            break
+        name = parts[depth]
+        if _SEASON.match(name):
+            continue
+        patterns.append(
+            LibraryPattern(kind, _normalize(name), "/".join(parts[: depth + 1]))
+        )
+    return patterns
 
 
 def _normalize(value: str) -> str:

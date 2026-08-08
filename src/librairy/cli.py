@@ -19,6 +19,7 @@ from librairy.content.extract import rebuild_content_index
 from librairy.db import connect, database_path
 from librairy.executor import execute_plan
 from librairy.history import list_history, undo_op, undo_plan
+from librairy.indexer import index_library
 from librairy.logging import configure_logging
 from librairy.models import Item
 from librairy.planner import (
@@ -157,6 +158,12 @@ def main(argv: list[str] | None = None) -> int:
 def _dispatch(args: argparse.Namespace, conn: sqlite3.Connection, settings: Settings):
     if args.command == "scan":
         root_path = getattr(settings, f"{args.root}_dir")
+        # Scanning the library is also how LibrAIry learns the layout you
+        # already keep — index_library builds the folder map that lets a new
+        # Queen record land in the Music/Queen you already have. Nothing ever
+        # called it, so the map was permanently empty.
+        if args.root == "library":
+            return asdict(index_library(conn, settings))
         summary = scan_root(conn, args.root, root_path, settings)
         return asdict(summary)
     if args.command == "analyze":

@@ -14,6 +14,7 @@ from librairy.classify.images import enrich_with_vision
 from librairy.classify.music import AUDIO_EXTS, classify_music
 from librairy.classify.video import VIDEO_EXTS, classify_video
 from librairy.config import Settings
+from librairy.indexer import apply_library_pattern, pattern_key
 from librairy.lifecycle import transition_item
 from librairy.models import EvidenceEntry, Item
 from librairy.proposals import upsert_proposal
@@ -233,7 +234,39 @@ def _with_runtime_destination(conn: sqlite3.Connection, settings: Settings, resu
     rendered = render_destination(
         result.category, result.fields, library_root=settings.library_dir, conn=conn
     )
-    return replace(result, dest_relpath=rendered.relpath, reason=rendered.reason)
+    result = replace(result, dest_relpath=rendered.relpath, reason=rendered.reason)
+    return _fitted_to_library(conn, result)
+
+
+def _fitted_to_library(conn: sqlite3.Connection, result):
+    """Prefer the folder your library already keeps this artist or show in.
+
+    If you have `Music/Queen/`, a new Queen record belongs there rather than
+    in whatever a template would invent — that is the whole promise of "fits
+    your existing layout", and the evidence line says so on the row.
+
+    `apply_library_pattern` and the map it reads were written in phase 2 and
+    neither end was ever called, so the promise had never once been kept. The
+    map is empty until you scan your library, and an empty map changes
+    nothing.
+    """
+    if not result.dest_relpath:
+        return result
+    key = pattern_key(result.category, result.fields)
+    if key is None:
+        return result
+    kind, name = key
+    rebased, evidence = apply_library_pattern(
+        conn, kind=kind, key=name, relpath=result.dest_relpath
+    )
+    if rebased is None or evidence is None:
+        return result
+    return replace(
+        result,
+        dest_relpath=rebased,
+        evidence=(*result.evidence, evidence),
+        reason="fits your existing library layout",
+    )
 
 
 def _item_from_row(row: sqlite3.Row) -> Item:

@@ -149,6 +149,24 @@ the other way: it hands the file back to the worker to pick a new winner. Use
 *Other options* to choose an answer yourself, and *Re-analyse* to let LibrAIry
 choose again.
 
+### Fitting your existing layout
+
+Run this once, and again whenever your library changes shape:
+
+```bash
+docker exec librairy librairy scan --root library
+```
+
+It reads your library without writing to it and learns which folder you already
+keep each artist, show and film in. After that, a new record by an artist you
+already have joins that folder instead of the one a template would invent —
+if your library is `Music/Pop/Abba/` and the genre-first template would produce
+`Music/Disco/Abba/`, the proposal is for `Music/Pop/Abba/`, and *Why* says
+**Fits your existing layout**. The album underneath is kept.
+
+An artist with no folder of their own is left to the template. Until you run
+that scan the map is empty and nothing changes.
+
 ### Image understanding
 
 Off until you switch it on, in **Settings → Image understanding**. Once it is

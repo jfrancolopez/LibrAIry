@@ -50,6 +50,27 @@ panel at a real library and reading what it said.
   that mattered. `with_dest_base` and `enqueue_plan_outputs` were deleted — dead
   code that looks like a feature is exactly how the first one hid.
 
+### Fixed — "fits your existing layout" had never once fitted anything
+
+- **Both halves of the library-pattern feature were dead.** `index_library`
+  builds the map of folders you already use; `apply_library_pattern` files a new
+  record into them. Neither had a caller, so the `library-pattern` evidence
+  source that Review renders as *"Fits your existing layout"* could never
+  appear. `librairy scan --root library` now builds the map, and classification
+  consults it.
+- It was also **wrong in two ways** that only running it would show. It read
+  `parts[1]` as the artist, so a genre-first library — `Music/Pop/Abba/` —
+  registered exactly one artist called "Pop" and never Abba; both candidate
+  depths are recorded now and the lookup by real name picks the right one. And
+  it returned `dest_base + clean_name`, flattening the album:
+  `Music/Rock/Queen/A-Night-at-the-Opera/01.mp3` came back as
+  `Music/Queen/01.mp3`. Only the part above the artist is replaced now.
+- Measured on a real 140-file library: 29 artists learned where the old code
+  would have learned one genre. A new Abba record goes to the `Music/Pop/Abba/`
+  that exists rather than starting a second `Music/Disco/Abba/`. An artist with
+  no existing folder is untouched, and the map is empty until you scan your
+  library, so nothing changes for anyone who has not.
+
 ### Fixed — home videos
 
 - **A clip off a phone is no longer looked up as a film.** Seventeen `.MOV`
