@@ -309,3 +309,34 @@ def test_a_uuid_folder_is_not_a_photo_event(tmp_path: Path) -> None:
     assert result.fields["event"] == "Unsorted"
     assert "01B583D3" not in (result.dest_relpath or "")
     assert "01B583D3" not in result.clean_name
+
+
+def test_a_phone_clip_is_filed_with_the_photos_not_as_a_film(tmp_path: Path) -> None:
+    """Seventeen .MOV files off a phone were being handed to TMDB as film
+    titles. A UUID matches nothing, so they came back at 0.65 with no
+    destination, proposing Movies/General/255Bea56-53F5-…-(0)/.
+
+    IMG_0585.MOV and IMG_0585.jpeg left the same phone a second apart.
+    """
+    settings = settings_for(tmp_path)
+    folder = tmp_path / "inbox" / "Holiday 2024"
+    folder.mkdir(parents=True)
+    for name in ("IMG_0585.MOV", "255E8722-94DB-47BE-8FE5-DB95F616E86E.MOV"):
+        (folder / name).write_bytes(b"x")
+
+    for name in ("IMG_0585.MOV", "255E8722-94DB-47BE-8FE5-DB95F616E86E.MOV"):
+        result = classify_path(folder / name, settings)
+        assert result.category == "photos", name
+        assert result.confidence == 0.85
+        assert result.dest_relpath.startswith("Photos/2024/Holiday-2024/")
+
+
+def test_a_real_film_is_still_left_to_the_video_classifier(tmp_path: Path) -> None:
+    """A bare number is deliberately not enough: 1917.mp4 is a film, and TMDB
+    is the thing that can say so."""
+    settings = settings_for(tmp_path)
+    folder = tmp_path / "inbox"
+    folder.mkdir(parents=True, exist_ok=True)
+    for name in ("1917.mp4", "The.Matrix.1999.1080p.mkv", "holiday-in-rome.mp4"):
+        (folder / name).write_bytes(b"x")
+        assert classify_path(folder / name, settings) is None, name

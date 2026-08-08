@@ -8,7 +8,7 @@ from pathlib import Path
 from librairy.classify.photo_names import photo_name
 from librairy.config import Settings
 from librairy.models import EvidenceEntry
-from librairy.naming import is_noise
+from librairy.naming import EMBEDDED_UUID_RE, is_noise
 from librairy.taxonomy import RenderResult, clean_name_from_title, render_destination
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".heic", ".webp", ".bmp", ".tiff", ".avif"}
@@ -146,6 +146,8 @@ def _classify_file(path: Path, settings: Settings) -> HeuristicResult | None:
         )
     if suffix in IMAGE_EXTS:
         return _image_file(path, settings, suffix, stem)
+    if suffix in HOME_VIDEO_EXTS and _is_home_video(stem):
+        return _home_video(path, settings, suffix, stem)
     if suffix in COMPANION_EXTS and _has_media_sibling(path):
         # Below the threshold on purpose: v1 moves files one at a time, so
         # filing a subtitle on its own would strand it away from its video.
@@ -230,6 +232,48 @@ def _image_file(
         {"year": year, "event": event, "clean_name": named.name},
         settings,
         named.reason or detail,
+    )
+
+
+# A clip off a phone or a camera is the same kind of thing as a photo from the
+# same afternoon, and belongs in the same folder. Only the containers phones
+# actually write; a .mkv or an .avi is somebody's film collection.
+HOME_VIDEO_EXTS = {".mov", ".mp4", ".m4v", ".3gp"}
+
+
+def _is_home_video(stem: str) -> bool:
+    """Whether this video is somebody's clip rather than a film to look up.
+
+    Seventeen .MOV files off a phone were being handed to TMDB as film titles,
+    and since a UUID matches nothing they came back at 0.65 with no
+    destination — proposing to file a home video as
+    `Movies/General/255Bea56-53F5-4D71-B0F4-A2F78Cfd5667-(0)/`.
+
+    A bare number is deliberately *not* enough on its own: `1917.mp4` is a
+    film, and TMDB can say so. It takes a camera prefix or a UUID.
+    """
+    if CAMERA_RE.match(stem):
+        return True
+    return stem != EMBEDDED_UUID_RE.sub(" ", stem) and is_noise(stem)
+
+
+def _home_video(path: Path, settings: Settings, suffix: str, stem: str) -> HeuristicResult:
+    """Filed exactly like a photo, because that is what it sits beside.
+
+    `IMG_0585.MOV` and `IMG_0585.jpeg` came out of the same phone a second
+    apart. Sending one to Photos/2024/ and the other to a film catalogue is
+    the wrong answer twice.
+    """
+    year = _year_from_name(stem) or _year_from_name(path.parent.name) or "Unknown"
+    event = _event_from_parent(path, settings)
+    named = photo_name(stem, suffix, event=event)
+    return _result(
+        "photos",
+        named.name,
+        0.85,
+        {"year": year, "event": event, "clean_name": named.name},
+        settings,
+        named.reason or "clip from a phone or camera, not a film",
     )
 
 
