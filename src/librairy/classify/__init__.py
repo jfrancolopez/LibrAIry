@@ -6,7 +6,7 @@ from pathlib import Path
 
 from librairy.ai.orchestrator import AIBatchState, apply_ai_if_needed
 from librairy.catalogs import catalog_enabled
-from librairy.classify.artwork import associate_artwork
+from librairy.classify.companions import associate_companions, sidecar_kind
 from librairy.classify.disc import classify_disc
 from librairy.classify.documents import classify_document_like
 from librairy.classify.grouping import GroupInput, group_proposals
@@ -112,7 +112,7 @@ def analyze_items(
     # After the loop, not inside it: the cover and the tracks are separate
     # items and either may be classified first, so an album's destination is
     # only reliably known once every file in the batch has one.
-    artwork = associate_artwork(conn, settings)
+    artwork = associate_companions(conn, settings)
     proposed += artwork.associated
     pending += artwork.already_present
     return AnalyzeSummary(len(items), proposed, pending, requeued)
@@ -230,6 +230,15 @@ def _enriched(
     is what keeps the names inside a VIDEO_TS untouched.
     """
     if conn is None or item is None or ai_state is None:
+        return result
+    # A companion file is never asked what it is. The extension already
+    # answered that, and asking anyway is how a .m3u and an .nfo in one folder
+    # came back as confident music by two different invented artists — which
+    # then split the folder's consensus and cost its cover a destination. They
+    # get their identity in the association pass, from the media they describe.
+    # Sidecars only, not artwork: a cover is still an image worth looking at,
+    # and the association pass overrides whatever vision says about it anyway.
+    if sidecar_kind(item.relpath) is not None:
         return result
     result = enrich_with_vision(conn, settings, item, result, ai_state)
     return apply_ai_if_needed(conn, settings, item, result, ai_state)

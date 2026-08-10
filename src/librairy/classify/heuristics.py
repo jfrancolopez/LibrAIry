@@ -148,16 +148,24 @@ def _classify_file(path: Path, settings: Settings) -> HeuristicResult | None:
         return _image_file(path, settings, suffix, stem)
     if suffix in HOME_VIDEO_EXTS and _is_home_video(stem):
         return _home_video(path, settings, suffix, stem)
-    if suffix in COMPANION_EXTS and _has_media_sibling(path):
-        # Below the threshold on purpose: v1 moves files one at a time, so
-        # filing a subtitle on its own would strand it away from its video.
+    if suffix in COMPANION_EXTS:
+        # No sibling test any more. It used to require media in the same folder,
+        # which fails exactly when it matters most: once an album is committed
+        # its tracks are gone and only the .m3u and .nfo are left, so the rule
+        # stopped applying and the AI stepped in and invented a release for
+        # them. The extension is decisive on its own — a .srt is never a film.
+        #
+        # Below the threshold on purpose, so this never files itself. Its
+        # destination comes from the media it describes, in the association
+        # pass; if there is no such media it stays here for the owner to place.
+        beside = " for the media beside it" if _has_media_sibling(path) else ""
         return _result(
             "misc",
-            clean_name_from_title(stem, suffix),
+            path.name,
             0.4,
-            {"clean_name": clean_name_from_title(stem, suffix)},
+            {"clean_name": path.name},
             settings,
-            f"companion file for the media beside it ({path.parent.name})",
+            f"companion file{beside} — it follows what it describes, not its own name",
         )
     if suffix in MODEL_EXTS | PRINT_EXTS:
         project = _project_name_for(path, settings, stem)

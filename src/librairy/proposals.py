@@ -25,6 +25,10 @@ LOCAL_EVIDENCE_SOURCES = frozenset(
         # Not a catalog and not a guess: the file is *named* like cover art and
         # the folder it arrived in was identified as one album or film.
         "artwork",
+        # The same idea for the files that describe media rather than being it
+        # — subtitles, playlists, .nfo. Its own source because Review says
+        # "Companion file", not "Cover art", when it explains one.
+        "companion",
     }
 )
 # Every catalog is a legal evidence source by definition, derived from the

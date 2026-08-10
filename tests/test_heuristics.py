@@ -247,8 +247,18 @@ def test_subtitle_beside_its_video_waits_for_a_human(tmp_path: Path) -> None:
     assert "companion file" in result.evidence[0].detail
 
 
-def test_orphan_subtitle_is_not_treated_as_a_companion(tmp_path: Path) -> None:
-    """Nothing to be a companion to — it falls through to the normal path."""
+def test_an_orphan_subtitle_is_still_a_companion_with_nowhere_to_go(
+    tmp_path: Path,
+) -> None:
+    """This used to return None — "nothing beside it, so the companion rule
+    does not apply" — and falling through to the normal path is precisely how
+    a subtitle reached the AI and came back as a film. The sibling test failed
+    exactly when it mattered most: once a release is committed its media is
+    gone and only the sidecars are left.
+
+    The extension is decisive on its own. It is a companion; it just has no
+    destination yet, which is a question for Review rather than for a model.
+    """
     folder = tmp_path / "Loose"
     folder.mkdir()
     subtitle = folder / "something.srt"
@@ -256,7 +266,16 @@ def test_orphan_subtitle_is_not_treated_as_a_companion(tmp_path: Path) -> None:
 
     result = classify_path(subtitle, settings_for(tmp_path))
 
-    assert result is None, "no media beside it, so no companion rule applies"
+    assert result is not None
+    assert result.category == "misc"
+    assert result.dest_relpath is None, "it must not file itself anywhere"
+    assert result.confidence < 0.5
+    # The evidence carries the explanation — below the threshold the reason is
+    # replaced with "below confidence threshold", and it is the evidence that
+    # Review's Why panel renders anyway.
+    assert any("companion file" in entry.detail for entry in result.evidence)
+    # And the name is left alone, so `.en.forced` and friends survive.
+    assert result.clean_name == "something.srt"
 
 
 def test_print_files_become_projects_named_after_their_folder(tmp_path: Path) -> None:

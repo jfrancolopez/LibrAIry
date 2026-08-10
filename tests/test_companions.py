@@ -6,7 +6,7 @@ import sqlite3
 from pathlib import Path
 
 from librairy.classify import analyze_items
-from librairy.classify.artwork import artwork_stem, associate_artwork
+from librairy.classify.companions import artwork_stem, associate_companions
 from librairy.config import Settings
 from librairy.db import connect
 from librairy.models import EvidenceEntry
@@ -115,7 +115,7 @@ def test_album_cover_joins_the_album_instead_of_the_photographs(tmp_path: Path) 
     )
     propose(conn, cover, category="photos", dest_relpath="Photos/2025/Alicia-Keys/cover-x.jpg")
 
-    summary = associate_artwork(conn, settings)
+    summary = associate_companions(conn, settings)
 
     assert summary.associated == 1
     assert dest_of(conn, cover) == (
@@ -147,7 +147,7 @@ def test_a_movie_poster_joins_the_film_and_is_named_poster(tmp_path: Path) -> No
     )
     propose(conn, art, category="photos", dest_relpath="Photos/Unknown/Unsorted/x.jpg")
 
-    associate_artwork(conn, settings)
+    associate_companions(conn, settings)
 
     assert dest_of(conn, art) == (
         "movies",
@@ -171,7 +171,7 @@ def test_a_photograph_beside_a_video_is_left_alone(tmp_path: Path) -> None:
         dest_relpath="Photos/Unknown/Unsorted/IMG_9323-airport.jpeg",
     )
 
-    summary = associate_artwork(conn, settings)
+    summary = associate_companions(conn, settings)
 
     assert summary.associated == 0
     assert dest_of(conn, photo) == (
@@ -196,7 +196,7 @@ def test_existing_artwork_is_never_overwritten_or_duplicated(tmp_path: Path) -> 
     )
     propose(conn, cover, category="photos", dest_relpath="Photos/2025/Abba/cover-x.jpg")
 
-    summary = associate_artwork(conn, settings)
+    summary = associate_companions(conn, settings)
 
     assert summary.already_present == 1
     assert summary.associated == 0
@@ -219,7 +219,7 @@ def test_two_covers_in_one_folder_do_not_collide(tmp_path: Path) -> None:
     propose(conn, cover, category="photos", dest_relpath="Photos/a.jpg")
     propose(conn, folder, category="photos", dest_relpath="Photos/b.jpg")
 
-    associate_artwork(conn, settings)
+    associate_companions(conn, settings)
 
     # cover.jpg wins because it is first in the conventional order, and the
     # other is left exactly as it was rather than becoming a second cover.
@@ -239,7 +239,7 @@ def test_a_folder_holding_two_albums_gets_no_guess(tmp_path: Path) -> None:
     propose(conn, two, category="music", dest_relpath="Music/Pop/B/Two/b.flac")
     propose(conn, cover, category="photos", dest_relpath="Photos/x.jpg")
 
-    assert associate_artwork(conn, settings).associated == 0
+    assert associate_companions(conn, settings).associated == 0
     assert dest_of(conn, cover)[1] == "Photos/x.jpg"
 
 
@@ -252,7 +252,7 @@ def test_artwork_inside_a_disc_rip_is_never_touched(tmp_path: Path) -> None:
     propose(conn, vob, category="movies", dest_relpath="Movies/My DVD/VIDEO_TS/VTS_01_1.VOB")
     propose(conn, art, category="photos", dest_relpath="Photos/x.jpg")
 
-    assert associate_artwork(conn, settings).associated == 0
+    assert associate_companions(conn, settings).associated == 0
     assert dest_of(conn, art)[1] == "Photos/x.jpg"
 
 
@@ -265,7 +265,7 @@ def test_a_decided_proposal_is_never_repointed(tmp_path: Path) -> None:
     propose(conn, track, category="music", dest_relpath="Music/Pop/Band/Album/01.flac")
     propose(conn, cover, category="photos", dest_relpath="Photos/x.jpg", state="approved")
 
-    assert associate_artwork(conn, settings).associated == 0
+    assert associate_companions(conn, settings).associated == 0
     assert dest_of(conn, cover)[1] == "Photos/x.jpg"
 
 
@@ -285,7 +285,7 @@ def test_artwork_joins_its_album_group_so_review_keeps_them_together(
     conn.execute("UPDATE proposals SET group_id=? WHERE item_id=?", (group_id, track))
     propose(conn, cover, category="photos", dest_relpath="Photos/x.jpg")
 
-    associate_artwork(conn, settings)
+    associate_companions(conn, settings)
 
     row = conn.execute(
         "SELECT group_id FROM proposals WHERE item_id=? AND status != 'superseded'", (cover,)
@@ -325,7 +325,7 @@ def test_a_cover_left_behind_joins_the_album_that_was_already_filed(
     cover = add_item(conn, f"{folder}/cover.jpg")
     propose(conn, cover, category="photos", dest_relpath="Photos/2025/Alicia-Keys/cover-x.jpg")
 
-    assert associate_artwork(conn, settings).associated == 1
+    assert associate_companions(conn, settings).associated == 1
     assert dest_of(conn, cover) == ("music", f"{album}/cover.jpg", "cover.jpg")
 
 
@@ -343,7 +343,7 @@ def test_a_compilation_scattered_across_artists_gets_no_cover(tmp_path: Path) ->
     cover = add_item(conn, f"{folder}/Cover.jpg")
     propose(conn, cover, category="photos", dest_relpath="Photos/2023/VA/Cover-x.jpg")
 
-    assert associate_artwork(conn, settings).associated == 0
+    assert associate_companions(conn, settings).associated == 0
     assert dest_of(conn, cover)[1] == "Photos/2023/VA/Cover-x.jpg"
 
 
@@ -353,7 +353,7 @@ def test_a_folder_that_was_never_filed_anchors_nothing(tmp_path: Path) -> None:
     cover = add_item(conn, "Cracking the Coding Interview/cover.jpg")
     propose(conn, cover, category="misc", dest_relpath=None)
 
-    assert associate_artwork(conn, settings).associated == 0
+    assert associate_companions(conn, settings).associated == 0
     assert dest_of(conn, cover)[1] is None
 
 
@@ -371,7 +371,7 @@ def test_a_destination_folder_that_has_since_vanished_is_not_proposed_into(
     cover = add_item(conn, "Album/cover.jpg")
     propose(conn, cover, category="photos", dest_relpath="Photos/x.jpg")
 
-    assert associate_artwork(conn, settings).associated == 0
+    assert associate_companions(conn, settings).associated == 0
     assert dest_of(conn, cover)[1] == "Photos/x.jpg"
 
 
@@ -384,7 +384,7 @@ def test_a_folder_filed_into_photos_grows_no_cover(tmp_path: Path) -> None:
     cover = add_item(conn, "Holiday/folder.jpg")
     propose(conn, cover, category="photos", dest_relpath="Photos/2024/Holiday/folder.jpg")
 
-    assert associate_artwork(conn, settings).associated == 0
+    assert associate_companions(conn, settings).associated == 0
 
 
 def test_the_whole_pass_runs_inside_analyze_and_never_touches_the_library(
@@ -444,3 +444,238 @@ def test_the_whole_pass_runs_inside_analyze_and_never_touches_the_library(
     assert dest is not None and dest.endswith("/cover.jpg")
     # And it landed beside the track rather than in Photos.
     assert dest.startswith("Music/")
+
+
+# --- sidecars: files that describe media rather than being it ---------------
+
+
+def test_a_playlist_and_an_nfo_are_never_audio_tracks(tmp_path: Path) -> None:
+    """The live bug. `00.Info.m3u` and `00.Info.nfo` came back as confident
+    music by two *different* invented artists — `V.A` and `Various-Artists`."""
+    from librairy.classify.heuristics import classify_path
+
+    settings = settings_for(tmp_path)
+    folder = settings.inbox_dir / "Album"
+    folder.mkdir(parents=True)
+    for name in ("00.Info.m3u", "00.Info.nfo", "01 - Song.flac"):
+        (folder / name).write_bytes(b"x")
+
+    for name in ("00.Info.m3u", "00.Info.nfo"):
+        result = classify_path(folder / name, settings)
+        assert result is not None
+        assert result.category != "music", f"{name} is not a track"
+        assert result.dest_relpath is None, f"{name} must not file itself"
+
+
+def test_a_sidecar_is_never_handed_to_the_ai_to_identify(tmp_path: Path) -> None:
+    """The heuristic already declined at 0.3–0.4. The AI then overrode it at
+    0.85 and invented a release, which is the whole failure."""
+    import librairy.classify as classify
+
+    settings = settings_for(tmp_path)
+    conn = connect(settings)
+    called: list[str] = []
+
+    def spy(conn_, settings_, item, result, state):
+        called.append(item.relpath)
+        return result
+
+    original = classify.apply_ai_if_needed
+    classify.apply_ai_if_needed = spy
+    try:
+        from librairy.models import Item
+
+        for relpath in ("Album/00.Info.nfo", "Album/01 - Song.flac"):
+            item = Item(1, "inbox", relpath, 10, 1, "fp", "discovered", "now", "now", None)
+            classify._enriched(conn, settings, item, classify.AIBatchState({}), _stub_result())
+    finally:
+        classify.apply_ai_if_needed = original
+
+    assert called == ["Album/01 - Song.flac"], "the sidecar must not reach the AI"
+
+
+def _stub_result():
+    from librairy.classify import UnknownResult
+
+    return UnknownResult("misc", "x", None, 0.3, (), {})
+
+
+def test_a_playlist_follows_the_album_its_tracks_were_identified_as(
+    tmp_path: Path,
+) -> None:
+    settings = settings_for(tmp_path)
+    conn = connect(settings)
+    album = "Music/Pop/Band/Album"
+    for index in (1, 2):
+        track = add_item(conn, f"Album/{index:02d} - Song.flac")
+        propose(conn, track, category="music", dest_relpath=f"{album}/{index:02d}-Song.flac")
+    playlist = add_item(conn, "Album/00.Info.m3u")
+    info = add_item(conn, "Album/00.Info.nfo")
+    propose(conn, playlist, category="misc", dest_relpath=None)
+    propose(conn, info, category="misc", dest_relpath=None)
+
+    associate_companions(conn, settings)
+
+    assert dest_of(conn, playlist) == ("music", f"{album}/00.Info.m3u", "00.Info.m3u")
+    assert dest_of(conn, info) == ("music", f"{album}/00.Info.nfo", "00.Info.nfo")
+
+
+def test_a_subtitle_follows_the_film_and_keeps_pairing_with_it(tmp_path: Path) -> None:
+    """The real case: the video became `An-American-Carol-(2008).mp4` while the
+    AI renamed its subtitle to `An-American-Carol.srt`, so no player would ever
+    load it. The subtitle has to take the video's final stem."""
+    settings = settings_for(tmp_path)
+    conn = connect(settings)
+    stem = "An.American.Carol.2008.1080p.BluRay.x264.AAC5.1-[YTS.MX]"
+    dest = "Movies/General/An-American-Carol-(2008)/An-American-Carol-(2008).mp4"
+    film = add_item(conn, f"An American Carol (2008)/{stem}.mp4")
+    subtitle = add_item(conn, f"An American Carol (2008)/{stem}.srt")
+    propose(conn, film, category="movies", dest_relpath=dest)
+    propose(conn, subtitle, category="misc", dest_relpath=None)
+
+    associate_companions(conn, settings)
+
+    assert dest_of(conn, subtitle)[1] == (
+        "Movies/General/An-American-Carol-(2008)/An-American-Carol-(2008).srt"
+    )
+
+
+def test_a_subtitle_keeps_its_language_and_forced_suffixes(tmp_path: Path) -> None:
+    """`.en.forced` says which track this is. Renaming it away to match the
+    video would lose the only thing distinguishing two subtitles."""
+    settings = settings_for(tmp_path)
+    conn = connect(settings)
+    dest = "Movies/The Matrix (1999)/The-Matrix-(1999).mkv"
+    film = add_item(conn, "Matrix/Movie.mkv")
+    english = add_item(conn, "Matrix/Movie.en.srt")
+    forced = add_item(conn, "Matrix/Movie.en.forced.srt")
+    propose(conn, film, category="movies", dest_relpath=dest)
+    propose(conn, english, category="misc", dest_relpath=None)
+    propose(conn, forced, category="misc", dest_relpath=None)
+
+    associate_companions(conn, settings)
+
+    assert dest_of(conn, english)[1] == "Movies/The Matrix (1999)/The-Matrix-(1999).en.srt"
+    assert dest_of(conn, forced)[1] == (
+        "Movies/The Matrix (1999)/The-Matrix-(1999).en.forced.srt"
+    )
+
+
+def test_an_episode_subtitle_follows_its_own_episode(tmp_path: Path) -> None:
+    """Two episodes in one folder: each subtitle joins the right one, and the
+    longest matching stem wins so S01E01 does not capture S01E01x."""
+    settings = settings_for(tmp_path)
+    conn = connect(settings)
+    base = "Shows/Breaking Bad/Season 01"
+    for episode in (1, 2):
+        video = add_item(conn, f"BB/Show.S01E0{episode}.mkv")
+        propose(conn, video, category="shows", dest_relpath=f"{base}/S01E0{episode}.mkv")
+    sub = add_item(conn, "BB/Show.S01E02.en.srt")
+    propose(conn, sub, category="misc", dest_relpath=None)
+
+    associate_companions(conn, settings)
+
+    assert dest_of(conn, sub)[1] == f"{base}/S01E02.en.srt"
+
+
+def test_a_lone_nfo_beside_nothing_identified_is_left_for_review(tmp_path: Path) -> None:
+    """Conservative: no anchor, no guess."""
+    settings = settings_for(tmp_path)
+    conn = connect(settings)
+    stray = add_item(conn, "Random/notes.nfo")
+    propose(conn, stray, category="misc", dest_relpath=None)
+
+    assert associate_companions(conn, settings).associated == 0
+    assert dest_of(conn, stray)[1] is None
+
+
+def test_sidecars_do_not_vote_on_where_the_release_lives(tmp_path: Path) -> None:
+    """The consensus bug. Two sidecars carrying confident-looking destinations
+    under two different invented artists made the folder look ambiguous, so its
+    real cover got nothing. They must not count."""
+    settings = settings_for(tmp_path)
+    conn = connect(settings)
+    album = "Music/Pop/Band/Album"
+    track = add_item(conn, "Album/01.flac")
+    propose(conn, track, category="music", dest_relpath=f"{album}/01.flac")
+    # Exactly the two bogus proposals found in the live database.
+    m3u = add_item(conn, "Album/00.Info.m3u")
+    nfo = add_item(conn, "Album/00.Info.nfo")
+    propose(conn, m3u, category="music", dest_relpath="Music/General/V.A/Best/00.Info.m3u")
+    propose(
+        conn, nfo, category="music",
+        dest_relpath="Music/General/Various-Artists/Best/00.Info.nfo",
+    )
+    cover = add_item(conn, "Album/cover.jpg")
+    propose(conn, cover, category="photos", dest_relpath="Photos/x.jpg")
+
+    associate_companions(conn, settings)
+
+    # One real track, so one anchor — the sidecars' invented paths are ignored.
+    assert dest_of(conn, cover)[1] == f"{album}/cover.jpg"
+    assert dest_of(conn, m3u)[1] == f"{album}/00.Info.m3u"
+    assert dest_of(conn, nfo)[1] == f"{album}/00.Info.nfo"
+
+
+def test_a_sidecar_never_overwrites_one_already_in_the_library(tmp_path: Path) -> None:
+    settings = settings_for(tmp_path)
+    conn = connect(settings)
+    album = "Music/Pop/Band/Album"
+    add_item(conn, f"{album}/00.Info.nfo", root="library")
+    track = add_item(conn, "Album/01.flac")
+    propose(conn, track, category="music", dest_relpath=f"{album}/01.flac")
+    info = add_item(conn, "Album/00.Info.nfo")
+    propose(conn, info, category="misc", dest_relpath=None)
+
+    summary = associate_companions(conn, settings)
+
+    assert summary.already_present >= 1
+    assert dest_of(conn, info)[1] is None, "no destination beats a second copy"
+
+
+def test_sidecars_inside_a_disc_rip_are_never_touched(tmp_path: Path) -> None:
+    settings = settings_for(tmp_path)
+    conn = connect(settings)
+    vob = add_item(conn, "MY_DVD/VIDEO_TS/VTS_01_1.VOB")
+    ifo = add_item(conn, "MY_DVD/VIDEO_TS/VIDEO_TS.nfo")
+    propose(conn, vob, category="movies", dest_relpath="Movies/My DVD/VIDEO_TS/VTS_01_1.VOB")
+    propose(conn, ifo, category="misc", dest_relpath=None)
+
+    assert associate_companions(conn, settings).associated == 0
+    assert dest_of(conn, ifo)[1] is None
+
+
+def test_normal_media_classification_is_untouched(tmp_path: Path) -> None:
+    """The tracks and the film keep exactly the destinations they had."""
+    settings = settings_for(tmp_path)
+    conn = connect(settings)
+    track = add_item(conn, "Album/01.flac")
+    film = add_item(conn, "Film/movie.mkv")
+    propose(conn, track, category="music", dest_relpath="Music/Pop/Band/Album/01.flac")
+    propose(conn, film, category="movies", dest_relpath="Movies/Film (2001)/Film.mkv")
+
+    associate_companions(conn, settings)
+
+    assert dest_of(conn, track)[1] == "Music/Pop/Band/Album/01.flac"
+    assert dest_of(conn, film)[1] == "Movies/Film (2001)/Film.mkv"
+
+
+def test_the_why_panel_explains_the_relationship_in_words(tmp_path: Path) -> None:
+    settings = settings_for(tmp_path)
+    conn = connect(settings)
+    dest = "Movies/The Matrix (1999)/The-Matrix-(1999).mkv"
+    film = add_item(conn, "Matrix/Movie.mkv")
+    sub = add_item(conn, "Matrix/Movie.en.srt")
+    propose(conn, film, category="movies", dest_relpath=dest)
+    propose(conn, sub, category="misc", dest_relpath=None)
+
+    associate_companions(conn, settings)
+
+    evidence = conn.execute(
+        "SELECT evidence FROM proposals WHERE item_id=? AND status != 'superseded'", (sub,)
+    ).fetchone()["evidence"]
+    assert "subtitle" in evidence
+    assert "names the same file as The-Matrix-(1999).mkv" in evidence
+    assert "film" in evidence
+    # No field names or extensions leaking into the sentence.
+    assert "dest_relpath" not in evidence
