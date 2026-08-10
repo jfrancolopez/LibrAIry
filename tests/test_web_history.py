@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -126,8 +127,11 @@ def test_history_timeline_groups_by_plan_and_deep_links_to_browse(tmp_path: Path
     # Grouped git-log style, with an undo-plan control and the plan link.
     assert "timeline-plan" in page
     assert f"/history/plans/{plan_id}" in page
-    assert "Undo plan" in page
-    assert "2 file(s)" in page
+    # Short like a git hash: a full UUID is 414px of button on a phone.
+    assert f"Plan {plan_id[:8]}<" in page
+    assert "Undo the whole plan" in page
+    # The plan says what it did, rather than making you count the rows.
+    assert "Filed 2 files" in page
     # Committed destinations deep-link into Browse at the containing folder.
     assert '/browse/documents' in page
 
@@ -151,8 +155,8 @@ def test_history_search_finds_a_move_by_part_of_its_path(tmp_path: Path) -> None
 
     assert "Ozymandias.mkv" in hit.text
     assert "Bohemian" not in hit.text
-    assert "1 file move" in hit.text
-    assert "No file moves match" in miss.text
+    assert "Showing 1 of 1 matching" in hit.text
+    assert "Nothing here matches" in miss.text
 
 
 def test_history_search_is_case_insensitive_and_survives_wildcards(tmp_path: Path) -> None:
@@ -170,3 +174,142 @@ def test_history_search_is_case_insensitive_and_survives_wildcards(tmp_path: Pat
 
     assert "my_file.mkv" in client.get("/history?q=MY_FILE").text
     assert client.get("/history?q=%").status_code == 200
+
+
+# --- the information model --------------------------------------------------
+
+
+def journal_row(conn, **kw) -> None:
+    row = {
+        "ts": "2026-08-04T10:00:00+00:00",
+        "plan_id": "p1",
+        "action": "move",
+        "src_root": "inbox",
+        "src_relpath": "a.txt",
+        "dest_root": "library",
+        "dest_relpath": "Documents/a.txt",
+        "outcome": "ok",
+        **kw,
+    }
+    conn.execute(
+        """
+        INSERT INTO history(ts, plan_id, action, src_root, src_relpath,
+                            dest_root, dest_relpath, outcome)
+        VALUES (:ts, :plan_id, :action, :src_root, :src_relpath,
+                :dest_root, :dest_relpath, :outcome)
+        """,
+        row,
+    )
+
+
+def test_the_filters_are_only_things_the_journal_can_tell_apart(tmp_path: Path) -> None:
+    """The journal has three action values. Approvals and re-analysis are not
+    in it at all, so offering them as filters would offer categories the data
+    can never fill."""
+    client, conn, _ = client_for(tmp_path)
+    journal_row(conn, src_relpath="filed.txt")
+    journal_row(conn, src_relpath="dupe.txt", dest_root="quarantine", dest_relpath="dupe.txt")
+    journal_row(conn, src_relpath="back.txt", action="undo_move", dest_root="inbox")
+    journal_row(conn, src_relpath="theme", action="settings_change", outcome="a -> b")
+    journal_row(conn, src_relpath="broke.txt", outcome="skipped_missing")
+
+    page = client.get("/history").text
+
+    for label in ("Filed", "Quarantined", "Undone", "Settings", "Failed"):
+        assert label in page
+    # Categories the journal cannot distinguish are not offered.
+    assert "Approvals" not in page
+    assert ">Analysis<" not in page
+
+
+def test_each_filter_shows_its_real_count_and_narrows_the_list(tmp_path: Path) -> None:
+    client, conn, _ = client_for(tmp_path)
+    for index in range(3):
+        journal_row(conn, src_relpath=f"filed{index}.txt")
+    journal_row(conn, src_relpath="dupe.txt", dest_root="quarantine", dest_relpath="dupe.txt")
+
+    everything = client.get("/history").text
+    quarantined = client.get("/history?kind=quarantined").text
+
+    # The count beside the chip is the count the filter actually yields.
+    assert "Quarantined <span class=\"chip-count\">1</span>" in everything
+    assert "dupe.txt" in quarantined
+    assert "filed0.txt" not in quarantined
+    assert "Showing 1 of 1 matching" in quarantined
+
+
+def test_a_filter_and_the_find_box_compose(tmp_path: Path) -> None:
+    """Narrowing to Filed and then typing a name searches inside the filter
+    rather than replacing it."""
+    client, conn, _ = client_for(tmp_path)
+    journal_row(conn, src_relpath="Ozymandias.mkv", dest_relpath="Shows/Ozymandias.mkv")
+    journal_row(
+        conn, src_relpath="Ozymandias-copy.mkv", dest_root="quarantine",
+        dest_relpath="Ozymandias-copy.mkv",
+    )
+
+    both = client.get("/history?q=ozymandias").text
+    filed_only = client.get("/history?kind=filed&q=ozymandias").text
+
+    assert "Ozymandias-copy.mkv" in both
+    assert "Ozymandias-copy.mkv" not in filed_only
+    assert "Shows/Ozymandias.mkv" in filed_only
+    # And the search box keeps the filter, so submitting it again does not
+    # silently widen back to everything.
+    assert '<input type="hidden" name="kind" value="filed">' in filed_only
+
+
+def test_entries_are_grouped_under_a_day_heading(tmp_path: Path) -> None:
+    client, conn, _ = client_for(tmp_path)
+    today = datetime.now(UTC).date().isoformat()
+    journal_row(conn, ts=f"{today}T09:30:00+00:00", src_relpath="new.txt", plan_id="p-today")
+    journal_row(conn, ts="2026-01-02T09:30:00+00:00", src_relpath="old.txt", plan_id="p-old")
+
+    page = client.get("/history").text
+
+    assert "Today" in page
+    assert "2 January 2026" in page
+    assert "09:30" in page
+
+
+def test_grouping_is_presentation_only_and_loses_no_journal_row(tmp_path: Path) -> None:
+    """Aggregation happens at render time. Every individual entry is still
+    listed, and still individually undoable."""
+    client, conn, _ = client_for(tmp_path)
+    for index in range(4):
+        journal_row(conn, src_relpath=f"f{index}.txt", dest_relpath=f"Documents/f{index}.txt")
+
+    page = client.get("/history").text
+    rows = conn.execute("SELECT COUNT(*) FROM history").fetchone()[0]
+
+    assert rows == 4, "no journal row was merged away"
+    for index in range(4):
+        assert f"Documents/f{index}.txt" in page
+    assert page.count("/history/undo/") == 4
+    assert "Filed 4 files" in page
+
+
+def test_history_pages_past_the_first_screenful(tmp_path: Path) -> None:
+    client, conn, _ = client_for(tmp_path)
+    for index in range(55):
+        journal_row(conn, src_relpath=f"f{index}.txt", dest_relpath=f"Documents/f{index}.txt")
+
+    first = client.get("/history").text
+    second = client.get("/history?page=2").text
+
+    assert "Older" in first
+    assert "Newer" not in first
+    # Newest first: the oldest rows are the ones on page two.
+    assert "Documents/f0.txt" in second
+    assert "Documents/f54.txt" in first
+    assert "Documents/f54.txt" not in second
+
+
+def test_an_unknown_filter_falls_back_to_everything(tmp_path: Path) -> None:
+    client, conn, _ = client_for(tmp_path)
+    journal_row(conn, src_relpath="a.txt")
+
+    page = client.get("/history?kind=../../etc/passwd")
+
+    assert page.status_code == 200
+    assert "Documents/a.txt" in page.text

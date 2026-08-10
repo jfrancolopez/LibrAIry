@@ -22,11 +22,53 @@ class UndoResult:
     dest_relpath: str | None = None
 
 
+# What the journal can actually tell apart, and nothing more. There is no
+# approval or re-analysis event in here — approvals are proposal state changes
+# and were never journalled — so offering those as filters would be offering
+# categories the data cannot fill. Each of these is a predicate over columns
+# that exist, which is why the page can show an honest count beside every one.
+HISTORY_KINDS: dict[str, tuple[str, str | None]] = {
+    "all": ("Everything", None),
+    "filed": ("Filed", "action='move' AND dest_root='library' AND outcome='ok'"),
+    "quarantined": ("Quarantined", "action='move' AND dest_root='quarantine' AND outcome='ok'"),
+    "undone": ("Undone", "action='undo_move'"),
+    "settings": ("Settings", "action='settings_change'"),
+    # A settings change stores its before -> after in `outcome`, not a status,
+    # so "everything that is not ok" counted all 27 of them as failures and the
+    # page opened claiming 27 things had gone wrong. Only moves can fail.
+    "failed": ("Failed", "action != 'settings_change' AND outcome != 'ok'"),
+}
+
+
+def kind_counts(conn: sqlite3.Connection, query: str = "") -> dict[str, int]:
+    """How many entries each filter would show, against the same search."""
+    counts: dict[str, int] = {}
+    for kind, (_, predicate) in HISTORY_KINDS.items():
+        clauses = [predicate] if predicate else []
+        params: list[object] = []
+        if query.strip():
+            clauses.append(_QUERY_CLAUSE)
+            params.extend([f"%{query.strip()}%"] * 3)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        counts[kind] = int(
+            conn.execute(
+                f"SELECT COUNT(*) FROM history {where}",  # noqa: S608
+                params,
+            ).fetchone()[0]
+        )
+    return counts
+
+
+_QUERY_CLAUSE = "(src_relpath LIKE ? OR dest_relpath LIKE ? OR action LIKE ?)"
+
+
 def list_history(
     conn: sqlite3.Connection,
     plan_id: str | None = None,
     limit: int = 50,
     query: str = "",
+    kind: str = "all",
+    offset: int = 0,
 ) -> list[sqlite3.Row]:
     """The journal, newest first. `query` matches either path or the action.
 
@@ -41,17 +83,22 @@ def list_history(
         clauses.append("plan_id = ?")
         params.append(plan_id)
     if query.strip():
-        clauses.append("(src_relpath LIKE ? OR dest_relpath LIKE ? OR action LIKE ?)")
+        clauses.append(_QUERY_CLAUSE)
         # LIKE wildcards in the query are the user's business; escaping them
         # would only stop someone searching for a literal underscore, which is
         # in half the filenames here.
         like = f"%{query.strip()}%"
         params.extend([like, like, like])
+    # Filter and search compose: narrowing to Filed and then typing a name
+    # searches within the filter rather than replacing it.
+    predicate = HISTORY_KINDS.get(kind, (None, None))[1]
+    if predicate:
+        clauses.append(predicate)
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
-    params.append(limit)
+    params.extend([limit, offset])
     return list(
         conn.execute(
-            f"SELECT * FROM history {where} ORDER BY id DESC LIMIT ?",  # noqa: S608
+            f"SELECT * FROM history {where} ORDER BY id DESC LIMIT ? OFFSET ?",  # noqa: S608
             params,
         )
     )

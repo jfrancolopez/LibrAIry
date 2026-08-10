@@ -11,50 +11,99 @@
       <label class="field">Find a move
         <input type="search" name="q" value="{{ query }}" placeholder="part of a file name">
       </label>
+      {# The filter travels with the search, so narrowing to Filed and then
+         typing a name searches inside that filter instead of replacing it. #}
+      <input type="hidden" name="kind" value="{{ kind }}">
       <button type="submit">Search</button>
-      {% if query %}<a class="btn btn-ghost" href="/history">Clear</a>{% endif %}
+      {% if query or kind != 'all' %}<a class="btn btn-ghost" href="/history">Clear</a>{% endif %}
     </form>
   </header>
-  {% if query %}
-    {# Settings changes are counted separately or the number contradicts the
-       list folded away below it. #}
-    <p class="muted">
-      {{ entries|length }} file move{{ '' if entries|length == 1 else 's' }}
-      {%- if settings_changes %} and {{ settings_changes|length }} settings change{{ '' if settings_changes|length == 1 else 's' }}{% endif %}
-      match <strong>{{ query }}</strong>, out of {{ total }} journalled entries.
-    </p>
-  {% endif %}
+
+  {# Every one of these is a predicate over columns the journal actually has —
+     which is why each can show a real count. There is deliberately no
+     "Approvals" or "Analysis" chip: those are not journalled at all, and a
+     filter that can only ever be empty is worse than no filter. #}
+  <nav class="kind-filters" aria-label="Filter history by what happened">
+    {% for entry in kinds %}
+      <a class="chip{% if entry.key == kind %} is-on{% endif %}"
+         href="/history?kind={{ entry.key }}{% if query %}&q={{ query|urlencode }}{% endif %}"
+         {% if entry.key == kind %}aria-current="true"{% endif %}>
+        {{ entry.label }} <span class="chip-count">{{ entry.count }}</span>
+      </a>
+    {% endfor %}
+  </nav>
+
+  <p class="muted">
+    {% if query or kind != 'all' %}
+      Showing {{ showing }} of {{ matching }} matching
+      {%- if query %} <strong>{{ query }}</strong>{% endif %},
+      out of {{ total }} journalled entries.
+    {% else %}
+      {{ total }} journalled entries. Every committed filesystem operation is here.
+    {% endif %}
+  </p>
+
   <div id="history-result"></div>
-  {% if timeline %}
-    {% for group in timeline %}
-      <section class="timeline-plan card">
-        <header class="timeline-head">
-          <span class="badge {{ 'badge-ok' if group.status == 'done' else 'badge-warn' }}">{{ group.status or 'plan' }}</span>
-          <a href="/history/plans/{{ group.plan_id }}">Plan {{ group.plan_id }}</a>
-          <span class="muted">{{ group.entries|length }} file(s)</span>
-          <span class="muted">{{ group.ts }}</span>
-          <form class="logout-form" hx-post="/history/plans/{{ group.plan_id }}/undo" hx-target="#history-result" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>
-            <button type="submit" class="btn-ghost">Undo plan</button>
-          </form>
-        </header>
-        <ul class="timeline-list">
-          {% for entry in group.entries %}
-            <li>
-              <span class="badge {{ 'badge-ok' if entry.outcome == 'ok' else 'badge-warn' }}">{{ entry.action }}</span>
-              <span class="mono muted">{{ entry.src_root }}/{{ entry.src_relpath }}</span>
-              <span aria-hidden="true">→</span>
-              {% if entry.browse_href %}<a class="mono" href="{{ entry.browse_href }}">{{ entry.dest_root }}/{{ entry.dest_relpath }}</a>{% else %}<span class="mono">{{ entry.dest_root }}/{{ entry.dest_relpath }}</span>{% endif %}
-              {% if entry.outcome == 'ok' %}
-                <button class="btn-ghost" hx-post="/history/undo/{{ entry.id }}" hx-target="#history-result" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>Undo</button>
-              {% endif %}
-            </li>
-          {% endfor %}
-        </ul>
+  {% if days %}
+    {% for day in days %}
+      {# The day is the heading people actually navigate by. Under it, one line
+         per plan saying what it did — "Filed 12 files" — instead of twelve
+         visually identical rows you have to count yourself. #}
+      <section class="day">
+        <h2 class="day-head">{{ day.label }}
+          <span class="muted">{{ day.files }} file{{ '' if day.files == 1 else 's' }}</span>
+        </h2>
+        {% for group in day.plans %}
+          <details class="timeline-plan card">
+            <summary class="timeline-head">
+              <span class="day-time mono">{{ group.time }}</span>
+              <strong class="plan-summary">{{ group.summary }}</strong>
+              <span class="badge {{ 'badge-ok' if group.status == 'done' else 'badge-warn' }}">{{ group.status or 'plan' }}</span>
+            </summary>
+            <div class="plan-detail">
+              <p class="button-row">
+                {# Short, like a git hash. The full UUID is 414px of button and
+                   overflows the row on a phone, and nobody reads one anyway —
+                   the page it links to has it in full. #}
+                <a class="btn btn-ghost" href="/history/plans/{{ group.plan_id }}"
+                   title="Plan {{ group.plan_id }}">Plan {{ group.plan_id[:8] }}</a>
+                {# Not a <form>: this section is inside no form, and a nested
+                   one would be invalid. hx-post carries the token itself. #}
+                <button type="button" class="btn-ghost"
+                        hx-post="/history/plans/{{ group.plan_id }}/undo"
+                        hx-target="#history-result"
+                        hx-confirm="Put all {{ group.entries|length }} file(s) in this plan back where they came from?"
+                        hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>Undo the whole plan</button>
+              </p>
+              <ul class="timeline-list">
+                {% for entry in group.entries %}
+                  <li>
+                    <span class="badge {{ 'badge-ok' if entry.outcome == 'ok' else 'badge-fail' }}">{{ entry.action }}</span>
+                    <span class="mono muted">{{ entry.src_root }}/{{ entry.src_relpath }}</span>
+                    <span aria-hidden="true">→</span>
+                    {% if entry.browse_href %}<a class="mono" href="{{ entry.browse_href }}">{{ entry.dest_root }}/{{ entry.dest_relpath }}</a>{% else %}<span class="mono">{{ entry.dest_root }}/{{ entry.dest_relpath }}</span>{% endif %}
+                    {% if entry.outcome == 'ok' %}
+                      <button class="btn-ghost" hx-post="/history/undo/{{ entry.id }}" hx-target="#history-result" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>Undo</button>
+                    {% endif %}
+                  </li>
+                {% endfor %}
+              </ul>
+            </div>
+          </details>
+        {% endfor %}
       </section>
     {% endfor %}
+
+    {% if has_prev or has_next %}
+      <nav class="pager button-row" aria-label="History pages">
+        {% if has_prev %}<a class="btn" href="/history?kind={{ kind }}&page={{ page - 1 }}{% if query %}&q={{ query|urlencode }}{% endif %}">Newer</a>{% endif %}
+        <span class="muted">page {{ page }}</span>
+        {% if has_next %}<a class="btn" href="/history?kind={{ kind }}&page={{ page + 1 }}{% if query %}&q={{ query|urlencode }}{% endif %}">Older</a>{% endif %}
+      </nav>
+    {% endif %}
   {% else %}
-    {% if query %}
-      <p class="muted">No file moves match <strong>{{ query }}</strong>.</p>
+    {% if query or kind != 'all' %}
+      <p class="muted">Nothing here matches. Try <a href="/history">everything</a>.</p>
     {% else %}
       <p class="muted">No journal entries yet. Every committed filesystem operation appears here with undo context.</p>
     {% endif %}

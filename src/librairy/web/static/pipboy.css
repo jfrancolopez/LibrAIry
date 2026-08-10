@@ -1513,7 +1513,56 @@ kbd {
   background: var(--bg-input);
 }
 
-.timeline-plan { margin: var(--space-3) 0; }
+/* One filter chip per thing the journal can actually distinguish, each with
+   its real count. Same disclosure principle as Review: narrow first, then
+   read, rather than scrolling 145 identical rows looking for one. */
+.kind-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: var(--space-3) 0;
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  border: var(--border-thin) solid var(--border);
+  border-radius: var(--radius-ui);
+  background: var(--bg-metric);
+  color: var(--text);
+  text-decoration: none;
+  font-size: var(--text-sm);
+  min-height: 2rem;
+}
+.chip:hover, .chip:focus-visible { border-color: var(--accent); }
+/* The selected one is filled rather than merely tinted, so which filter is on
+   survives being read at a glance and does not depend on seeing colour. */
+.chip.is-on { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+.chip-count { color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.chip.is-on .chip-count { color: var(--bg); }
+
+/* The day is what people navigate by — "sometime yesterday" is how anyone
+   remembers a commit, not "plan 7f3a". */
+.day { margin: var(--space-4) 0; }
+.day-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-3);
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-lg);
+  border-bottom: var(--border-thin) solid var(--border);
+  padding-bottom: var(--space-1);
+}
+.day-time { color: var(--text-dim); font-size: var(--text-sm); white-space: nowrap; }
+.plan-summary { flex: 1 1 12rem; min-width: 0; }
+.plan-detail { padding-top: var(--space-2); }
+
+.timeline-plan { margin: var(--space-2) 0; }
+/* A summary row is the control that opens it, so it needs to look like one. */
+summary.timeline-head { cursor: pointer; }
+summary.timeline-head::-webkit-details-marker { display: none; }
 .timeline-head {
   display: flex;
   flex-wrap: wrap;

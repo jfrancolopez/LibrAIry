@@ -986,7 +986,9 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         )
 
     @app.get("/history", response_class=HTMLResponse)
-    def history(request: Request, q: str = "") -> HTMLResponse:
+    def history(
+        request: Request, q: str = "", kind: str = "all", page: int = 1
+    ) -> HTMLResponse:
         return TEMPLATES.TemplateResponse(
             request,
             "history.html",
@@ -995,7 +997,9 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
                 "csrf_token": request.state.session["csrf_token"],
                 # A search wants a wider net than the default fifty rows: the
                 # move you are hunting for is usually not a recent one.
-                **history_data(conn, limit=500 if q.strip() else 50, query=q),
+                **history_data(
+                    conn, limit=500 if q.strip() else 50, query=q, kind=kind, page=page
+                ),
             },
         )
 
