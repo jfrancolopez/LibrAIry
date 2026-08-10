@@ -338,3 +338,35 @@ def test_quarantine_empty_state_says_how_files_get_here(tmp_path: Path) -> None:
     assert "Nothing is being held." in body
     assert "Nothing has been moved out yet." in body
     assert "never on their own" in body
+
+
+def test_quarantine_rows_can_show_what_the_file_actually_is(tmp_path: Path) -> None:
+    """Deciding whether a file goes back is a question about what it is, and a
+    UUID filename does not answer it."""
+    client, conn, settings = client_for(tmp_path)
+    entry_id = seed_executed_quarantine(conn, settings)
+    item_id = int(
+        conn.execute("SELECT item_id FROM quarantine_entries WHERE id=?", (entry_id,)).fetchone()[0]
+    )
+
+    body = client.get("/quarantine").text
+
+    assert f'hx-get="/preview/items/{item_id}"' in body
+    assert f'id="qpreview-{entry_id}"' in body
+    # The preview card carries an expand control, so the page must carry the
+    # viewer it opens — otherwise Quarantine grows the dead button Browse had.
+    assert 'id="lightbox"' in body
+    assert "/static/lightbox.js" in body
+
+
+def test_a_staged_quarantine_can_be_previewed_before_you_decide(tmp_path: Path) -> None:
+    client, conn, _settings = client_for(tmp_path)
+    proposal_id = seed_staged_quarantine(conn)
+    item_id = int(
+        conn.execute("SELECT item_id FROM proposals WHERE id=?", (proposal_id,)).fetchone()[0]
+    )
+
+    body = client.get("/quarantine").text
+
+    assert f'hx-get="/preview/items/{item_id}"' in body
+    assert f'id="spreview-{proposal_id}"' in body
