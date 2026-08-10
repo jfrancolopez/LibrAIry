@@ -1695,6 +1695,72 @@ kbd {
 .compare-card img { max-width: 100%; height: auto; border-radius: var(--radius-ui); }
 .compare-card.split { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
 
+/* ---- Quarantine rows --------------------------------------------------- */
+/* Deliberately the same shape as a proposal row — name, badges, one line of
+   detail, everything else behind a disclosure — because it answers the same
+   kind of question. Not the same component: there is no confidence here and
+   no selection, and forcing one abstraction over both would only make each
+   worse. What is shared is shared for real: .badge, .why, .why-list,
+   .name-size, and the spacing scale. */
+.qlist { display: grid; gap: var(--space-2); }
+.qrow {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: var(--border-thin) solid var(--border);
+  /* Same left-edge idiom as Review: state is readable down the margin without
+     reading a single row. Neutral by default — a quarantined file is not a
+     warning, it is just filed somewhere else. */
+  border-left: 4px solid var(--border);
+  border-radius: var(--radius-ui);
+  background: var(--bg-metric);
+}
+/* Staged to leave. */
+.qrow.is-marked { border-left-color: var(--warn); }
+/* Back where it came from: settled, and dimmed so the live rows read first. */
+.qrow.is-restored { border-left-color: var(--ok); opacity: 0.7; }
+
+.qrow-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.qrow-name {
+  margin: 0;
+  font-size: var(--text-base);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.qrow-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.qrow-when { font-size: var(--text-sm); white-space: nowrap; }
+
+.qrow-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-3);
+}
+.qrow-from {
+  margin: 0;
+  min-width: 0;
+  flex: 1 1 18rem;
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+.qrow-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.qrow-actions button { min-height: 2rem; padding: var(--space-1) var(--space-3); }
+
+/* On a phone the actions get their own line and the full width, rather than
+   being squeezed beside a path they cannot fit next to. */
+@media (max-width: 639px) {
+  .qrow-actions { width: 100%; }
+  .qrow-actions button { flex: 1 1 auto; }
+}
+
 /* ---- Sticky save bar (Phase 13) -------------------------------------- */
 
 #path-helper { display: grid; gap: var(--space-2); }

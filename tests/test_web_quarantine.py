@@ -235,3 +235,106 @@ def test_a_staged_duplicate_can_go_straight_to_the_delete_pile(tmp_path: Path) -
     assert row["action"] == "quarantine"
     assert row["dest_relpath"].startswith("_to-delete/")
     assert "still not deleted" in response.text
+
+
+# --- what a quarantine row says, and why -----------------------------------
+
+
+def test_a_hand_quarantined_file_is_not_called_a_duplicate(tmp_path: Path) -> None:
+    """Every entry recorded `exact_duplicate` regardless of why the file was
+    set aside, so a file you sent here yourself from Review was described on
+    this page as a byte-for-byte copy of something you already have."""
+    client, conn, settings = client_for(tmp_path)
+    (settings.inbox_dir / "unwanted.txt").write_text("mine", encoding="utf-8")
+    scan_root(conn, "inbox", settings.inbox_dir, settings)
+    item_id = int(
+        conn.execute("SELECT id FROM items WHERE relpath='unwanted.txt'").fetchone()[0]
+    )
+    # No duplicate evidence anywhere: this file is here because you said so.
+    upsert_proposal(
+        conn,
+        item_id=item_id,
+        category="documents",
+        clean_name="unwanted.txt",
+        dest_relpath="unwanted.txt",
+        confidence=0.9,
+        evidence=[EvidenceEntry("heuristic", "category", "you sent it here", 0.9)],
+        action="quarantine",
+        dest_root="quarantine",
+    )
+    plan_id = create_plan(conn, [quarantine_operation("unwanted.txt")], settings)
+    approve_plan(conn, plan_id, settings)
+    execute_plan(conn, plan_id, settings)
+
+    reason = conn.execute("SELECT reason FROM quarantine_entries").fetchone()[0]
+    body = client.get("/quarantine").text
+
+    assert reason == "user"
+    assert "byte-for-byte copy" not in body
+    assert "you said you did not want it" in body
+    assert "no reason recorded" not in body
+
+
+def test_a_duplicate_is_still_recorded_as_one(tmp_path: Path) -> None:
+    client, conn, settings = client_for(tmp_path)
+    (settings.inbox_dir / "dupe.txt").write_text("dupe", encoding="utf-8")
+    scan_root(conn, "inbox", settings.inbox_dir, settings)
+    item_id = int(conn.execute("SELECT id FROM items WHERE relpath='dupe.txt'").fetchone()[0])
+    upsert_proposal(
+        conn,
+        item_id=item_id,
+        category="documents",
+        clean_name="dupe.txt",
+        dest_relpath="dupe.txt",
+        confidence=0.99,
+        evidence=[EvidenceEntry("heuristic", "duplicate", "exact duplicate of library:x", 0.99)],
+        action="quarantine",
+        dest_root="quarantine",
+    )
+    plan_id = create_plan(conn, [quarantine_operation("dupe.txt")], settings)
+    approve_plan(conn, plan_id, settings)
+    execute_plan(conn, plan_id, settings)
+
+    assert conn.execute("SELECT reason FROM quarantine_entries").fetchone()[0] == "exact_duplicate"
+    assert "byte-for-byte copy" in client.get("/quarantine").text
+
+
+def test_a_moved_out_row_leads_with_the_name_and_hides_the_rest(tmp_path: Path) -> None:
+    """A table of four columns could not reflow: the full relpath wrapped to
+    four lines on a phone and pushed the actions off the screen."""
+    client, conn, settings = client_for(tmp_path)
+    seed_executed_quarantine(conn, settings)
+
+    body = client.get("/quarantine").text
+
+    assert "<table" not in body.split("Already moved out")[1].split("</section>")[0]
+    assert 'class="qrow' in body
+    # The name identifies the row; the path and the plan are behind Details.
+    assert "qrow-name" in body
+    assert "<summary>Details</summary>" in body
+    assert "came from" in body
+
+
+def test_quarantine_actions_and_delete_pile_semantics_are_unchanged(tmp_path: Path) -> None:
+    """The rework is presentation. Nothing about what the buttons do moved."""
+    client, conn, settings = client_for(tmp_path)
+    entry_id = seed_executed_quarantine(conn, settings)
+
+    body = client.get("/quarantine").text
+
+    assert f"/quarantine/restore/{entry_id}" in body
+    assert f"/quarantine/mark-delete/{entry_id}" in body
+    assert "LibrAIry never deletes anything." in body
+    assert "delete them yourself" in body
+    # Marking is still a staging move into one folder, never a deletion.
+    assert "It is still not deleted" in body
+
+
+def test_quarantine_empty_state_says_how_files_get_here(tmp_path: Path) -> None:
+    client, _conn, _settings = client_for(tmp_path)
+
+    body = client.get("/quarantine").text
+
+    assert "Nothing is being held." in body
+    assert "Nothing has been moved out yet." in body
+    assert "never on their own" in body

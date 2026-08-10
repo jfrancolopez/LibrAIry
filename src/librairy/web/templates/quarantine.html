@@ -90,38 +90,73 @@
   <section class="metric wide">
     <h2>Already moved out</h2>
     {% if entries %}
-      <table>
-        <thead><tr><th>File</th><th>Why</th><th>When</th><th></th></tr></thead>
-        <tbody>
-          {% for entry in entries %}
-            <tr{% if entry.restored_at %} class="is-idle"{% endif %}>
-              <td class="mono">{{ entry.item_relpath or entry.original_relpath }}
-                {% if entry.size_label %}<span class="muted"> · {{ entry.size_label }}</span>{% endif %}</td>
-              <td>{{ entry.reason_text }}
-                {% if entry.marked and not entry.restored_at %}<br><span class="badge badge-warn">marked for deletion</span>{% endif %}</td>
-              <td class="muted">
-                {{ entry.quarantined_at }}
-                {% if entry.restored_at %}<br><span class="badge badge-ok">put back {{ entry.restored_at }}</span>{% endif %}
-              </td>
-              <td>
-                {% if not entry.restored_at %}
-                  <div class="button-row">
-                    <button hx-post="/quarantine/restore/{{ entry.id }}" hx-target="#quarantine-result" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>Put it back</button>
-                    {% if not entry.marked %}
-                      <button class="btn-danger" hx-post="/quarantine/mark-delete/{{ entry.id }}" hx-target="#quarantine-result"
-                        hx-confirm="Move this into the delete pile? It is still not deleted — it goes to one folder so you can empty that folder yourself."
-                        hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>Mark for deletion</button>
-                    {% endif %}
-                  </div>
+      {# Rows, not a table. The four columns held a full relpath that wrapped to
+         four lines on a phone and pushed the actions off the side of the
+         screen; a table cannot reflow and this has to. Same shape as a Review
+         row: the name identifies it, a badge says why, and everything else is
+         behind Details. #}
+      <div class="qlist">
+        {% for entry in entries %}
+          <article class="qrow{% if entry.restored_at %} is-restored{% elif entry.marked %} is-marked{% endif %}">
+            <header class="qrow-head">
+              <h3 class="qrow-name" title="{{ entry.item_relpath or entry.original_relpath }}">
+                {{ entry.display_name }}{% if entry.size_label %}<span class="name-size"> · {{ entry.size_label }}</span>{% endif %}
+              </h3>
+              <span class="qrow-meta">
+                {# One consistent meaning per colour: info is a fact about the
+                   file, warn is something staged to leave, ok is safe/undone. #}
+                <span class="badge badge-info" title="{{ entry.reason_text }}">{{ entry.reason_tag }}</span>
+                {% if entry.restored_at %}
+                  <span class="badge badge-ok">put back</span>
+                {% elif entry.marked %}
+                  <span class="badge badge-warn">marked for deletion</span>
                 {% endif %}
-              </td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+                <span class="muted qrow-when">{{ entry.quarantined_at }}</span>
+              </span>
+            </header>
+
+            <div class="qrow-line">
+              <p class="qrow-from">
+                <span class="muted">came from</span>
+                <span class="mono">{{ entry.original_root }}/{{ entry.original_relpath }}</span>
+              </p>
+              {% if not entry.restored_at %}
+                <div class="qrow-actions">
+                  <button hx-post="/quarantine/restore/{{ entry.id }}" hx-target="#quarantine-result" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>Put it back</button>
+                  {% if not entry.marked %}
+                    <button class="btn-danger" hx-post="/quarantine/mark-delete/{{ entry.id }}" hx-target="#quarantine-result"
+                      hx-confirm="Move this into the delete pile? It is still not deleted — it goes to one folder so you can empty that folder yourself."
+                      hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>Mark for deletion</button>
+                  {% endif %}
+                </div>
+              {% endif %}
+            </div>
+
+            {# Same disclosure as Review's Why: enough on the row to recognise
+               it, the rest one click away instead of in four columns. #}
+            <details class="why">
+              <summary>Details</summary>
+              <ul class="why-list">
+                <li><span class="badge badge-info">why</span> {{ entry.reason_text }}</li>
+                <li><span class="badge badge-info">now at</span>
+                  <span class="mono">{{ entry.item_relpath or 'restored' }}</span></li>
+                <li><span class="badge badge-info">quarantined</span> {{ entry.quarantined_at }}</li>
+                {% if entry.restored_at %}
+                  <li><span class="badge badge-ok">put back</span> {{ entry.restored_at }}</li>
+                {% endif %}
+                {% if entry.plan_id %}
+                  <li><span class="badge badge-info">plan</span>
+                    <a href="/history/plans/{{ entry.plan_id }}">{{ entry.plan_id }}</a></li>
+                {% endif %}
+              </ul>
+            </details>
+          </article>
+        {% endfor %}
+      </div>
       <p class="muted">"Put it back" returns the file to exactly where it came from, verified by hash on the way.</p>
     {% else %}
-      <p class="muted">Nothing has been moved out yet.</p>
+      <p class="muted">Nothing has been moved out yet. Files appear here after you approve a
+        quarantine in Review and then commit — never before, and never on their own.</p>
     {% endif %}
   </section>
 

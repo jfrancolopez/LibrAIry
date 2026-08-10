@@ -14,12 +14,23 @@ from librairy.quarantine import (
 )
 from librairy.web.evidence import humanize_evidence
 
-#  What the reason column holds, said the way a person would say it.
+#  What the reason column holds, said the way a person would say it. The keys
+#  are the three the schema's CHECK allows — `user_discard` was here instead of
+#  `user`, which the column cannot hold, so every hand-quarantined file read
+#  "no reason recorded".
 REASONS = {
     "exact_duplicate": "byte-for-byte copy of a file you already have",
-    "user_discard": "you said you did not want it",
+    "similar_media": "close enough to something you already have to be worth a look",
+    "user": "you said you did not want it",
 }
 UNWANTED = "you sent it here from Review"
+
+#  One word for the badge, where the sentence above is the explanation.
+REASON_TAGS = {
+    "exact_duplicate": "duplicate",
+    "similar_media": "similar",
+    "user": "your call",
+}
 
 
 def quarantine_data(
@@ -157,11 +168,19 @@ def _entries(conn: sqlite3.Connection) -> list[dict[str, object]]:
         {
             **dict(row),
             "reason_text": reason_text(row["reason"]),
+            "reason_tag": REASON_TAGS.get(str(row["reason"] or ""), "set aside"),
             "marked": marked_for_deletion(row["item_relpath"]),
             "size_label": human_size(row["item_size"]),
+            # The name is what identifies the row; the path is detail. Both
+            # were in one mono blob that wrapped to four lines on a phone.
+            "display_name": _basename(row["item_relpath"] or row["original_relpath"]),
         }
         for row in rows
     ]
+
+
+def _basename(relpath: object) -> str:
+    return str(relpath or "").rstrip("/").rsplit("/", 1)[-1]
 
 
 def _similar_flags(conn: sqlite3.Connection) -> list[dict[str, object]]:

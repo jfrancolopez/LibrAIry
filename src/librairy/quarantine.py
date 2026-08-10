@@ -49,14 +49,39 @@ def marked_for_deletion(relpath: str | None) -> bool:
     return bool(relpath) and str(relpath).replace("\\", "/").split("/", 1)[0] == DELETE_PILE
 
 
+def quarantine_reason(conn: sqlite3.Connection, item_id: int) -> str:
+    """Why this file is in quarantine: the duplicate finder, or you.
+
+    Two very different answers, and the row recorded `exact_duplicate` for both
+    — so a file you set aside by hand in Review was described on the Quarantine
+    page as a byte-for-byte copy of something you already have. Read back off
+    the evidence rather than stored twice, which is what the staged list above
+    it already does; two columns saying why can disagree, one cannot.
+    """
+    row = conn.execute(
+        "SELECT evidence FROM proposals WHERE item_id=? AND status != 'superseded' "
+        "ORDER BY id DESC LIMIT 1",
+        (item_id,),
+    ).fetchone()
+    evidence = (row["evidence"] if row else "") or ""
+    return "exact_duplicate" if "exact duplicate of" in evidence else "user"
+
+
 def record_quarantine_entry(conn: sqlite3.Connection, op: sqlite3.Row) -> None:
     conn.execute(
         """
         INSERT INTO quarantine_entries(
           item_id, reason, duplicate_of, original_root, original_relpath, quarantined_at, plan_id
-        ) VALUES (?, 'exact_duplicate', NULL, ?, ?, ?, ?)
+        ) VALUES (?, ?, NULL, ?, ?, ?, ?)
         """,
-        (op["item_id"], op["src_root"], op["src_relpath"], utc_now(), op["plan_id"]),
+        (
+            op["item_id"],
+            quarantine_reason(conn, op["item_id"]),
+            op["src_root"],
+            op["src_relpath"],
+            utc_now(),
+            op["plan_id"],
+        ),
     )
 
 
