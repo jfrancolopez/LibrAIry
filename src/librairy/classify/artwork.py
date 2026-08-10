@@ -52,6 +52,10 @@ ARTWORK_STEMS = ("cover", "folder", "poster", "front", "albumart", "fanart")
 # Kodi, Jellyfin and Plex look for poster.jpg.
 ARTWORK_FILENAME = {"music": "cover", "movies": "poster", "shows": "poster"}
 
+# What to call the thing it belongs to, on the row. "belongs_to" is field-speak
+# and the Why panel prints the field name.
+_OWNER_FIELD = {"music": "album", "movies": "film", "shows": "show"}
+
 # Categories that own a folder an image can belong to. A photo has no such
 # folder, which is the whole reason this exists.
 ANCHOR_CATEGORIES = frozenset(ARTWORK_FILENAME)
@@ -262,8 +266,13 @@ def _repoint(
         dest_relpath=dest_relpath,
         confidence=CONFIDENCE,
         evidence=[
-            EvidenceEntry("artwork", "role", f"named like cover art ({filename})", CONFIDENCE),
-            EvidenceEntry("artwork", "belongs_to", anchor.label, CONFIDENCE),
+            EvidenceEntry(
+                "artwork",
+                "filename",
+                f"{PurePosixPath(item['relpath']).name} is a conventional cover-art name",
+                CONFIDENCE,
+            ),
+            EvidenceEntry("artwork", _OWNER_FIELD[anchor.category], anchor.label, CONFIDENCE),
         ],
         group_id=anchor.group_id,
     )

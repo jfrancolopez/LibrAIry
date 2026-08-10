@@ -116,12 +116,18 @@ than by a rule that would fail loudly if reordered.
 
 ### Priority
 
-| # | Change | Value | Risk |
-|---|---|---|---|
-| 1 | Recognise artwork in the destination; never propose a duplicate | high | low |
-| 2 | Associate canonically-named incoming artwork with its media group | high | low |
-| 3 | Propose artwork into an already-filed media folder | medium | medium |
-| 4 | Download provider artwork | low | high — deferred |
+| # | Change | Value | Risk | Status |
+|---|---|---|---|---|
+| 1 | Recognise artwork in the destination; never propose a duplicate | high | low | **done** |
+| 2 | Associate canonically-named incoming artwork with its media group | high | low | **done** |
+| 3 | Propose artwork into an already-filed media folder | medium | medium | **done**, via the journal |
+| 4 | Download provider artwork | low | high | **deferred** |
+
+3 turned out to be the case that actually matters here, not 2: on this library
+the album had already been committed, so there was no inbox sibling to anchor
+to and the only surviving link was the journal's record of where the tracks
+went. 4 stays deferred deliberately — the first three cover the usefulness
+without turning LibrAIry into a daemon that fetches images at the NAS.
 
 ## Part B — UI
 

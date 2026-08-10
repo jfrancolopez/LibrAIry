@@ -123,6 +123,13 @@ def test_album_cover_joins_the_album_instead_of_the_photographs(tmp_path: Path) 
         "Music/R&BSoul/Alicia Keys/Unplugged/cover.jpg",
         "cover.jpg",
     )
+    # And the row says why in words, not field names.
+    evidence = conn.execute(
+        "SELECT evidence FROM proposals WHERE item_id=?", (cover,)
+    ).fetchone()["evidence"]
+    assert "conventional cover-art name" in evidence
+    assert "album" in evidence
+    assert "belongs_to" not in evidence
     # The album's own track is untouched.
     assert dest_of(conn, track)[1] == "Music/R&BSoul/Alicia Keys/Unplugged/01-Intro.flac"
 
