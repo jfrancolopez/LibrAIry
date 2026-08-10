@@ -180,6 +180,23 @@ def _is_hidden(name: str) -> bool:
     return name.startswith(".")
 
 
+def is_visible_entry(path: Path, relpath: str, patterns: list[str]) -> bool:
+    """Whether LibrAIry considers this filesystem entry part of the library.
+
+    One predicate, used by the scanner when indexing and by Browse when
+    listing, so the two cannot drift into disagreeing about what exists.
+    Browse showing a file the indexer refuses to touch — or hiding one it
+    indexed — is the kind of discrepancy that makes the whole view untrustworthy.
+
+    Hidden files, ignore-pattern matches and symlinks, in that order. Symlinks
+    are skipped rather than followed: `followlinks=False` in the walk below is
+    what keeps a loop from hanging the scan and a link from escaping the root.
+    """
+    return (
+        not _is_hidden(path.name) and not _ignored(relpath, patterns) and not path.is_symlink()
+    )
+
+
 def _ignored(relpath: str, patterns: list[str]) -> bool:
     name = Path(relpath).name
     return any(

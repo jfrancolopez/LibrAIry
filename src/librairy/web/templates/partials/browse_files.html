@@ -1,21 +1,34 @@
 {% for item in items %}
-  <a class="browse-row is-item" href="/items/{{ item.item_id }}"
-     hx-get="/browse/items/{{ item.item_id }}/panel" hx-target="#browse-panel" hx-swap="outerHTML"
-     hx-trigger="click, focus">
-    {% if item.thumb %}
-      <img class="row-thumb" src="/preview/items/{{ item.item_id }}/thumb" alt="" loading="lazy" decoding="async">
-    {% else %}
+  {# An unindexed file is still a file. It is listed, and says so, rather than
+     being hidden because LibrAIry has no row for it — but it has no detail
+     panel and no preview to open, so it is not a link to one. #}
+  {% if item.item_id %}
+    <a class="browse-row is-item" href="/items/{{ item.item_id }}"
+       hx-get="/browse/items/{{ item.item_id }}/panel" hx-target="#browse-panel" hx-swap="outerHTML"
+       hx-trigger="click, focus">
+      {% if item.thumb %}
+        <img class="row-thumb" src="/preview/items/{{ item.item_id }}/thumb" alt="" loading="lazy" decoding="async">
+      {% else %}
+        <span class="row-thumb is-placeholder" aria-hidden="true"></span>
+      {% endif %}
+      <span class="row-name mono">{{ item.name }}</span>
+      <span class="row-size muted">{{ item.size }}</span>
+    </a>
+  {% else %}
+    <div class="browse-row is-item is-unindexed" title="On disk, but LibrAIry has no record of it yet — run a library scan">
       <span class="row-thumb is-placeholder" aria-hidden="true"></span>
-    {% endif %}
-    <span class="row-name mono">{{ item.name }}</span>
-    <span class="row-size muted">{{ item.size }}</span>
-  </a>
+      <span class="row-name mono">{{ item.name }}</span>
+      <span class="row-size muted">{{ item.size }}</span>
+      <span class="badge badge-info">not indexed</span>
+    </div>
+  {% endif %}
 {% else %}
   {% if page == 1 %}<p class="muted">No files at this level.</p>{% endif %}
 {% endfor %}
 {% if has_next %}
   {# Replaces itself with the next batch and a fresh button, so the list grows
-     in place. Prev/Next threw away everything you had already scrolled past. #}
+     in place. Prev/Next threw away everything you had already scrolled past.
+     Only files page — folders are always listed in full. #}
   <button type="button" class="load-more btn-block"
           hx-get="/browse/{{ category }}/files?folder={{ folder|urlencode }}&page={{ page + 1 }}"
           hx-target="this" hx-swap="outerHTML">Load more</button>

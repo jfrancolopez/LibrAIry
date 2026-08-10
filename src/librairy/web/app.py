@@ -1178,7 +1178,7 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         request: Request, category: str, folder: str = "", page: PageNumber = 1
     ) -> HTMLResponse:
         try:
-            data = browse_category(conn, category, folder=folder, page=page)
+            data = browse_category(conn, settings, category, folder=folder, page=page)
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         return TEMPLATES.TemplateResponse(
@@ -1193,7 +1193,7 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
     ) -> HTMLResponse:
         """One more batch of file rows, appended in place by "Load more"."""
         try:
-            data = browse_category(conn, category, folder=folder, page=page)
+            data = browse_category(conn, settings, category, folder=folder, page=page)
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         return TEMPLATES.TemplateResponse(request, "partials/browse_files.html", data)

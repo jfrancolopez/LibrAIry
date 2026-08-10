@@ -1287,6 +1287,10 @@ tbody tr:hover { background: var(--bg-metric); }
 .browse-row.is-active { background: var(--accent); color: var(--on-accent); }
 .browse-row.is-active .muted { color: inherit; }
 .browse-row.is-folder { font-weight: 600; }
+/* On disk, no index row. Listed like anything else — Browse shows the library,
+   not the database — but not a link, because there is no detail to open. */
+.browse-row.is-unindexed { cursor: default; }
+.browse-row.is-unindexed:hover { background: none; }
 .browse-row.is-folder span:first-child::before { content: "▸ "; color: var(--accent); }
 .browse-row.is-active.is-folder span:first-child::before { color: inherit; }
 
