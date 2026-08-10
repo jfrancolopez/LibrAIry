@@ -147,6 +147,23 @@ panel at a real library and reading what it said.
     explorer's keyboard navigation stands down while it is open: it listens on
     the document, so ↑↓ used to move the selection behind the viewer and Enter
     navigated the page out from under it.
+- **Companion files follow their media instead of inventing a release.** A
+  `cover.jpg` inside a folder of FLACs was filed as a photograph; `00.Info.m3u`
+  and `00.Info.nfo` came back as confident music under two *different* invented
+  artists, which split the folder's consensus and cost its real cover a
+  destination. The heuristic had declined correctly both times — it was the AI,
+  which only runs because confidence is low, that was asked and answered.
+  Sidecars are no longer asked: the extension already says a `.srt` is not a
+  film. They take their destination from the media they describe, and subtitles
+  match one specific video by name and keep its final stem, so
+  `Movie.en.forced.srt` becomes `The-Matrix-(1999).en.forced.srt` and players
+  can still find it. No anchor, no guess — it stays in Review.
+  - **Proximity is not evidence.** Eight inbox folders here hold an image beside
+    a video and seven are phone camera folders; a "picture next to a film is a
+    poster" rule would have misfiled every family photograph in them.
+  - Existing artwork always wins, and nothing is ever overwritten.
+- **Quarantine shows the file.** Both lists get Review's preview and its
+  fullscreen viewer — three of the entries here are named after UUIDs.
 - **The filename editor moved above the preview.** It rendered last: you clicked
   a destination at the top of the row and a form appeared underneath a
   photograph, which reads as editing the picture. Clicking a destination also

@@ -129,6 +129,70 @@ to and the only surviving link was the journal's record of where the tracks
 went. 4 stays deferred deliberately — the first three cover the usefulness
 without turning LibrAIry into a daemon that fetches images at the NAS.
 
+## Provider artwork — audited, and deliberately not built
+
+Priority 4. The question was whether the path is clean enough to implement the
+smallest safe version. It is not, for two separate reasons, both concrete.
+
+### Which catalogs expose artwork, for what
+
+| Catalog | Media | Artwork exposed | Sizes |
+|---|---|---|---|
+| Cover Art Archive | music | front cover, by release MBID | `front-250`, `front-500`, `front-1200` |
+| TMDB | movies, TV | `poster_path` in every search result | any `w92…w780`, `original` |
+| TVmaze | TV | `image.medium` / `image.original` | two fixed |
+| Discogs | music | `cover_image`, `thumb` | two fixed |
+| Open Library | books | cover by ISBN/OLID | S / M / L |
+
+So artwork is plentiful. That is not the blocker.
+
+### Blocker 1 — no stable identity is persisted
+
+Artwork needs an ID, and LibrAIry keeps titles.
+
+- `classify_video` records `EvidenceEntry("tmdb", "title", title)`. The TMDB
+  **id** and `poster_path` are in the response and are dropped. `tmdb._CACHE`
+  is an in-memory dict, gone at restart.
+- `classify_music` records a MusicBrainz `release_id` — but only on the
+  AcoustID branch, which runs *only for files with no usable tags*. A normally
+  tagged album, the common case at 0.90, never does a MusicBrainz lookup and
+  so has no MBID.
+- Measured on the live database: **15 catalog evidence entries, 0 of which
+  carry an id.**
+
+Proposing artwork today would therefore mean a fresh catalog query per album or
+film, at proposal time, keyed on a title — which is exactly the weak identity
+the rest of this work has been removing. "Do not download until there is a
+high-confidence media match" cannot be honoured when the match is a string.
+
+**Prerequisite:** persist the catalog id as evidence (`tmdb/id`,
+`musicbrainz/release_id` on the tagged path too). Additive, cheap, and worth
+doing on its own for explainability — Review could then say *"TMDB 603"*
+instead of *"matched An American Carol"*.
+
+### Blocker 2 — a download is not an item
+
+Every guarantee in LibrAIry hangs off one shape: a proposal moves an **existing
+inbox item** to a validated destination, hash-verified, journalled, undoable. A
+poster fetched from TMDB is not an inbox item, so it cannot be proposed. The
+two ways out:
+
+1. **Download into the inbox** and let it be scanned, proposed, reviewed and
+   committed like any other file. Changes no semantics at all — the artwork
+   association written in this pass would then pick it up for free. It does
+   mean LibrAIry writing into the user's inbox, which it has never done.
+2. **A new op type that creates a file at commit.** This touches the immutable
+   plan and the undo model, which is precisely what must not be touched.
+
+(1) is the right shape when this is built. It is still a real decision — the
+inbox stops being purely the owner's — and it is the owner's to make.
+
+### Verdict
+
+Stop. Two prerequisites, neither of them artwork work: persist catalog ids,
+then decide whether LibrAIry may write into the inbox. The first three artwork
+priorities already cover the useful cases without either.
+
 ## Part B — UI
 
 Review is the baseline: compact rows, one line of identity, detail behind
