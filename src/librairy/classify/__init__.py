@@ -6,6 +6,7 @@ from pathlib import Path
 
 from librairy.ai.orchestrator import AIBatchState, apply_ai_if_needed
 from librairy.catalogs import catalog_enabled
+from librairy.classify.artwork import associate_artwork
 from librairy.classify.disc import classify_disc
 from librairy.classify.documents import classify_document_like
 from librairy.classify.grouping import GroupInput, group_proposals
@@ -108,6 +109,12 @@ def analyze_items(
             pending += 1
             transition_item(conn, item["id"], "pending")
         conn.execute("UPDATE proposals SET updated_at=updated_at WHERE id=?", (proposal_id,))
+    # After the loop, not inside it: the cover and the tracks are separate
+    # items and either may be classified first, so an album's destination is
+    # only reliably known once every file in the batch has one.
+    artwork = associate_artwork(conn, settings)
+    proposed += artwork.associated
+    pending += artwork.already_present
     return AnalyzeSummary(len(items), proposed, pending, requeued)
 
 

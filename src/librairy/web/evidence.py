@@ -23,6 +23,7 @@ _SOURCE_LABEL = {
     "hashtag": "Folder hashtag",
     "ai": "AI",
     "vision": "Looked at it",
+    "artwork": "Cover art",
 }
 
 
@@ -40,6 +41,8 @@ TRUST = {
     "tags": "local",
     "library-pattern": "local",
     "hashtag": "local",
+    #  The filename and the folder it came in — both read off the file itself.
+    "artwork": "local",
     #  Its own kind. A model that opened the file and looked at the picture is
     #  not guessing from a name, and it is not a public catalog either — and
     #  the whole point of the segmented bar is that those are different things.

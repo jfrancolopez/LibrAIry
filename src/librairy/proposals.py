@@ -22,6 +22,9 @@ LOCAL_EVIDENCE_SOURCES = frozenset(
         # because "it read the name" and "it saw the thing" are not the same
         # claim about a file.
         "vision",
+        # Not a catalog and not a guess: the file is *named* like cover art and
+        # the folder it arrived in was identified as one album or film.
+        "artwork",
     }
 )
 # Every catalog is a legal evidence source by definition, derived from the
