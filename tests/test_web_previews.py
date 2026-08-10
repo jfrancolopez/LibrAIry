@@ -437,6 +437,101 @@ def test_the_viewer_does_not_rely_on_the_close_event_to_stop_a_video() -> None:
     assert "stage.replaceChildren()" in teardown
 
 
+def test_every_page_that_can_show_a_preview_carries_the_viewer(tmp_path: Path) -> None:
+    """Review and Browse render the same preview_card, so they must offer the
+    same viewer. The expand button ships with the card; when the dialog did not
+    ship with the page, Browse grew a control that opened nothing.
+    """
+    client, conn, settings = client_for(tmp_path)
+    item = insert_file(conn, settings, "photo.jpg", b"not really a jpeg")
+
+    for path in ("/review", "/browse", "/browse/photos", f"/items/{item}"):
+        page = client.get(path).text
+        assert 'id="lightbox"' in page, f"{path} renders previews without a viewer"
+        assert "/static/lightbox.js" in page, f"{path} has the markup but no behaviour"
+
+
+def test_the_viewer_is_one_partial_and_not_a_copy_per_page() -> None:
+    """The point of the shared include: two copies drift, and the one that
+    drifts is always the one nobody is looking at.
+    """
+    templates = Path(__file__).resolve().parents[1] / "src/librairy/web/templates"
+    homes = [
+        path.relative_to(templates).as_posix()
+        for path in templates.rglob("*.html")
+        if 'id="lightbox"' in path.read_text(encoding="utf-8")
+    ]
+
+    assert homes == ["partials/lightbox.html"]
+    # And the markup cannot be included without its behaviour.
+    partial = (templates / "partials/lightbox.html").read_text(encoding="utf-8")
+    assert "/static/lightbox.js" in partial
+
+
+def test_a_browse_panel_offers_the_same_full_screen_hooks_as_review(tmp_path: Path) -> None:
+    client, conn, settings = client_for(tmp_path)
+    image = insert_file(conn, settings, "holiday.jpg", b"not really a jpeg")
+
+    panel = client.get(f"/browse/items/{image}/panel").text
+
+    assert f'data-lightbox-image="/preview/items/{image}/thumb?size=large"' in panel
+    assert "is-expandable" in panel
+    # Browse is read-only, and the viewer must not smuggle a host path into it.
+    assert tmp_path.as_posix() not in panel
+
+
+def test_a_browse_video_gets_the_expand_control_not_a_hijacked_click(
+    tmp_path: Path,
+) -> None:
+    client, conn, settings = client_for(tmp_path)
+    video = insert_file(conn, settings, "clip.mp4", b"not really a video")
+
+    panel = client.get(f"/browse/items/{video}/panel").text
+
+    assert f'data-lightbox-video="/preview/items/{video}/media"' in panel
+    assert "preview-expand" in panel
+    # A click on a video is play/pause, in Browse exactly as in Review.
+    assert "is-expandable" not in panel
+
+
+def test_a_browse_panel_with_no_preview_has_no_viewer_controls(tmp_path: Path) -> None:
+    client, conn, settings = client_for(tmp_path)
+    other = insert_file(conn, settings, "archive.7z", b"binary")
+
+    panel = client.get(f"/browse/items/{other}/panel").text
+
+    assert "data-lightbox" not in panel
+    assert "preview-expand" not in panel
+
+
+def test_browse_keyboard_navigation_yields_to_an_open_viewer() -> None:
+    """The explorer listens on the document, so without this the arrow keys
+    moved the selection in the list behind the open viewer — dragging focus out
+    of the modal with them — and Enter navigated the page away underneath it.
+    """
+    source = (
+        Path(__file__).resolve().parents[1] / "src/librairy/web/static/browse.js"
+    ).read_text(encoding="utf-8")
+
+    handler = source[source.index('addEventListener("keydown"') :]
+    guard = handler[: handler.index("switch (event.key)")]
+    assert 'document.querySelector("dialog[open]")' in guard
+
+
+def test_browse_still_lists_categories_and_searches(tmp_path: Path) -> None:
+    """The viewer is an addition to Browse, not a change to it."""
+    client, conn, settings = client_for(tmp_path)
+    insert_file(conn, settings, "photo.jpg", b"not really a jpeg")
+
+    home = client.get("/browse")
+    results = client.get("/browse?q=photo")
+
+    assert home.status_code == 200
+    assert "Your library" in home.text
+    assert results.status_code == 200
+    assert 'id="search-results"' in results.text
+
+
 def test_the_viewer_never_autoplays() -> None:
     source = (
         Path(__file__).resolve().parents[1]

@@ -6,6 +6,7 @@
   <p>copy: {{ host_path }}</p>
   <p class="muted"><a href="/access">Need SMB/FTP/WebDAV access help?</a></p>
   {% if preview %}{% include "partials/preview_card.html" %}{% elif preview_error %}<p class="status warn">Preview unavailable: {{ preview_error }}</p>{% endif %}
+  {% include "partials/lightbox.html" %}
   <section class="metric wide">
     <h2>Metadata</h2>
     {% if proposal %}<span>category: {{ proposal.category }}</span><span>confidence: {{ '%.2f'|format(proposal.confidence) }}</span><span>destination: {{ proposal.dest_root }}/{{ proposal.dest_relpath }}</span>{% else %}<span class="muted">No proposal metadata.</span>{% endif %}

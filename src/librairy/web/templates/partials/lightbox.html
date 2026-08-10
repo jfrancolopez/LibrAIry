@@ -1,11 +1,15 @@
-{# One viewer for the whole page, not one per row.
+{# One viewer for the whole page, not one per row — and one viewer for the
+   whole app, not one per page. Every page that can render a preview_card
+   includes this, which is why the script tag lives in here too: including the
+   markup without the behaviour would leave an expand button that opens
+   nothing, and that is exactly how Review and Browse would drift apart.
 
    A real <dialog>: Escape, the backdrop, focus trapping and returning focus to
    whatever opened it are all the browser's job, and it does them better than a
    hand-rolled overlay would. Nothing here needs a framework.
 
-   It lives outside #review-list so an htmx swap of the list cannot pull the
-   open viewer out from under you. #}
+   Include it OUTSIDE whatever htmx swaps — #review-list, #browse-body,
+   #browse-panel — or a swap can pull the open viewer out from under you. #}
 <dialog id="lightbox" class="lightbox" aria-labelledby="lightbox-title">
   <div class="lightbox-frame">
     <header class="lightbox-bar">
@@ -22,3 +26,4 @@
     </footer>
   </div>
 </dialog>
+<script src="/static/lightbox.js" defer></script>

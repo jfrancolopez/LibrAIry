@@ -48,5 +48,7 @@
       <p class="muted">{% if first_item_id %}Loading…{% else %}Select a file to see it here.{% endif %}</p>
     </aside>
   </div>
+  {# Outside .explorer: arrowing to another file swaps #browse-panel. #}
+  {% include "partials/lightbox.html" %}
   <script src="/static/browse.js" defer></script>
 {% endblock %}

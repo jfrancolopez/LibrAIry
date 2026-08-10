@@ -139,6 +139,14 @@ panel at a real library and reading what it said.
     browser: `showModal()` then `close()` opens and closes the dialog correctly
     and fires no `close` at all. Hanging the teardown off it left a video
     playing to nobody behind a shut viewer. Every exit runs one teardown now.
+  - **In Browse too**, on all three surfaces that show a preview — search
+    results, the explorer's detail panel and the full item page. They already
+    rendered the same preview card, so they already had the expand control; only
+    Review shipped the viewer it opened. The dialog and its script are one
+    include now, so the markup cannot arrive without the behaviour. The
+    explorer's keyboard navigation stands down while it is open: it listens on
+    the document, so ↑↓ used to move the selection behind the viewer and Enter
+    navigated the page out from under it.
 - **The filename editor moved above the preview.** It rendered last: you clicked
   a destination at the top of the row and a form appeared underneath a
   photograph, which reads as editing the picture. Clicking a destination also

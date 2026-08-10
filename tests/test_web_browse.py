@@ -129,8 +129,20 @@ def test_browse_templates_have_no_mutating_affordances(tmp_path: Path) -> None:
         assert verb not in html.lower()
     forms = re.findall(r"<form[^>]*>", html)
     assert all('method="get"' in form for form in forms), forms
-    # Submitting a search is the only button here.
-    assert html.count("<button") == len(forms)
+    # Counting buttons used to stand in for "Browse changes nothing", which
+    # stopped working the moment Browse gained the same read-only preview
+    # controls Review has. Naming them keeps the invariant instead: a button
+    # here is the search submit or a view-only control, and a new one that
+    # writes matches neither and fails.
+    view_only = ("data-lightbox", "data-preview-all", "preview-expand")
+    buttons = re.findall(r"<button\b[^>]*>", html)
+    unexplained = [
+        button
+        for button in buttons
+        if "submit" not in button and not any(marker in button for marker in view_only)
+    ]
+    assert not unexplained, unexplained
+    assert sum("submit" in button for button in buttons) == len(forms)
 
 
 def test_browse_requests_do_not_walk_filesystem(tmp_path: Path, monkeypatch) -> None:

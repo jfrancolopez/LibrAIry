@@ -47,6 +47,11 @@
     var tag = (event.target.tagName || "").toLowerCase();
     if (tag === "input" || tag === "textarea" || tag === "select") return;
     if (event.metaKey || event.ctrlKey || event.altKey) return;
+    // A modal is on top: the keys belong to it. Without this, arrowing inside
+    // the fullscreen viewer moved the selection in the list behind it — and
+    // pulled focus out of the modal to do it — while Enter navigated the whole
+    // page away from under the open viewer.
+    if (document.querySelector("dialog[open]")) return;
 
     switch (event.key) {
       case "ArrowDown":
