@@ -6,7 +6,35 @@
 3. Watch the activity pill in the header, on any page, for what it is doing.
 4. Open Review, approve/edit/reject/postpone proposals.
 5. Open Commit, create a plan, inspect it, then execute.
-6. Use Search and Browse to find indexed files.
+6. Use Search and Browse to find files.
+
+## What Browse shows, and how it differs from Search
+
+**Browse reflects the physical contents of your library directory.** It lists
+the real direct children of each folder and then enriches them with whatever
+LibrAIry knows — category, size, thumbnail, preview, evidence. A file with no
+database record still appears, marked *not indexed*: a missing record means
+metadata is unavailable, not that the file does not exist.
+
+The consequences worth knowing:
+
+- **Folders are never truncated.** However many files a folder holds, every
+  sibling folder is listed. Only the file list pages.
+- **Empty folders appear**, because they exist.
+- **A file deleted outside LibrAIry stops appearing**, because Browse lists the
+  disk rather than the index.
+- **Search is index-backed**, so a file that exists but has not been scanned is
+  visible in Browse before it is findable in Search. Run a library scan
+  (`librairy scan --root library`) to close the gap.
+
+Browse deliberately does not answer *where should this file go* — that is
+Review's job. It answers *what is in my library right now*, so a folder whose
+name the classifier would not have chosen is still shown exactly as it is.
+
+**Intentionally excluded** from both Browse and the indexer, by one shared
+rule: dot-files and dot-directories, anything matching `IGNORE_PATTERNS`, and
+symlinks (never followed, so they cannot escape the library root or loop).
+Directories that cannot be read are skipped rather than crashing the page.
 7. Use History to inspect or undo committed filesystem operations.
 
 LibrAIry never commits automatically. Analysis only writes database proposals. File moves happen only through an approved immutable plan.

@@ -147,6 +147,24 @@ panel at a real library and reading what it said.
     explorer's keyboard navigation stands down while it is open: it listens on
     the document, so ↑↓ used to move the selection behind the viewer and Enter
     navigated the page out from under it.
+- **Browse shows the library, not a page of the index.** It built its folder
+  list out of fifty indexed files: select fifty rows ordered by path, take the
+  second component of each, call that the directory listing. `Photos/` here
+  holds 89 indexed files and the first 83 are inside `2022/`, so
+  `Photos/Unknown/` — starting at row 83 — did not exist as far as the UI was
+  concerned, while navigating straight into it worked. That is what made it
+  look arbitrary rather than like a limit. Two more consequences of the same
+  design: a file with no search row was invisible however few files there were,
+  and an empty folder could never be shown at all.
+  - Folders now come from the filesystem and are **never paginated** — no
+    number of files can hide a sibling. Only the file list pages.
+  - The index enriches rather than defines: an unindexed file is listed with a
+    quiet *not indexed* badge, because a missing record means metadata is
+    unavailable, not that the file is absent. A record whose file is gone is
+    simply not listed.
+  - Hidden files, ignore patterns and symlinks go through **one predicate
+    shared with the indexer**, so Browse and the scanner cannot drift into
+    disagreeing about what the library contains. Containment is unchanged.
 - **Companion files follow their media instead of inventing a release.** A
   `cover.jpg` inside a folder of FLACs was filed as a photograph; `00.Info.m3u`
   and `00.Info.nfo` came back as confident music under two *different* invented
