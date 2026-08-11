@@ -233,6 +233,23 @@ panel at a real library and reading what it said.
     evidence, search entry and history counts are identical across a clear.
     `missing_since` stays set, a file that comes back leaves the list on its
     own with its decision intact, and running it twice does nothing.
+  - **`librairy vanished list` / `librairy vanished clear --root inbox --yes`**,
+    over the same function the button calls — a test asserts both names are the
+    one object and that the CLI dispatch contains no `UPDATE` of its own.
+    `list` is the preview; `clear` needs an explicit root and `--yes`, and
+    reports `files_deleted: 0`.
+  - **A missing record no longer describes itself as a zero-byte file.** The
+    scanner keeps the last size it measured, so the number was right and the
+    tense was wrong: the page says *last known size* now, humanised, or *not
+    recorded*.
+  - **A quarantine destination is not called filing.** Three intents can sit
+    behind one `dest_relpath` and the path does not distinguish them, so the
+    label does — *Would have been filed as*, *Set aside*, *Marked for
+    deletion*. One vanished entry here points into quarantine and had been read
+    as one more filing decision. Proposal states get written out too, rather
+    than showing the word the database uses.
+  - **The notice reconciles its own arithmetic**: seven entries to clear, and a
+    line for the eighth record that is missing and already resolved.
 - **Files in the library root are reachable.** A file sitting directly in
   `library/` was scanned, indexed, searchable and had a detail page, and there
   was nowhere in Browse it could appear: the root screen lists directories, and

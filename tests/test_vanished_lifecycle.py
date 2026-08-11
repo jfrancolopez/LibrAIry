@@ -569,3 +569,45 @@ def test_nothing_extra_is_said_when_every_missing_record_is_clearable(tmp_path: 
     notice = client.get("/review").text.split('id="review-list"')[0]
 
     assert "already resolved" not in notice
+
+
+# --- the invariants this pass must not have broken --------------------------
+
+
+def test_the_whole_missing_lifecycle_still_holds_end_to_end(tmp_path: Path) -> None:
+    """One pass over everything the last three tasks established, so a change
+    to presentation cannot quietly move any of it."""
+    client, conn, settings = client_for(tmp_path)
+    live = seed(conn, settings, "here.mkv")
+    gone = seed(conn, settings, "gone.mkv", status="approved", gone=True)
+
+    # Excluded from Search, from the Review queue, and from Commit.
+    assert search_items(conn, "gone", SearchFilters(root=None)) == []
+    assert "gone.mkv" not in client.get("/review").text.split('id="review-list"')[1]
+    assert "Nothing is approved yet" in client.get("/commit").text
+    # Still reachable directly, and honest about it.
+    detail = client.get(f"/items/{gone}")
+    assert detail.status_code == 200
+    assert "Not on disk" in detail.text
+    assert "preview-expand" not in detail.text
+    # The live one is unaffected throughout.
+    assert len(search_items(conn, "here", SearchFilters(root=None))) == 1
+
+    forget_vanished(conn, root="inbox")
+
+    assert search_items(conn, "gone", SearchFilters(root=None)) == [], "still not searchable"
+    assert conn.execute("SELECT COUNT(*) FROM items").fetchone()[0] == 2
+    assert conn.execute(
+        "SELECT status FROM proposals WHERE item_id=?", (live,)
+    ).fetchone()[0] == "proposed"
+
+    (settings.inbox_dir / "gone.mkv").write_text("back", encoding="utf-8")
+    scan_root(conn, "inbox", settings.inbox_dir, settings)
+
+    assert conn.execute(
+        "SELECT missing_since FROM items WHERE id=?", (gone,)
+    ).fetchone()[0] is None
+    assert vanished_count(conn) == 0
+    page = client.get(f"/items/{gone}").text
+    assert "Not on disk" not in page
+    assert "last known size" not in page

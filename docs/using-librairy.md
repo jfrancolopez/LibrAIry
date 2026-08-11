@@ -154,7 +154,51 @@ the next scan takes it off the list by itself, decision intact.
 One count worth understanding: **records whose file is missing** and **entries
 worth clearing** are different numbers. A proposal you already rejected is not
 waiting on anybody, so its file vanishing changes nothing about it and clearing
-does not apply. Eight missing records here, seven entries to clear.
+does not apply. Eight missing records here, seven entries to clear — and the
+disclosure says so, rather than leaving you to reconcile it.
+
+The same thing from a terminal:
+
+```bash
+librairy vanished list --root inbox
+```
+
+```bash
+librairy vanished clear --root inbox --yes
+```
+
+`list` is also the preview: it prints exactly the entries `clear` would resolve,
+with relative paths only. `clear` needs an explicit root and `--yes` — without
+it, it reports what it would do and changes nothing — and running it again when
+there is nothing left succeeds with `cleared: 0`. It is the same function the
+Review button calls.
+
+### What a missing record's page shows
+
+Open one directly and it says the file is gone rather than describing it as
+though it were there:
+
+- **Last known size**, not *size*. The scanner keeps the last size it measured;
+  printing it plainly read as a claim about a file nobody can check. A record
+  whose file was never measured says *not recorded*.
+- No preview and no viewer control — there is nothing to open.
+- The path it last had, relative to its root. No host path.
+- Its category, evidence, siblings and history, all still there.
+
+### Where a proposal was going, and what that meant
+
+A destination is not always a filing decision, and the path alone does not say
+which it is, so the label does:
+
+| Label | Means |
+|---|---|
+| **Would have been filed as** `library/…` | Normal filing. |
+| **Set aside** `quarantine/…` | Sent to quarantine — a duplicate, or something you shelved. |
+| **Marked for deletion** `quarantine/_to-delete/…` | Staged for deletion. Still a quarantine move, still restorable. |
+
+Proposal states are written out for the same reason: *Waiting for review*,
+*Approved, not committed*, *Rejected* — rather than the words the database
+uses for them.
 
 ### The words, and what they mean here
 
