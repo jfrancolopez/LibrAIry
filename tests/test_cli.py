@@ -61,8 +61,9 @@ def test_cli_full_lifecycle(tmp_path: Path) -> None:
     assert shown["plan"]["status"] == "draft"
     approved = json.loads(run_cli(tmp_path, "plan", "approve", plan_id).stdout)
     assert approved["status"] == "approved"
-    needs_yes = json.loads(run_cli(tmp_path, "commit", plan_id).stdout)
-    assert needs_yes["error"] == "commit requires --yes"
+    refused = run_cli(tmp_path, "commit", plan_id)
+    assert refused.returncode == 2, "a refusal is a failure, not a quiet success"
+    assert json.loads(refused.stdout)["error"] == "confirmation_required"
     committed = json.loads(run_cli(tmp_path, "commit", plan_id, "--yes").stdout)
     assert committed["done"] == 1
     assert (library / "Documents/a.txt").read_text(encoding="utf-8") == "a"
@@ -100,4 +101,4 @@ def test_cli_rejects_escape_plan_at_approval(tmp_path: Path) -> None:
     result = run_cli(tmp_path, "plan", "create", "--from-file", str(ops))
 
     assert result.returncode == 2
-    assert "traversal" in result.stderr
+    assert "traversal" in json.loads(result.stdout)["message"]

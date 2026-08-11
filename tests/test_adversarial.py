@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import errno
+import json
 import os
 import re
 import signal
@@ -123,7 +124,11 @@ def test_double_execution_race_only_one_process_proceeds(tmp_path: Path) -> None
             check=False,
         )
         assert second.returncode == 2
-        assert "another LibrAIry process holds the lock" in second.stderr
+        # --json puts the one document on stdout whichever way it went.
+        assert json.loads(second.stdout) == {
+            "error": "internal_error",
+            "message": "another LibrAIry process holds the lock",
+        }
     finally:
         if first.poll() is None:
             first.kill()

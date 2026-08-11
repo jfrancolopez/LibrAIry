@@ -202,9 +202,12 @@ def test_clear_refuses_without_yes_and_says_what_it_would_do(tmp_path: Path) -> 
     conn.commit()
     conn.close()
 
-    payload = json.loads(run_cli(tmp_path, "vanished", "clear", "--root", "inbox").stdout)
+    refused = run_cli(tmp_path, "vanished", "clear", "--root", "inbox")
 
-    assert payload["error"] == "vanished clear requires --yes"
+    assert refused.returncode == 2
+    payload = json.loads(refused.stdout)
+    assert payload["error"] == "confirmation_required"
+    assert payload["message"] == "vanished clear requires --yes"
     assert payload["would_clear"] == 1
     assert json.loads(run_cli(tmp_path, "vanished", "list").stdout)["clearable"] == 1
 

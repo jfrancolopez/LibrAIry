@@ -46,6 +46,14 @@ from librairy.search import rebuild_search_index
 from librairy.supervisor import run_supervisor
 from librairy.worker import run_forever, run_once
 
+# Exit codes, as promised since Phase 1. Three is enough: a script needs to
+# know whether the thing happened, half-happened, or was refused.
+EXIT_OK = 0
+EXIT_PARTIAL = 1
+EXIT_REFUSED = 2
+
+JSON_HELP = "Emit JSON output"
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -53,7 +61,7 @@ def build_parser() -> argparse.ArgumentParser:
         description="LibrAIry core safety engine",
     )
     parser.add_argument("--version", action="version", version=f"librairy {__version__}")
-    parser.add_argument("--json", action="store_true", help="Emit JSON output")
+    parser.add_argument("--json", action="store_true", help=JSON_HELP)
     subparsers = parser.add_subparsers(dest="command")
 
     scan = subparsers.add_parser("scan", help="Scan configured roots")
@@ -72,7 +80,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     plan = subparsers.add_parser("plan", help="Create, inspect, and approve plans")
-    plan_subparsers = plan.add_subparsers(dest="plan_command")
+    plan_subparsers = plan.add_subparsers(dest="plan_command", required=True)
     create = plan_subparsers.add_parser("create", help="Create a draft plan")
     create.add_argument("--from-file", required=True)
     show = plan_subparsers.add_parser("show", help="Show a plan")
@@ -95,7 +103,7 @@ def build_parser() -> argparse.ArgumentParser:
     undo.add_argument("--yes", action="store_true", help="Confirm undo")
 
     proposals = subparsers.add_parser("proposals", help="Proposal utilities")
-    proposal_subparsers = proposals.add_subparsers(dest="proposal_command")
+    proposal_subparsers = proposals.add_subparsers(dest="proposal_command", required=True)
     proposal_list = proposal_subparsers.add_parser("list", help="List proposals")
     proposal_list.add_argument("--status", default="proposed")
     proposal_show = proposal_subparsers.add_parser("show", help="Show proposal")
@@ -106,7 +114,7 @@ def build_parser() -> argparse.ArgumentParser:
     propose_plan.add_argument("--ids", nargs="*", type=int)
 
     quarantine = subparsers.add_parser("quarantine", help="Quarantine utilities")
-    quarantine_subparsers = quarantine.add_subparsers(dest="quarantine_command")
+    quarantine_subparsers = quarantine.add_subparsers(dest="quarantine_command", required=True)
     quarantine_subparsers.add_parser("list", help="List quarantine entries")
     quarantine_restore = quarantine_subparsers.add_parser(
         "restore", help="Restore quarantine entries"
@@ -115,12 +123,12 @@ def build_parser() -> argparse.ArgumentParser:
     quarantine_restore.add_argument("--all", action="store_true")
 
     db = subparsers.add_parser("db", help="Database utilities")
-    db_subparsers = db.add_subparsers(dest="db_command")
+    db_subparsers = db.add_subparsers(dest="db_command", required=True)
     db_subparsers.add_parser("path", help="Print database path")
     db_subparsers.add_parser("migrate", help="Apply migrations")
 
     index = subparsers.add_parser("index", help="Search index utilities")
-    index_subparsers = index.add_subparsers(dest="index_command")
+    index_subparsers = index.add_subparsers(dest="index_command", required=True)
     index_rebuild = index_subparsers.add_parser("rebuild", help="Rebuild the FTS search index")
     index_rebuild.add_argument(
         "--content",
@@ -129,12 +137,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     ai = subparsers.add_parser("ai", help="AI provider utilities")
-    ai_subparsers = ai.add_subparsers(dest="ai_command")
-    ai_status = ai_subparsers.add_parser("status", help="Show AI provider status")
-    ai_status.add_argument("--json", action="store_true", help="Emit JSON output")
+    ai_subparsers = ai.add_subparsers(dest="ai_command", required=True)
+    ai_subparsers.add_parser("status", help="Show AI provider status")
     ai_test = ai_subparsers.add_parser("test", help="Test an AI provider")
     ai_test.add_argument("provider", nargs="?")
-    ai_test.add_argument("--json", action="store_true", help="Emit JSON output")
 
     # The same lifecycle the Review page offers, for people who live in a
     # terminal. `list` doubles as the dry run: it prints exactly the rows
@@ -143,7 +149,7 @@ def build_parser() -> argparse.ArgumentParser:
     vanished = subparsers.add_parser(
         "vanished", help="Entries whose file is no longer on disk"
     )
-    vanished_subparsers = vanished.add_subparsers(dest="vanished_command")
+    vanished_subparsers = vanished.add_subparsers(dest="vanished_command", required=True)
     vanished_list = vanished_subparsers.add_parser(
         "list", help="List entries waiting on a file that is gone"
     )
@@ -152,15 +158,38 @@ def build_parser() -> argparse.ArgumentParser:
         "clear", help="Resolve those entries. Deletes no file and no record."
     )
     vanished_clear.add_argument("--root", choices=sorted(VALID_ROOTS), required=True)
-    # --json is global, and a subcommand redeclaring it silently overrides the
-    # global one back to False. `ai status` has that bug; this does not.
     vanished_clear.add_argument("--yes", action="store_true", help="Confirm")
 
     worker = subparsers.add_parser("worker", help="Run the background worker")
     worker.add_argument("--once", action="store_true", help="Run one worker cycle and exit")
 
     subparsers.add_parser("run", help="Run web and worker under the supervisor")
+    _inherit_json(parser)
     return parser
+
+
+def _inherit_json(parser: argparse.ArgumentParser) -> None:
+    """Let `--json` be typed anywhere: before the command or after it.
+
+    A subparser parses into a fresh namespace and copies every key it set back
+    over the parent's. A subcommand that declares `--json` the ordinary way
+    therefore copies its default of `False` over a global `--json` that was
+    already `True` — which is why `librairy --json ai status` printed plain
+    text while `librairy ai status --json` worked. `default=SUPPRESS` means the
+    key only exists, and only gets copied back, when the flag was really typed.
+
+    Doing it by walking the tree rather than by hand at thirty call sites is
+    the point: a subcommand added tomorrow inherits the fixed flag and cannot
+    reintroduce the bug by declaring its own.
+    """
+    for action in parser._actions:
+        if not isinstance(action, argparse._SubParsersAction):
+            continue
+        for sub in dict.fromkeys(action.choices.values()):
+            sub.add_argument(
+                "--json", action="store_true", default=argparse.SUPPRESS, help=JSON_HELP
+            )
+            _inherit_json(sub)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -168,7 +197,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command is None:
         parser.print_help()
-        return 0
+        return EXIT_OK
     try:
         settings = validate_or_die()
         if args.command == "run":
@@ -177,14 +206,26 @@ def main(argv: list[str] | None = None) -> int:
         conn = connect(settings)
         result = _dispatch(args, conn, settings)
     except Exception as exc:
-        _emit(args, {"error": str(exc)}, error=True)
-        return 2
+        _emit(args, {"error": "internal_error", "message": str(exc)})
+        return EXIT_REFUSED
     if result is None:
-        return 0
+        return EXIT_OK
     _emit(args, result)
-    if isinstance(result, dict) and result.get("partial"):
-        return 1
-    return 0
+    return _exit_code(result)
+
+
+def _exit_code(result: dict[str, object]) -> int:
+    """Success looks like success; refusal looks like failure.
+
+    Doing nothing because there was nothing to do is still success — `cleared:
+    0` is an answer, not a fault. Only a refused or failed request goes
+    non-zero, so `if librairy ...; then` reads the way a shell reader expects.
+    """
+    if result.get("error"):
+        return EXIT_REFUSED
+    if result.get("partial"):
+        return EXIT_PARTIAL
+    return EXIT_OK
 
 
 def _dispatch(args: argparse.Namespace, conn: sqlite3.Connection, settings: Settings):
@@ -204,14 +245,22 @@ def _dispatch(args: argparse.Namespace, conn: sqlite3.Connection, settings: Sett
         return _plan_command(args, conn, settings)
     if args.command == "commit":
         if not args.yes:
-            return {"error": "commit requires --yes", "would_commit": args.plan_id}
+            return {
+                "error": "confirmation_required",
+                "message": "commit requires --yes",
+                "would_commit": args.plan_id,
+            }
         summary = execute_plan(conn, args.plan_id, settings)
         return asdict(summary) | {"partial": summary.partial}
     if args.command == "history":
         return {"history": [_row_dict(row) for row in list_history(conn, args.plan, args.n)]}
     if args.command == "undo":
         if not args.yes:
-            return {"error": "undo requires --yes"}
+            return {
+                "error": "confirmation_required",
+                "message": "undo requires --yes",
+                "would_undo": args.op if args.op is not None else args.plan,
+            }
         if args.op is not None:
             result = undo_op(conn, args.op, settings)
             return asdict(result)
@@ -319,7 +368,8 @@ def _vanished_command(args: argparse.Namespace, conn: sqlite3.Connection):
         # them back means classifying those files again.
         if not args.yes:
             return {
-                "error": "vanished clear requires --yes",
+                "error": "confirmation_required",
+                "message": "vanished clear requires --yes",
                 "would_clear": vanished_count(conn, root=args.root),
                 "root": args.root,
             }
@@ -339,7 +389,10 @@ def _quarantine_command(args: argparse.Namespace, conn: sqlite3.Connection, sett
         if args.all:
             return {"results": [asdict(result) for result in restore_all(conn, settings)]}
         if args.entry_id is None:
-            return {"error": "restore requires entry_id or --all", "partial": True}
+            return {
+                "error": "argument_required",
+                "message": "restore requires entry_id or --all",
+            }
         return asdict(restore_entry(conn, args.entry_id, settings))
     return None
 
@@ -352,7 +405,11 @@ def _ai_command(args: argparse.Namespace, conn: sqlite3.Connection, settings: Se
         configs = provider_chain(conn, settings)
         config = _select_provider(configs, args.provider)
         if config is None:
-            return {"ok": False, "error": "provider not found", "partial": True}
+            return {
+                "ok": False,
+                "error": "provider_not_found",
+                "message": f"no provider named {args.provider!r}",
+            }
         provider = provider_for_config(config, settings)
         health = provider.health(settings.ai_timeout)
         answer = None
@@ -398,27 +455,38 @@ def _row_dict(row: sqlite3.Row | None) -> dict[str, object] | None:
     return dict(row)
 
 
-def _emit(args: argparse.Namespace, result: dict[str, object], error: bool = False) -> None:
-    stream = sys.stderr if error else sys.stdout
+def _emit(args: argparse.Namespace, result: dict[str, object]) -> None:
     if getattr(args, "json", False):
-        print(json.dumps(result, sort_keys=True), file=stream)
-    else:
-        for key, value in result.items():
-            # A list of rows printed as one line is a Python repr, which is
-            # what `quarantine list`, `history` and `vanished list` all used to
-            # produce. One indented line each instead; --json is unchanged and
-            # remains the machine-readable form.
-            if isinstance(value, list):
-                print(f"{key}: {len(value)}", file=stream)
-                for entry in value:
-                    print(f"  {_row_line(entry)}", file=stream)
-                continue
-            print(f"{key}: {value}", file=stream)
+        # Exactly one JSON document, always on stdout, whether the command
+        # worked or refused — so `librairy --json ... | jq .` is never handed
+        # half a stream, and the exit code is what says which it was.
+        print(json.dumps(result, sort_keys=True, default=str))
+        return
+    # Human mode keeps the old split: results on stdout, diagnostics on stderr,
+    # so a plain `librairy ... > out` does not collect the complaint.
+    stream = sys.stderr if result.get("error") else sys.stdout
+    for key, value in result.items():
+        # A list or a dict printed with str() is a Python repr, which is what
+        # `quarantine list`, `history`, `vanished list` and `ai test` all used
+        # to produce. Line-oriented output instead; --json is untouched and
+        # remains the machine-readable form.
+        if isinstance(value, list | tuple):
+            print(f"{key}: {len(value)}", file=stream)
+            for entry in value:
+                print(f"  {_row_line(entry)}", file=stream)
+            continue
+        print(f"{key}: {_row_line(value)}", file=stream)
 
 
 def _row_line(entry: object) -> str:
     if isinstance(entry, dict):
         return "  ".join(
-            f"{key}={value}" for key, value in entry.items() if value not in (None, "")
+            f"{key}={_scalar(value)}" for key, value in entry.items() if value not in (None, "")
         )
-    return str(entry)
+    return _scalar(entry)
+
+
+def _scalar(value: object) -> str:
+    # One value, one line. A rationale with a newline in it would otherwise
+    # look like the start of a new key.
+    return " ".join(str(value).split("\n"))
