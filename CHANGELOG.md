@@ -199,6 +199,29 @@ panel at a real library and reading what it said.
     filter, so anything Browse can see, it can index.
   - Reporting only. Opening Browse indexes nothing, deletes nothing, triggers
     no scan, and calls no catalog or AI provider.
+- **Search no longer returns files that are not there.** `missing_since` is set
+  by every scan and checked by Review, Commit, plan, dedup, duplicates, the
+  catalog probe, content extraction, backup, the indexer and companions.
+  `search.py` did not mention the column anywhere. Here that was five files
+  deleted during a drill in August coming back beside one real result and
+  rendered identically — same thumbnail slot, same size, same category badge,
+  same "goes to" destination. Browse was finally trustworthy and Search was
+  telling you the opposite.
+  - The clause is in the `WHERE`, so the exclusion happens **before**
+    `LIMIT`/`OFFSET`. Filtering the returned rows would have hidden the ghosts
+    and quietly shortened every page — the Browse folder bug, one table over.
+  - **Nothing is deleted.** The record keeps its classification, its evidence
+    and any approval or rejection; History still points at it. Put the file
+    back and the next scan makes it searchable again with no rebuild.
+  - `/items/{id}` says *Not on disk*, when it was last seen and where, and
+    stops offering a preview of nothing — that page used to attempt one, fail
+    on the open, and print the errno where the photograph should be.
+- **Files in the library root are reachable.** A file sitting directly in
+  `library/` was scanned, indexed, searchable and had a detail page, and there
+  was nowhere in Browse it could appear: the root screen lists directories, and
+  the explorer only opens one. They are listed under the tiles now, with the
+  same rows, badges, previews and viewer, and the same rule as one level down —
+  directories complete, files paged.
 - **Companion files follow their media instead of inventing a release.** A
   `cover.jpg` inside a folder of FLACs was filed as a photograph; `00.Info.m3u`
   and `00.Info.nfo` came back as confident music under two *different* invented

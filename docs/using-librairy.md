@@ -22,6 +22,10 @@ under their real names, each showing how many visible files lie beneath it at
 any depth. A folder you created yourself over SMB gets a tile; a category
 LibrAIry knows about but has never filed anything into does not.
 
+Files lying **directly in the library root** are listed under the tiles, in the
+same rows the explorer uses. Nothing has to be put in a folder before Browse
+will admit it is there.
+
 The consequences worth knowing:
 
 - **Folders are never truncated.** However many files a folder holds, every
@@ -51,7 +55,7 @@ is why it never claims to be synchronised. Two things can be reported:
 | Reading | What happened | What fixes it |
 |---|---|---|
 | *not indexed* | A file is on disk that nothing has scanned — usually copied straight in over SMB. It is browsable but not searchable. | `librairy scan --root library` |
-| *missing on disk* | A record points at a file that is no longer there. A scan marks the record missing but keeps it, so Search can still return it. | Nothing automatic. LibrAIry does not delete your records. |
+| *missing on disk* | A record points at a file that is no longer there. Search will not return it and Browse never showed it; the record is kept for its history and its evidence. | Nothing automatic. LibrAIry does not delete your records. Put the file back and a scan picks it up again. |
 
 **Not indexed never means unsupported.** The scanner has no extension filter —
 anything Browse can see, it can index — so the only reason a visible file has
@@ -68,6 +72,50 @@ So a file that arrives in the library any other way stays unknown until you
 scan. That is by design — the library is not touched unless you ask — and the
 consistency line exists so the consequence is visible rather than surprising.
 
+### Three questions, three answers
+
+| | Answers | Source |
+|---|---|---|
+| **Browse** | What is physically in my library? | The filesystem. |
+| **Search** | Which files that are here match this? | The index, minus anything a scan looked for and did not find. |
+| **History** | What happened, including to things that are gone? | The journal, which is never pruned. |
+
+A file you deleted outside LibrAIry disappears from Browse immediately, drops
+out of Search at the next scan, and stays in History forever. Its record stays
+too: open `/items/{id}` from a History entry and the page says the file is not
+on disk, when it was last seen and where, with no preview offered. Nothing is
+deleted to achieve that — the record still carries the classification, the
+evidence and any approval or rejection made about it.
+
+Put the file back and the next scan clears the flag; it is searchable again
+with no repair and no rebuild.
+
+**A rename outside LibrAIry** looks like a deletion and a new file, because
+LibrAIry does not track renames. You get two records and one healthy result:
+the old path stops being searchable, the new one appears once scanned.
+
+### What `librairy scan --root library` does
+
+The supported way to reconcile the library with the index. Audited, so this
+list is exact:
+
+- **Marks** records whose file it did not find, by setting `missing_since`.
+- **Clears** `missing_since` for a file that has come back.
+- **Indexes** files it has not seen before, and updates size, mtime and
+  fingerprint for ones that changed.
+- **Rebuilds the layout map** — the folder conventions used to file a new
+  album into the artist folder you already keep.
+- **Deletes nothing.** No record, no search entry, no proposal, no history.
+- **Classifies nothing**, and calls no AI provider and no catalog.
+
+It only reconciles the root you scanned. `--root library` cannot mark an inbox
+record missing, and the background worker only ever scans the inbox — which is
+why inbox records can sit missing while the library is perfectly clean.
+
+There is deliberately no "clean up stale records" command. A missing file is
+usually an unmounted disk, and discarding a volume's worth of decisions the
+moment it drops offline would be worse than a stale row.
+
 ### The words, and what they mean here
 
 | Term | Meaning |
@@ -76,6 +124,7 @@ consistency line exists so the consequence is visible rather than surprising.
 | **searchable** | Has a row in the search index, which every record gets — so in practice, the same as scanned. |
 | **classified** | Has a live proposal carrying a category and a destination. Browse does not require this. |
 | **committed** | Moved into the library by an approved plan. |
+| **missing** | A scan of that root looked for the file and did not find it. The record is kept; it is excluded from Search, Review, Commit and everything else that assumes the file is there. |
 
 **Intentionally excluded** from both Browse and the indexer, by one shared
 rule: dot-files and dot-directories, anything matching `IGNORE_PATTERNS`, and
