@@ -21,6 +21,20 @@ THUMBNAILABLE = {
 }
 FTS_OPERATORS = {"AND", "OR", "NOT", "NEAR"}
 
+# Search answers "which files that are here match this?", so a row whose file a
+# scan looked for and did not find is not a result. Every other surface already
+# knew this — Review, Commit, plan, dedup, duplicates, the catalog probe,
+# content extraction, backup, the indexer, companions — and search.py was the
+# one that did not mention the column at all. On the author's library that was
+# five files deleted during a drill in August coming back beside one real
+# result, rendered identically: same thumbnail slot, same size, same category.
+#
+# The row is kept, not deleted. It still carries the proposals, the approval
+# and the rejection made about that file, History can still reach it, and if
+# the file comes back the next scan clears the flag and it is searchable again
+# with no rebuild. The record was never wrong; only the query was.
+LIVE_ONLY = "i.missing_since IS NULL"
+
 
 @dataclass(frozen=True)
 class SearchFilters:
@@ -165,7 +179,7 @@ def _content_search_items(
     match = _match_query(query)
     if not match:
         return []
-    clauses = ["content_fts MATCH ?"]
+    clauses = ["content_fts MATCH ?", LIVE_ONLY]
     params: list[object] = [match]
     if filters.category:
         clauses.append("COALESCE(search_fts.category, '')=?")
@@ -350,7 +364,12 @@ def _category_from_path(relpath: str) -> str:
 
 
 def _where(filters: SearchFilters) -> tuple[str, list[object]]:
-    clauses = ["1=1"]
+    # First clause, not last, and in the WHERE rather than a filter over the
+    # results: everything below narrows what LIMIT/OFFSET then pages through,
+    # so a stale row excluded here can never occupy a slot on a page or push a
+    # real result onto the next one. Removing it afterwards would have hidden
+    # the ghosts and quietly shortened every page.
+    clauses = [LIVE_ONLY]
     params: list[object] = []
     if filters.category:
         clauses.append("search_fts.category=?")
