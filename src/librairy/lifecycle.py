@@ -3,6 +3,7 @@ from __future__ import annotations
 import sqlite3
 
 from librairy.planner import utc_now
+from librairy.search import sync_search_item
 
 ITEM_STATES = {
     "discovered",
@@ -116,7 +117,33 @@ def should_reset_for_fingerprint_change(state: str) -> bool:
     return state in RESET_ON_FINGERPRINT_CHANGE
 
 
-def vanished_count(conn: sqlite3.Connection) -> int:
+# Only a proposal still waiting on the owner is worth clearing. A rejected or
+# already-superseded one is resolved: its file being gone changes nothing about
+# it, and it is not in anybody's queue. So the number of *records* whose file
+# is missing and the number of *entries worth clearing* are two different
+# numbers, and the UI has to be careful not to imply they are one.
+VANISHED_STATUSES = ("proposed", "approved", "postponed")
+_VANISHED_WHERE = (
+    f"p.status IN ({', '.join('?' * len(VANISHED_STATUSES))}) AND i.missing_since IS NOT NULL"
+)
+
+
+def _vanished_filter(root: str | None) -> tuple[str, list[object]]:
+    """The one predicate `vanished_count`, the listing and the clear all share.
+
+    Scoped by root because clearing them is: the inbox and the library go
+    missing for different reasons — an unmounted share versus a file you tidied
+    away yourself — and a button offered next to a count of one must not also
+    resolve entries belonging to the other.
+    """
+    where, params = _VANISHED_WHERE, list(VANISHED_STATUSES)
+    if root is not None:
+        where += " AND i.root=?"
+        params.append(root)
+    return where, params
+
+
+def vanished_count(conn: sqlite3.Connection, root: str | None = None) -> int:
     """Proposals whose file is no longer where the scanner last saw it.
 
     Not an error and not necessarily a problem: an unmounted disk looks
@@ -124,32 +151,70 @@ def vanished_count(conn: sqlite3.Connection) -> int:
     worth a number on screen so the counts add up -- these are filtered out of
     Review and Commit, and without saying so the totals would just be wrong.
     """
+    where, params = _vanished_filter(root)
     return int(
         conn.execute(
-            """
-            SELECT COUNT(*) FROM proposals p JOIN items i ON i.id = p.item_id
-            WHERE p.status IN ('proposed', 'approved', 'postponed')
-              AND i.missing_since IS NOT NULL
-            """
+            f"SELECT COUNT(*) FROM proposals p JOIN items i ON i.id = p.item_id "  # noqa: S608
+            f"WHERE {where}",
+            params,
         ).fetchone()[0]
     )
 
 
-def forget_vanished(conn: sqlite3.Connection) -> int:
-    """Drop the proposals for files that are gone. Never touches a file.
+def vanished_entries(conn: sqlite3.Connection, root: str | None = None) -> list[sqlite3.Row]:
+    """The same entries, listed, so the owner can look before deciding.
+
+    Clearing seven rows you cannot see is a worse offer than clearing seven you
+    can. Everything here is already in the two tables the count joins; no host
+    path is selected, because none of it is anybody's business outside the box.
+    """
+    where, params = _vanished_filter(root)
+    return list(
+        conn.execute(
+            f"""
+            SELECT i.id AS item_id, i.root, i.relpath, i.missing_since, i.state,
+                   p.id AS proposal_id, p.status, p.category, p.confidence,
+                   p.dest_root, p.dest_relpath, p.evidence
+            FROM proposals p JOIN items i ON i.id = p.item_id
+            WHERE {where}
+            ORDER BY i.root, i.relpath
+            """,  # noqa: S608 - placeholders only
+            params,
+        )
+    )
+
+
+def forget_vanished(conn: sqlite3.Connection, root: str | None = None) -> int:
+    """Resolve the proposals for files that are gone. Never touches a file.
 
     Deliberately manual. A missing file is usually a disk that is not mounted,
     and clearing these automatically would throw away every decision made
     about a whole volume the moment it dropped offline.
+
+    What it does, exactly, because a button is about to say so: the proposal
+    goes to `superseded` and the item back to `discovered`. **Nothing is
+    deleted** — not the item, not the proposal row, not its evidence, not the
+    search entry, not history, and least of all a file. `missing_since` is left
+    alone, so the record stays out of Search and Browse until a scan finds the
+    file again, and if it does, the item is simply an unclassified file once
+    more. Running it twice is a no-op: the second pass finds nothing in these
+    statuses.
+
+    The superseded proposal keeps its evidence in the table but stops being the
+    live one, so the item's page no longer shows a category or a "why here?".
+    That is the whole cost, and the confirmation copy says it.
     """
+    where, params = _vanished_filter(root)
     rows = conn.execute(
-        """
-        SELECT p.id, p.item_id FROM proposals p JOIN items i ON i.id = p.item_id
-        WHERE p.status IN ('proposed', 'approved', 'postponed')
-          AND i.missing_since IS NOT NULL
-        """
+        f"SELECT p.id, p.item_id, i.state FROM proposals p "  # noqa: S608 - placeholders only
+        f"JOIN items i ON i.id = p.item_id WHERE {where}",
+        params,
     ).fetchall()
     for row in rows:
+        # Every state that can hold one of these proposals may legally go back
+        # to discovered, but the check is free and this used to write the state
+        # column directly — the one place in the codebase that skipped it.
+        assert_transition(row["state"], "discovered")
         conn.execute(
             "UPDATE proposals SET status='superseded', updated_at=? WHERE id=?",
             (utc_now(), row["id"]),
@@ -158,4 +223,9 @@ def forget_vanished(conn: sqlite3.Connection) -> int:
             "UPDATE items SET state='discovered' WHERE id=?",
             (row["item_id"],),
         )
+        # The search entry copies its category and clean name off the live
+        # proposal. Superseding one without re-syncing left the index asserting
+        # a category no proposal claimed any more — invisible while the file is
+        # missing, and wrong the moment it came back.
+        sync_search_item(conn, row["item_id"])
     return len(rows)

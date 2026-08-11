@@ -31,6 +31,7 @@ from librairy.dedup import DedupConfigError
 from librairy.lifecycle import forget_vanished
 from librairy.logging import configure_logging
 from librairy.review_undo import undo_last
+from librairy.scanner import VALID_ROOTS
 from librairy.search import (
     DEFAULT_SEARCH_ROOT,
     SEARCH_SCOPES,
@@ -737,14 +738,23 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         )
 
     @app.post("/review/forget-missing", include_in_schema=False)
-    def review_forget_missing(request: Request) -> RedirectResponse:  # noqa: ARG001
-        """Drop proposals whose file is gone. Never touches a file.
+    def review_forget_missing(
+        request: Request,  # noqa: ARG001
+        root: Annotated[str | None, Form()] = None,
+    ) -> RedirectResponse:
+        """Resolve the proposals whose file is gone. Never touches a file.
 
         Manual on purpose: a missing file is usually an unmounted disk, and
         clearing these automatically would throw away every decision made
         about a whole volume the moment it dropped offline.
+
+        Scoped to one root, because the button that posts here sits beside a
+        count for that root and must not resolve anything outside it. An
+        unrecognised root clears nothing rather than falling back to all.
         """
-        forget_vanished(conn)
+        if root not in VALID_ROOTS:
+            return RedirectResponse("/review", status_code=303)
+        forget_vanished(conn, root=root)
         return RedirectResponse("/review", status_code=303)
 
     @app.post("/review/action", response_class=HTMLResponse)

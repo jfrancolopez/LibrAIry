@@ -63,10 +63,14 @@ def test_a_file_deleted_outside_librairy_leaves_review(tmp_path: Path) -> None:
     seed(conn, "gone.mkv", status="proposed", gone=True)
 
     page = client.get("/review").text
+    queue = page.split('id="review-list"')[1]
 
-    assert "here.mkv" in page
-    assert "gone.mkv" not in page
+    assert "here.mkv" in queue
+    assert "gone.mkv" not in queue, "not a row you can decide on"
     assert "1 file moved or deleted outside LibrAIry" in page
+    # It is named in the notice, though — clearing entries you cannot see is a
+    # worse offer than clearing entries you can.
+    assert "gone.mkv" in page.split('id="review-list"')[0]
 
 
 def test_commit_will_not_build_a_plan_around_a_missing_file(tmp_path: Path) -> None:

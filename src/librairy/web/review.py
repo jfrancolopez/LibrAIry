@@ -9,7 +9,7 @@ from librairy.classify.images import vision_disagrees, vision_for_items
 from librairy.config import Settings
 from librairy.duplicates import items_with_reports, reports_for_item
 from librairy.flags import flags_for, unhidden_name
-from librairy.lifecycle import transition_item, vanished_count
+from librairy.lifecycle import transition_item, vanished_count, vanished_entries
 from librairy.paths import PathValidationError, sanitize_component, validate_dest
 from librairy.planner import utc_now
 from librairy.proposals import decode_evidence
@@ -113,6 +113,7 @@ def review_data(conn: sqlite3.Connection, filters: ReviewFilters) -> dict[str, o
         # Filtered out of the list above; without a number the totals would
         # simply be wrong and nothing would say why.
         "vanished": vanished_count(conn),
+        "vanished_groups": vanished_view(conn),
         # Nothing in the portal could take a decision back, and "Not this" in
         # particular dropped a file out of the queue with no way to return it.
         "undo": latest_undo(conn),
@@ -714,3 +715,55 @@ def _available_relpath(
 def _collision_parts(name: str) -> tuple[str, str]:
     path = PurePosixPath(name)
     return path.stem, path.suffix
+
+
+ROOT_LABELS = {
+    "inbox": "waiting to be filed",
+    "library": "already in your library",
+    "quarantine": "in quarantine",
+}
+
+
+def vanished_view(conn: sqlite3.Connection) -> list[dict[str, object]]:
+    """Entries whose file is gone, grouped by root and ready to look at.
+
+    Grouped because clearing is scoped that way, and the two groups mean
+    different things: an inbox entry that vanished is usually a file you tidied
+    away before deciding, a library one is usually a share that is not mounted.
+    One count and one button per group, so a number never covers rows the
+    button beside it would not touch.
+
+    Library-relative paths only. The point of the list is to recognise what you
+    are resolving, which the filename and the destination do; where the file
+    used to live on the host does not, and it is not this box's to publish.
+    """
+    groups: dict[str, list[dict[str, object]]] = {}
+    for row in vanished_entries(conn):
+        groups.setdefault(row["root"], []).append(
+            {
+                "item_id": row["item_id"],
+                "name": PurePosixPath(row["relpath"]).name,
+                "relpath": row["relpath"],
+                "missing_since": (row["missing_since"] or "")[:10],
+                "status": row["status"],
+                "category": row["category"],
+                "destination": row["dest_relpath"] or "",
+                # The one line that says why LibrAIry thought what it thought.
+                # It is what makes clearing a decision rather than a shrug.
+                "why": _why_summary(row["evidence"]),
+            }
+        )
+    return [
+        {
+            "root": root,
+            "label": ROOT_LABELS.get(root, root),
+            "count": len(entries),
+            "entries": entries,
+        }
+        for root, entries in sorted(groups.items())
+    ]
+
+
+def _why_summary(evidence: str | None) -> str:
+    views = humanize_evidence(evidence) if evidence else []
+    return " · ".join(view.text for view in views[:2])

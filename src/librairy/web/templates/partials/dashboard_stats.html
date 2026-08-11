@@ -64,6 +64,15 @@
         <p class="muted">Inbox clear — drop files at <span class="mono">{{ host_inbox_dir }}</span>.</p>
       {% endif %}
       <p class="muted">{{ library_count }} file(s) filed in your library.</p>
+      {# The counts above exclude these, so without a line here the card is
+         short by this much and says nothing about it. Only when there are
+         any: a nought would be a sentence about nothing. #}
+      {% if vanished_count %}
+        <p class="muted">
+          <a href="/review">{{ vanished_count }} entr{{ 'ies' if vanished_count != 1 else 'y' }}</a>
+          wait{{ '' if vanished_count != 1 else 's' }} on a file that is no longer on disk.
+        </p>
+      {% endif %}
     </article>
 
     <article class="widget card">

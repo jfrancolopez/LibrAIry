@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from librairy.config import Settings
-from librairy.lifecycle import state_counts
+from librairy.lifecycle import state_counts, vanished_count
 
 
 @dataclass(frozen=True)
@@ -90,6 +90,10 @@ def dashboard_data(conn: sqlite3.Connection, settings: Settings) -> dict[str, ob
         "volumes": volumes(disks),
         "host_inbox_dir": settings.host_inbox_dir,
         "backup_counts": backup,
+        # Filtered out of the inbox card's totals, so the number is short by
+        # this much and nothing said why. One line, and only when there are
+        # any — a nought here would be a card about nothing.
+        "vanished_count": vanished_count(conn),
     }
 
 

@@ -126,22 +126,52 @@
   {% if vanished %}
     {# These are hidden from the list because approving one produces a commit
        that cannot run. Saying so is the difference between a total that looks
-       wrong and a total that explains itself. #}
+       wrong and a total that explains itself.
+
+       The button used to sit right here, one click, clearing every root at
+       once and showing you none of what it was about to resolve. It is behind
+       a disclosure now: opening it is the deliberate step, and what you find
+       inside is the actual list plus what clearing does — because "Clear these
+       entries" reads as destructive and is not. #}
     <section class="status warn notice-row">
-      {# Four lines of explanation for a footnote pushed the first file most of
-         a screen down. Same facts, one line. "Forget them" also sounded like a
-         decision about the files; it is only about these rows. #}
       <p>
         <strong>{{ vanished }} file{{ 's' if vanished != 1 else '' }} moved or deleted outside LibrAIry</strong>,
         so {{ 'they are' if vanished != 1 else 'it is' }} not listed below. Usually an
         unmounted disk — plug it back in and the next scan picks
-        {{ 'them' if vanished != 1 else 'it' }} up with the decisions intact. Clearing
-        the leftover row{{ 's' if vanished != 1 else '' }} touches no file anywhere.
+        {{ 'them' if vanished != 1 else 'it' }} up with the decisions intact.
       </p>
-      <form method="post" action="/review/forget-missing">
-        <input type="hidden" name="csrf_token" value="{{ request.state.session.csrf_token }}">
-        <button type="submit" title="Removes these entries from Review. The files themselves are not touched.">Clear these entries</button>
-      </form>
+      {% for group in vanished_groups %}
+        <details class="vanished">
+          <summary>{{ group.count }} {{ group.root }} entr{{ 'ies' if group.count != 1 else 'y' }} —
+            {{ group.label }}</summary>
+          <ul class="vanished-list">
+            {% for entry in group.entries %}
+              <li>
+                <span class="mono">{{ entry.name }}</span>
+                <span class="muted">{{ entry.root }}/{{ entry.relpath }}</span>
+                <span class="vanished-facts muted">
+                  gone since {{ entry.missing_since }}
+                  {%- if entry.category %} · would have been filed as {{ entry.category }}{% endif %}
+                  {%- if entry.status != 'proposed' %} · {{ entry.status }}{% endif %}
+                </span>
+                {% if entry.why %}<span class="vanished-why muted">{{ entry.why }}</span>{% endif %}
+              </li>
+            {% endfor %}
+          </ul>
+          {# Says exactly what happens, in the order it matters: nothing is
+             deleted, the record survives, and what you actually lose. #}
+          <p>These files are already gone from disk. Clearing stops LibrAIry treating
+            {{ 'their proposals' if group.count != 1 else 'its proposal' }} as waiting on you:
+            no file is touched, no record is deleted, and History keeps everything it had.
+            The classification stops being shown on the item's page — put the file back and
+            a scan will work it out again.</p>
+          <form method="post" action="/review/forget-missing">
+            <input type="hidden" name="csrf_token" value="{{ request.state.session.csrf_token }}">
+            <input type="hidden" name="root" value="{{ group.root }}">
+            <button type="submit">Clear {{ group.count }} {{ group.root }} entr{{ 'ies' if group.count != 1 else 'y' }}</button>
+          </form>
+        </details>
+      {% endfor %}
     </section>
   {% endif %}
 
