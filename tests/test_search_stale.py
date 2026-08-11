@@ -434,6 +434,9 @@ def test_item_detail_says_the_file_is_gone(tmp_path: Path) -> None:
     assert "Not on disk" in page.text
     assert "library/Photos/gone.jpg" in page.text
     assert "LibrAIry does not" in page.text and "delete records" in page.text
+    # The scan named is the one that could clear it: only a scan of a file's
+    # own root does, and the worker only ever scans the inbox.
+    assert "a scan of the library" in page.text
 
 
 def test_a_missing_item_offers_no_preview_to_open(tmp_path: Path) -> None:
@@ -469,3 +472,17 @@ def test_no_absolute_path_reaches_a_missing_item_page(tmp_path: Path) -> None:
     for body in (page, panel):
         assert str(settings.library_dir) not in body
         assert str(tmp_path) not in body
+
+
+def test_a_missing_inbox_record_is_pointed_at_the_inbox(tmp_path: Path) -> None:
+    client, conn, settings = client_for(tmp_path)
+    write(settings, "dropped.mkv", root="inbox")
+    scan(conn, settings, root="inbox")
+    item_id = conn.execute("SELECT id FROM items").fetchone()[0]
+    (settings.inbox_dir / "dropped.mkv").unlink()
+    scan(conn, settings, root="inbox")
+
+    page = client.get(f"/items/{item_id}").text
+
+    assert "a scan of the inbox" in page
+    assert "a scan of the library" not in page
