@@ -20,6 +20,12 @@ from librairy.db import connect, database_path
 from librairy.executor import execute_plan
 from librairy.history import list_history, undo_op, undo_plan
 from librairy.indexer import index_library
+from librairy.lifecycle import (
+    forget_vanished,
+    resolved_missing_count,
+    vanished_count,
+    vanished_entries,
+)
 from librairy.logging import configure_logging
 from librairy.models import Item
 from librairy.planner import (
@@ -28,8 +34,14 @@ from librairy.planner import (
     create_plan_from_proposals,
     load_operation_specs,
 )
-from librairy.quarantine import list_quarantine_entries, restore_all, restore_entry
-from librairy.scanner import scan_root
+from librairy.proposals import proposal_label
+from librairy.quarantine import (
+    destination_intent,
+    list_quarantine_entries,
+    restore_all,
+    restore_entry,
+)
+from librairy.scanner import VALID_ROOTS, scan_root
 from librairy.search import rebuild_search_index
 from librairy.supervisor import run_supervisor
 from librairy.worker import run_forever, run_once
@@ -124,6 +136,26 @@ def build_parser() -> argparse.ArgumentParser:
     ai_test.add_argument("provider", nargs="?")
     ai_test.add_argument("--json", action="store_true", help="Emit JSON output")
 
+    # The same lifecycle the Review page offers, for people who live in a
+    # terminal. `list` doubles as the dry run: it prints exactly the rows
+    # `clear` would act on, and there is no dry-run flag anywhere else in this
+    # CLI to be consistent with.
+    vanished = subparsers.add_parser(
+        "vanished", help="Entries whose file is no longer on disk"
+    )
+    vanished_subparsers = vanished.add_subparsers(dest="vanished_command")
+    vanished_list = vanished_subparsers.add_parser(
+        "list", help="List entries waiting on a file that is gone"
+    )
+    vanished_list.add_argument("--root", choices=sorted(VALID_ROOTS))
+    vanished_clear = vanished_subparsers.add_parser(
+        "clear", help="Resolve those entries. Deletes no file and no record."
+    )
+    vanished_clear.add_argument("--root", choices=sorted(VALID_ROOTS), required=True)
+    # --json is global, and a subcommand redeclaring it silently overrides the
+    # global one back to False. `ai status` has that bug; this does not.
+    vanished_clear.add_argument("--yes", action="store_true", help="Confirm")
+
     worker = subparsers.add_parser("worker", help="Run the background worker")
     worker.add_argument("--once", action="store_true", help="Run one worker cycle and exit")
 
@@ -199,6 +231,8 @@ def _dispatch(args: argparse.Namespace, conn: sqlite3.Connection, settings: Sett
             proposal_ids=args.ids,
         )
         return {"plan_id": plan_id, "status": "draft"}
+    if args.command == "vanished":
+        return _vanished_command(args, conn)
     if args.command == "quarantine":
         return _quarantine_command(args, conn, settings)
     if args.command == "db":
@@ -247,6 +281,54 @@ def _proposal_command(args: argparse.Namespace, conn: sqlite3.Connection):
     if args.proposal_command == "show":
         row = conn.execute("SELECT * FROM proposals WHERE id=?", (args.proposal_id,)).fetchone()
         return {"proposal": _row_dict(row) if row else None}
+    return None
+
+
+def _vanished_command(args: argparse.Namespace, conn: sqlite3.Connection):
+    """`vanished list` and `vanished clear`, over the same functions the web
+    page calls. No second implementation: whatever the button does here does.
+    """
+    if args.vanished_command == "list":
+        entries = vanished_entries(conn, root=args.root)
+        return {
+            "clearable": len(entries),
+            "already_resolved": resolved_missing_count(conn, root=args.root),
+            "entries": [
+                {
+                    # Relative to its root, never a host path — the CLI runs
+                    # inside the container, where those would be meaningless
+                    # to the reader anyway.
+                    "root": row["root"],
+                    "relpath": row["relpath"],
+                    "missing_since": row["missing_since"],
+                    "state": proposal_label(row["status"]),
+                    "category": row["category"],
+                    "destination": (
+                        f"{destination_intent(row['dest_root'], row['dest_relpath'])}: "
+                        f"{row['dest_root']}/{row['dest_relpath']}"
+                        if row["dest_relpath"]
+                        else ""
+                    ),
+                }
+                for row in entries
+            ],
+        }
+    if args.vanished_command == "clear":
+        # --yes like commit and undo. Not because a file is at risk — none is —
+        # but because the proposals it supersedes are decisions, and getting
+        # them back means classifying those files again.
+        if not args.yes:
+            return {
+                "error": "vanished clear requires --yes",
+                "would_clear": vanished_count(conn, root=args.root),
+                "root": args.root,
+            }
+        return {
+            "cleared": forget_vanished(conn, root=args.root),
+            "root": args.root,
+            "files_deleted": 0,
+            "records_deleted": 0,
+        }
     return None
 
 
@@ -322,4 +404,21 @@ def _emit(args: argparse.Namespace, result: dict[str, object], error: bool = Fal
         print(json.dumps(result, sort_keys=True), file=stream)
     else:
         for key, value in result.items():
+            # A list of rows printed as one line is a Python repr, which is
+            # what `quarantine list`, `history` and `vanished list` all used to
+            # produce. One indented line each instead; --json is unchanged and
+            # remains the machine-readable form.
+            if isinstance(value, list):
+                print(f"{key}: {len(value)}", file=stream)
+                for entry in value:
+                    print(f"  {_row_line(entry)}", file=stream)
+                continue
             print(f"{key}: {value}", file=stream)
+
+
+def _row_line(entry: object) -> str:
+    if isinstance(entry, dict):
+        return "  ".join(
+            f"{key}={value}" for key, value in entry.items() if value not in (None, "")
+        )
+    return str(entry)

@@ -440,3 +440,132 @@ def test_an_unknown_root_clears_nothing(tmp_path: Path) -> None:
         )
 
     assert vanished_count(conn) == 1
+
+
+# --- presentation -----------------------------------------------------------
+
+
+def test_a_missing_item_does_not_report_zero_bytes_as_a_fact(tmp_path: Path) -> None:
+    """The scanner keeps the last size it measured rather than zeroing it, so
+    the number is real — it was the present tense that lied."""
+    client, conn, settings = client_for(tmp_path)
+    path = settings.inbox_dir / "gone.mkv"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"x" * 4096)
+    scan_root(conn, "inbox", settings.inbox_dir, settings)
+    item_id = conn.execute("SELECT id FROM items").fetchone()[0]
+    path.unlink()
+    scan_root(conn, "inbox", settings.inbox_dir, settings)
+
+    page = client.get(f"/items/{item_id}").text
+
+    assert "last known size: 4.0 KB" in page
+    assert "size: 0" not in page
+
+
+def test_a_missing_item_that_was_empty_says_so_without_lying(tmp_path: Path) -> None:
+    client, conn, settings = client_for(tmp_path)
+    item_id = seed(conn, settings, "empty.mkv")
+    conn.execute("UPDATE items SET size=0 WHERE id=?", (item_id,))
+    (settings.inbox_dir / "empty.mkv").unlink()
+    scan_root(conn, "inbox", settings.inbox_dir, settings)
+
+    page = client.get(f"/items/{item_id}").text
+
+    assert "last known size: not recorded" in page
+    assert "Not on disk" in page
+
+
+def test_a_live_item_still_shows_a_plain_size(tmp_path: Path) -> None:
+    client, conn, settings = client_for(tmp_path)
+    path = settings.inbox_dir / "here.mkv"
+    path.write_bytes(b"x" * 2048)
+    scan_root(conn, "inbox", settings.inbox_dir, settings)
+    item_id = conn.execute("SELECT id FROM items").fetchone()[0]
+
+    page = client.get(f"/items/{item_id}").text
+
+    assert "size: 2.0 KB" in page
+    assert "last known size" not in page
+
+
+def test_a_library_destination_reads_as_filing(tmp_path: Path) -> None:
+    client, conn, settings = client_for(tmp_path)
+    item_id = seed(conn, settings, "gone.mkv", gone=True)
+
+    detail = client.get(f"/items/{item_id}").text
+    notice = client.get("/review").text
+
+    assert "Would have been filed as" in detail
+    assert "Would have been filed as" in notice
+    assert "Marked for deletion" not in notice
+
+
+def test_a_quarantine_destination_is_not_called_filing(tmp_path: Path) -> None:
+    """One of the author's seven was staged for quarantine before it vanished.
+    Under a heading saying "destination" it read as one more filing decision."""
+    client, conn, settings = client_for(tmp_path)
+    item_id = seed(conn, settings, "aside.mkv", gone=True)
+    conn.execute(
+        "UPDATE proposals SET dest_root='quarantine', dest_relpath='2026-08-06/aside.mkv' "
+        "WHERE item_id=?",
+        (item_id,),
+    )
+
+    notice = client.get("/review").text
+
+    assert "Set aside" in notice
+    assert "Would have been filed as" not in notice
+
+
+def test_a_delete_pile_destination_says_marked_for_deletion(tmp_path: Path) -> None:
+    client, conn, settings = client_for(tmp_path)
+    item_id = seed(conn, settings, "doomed.mkv", gone=True)
+    conn.execute(
+        "UPDATE proposals SET dest_root='quarantine', "
+        "dest_relpath='_to-delete/2026-08-06/doomed.mkv' WHERE item_id=?",
+        (item_id,),
+    )
+
+    notice = client.get("/review").text
+
+    assert "Marked for deletion" in notice
+    assert "Set aside" not in notice
+
+
+def test_raw_proposal_statuses_do_not_reach_the_page(tmp_path: Path) -> None:
+    client, conn, settings = client_for(tmp_path)
+    seed(conn, settings, "waiting.mkv", gone=True)
+    seed(conn, settings, "approved.mkv", status="approved", gone=True)
+
+    notice = client.get("/review").text.split('id="review-list"')[0]
+
+    assert "Waiting for review" in notice
+    assert "Approved, not committed" in notice
+    assert "· proposed" not in notice
+    assert "· approved" not in notice
+
+
+def test_the_notice_reconciles_its_own_arithmetic(tmp_path: Path) -> None:
+    """Seven clearable and eight missing is correct and looks like a bug unless
+    the page says why. The author's eighth is a rejected proposal."""
+    client, conn, settings = client_for(tmp_path)
+    for index in range(3):
+        seed(conn, settings, f"waiting-{index}.mkv", gone=True)
+    seed(conn, settings, "rejected.mkv", status="rejected", gone=True)
+
+    notice = client.get("/review").text.split('id="review-list"')[0]
+
+    assert "3 file" in notice
+    assert "1 other inbox record" in notice
+    assert "already resolved" in notice
+    assert "nothing to clear" in notice
+
+
+def test_nothing_extra_is_said_when_every_missing_record_is_clearable(tmp_path: Path) -> None:
+    client, conn, settings = client_for(tmp_path)
+    seed(conn, settings, "waiting.mkv", gone=True)
+
+    notice = client.get("/review").text.split('id="review-list"')[0]
+
+    assert "already resolved" not in notice

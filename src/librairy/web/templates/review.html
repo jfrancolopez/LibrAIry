@@ -167,11 +167,8 @@
             {% endfor %}
           </ul>
           {% if group.resolved %}
-            <p class="muted">{{ group.resolved }} other {{ group.root }}
-              record{{ 's' if group.resolved != 1 else '' }}
-              {{ 'are' if group.resolved != 1 else 'is' }} also missing, but already resolved —
-              rejected or superseded, so {{ 'they are' if group.resolved != 1 else 'it is' }}
-              not waiting on you and there is nothing to clear.</p>
+            <p class="muted">{{ group.resolved }} other {{ group.root }} record{{ 's' if group.resolved != 1 else '' }} {{ 'are' if group.resolved != 1 else 'is' }} also missing but already resolved
+              — rejected or superseded, so {{ 'they are' if group.resolved != 1 else 'it is' }} not waiting on you and there is nothing to clear.</p>
           {% endif %}
           {# Says exactly what happens, in the order it matters: nothing is
              deleted, the record survives, and what you actually lose. #}
