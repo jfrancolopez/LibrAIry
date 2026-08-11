@@ -449,6 +449,15 @@ def test_nested_dicts_render_without_a_python_repr() -> None:
     assert out == "health: ok=True  latency_ms=12\n"
 
 
+def test_nesting_inside_a_row_keeps_its_shape_without_a_repr() -> None:
+    """`ai test --json`-less printed `models=('a', 'b')` until the live run."""
+    out, _ = emit(
+        {"health": {"ok": True, "models": ("a", "b")}, "answer": {"fields": {"title": "X"}}}
+    )
+
+    assert out == "health: ok=True  models=[a, b]\nanswer: fields=[title=X]\n"
+
+
 def test_a_tuple_renders_like_a_list() -> None:
     out, _ = emit({"roots": ("inbox", "library")})
 

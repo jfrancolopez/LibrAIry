@@ -487,6 +487,16 @@ def _row_line(entry: object) -> str:
 
 
 def _scalar(value: object) -> str:
-    # One value, one line. A rationale with a newline in it would otherwise
-    # look like the start of a new key.
+    """One value, one line, and no Python punctuation on the way down.
+
+    Found by running `ai test` against the real provider: the health block had
+    stopped being a repr, but the tuple of model names inside it had not, so
+    the line still ended in `models=('a', 'b')`. Brackets nest unambiguously
+    and cost nothing.
+    """
+    if isinstance(value, list | tuple):
+        return "[" + ", ".join(_scalar(item) for item in value) + "]"
+    if isinstance(value, dict):
+        return "[" + "  ".join(f"{key}={_scalar(item)}" for key, item in value.items()) + "]"
+    # A rationale with a newline in it would otherwise look like a new key.
     return " ".join(str(value).split("\n"))
