@@ -47,6 +47,29 @@ def configured_providers(conn: sqlite3.Connection, settings: Settings) -> list[P
     )
 
 
+def find_configured_provider(
+    conn: sqlite3.Connection, settings: Settings, name: str | None
+) -> ProviderConfig | None:
+    """One provider by name or kind, enabled or not.
+
+    "Is this thing reachable?" is the question you ask *before* switching it
+    on, so an explicit test has to be able to address a provider the automatic
+    chain deliberately skips. The chain itself stays enabled-only: looking a
+    provider up here changes nothing about what gets asked at analysis time.
+
+    `None` picks the first provider the chain would ask, which is what a bare
+    `librairy ai test` has always meant.
+    """
+    configured = configured_providers(conn, settings)
+    if name is None:
+        enabled = [provider for provider in configured if provider.enabled]
+        return enabled[0] if enabled else None
+    return next(
+        (provider for provider in configured if provider.name == name or provider.kind == name),
+        None,
+    )
+
+
 def provider_order(conn: sqlite3.Connection, settings: Settings) -> list[str]:
     value = _setting_json(conn, "ai.provider_order")
     if isinstance(value, list):

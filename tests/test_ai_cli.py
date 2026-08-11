@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import socket
+import sqlite3
 import subprocess
 import sys
 import threading
@@ -99,6 +100,54 @@ def test_ai_test_updates_status_on_success(tmp_path: Path) -> None:
     payload = json.loads(result.stdout)
     assert payload["ok"] is True
     assert payload["answer"]["category"] == "documents"
+
+
+def test_ai_test_reaches_a_configured_but_disabled_provider(tmp_path: Path) -> None:
+    """`ai status` listed it; `ai test` said provider_not_found."""
+    server, url = serve()
+    try:
+        run_cli(tmp_path, "ai", "status", OLLAMA_HOST=url)
+        endpoints = json.dumps(
+            [{"name": "ollama-primary", "url": url, "model": "qwen3:4b", "enabled": False}]
+        )
+        db = tmp_path / "appdata" / "librairy.db"
+        conn = sqlite3.connect(db)
+        conn.execute(
+            "INSERT OR REPLACE INTO settings(key, value) VALUES ('ai.ollama.endpoints', ?)",
+            (endpoints,),
+        )
+        conn.commit()
+        conn.close()
+
+        result = run_cli(tmp_path, "--json", "ai", "test", "ollama-primary", OLLAMA_HOST=url)
+    finally:
+        server.shutdown()
+
+    assert result.returncode == 0
+    payload = json.loads(result.stdout)
+    assert payload["ok"] is True
+    assert payload["configured"] is True
+    assert payload["enabled"] is False, "reachable, tested, and still switched off"
+
+    # And it is still not in the chain the classifier will use.
+    status = json.loads(run_cli(tmp_path, "--json", "ai", "status", OLLAMA_HOST=url).stdout)
+    primary = next(p for p in status["providers"] if p["name"] == "ollama-primary")
+    assert primary["enabled"] == 0
+    assert primary["last_used_at"] is None, "a test is not a use"
+
+
+def test_ai_status_emits_available_models_as_an_array(tmp_path: Path) -> None:
+    server, url = serve()
+    try:
+        run_cli(tmp_path, "ai", "test", "ollama-primary", OLLAMA_HOST=url)
+        result = run_cli(tmp_path, "--json", "ai", "status", OLLAMA_HOST=url)
+    finally:
+        server.shutdown()
+
+    primary = next(
+        p for p in json.loads(result.stdout)["providers"] if p["name"] == "ollama-primary"
+    )
+    assert primary["available_models"] == ["qwen3:4b"], "a list, and not erased by the refresh"
 
 
 def test_ai_test_down_endpoint_reports_failure(tmp_path: Path) -> None:

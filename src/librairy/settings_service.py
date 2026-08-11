@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from urllib.parse import urlparse
 
 from librairy.ai.lmstudio import normalize_host
@@ -192,14 +193,44 @@ def move_provider(conn: sqlite3.Connection, settings: Settings, kind: str, direc
 
 
 def provider_header(conn: sqlite3.Connection, settings: Settings) -> str:
-    """One line for the site header. Read-only: it is on every page render."""
+    """One line for the site header. Read-only: it is on every page render.
+
+    Only the enabled chain gets a look in, so testing a switched-off provider
+    can never promote it here. And the word is now dated: `last_ok_at` is
+    whenever someone last pressed Test, which may have been a fortnight ago,
+    and nothing polls in the background. "online" with no date read as a live
+    reading of something nobody had checked since Tuesday.
+    """
     chain = provider_chain(conn, settings, record=False)
     if not chain:
         return "AI: heuristics-only"
     first = chain[0]
     row = conn.execute("SELECT * FROM provider_status WHERE name=?", (first.name,)).fetchone()
-    status = "online" if row and row["last_ok_at"] and not row["last_error"] else "not tested"
+    if row and row["last_error"]:
+        status = "last check failed"
+    elif row and row["last_ok_at"]:
+        status = f"answered {_ago(row['last_ok_at'])}"
+    else:
+        status = "not tested"
     return f"AI: {first.name} ({first.model}) — {status}"
+
+
+def _ago(timestamp: str) -> str:
+    """Roughly how long ago, in the coarsest unit that is still useful."""
+    try:
+        then = datetime.fromisoformat(timestamp)
+    except ValueError:
+        return "at an unknown time"
+    if then.tzinfo is None:
+        then = then.replace(tzinfo=UTC)
+    seconds = (datetime.now(UTC) - then).total_seconds()
+    if seconds < 90:
+        return "just now"
+    for limit, size, unit in ((3600, 60, "minute"), (86400, 3600, "hour"), (None, 86400, "day")):
+        if limit is None or seconds < limit:
+            count = int(seconds // size)
+            return f"{count} {unit}{'s' if count != 1 else ''} ago"
+    return "a while ago"
 
 
 def add_ollama_endpoint(

@@ -66,8 +66,14 @@ def test_status_rows_persist_health_and_last_use(tmp_path: Path) -> None:
     assert row["last_ok_at"] is not None
     assert row["latency_ms"] == 42
     assert row["last_used_at"] is not None
-    assert row["available_models"] == "[]"
+    assert row["available_models"] == [], "a list, not the string '[]'"
 
     upsert_provider_status(conn, provider, HealthResult(True, models=("qwen3:4b", "qwen3:8b")))
     row = next(row for row in list_provider_status(conn) if row["name"] == "ollama-primary")
-    assert row["available_models"] == '["qwen3:4b", "qwen3:8b"]'
+    assert row["available_models"] == ["qwen3:4b", "qwen3:8b"]
+
+    # And an ordinary status refresh, which carries no health, must not erase
+    # what the test just discovered. It used to.
+    upsert_provider_status(conn, provider)
+    row = next(row for row in list_provider_status(conn) if row["name"] == "ollama-primary")
+    assert row["available_models"] == ["qwen3:4b", "qwen3:8b"]

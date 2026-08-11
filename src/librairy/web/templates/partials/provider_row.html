@@ -3,20 +3,27 @@
    existed, so it went on reporting a renamed box or a changed model as though
    it were still there. #}
 <div id="provider-{{ provider.name }}" class="provider-row">
+  {# Two independent facts, two badges. "Will it be asked?" is a switch you
+     set; "did it answer?" is the result of a test. One badge conflated them,
+     so a provider you had switched off but tested successfully read exactly
+     like the one doing the work. #}
   <span>
+    {% if provider.enabled %}<span class="badge badge-ok">on</span>
+    {% else %}<span class="badge">off</span>{% endif %}
     {% if provider.last_error %}<span class="badge badge-fail">not reachable</span>
     {% elif provider.last_ok_at %}<span class="badge badge-ok">answered</span>
-    {% elif not provider.enabled %}<span class="badge">off</span>
     {% else %}<span class="badge badge-warn">never tested</span>{% endif %}
     <strong>{{ provider.name }}</strong>
     <span class="muted">{{ provider.model or 'no model chosen' }}</span>
   </span>
   <span class="muted">
     {% if provider.endpoint %}{{ provider.endpoint }} · {% endif %}
+    {% if not provider.enabled %}switched off, so it is never asked ·
+    {% endif %}
     {% if provider.last_error %}{{ provider.last_error }}
     {% elif provider.last_ok_at %}answered {{ provider.last_ok_at }}{% if provider.latency_ms %} in {{ provider.latency_ms }} ms{% endif %}
     {% elif provider.enabled %}press Test to find out whether it answers
-    {% else %}switched off, so it is never asked{% endif %}
+    {% else %}never tested{% endif %}
   </span>
   <button
     type="button"

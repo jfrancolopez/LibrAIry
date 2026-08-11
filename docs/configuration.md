@@ -101,6 +101,44 @@ configuration, so a key saved in the portal is kept but unused while the variabl
 set, and the card says so. Keys are write-only either way: the page reports `set` or
 `not set` and never shows a value back.
 
+## Provider states
+
+Four separate facts, and a provider can hold any combination of them:
+
+| State | Means | Where it comes from |
+| --- | --- | --- |
+| **Configured** | LibrAIry knows about it: a host, a model, or an API key exists. | Environment or Settings. |
+| **Enabled** | It is allowed to be asked. | The on/off switch per provider. |
+| **Healthy** | The last check reached it and got an answer. | The last time *you* pressed Test — nothing polls. |
+| **Active** | It is the one the classifier will actually ask next. | First **enabled** provider in the order. |
+
+The combination that trips people up is legitimate: **configured yes, enabled
+no, healthy yes**. A provider you have switched off can still be tested — that
+is the question you ask *before* switching it back on — and testing it never
+enables it, never reorders the chain, and never makes the classifier use it.
+
+```bash
+librairy ai test ollama-primary
+```
+
+```
+ok: True
+provider: ollama-primary
+configured: True
+enabled: False
+```
+
+Because nothing polls in the background, "healthy" is always a statement about
+the past. The header says so: *AI: lmstudio (qwen3-coder-30b-a3b-instruct) —
+answered 4 days ago*, not *online*. Settings shows the two facts as two badges,
+`on`/`off` beside `answered`/`not reachable`/`never tested`, so a switched-off
+provider that answers cannot be mistaken for the one doing the work.
+
+`librairy ai status` reports the whole configuration, enabled or not, and exits
+`0` even when every provider is offline — you asked for the state and got it.
+`librairy ai test` exits `1` when the round trip fails, because the round trip
+is what you asked for. See [the command line](cli.md).
+
 ## Catalogs
 
 Metadata sources consulted **before** AI. Each one is individually switchable on the

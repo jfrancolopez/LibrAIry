@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 import shutil
 import sqlite3
@@ -11,8 +10,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from librairy.ai.orchestrator import provider_for_config
-from librairy.ai.registry import configured_providers
-from librairy.ai.status import upsert_provider_status
+from librairy.ai.registry import configured_providers, find_configured_provider
+from librairy.ai.status import provider_models, upsert_provider_status
 from librairy.backup import backup_status
 from librairy.config import Settings
 from librairy.db import database_path
@@ -63,6 +62,10 @@ def live_provider_status(conn: sqlite3.Connection, settings: Settings) -> list[d
                 "last_error": row["last_error"] if row else None,
                 "latency_ms": row["latency_ms"] if row else None,
                 "last_used_at": row["last_used_at"] if row else None,
+                # Carried through so the "model is not installed on that
+                # server" recommendation has something to check. It was
+                # dropped here, which meant that check could never once fire.
+                "available_models": provider_models(row["available_models"]) if row else [],
                 "tested": bool(row and (row["last_ok_at"] or row["last_error"])),
             }
         )
@@ -382,14 +385,10 @@ def _row_value(row: object, key: str) -> str:
 
 
 def _available_models(row: object) -> list[str]:
-    raw = _row_value(row, "available_models")
-    if not raw:
-        return []
     try:
-        models = json.loads(raw)
-    except ValueError:
+        return provider_models(row["available_models"])  # type: ignore[index]
+    except (KeyError, IndexError, TypeError):
         return []
-    return [str(model) for model in models] if isinstance(models, list) else []
 
 
 def _disk_recommendations(disks: list) -> list[Recommendation]:
@@ -434,8 +433,7 @@ def test_provider(
     thing reachable" is the question you ask *before* switching it on, and
     testing a switched-off endpoint used to silently re-show its stale row.
     """
-    configs = configured_providers(conn, settings)
-    config = next((provider for provider in configs if provider.name == name), None)
+    config = find_configured_provider(conn, settings, name)
     if config is None:
         return None
     provider = provider_for_config(config, settings)

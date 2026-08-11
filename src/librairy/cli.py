@@ -8,10 +8,9 @@ from dataclasses import asdict
 from pathlib import Path
 
 from librairy import __version__
-from librairy.ai.base import ProviderConfig
 from librairy.ai.orchestrator import provider_for_config
 from librairy.ai.redact import build_view
-from librairy.ai.registry import provider_chain
+from librairy.ai.registry import find_configured_provider, provider_chain
 from librairy.ai.status import list_provider_status, upsert_provider_status
 from librairy.classify import analyze_items
 from librairy.config import Settings, validate_or_die
@@ -400,15 +399,22 @@ def _quarantine_command(args: argparse.Namespace, conn: sqlite3.Connection, sett
 def _ai_command(args: argparse.Namespace, conn: sqlite3.Connection, settings: Settings):
     if args.ai_command == "status":
         provider_chain(conn, settings)
-        return {"providers": [_row_dict(row) for row in list_provider_status(conn)]}
+        return {"providers": list_provider_status(conn)}
     if args.ai_command == "test":
-        configs = provider_chain(conn, settings)
-        config = _select_provider(configs, args.provider)
+        # Configured, not enabled: the web Test button has always worked this
+        # way, and the CLI was the surface that disagreed. A provider you have
+        # switched off is exactly the one you want to test before switching it
+        # back on. Nothing here enables it or touches the chain.
+        config = find_configured_provider(conn, settings, args.provider)
         if config is None:
             return {
                 "ok": False,
                 "error": "provider_not_found",
-                "message": f"no provider named {args.provider!r}",
+                "message": (
+                    f"no provider named {args.provider!r}"
+                    if args.provider
+                    else "no provider is enabled"
+                ),
             }
         provider = provider_for_config(config, settings)
         health = provider.health(settings.ai_timeout)
@@ -416,21 +422,19 @@ def _ai_command(args: argparse.Namespace, conn: sqlite3.Connection, settings: Se
         if health.ok:
             answer = provider.classify(_synthetic_view(), settings.ai_timeout)
         ok = health.ok and answer is not None
-        upsert_provider_status(conn, config, health, used=ok)
+        # `used` means the classifier reached for it, not that someone pressed
+        # Test. Recording a test as use made a disabled provider look active.
+        upsert_provider_status(conn, config, health)
         return {
             "ok": ok,
             "provider": config.name,
+            "configured": True,
+            "enabled": config.enabled,
             "health": asdict(health),
             "answer": answer.model_dump() if answer else None,
             "partial": not ok,
         }
     return None
-
-
-def _select_provider(configs: list[ProviderConfig], name: str | None) -> ProviderConfig | None:
-    if name is None:
-        return configs[0] if configs else None
-    return next((config for config in configs if config.name == name or config.kind == name), None)
 
 
 def _synthetic_view():
