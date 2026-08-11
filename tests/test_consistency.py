@@ -193,8 +193,26 @@ def test_the_remedy_named_is_the_one_that_would_work(tmp_path: Path) -> None:
 
     view = consistency_view(library_consistency(conn, settings))
 
-    assert view["remedy"] == "librairy scan --root library"
-    assert "not scanned yet" in " ".join(view["notes"])
+    assert [note["remedy"] for note in view["notes"]] == ["librairy scan --root library"]
+    assert "not scanned yet" in view["notes"][0]["text"]
+
+
+def test_a_stale_record_is_offered_no_command_that_would_not_work(tmp_path: Path) -> None:
+    """A scan sets missing_since and keeps the row, and Search still returns
+    it. Naming a command that does not clear this would be a lie; deleting the
+    row would be an unasked-for repair. So it explains and offers neither."""
+    settings = settings_for(tmp_path)
+    conn = connect(settings)
+    write(settings, "Photos/gone.png")
+    scan(conn, settings)
+    (settings.library_dir / "Photos" / "gone.png").unlink()
+    scan(conn, settings)
+
+    view = consistency_view(library_consistency(conn, settings))
+
+    assert [note["remedy"] for note in view["notes"]] == [None]
+    assert "Search can still return them" in view["notes"][0]["text"]
+    assert conn.execute("SELECT COUNT(*) FROM items WHERE root='library'").fetchone()[0] == 1
 
 
 def test_a_scan_closes_the_gap_it_reported(tmp_path: Path) -> None:

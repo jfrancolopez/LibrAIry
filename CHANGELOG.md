@@ -165,6 +165,40 @@ panel at a real library and reading what it said.
   - Hidden files, ignore patterns and symlinks go through **one predicate
     shared with the indexer**, so Browse and the scanner cannot drift into
     disagreeing about what the library contains. Containment is unchanged.
+- **The Browse home screen is a listing too.** It was the same bug one level
+  up, left in place by the fix above: eight hard-coded classification
+  categories, counted with a `GROUP BY` on the search index, linking to
+  physical folders named after the slug. Five tiles read zero forever because
+  `Movies/` and friends do not exist here — untidy. The half that mattered is
+  the inverse: a folder created over SMB could never appear at all.
+  - Tiles are now the top-level directories that are really there, **under
+    their real names** — the breadcrumb used to capitalise the URL segment,
+    renaming your folders in the one place whose job is saying where you are.
+  - A URL segment names a real directory. `/browse/Music`, resolved against
+    disk, case-insensitively so existing `/browse/music` links keep working;
+    nothing else can be constructed there, so a traversal matches no folder and
+    gets a 404.
+  - **Every count means one thing**: visible files underneath, at any depth. The
+    folder pane counted *direct entries*, subfolders included — a
+    different-looking measure wearing the same clothes one screen away.
+- **Browse says whether the index still describes the library.** One line under
+  the heading: `140 files · index up to date`, or `140 files · 3 not indexed`,
+  which opens into which files and what to run. Nothing rescans the library on
+  a schedule — the worker watches the inbox, and library records are written by
+  the commit engine — so a file copied straight in over SMB is browsable and
+  unfindable, and you used to discover that by searching for something you were
+  looking straight at.
+  - It never claims to be synchronised: it is measured when the page renders
+    and nothing watches it after.
+  - It names `scan --root library`, not `index rebuild`, which only rebuilds
+    the search index from records that already exist and would find none of
+    these files. A stale record gets no command at all, because a scan marks it
+    missing and keeps it — and inventing a delete here would be exactly the
+    unasked-for repair this page exists to avoid.
+  - **Not indexed never means unsupported.** The scanner has no extension
+    filter, so anything Browse can see, it can index.
+  - Reporting only. Opening Browse indexes nothing, deletes nothing, triggers
+    no scan, and calls no catalog or AI provider.
 - **Companion files follow their media instead of inventing a release.** A
   `cover.jpg` inside a folder of FLACs was filed as a photograph; `00.Info.m3u`
   and `00.Info.nfo` came back as confident music under two *different* invented

@@ -21,14 +21,19 @@
       {% else %}
         <details class="sync-line is-drift">
           <summary><span class="sync-dot is-warn" aria-hidden="true"></span>{{ consistency.summary }}</summary>
-          {% for note in consistency.notes %}<p>{{ note }}</p>{% endfor %}
+          {# Each note carries its own remedy, because they are not the same
+             remedy: a scan finds an unscanned file, and nothing supported
+             removes a stale record. #}
+          {% for note in consistency.notes %}
+            <p>{{ note.text }}{% if note.remedy %} Run <code>{{ note.remedy }}</code>.{% endif %}</p>
+          {% endfor %}
           <ul class="sync-paths">
             {% for example in consistency.examples %}
               <li><span class="muted">{{ example.label }}</span> <span class="mono">{{ example.path }}</span></li>
             {% endfor %}
             {% if consistency.more %}<li class="muted">and {{ consistency.more }} more</li>{% endif %}
           </ul>
-          <p>Reconcile it with <code>{{ consistency.remedy }}</code>. LibrAIry will not do it on its own — nothing here is indexed, moved or deleted just because you looked at it.</p>
+          <p class="muted">Nothing is indexed, moved or deleted because you looked at this page.</p>
         </details>
       {% endif %}
     </div>

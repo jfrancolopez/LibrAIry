@@ -86,25 +86,45 @@ def consistency_view(state: LibraryConsistency) -> dict[str, object]:
     the future — this was true when the page was rendered and nothing watches
     it afterwards — so the wording stays in the past tense of a measurement.
 
-    The remedy has to be exact, too. `librairy index rebuild` rebuilds the
-    search index from item rows that already exist; it discovers nothing, so
-    pointing at it here would waste the owner's time. Scanning is what finds a
-    file, and scanning the library is also what teaches LibrAIry the layout.
+    The remedies have to be exact, and they are not the same remedy — which is
+    why each note carries its own instead of one line at the bottom.
+
+    `librairy index rebuild` rebuilds the search index from item rows that
+    already exist. It discovers nothing, so naming it for an unscanned file
+    would waste the owner's time; scanning is what finds a file, and scanning
+    the library is also what teaches LibrAIry the layout it already keeps.
+
+    A stale row gets no command at all, because there is no honest one to give.
+    A scan sets `missing_since` and stops there — the row survives, and Search
+    can still return it — and inventing a delete here would be exactly the kind
+    of unasked-for repair this page is supposed to avoid.
     """
-    notes: list[str] = []
+    notes: list[dict[str, str | None]] = []
     if state.unindexed_files:
         count = state.unindexed_files
         notes.append(
-            f"{count} {_files(count)} {'is' if count == 1 else 'are'} visible in Browse but not "
-            "searchable yet, because nothing has scanned them. Everything LibrAIry can see it "
-            "can index — there is no file type it refuses — so this only means not scanned yet."
+            {
+                "text": (
+                    f"{count} {_files(count)} {'is' if count == 1 else 'are'} visible in Browse "
+                    "but not searchable yet, because nothing has scanned them. Everything "
+                    "LibrAIry can see it can index — there is no file type it refuses — so this "
+                    "only means not scanned yet."
+                ),
+                "remedy": "librairy scan --root library",
+            }
         )
     if state.missing_files:
         count = state.missing_files
         notes.append(
-            f"{count} indexed {'entry has' if count == 1 else 'entries have'} no file on disk. "
-            "The file was moved or removed outside LibrAIry; the entry is stale and can still "
-            "turn up in Search."
+            {
+                "text": (
+                    f"{count} indexed {'entry has' if count == 1 else 'entries have'} no file on "
+                    "disk — moved or removed outside LibrAIry. A scan marks them missing but "
+                    "keeps the record, so Search can still return them. Nothing here will delete "
+                    "a record for you."
+                ),
+                "remedy": None,
+            }
         )
     return {
         "matches": state.matches,
@@ -123,7 +143,6 @@ def consistency_view(state: LibraryConsistency) -> dict[str, object]:
             )
         ),
         "notes": notes,
-        "remedy": "librairy scan --root library" if not state.matches else None,
         "examples": [
             *({"label": "Not indexed", "path": path} for path in state.unindexed_sample),
             *({"label": "Missing on disk", "path": path} for path in state.missing_sample),

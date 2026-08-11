@@ -16,6 +16,12 @@ LibrAIry knows — category, size, thumbnail, preview, evidence. A file with no
 database record still appears, marked *not indexed*: a missing record means
 metadata is unavailable, not that the file does not exist.
 
+That applies to the front page as much as to the folder view. **The tiles on
+the Browse home screen are the top-level directories that are really there**,
+under their real names, each showing how many visible files lie beneath it at
+any depth. A folder you created yourself over SMB gets a tile; a category
+LibrAIry knows about but has never filed anything into does not.
+
 The consequences worth knowing:
 
 - **Folders are never truncated.** However many files a folder holds, every
@@ -23,6 +29,8 @@ The consequences worth knowing:
 - **Empty folders appear**, because they exist.
 - **A file deleted outside LibrAIry stops appearing**, because Browse lists the
   disk rather than the index.
+- **Every count means the same thing**: visible files underneath, at any depth.
+  A tile, and the number beside a folder in the explorer, are the same measure.
 - **Search is index-backed**, so a file that exists but has not been scanned is
   visible in Browse before it is findable in Search. Run a library scan
   (`librairy scan --root library`) to close the gap.
@@ -30,6 +38,44 @@ The consequences worth knowing:
 Browse deliberately does not answer *where should this file go* — that is
 Review's job. It answers *what is in my library right now*, so a folder whose
 name the classifier would not have chosen is still shown exactly as it is.
+
+### The consistency line
+
+Under the Browse heading is one sentence saying whether the index still
+describes the library — `140 files · index up to date`, or
+`140 files · 3 not indexed`, which opens into which files and what to do.
+
+It is measured when the page renders and nothing watches it afterwards, which
+is why it never claims to be synchronised. Two things can be reported:
+
+| Reading | What happened | What fixes it |
+|---|---|---|
+| *not indexed* | A file is on disk that nothing has scanned — usually copied straight in over SMB. It is browsable but not searchable. | `librairy scan --root library` |
+| *missing on disk* | A record points at a file that is no longer there. A scan marks the record missing but keeps it, so Search can still return it. | Nothing automatic. LibrAIry does not delete your records. |
+
+**Not indexed never means unsupported.** The scanner has no extension filter —
+anything Browse can see, it can index — so the only reason a visible file has
+no record is that no scan has reached it yet.
+
+The reading only reports. Opening Browse does not index a file, delete a
+record, trigger a scan, classify anything, or call a catalog or an AI provider.
+
+### Why drift happens at all
+
+Nothing rescans the library on a schedule. The background worker watches the
+inbox; library records are written by the commit engine as it moves files in.
+So a file that arrives in the library any other way stays unknown until you
+scan. That is by design — the library is not touched unless you ask — and the
+consistency line exists so the consequence is visible rather than surprising.
+
+### The words, and what they mean here
+
+| Term | Meaning |
+|---|---|
+| **scanned** / **indexed** | Has a record in `items`. The scanner takes every visible file, whatever its type. |
+| **searchable** | Has a row in the search index, which every record gets — so in practice, the same as scanned. |
+| **classified** | Has a live proposal carrying a category and a destination. Browse does not require this. |
+| **committed** | Moved into the library by an approved plan. |
 
 **Intentionally excluded** from both Browse and the indexer, by one shared
 rule: dot-files and dot-directories, anything matching `IGNORE_PATTERNS`, and
