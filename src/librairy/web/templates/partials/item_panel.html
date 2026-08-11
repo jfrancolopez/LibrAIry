@@ -5,7 +5,11 @@
     <li>Size <strong>{{ item.size }}</strong> bytes</li>
     <li>State <span class="badge badge-info">{{ item.state }}</span></li>
     {% if proposal %}<li>Category <span class="badge badge-info">{{ proposal.category }}</span></li>{% endif %}
-    <li class="mono muted">{{ host_path }}</li>
+    {% if missing_since %}
+      <li><span class="badge badge-warn">not on disk</span> since {{ missing_since[:10] }}</li>
+    {% else %}
+      <li class="mono muted">{{ host_path }}</li>
+    {% endif %}
   </ul>
   {% if preview %}
     {% include "partials/preview_card.html" %}

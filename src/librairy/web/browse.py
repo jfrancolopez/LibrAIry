@@ -380,12 +380,19 @@ def item_detail(conn: sqlite3.Connection, settings: Settings, item_id: int) -> d
         (row["root"], row["relpath"], row["root"], row["relpath"]),
     ).fetchall()
     siblings = _siblings(conn, row, proposal)
+    # A record whose file a scan looked for and did not find. The record is
+    # kept on purpose — it carries every decision made about that file, and
+    # History points at it — but the page must not pretend the file is there.
+    # Asking for a preview would spend an ffmpeg call to arrive at an errno,
+    # and print it where a photograph should be.
+    missing_since = row["missing_since"]
+    preview = None
     preview_error = None
-    try:
-        preview = preview_for_item(conn, settings, item_id)
-    except (OSError, PreviewError) as exc:
-        preview = None
-        preview_error = str(exc) or exc.__class__.__name__
+    if not missing_since:
+        try:
+            preview = preview_for_item(conn, settings, item_id)
+        except (OSError, PreviewError) as exc:
+            preview_error = str(exc) or exc.__class__.__name__
     evidence_error = None
     try:
         evidence = decode_evidence(proposal["evidence"]) if proposal else []
@@ -401,7 +408,11 @@ def item_detail(conn: sqlite3.Connection, settings: Settings, item_id: int) -> d
         "siblings": siblings,
         "preview": preview,
         "preview_error": preview_error,
-        "host_path": host_path(settings, row["root"], row["relpath"]),
+        "missing_since": missing_since,
+        # Where to look for it is only useful advice if it is there. For a
+        # record whose file is gone the page shows the library-relative path it
+        # last had, and no location to go and open.
+        "host_path": "" if missing_since else host_path(settings, row["root"], row["relpath"]),
     }
 
 

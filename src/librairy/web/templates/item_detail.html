@@ -3,8 +3,18 @@
   
   <h1>{{ item.relpath }}</h1>
   <p>root: {{ item.root }} / state: {{ item.state }} / size: {{ item.size }}</p>
-  <p>copy: {{ host_path }}</p>
-  <p class="muted"><a href="/access">Need SMB/FTP/WebDAV access help?</a></p>
+  {# The record outlives the file, so this page has to be able to say the file
+     is gone. Not a warning to act on — nothing is broken and nothing needs
+     repairing — just the one fact that changes how to read everything below. #}
+  {% if missing_since %}
+    <p class="status warn">Not on disk. Last seen {{ missing_since[:10] }} at
+      <span class="mono">{{ item.root }}/{{ item.relpath }}</span>.</p>
+    <p class="muted">The record is kept for its history and its evidence. LibrAIry does not
+      delete records, and a library scan will pick the file up again if it comes back.</p>
+  {% else %}
+    <p>copy: {{ host_path }}</p>
+    <p class="muted"><a href="/access">Need SMB/FTP/WebDAV access help?</a></p>
+  {% endif %}
   {% if preview %}{% include "partials/preview_card.html" %}{% elif preview_error %}<p class="status warn">Preview unavailable: {{ preview_error }}</p>{% endif %}
   {% include "partials/lightbox.html" %}
   <section class="metric wide">

@@ -399,3 +399,73 @@ def test_a_preview_of_a_missing_file_fails_safely(tmp_path: Path) -> None:
     for response in (card, thumb):
         assert str(settings.library_dir) not in response.text
         assert str(tmp_path) not in response.text
+
+
+# --- item detail ------------------------------------------------------------
+
+
+def test_item_detail_of_a_live_file_is_unchanged(tmp_path: Path) -> None:
+    client, conn, settings = client_for(tmp_path)
+    write(settings, "Photos/here.jpg")
+    scan(conn, settings)
+    classify(conn)
+    item_id = conn.execute("SELECT id FROM items").fetchone()[0]
+
+    page = client.get(f"/items/{item_id}").text
+
+    assert "Photos/here.jpg" in page
+    assert "Not on disk" not in page
+    assert "Need SMB/FTP/WebDAV access help?" in page
+
+
+def test_item_detail_says_the_file_is_gone(tmp_path: Path) -> None:
+    """Honest, not alarming: the record is fine, the file is not there."""
+    client, conn, settings = client_for(tmp_path)
+    write(settings, "Photos/gone.jpg")
+    scan(conn, settings)
+    classify(conn)
+    item_id = conn.execute("SELECT id FROM items").fetchone()[0]
+    (settings.library_dir / "Photos" / "gone.jpg").unlink()
+    scan(conn, settings)
+
+    page = client.get(f"/items/{item_id}")
+
+    assert page.status_code == 200, "the record still opens — History points at it"
+    assert "Not on disk" in page.text
+    assert "library/Photos/gone.jpg" in page.text
+    assert "LibrAIry does not" in page.text and "delete records" in page.text
+
+
+def test_a_missing_item_offers_no_preview_to_open(tmp_path: Path) -> None:
+    client, conn, settings = client_for(tmp_path)
+    write(settings, "Photos/gone.jpg")
+    scan(conn, settings)
+    classify(conn)
+    item_id = conn.execute("SELECT id FROM items").fetchone()[0]
+    (settings.library_dir / "Photos" / "gone.jpg").unlink()
+    scan(conn, settings)
+
+    page = client.get(f"/items/{item_id}").text
+    panel = client.get(f"/browse/items/{item_id}/panel").text
+
+    for body in (page, panel):
+        assert "preview-expand" not in body, "no control that opens nothing"
+        assert "Preview unavailable" not in body, "not an error — the file is simply gone"
+    assert "not on disk" in panel
+
+
+def test_no_absolute_path_reaches_a_missing_item_page(tmp_path: Path) -> None:
+    client, conn, settings = client_for(tmp_path)
+    write(settings, "Photos/gone.jpg")
+    scan(conn, settings)
+    classify(conn)
+    item_id = conn.execute("SELECT id FROM items").fetchone()[0]
+    (settings.library_dir / "Photos" / "gone.jpg").unlink()
+    scan(conn, settings)
+
+    page = client.get(f"/items/{item_id}").text
+    panel = client.get(f"/browse/items/{item_id}/panel").text
+
+    for body in (page, panel):
+        assert str(settings.library_dir) not in body
+        assert str(tmp_path) not in body
