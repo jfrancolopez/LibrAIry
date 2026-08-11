@@ -12,6 +12,7 @@ from librairy.ai.orchestrator import provider_for_config
 from librairy.ai.redact import build_view
 from librairy.ai.registry import find_configured_provider, provider_chain
 from librairy.ai.status import list_provider_status, upsert_provider_status
+from librairy.audit import audit_library, open_findings
 from librairy.classify import analyze_items
 from librairy.config import Settings, validate_or_die
 from librairy.content.extract import rebuild_content_index
@@ -159,6 +160,23 @@ def build_parser() -> argparse.ArgumentParser:
     vanished_clear.add_argument("--root", choices=sorted(VALID_ROOTS), required=True)
     vanished_clear.add_argument("--yes", action="store_true", help="Confirm")
 
+    # Deliberately not called `scan`: scan indexes what is there, audit asks
+    # whether what is there is in the right place. Manual only — nothing here
+    # runs on a timer, and nothing here moves a file.
+    audit = subparsers.add_parser(
+        "audit", help="Examine the library you already have for things worth correcting"
+    )
+    audit_subparsers = audit.add_subparsers(dest="audit_command", required=True)
+    audit_run = audit_subparsers.add_parser(
+        "run", help="Look for problems. Reads only; writes findings, never files."
+    )
+    audit_run.add_argument("--scope", default="", help="A library folder, e.g. Music/Pop")
+    audit_run.add_argument(
+        "--no-tags", action="store_true", help="Skip reading embedded tags (faster, blinder)"
+    )
+    audit_list = audit_subparsers.add_parser("list", help="Show open findings")
+    audit_list.add_argument("--scope", default="")
+
     worker = subparsers.add_parser("worker", help="Run the background worker")
     worker.add_argument("--once", action="store_true", help="Run one worker cycle and exit")
 
@@ -281,6 +299,8 @@ def _dispatch(args: argparse.Namespace, conn: sqlite3.Connection, settings: Sett
         return {"plan_id": plan_id, "status": "draft"}
     if args.command == "vanished":
         return _vanished_command(args, conn)
+    if args.command == "audit":
+        return _audit_command(args, conn, settings)
     if args.command == "quarantine":
         return _quarantine_command(args, conn, settings)
     if args.command == "db":
@@ -377,6 +397,34 @@ def _vanished_command(args: argparse.Namespace, conn: sqlite3.Connection):
             "root": args.root,
             "files_deleted": 0,
             "records_deleted": 0,
+        }
+    return None
+
+
+def _audit_command(args: argparse.Namespace, conn: sqlite3.Connection, settings: Settings):
+    """`audit run` and `audit list`, over the same functions the button calls.
+
+    `run` moves nothing: it reads the library and writes findings. `files_moved`
+    is in the payload because a command that examines your library ought to say
+    out loud that it did not touch it.
+    """
+    if args.audit_command == "run":
+        summary = audit_library(conn, settings, scope=args.scope, read_tags=not args.no_tags)
+        return asdict(summary) | {"files_moved": 0, "files_deleted": 0}
+    if args.audit_command == "list":
+        rows = open_findings(conn, scope=args.scope)
+        return {
+            "open": len(rows),
+            "findings": [
+                {
+                    "kind": row["kind"],
+                    "severity": row["severity"],
+                    "relpath": row["relpath"],
+                    "summary": row["summary"],
+                    "suggested": row["dest_relpath"] or "",
+                }
+                for row in rows
+            ],
         }
     return None
 

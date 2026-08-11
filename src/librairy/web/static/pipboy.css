@@ -28,6 +28,7 @@
   --scanline: rgba(255, 255, 255, 0.04);
   --scanline-opacity: 1;
   --ok: #7cff6b;
+  --audit: #9b8cff;
   --warn: #ffbf4d;
   --fail: #ff6b6b;
 
@@ -2347,4 +2348,45 @@ summary.timeline-head::-webkit-details-marker { display: none; }
 @media (max-width: 639px) {
   .lightbox-frame { padding: var(--space-2); gap: var(--space-1); }
   .lightbox-title { font-size: var(--text-sm); }
+}
+
+
+/* --- Library audit -------------------------------------------------------
+   A different question from the inbox queue, so a visibly different block.
+   The colour reinforces the LIBRARY AUDIT badge on every row; it never
+   carries the meaning on its own, and it is kept clear of the green/amber/red
+   the confidence bar already owns. */
+.audit {
+  margin-top: var(--space-6, 2rem);
+  border-top: var(--border-thin) solid var(--border);
+  padding-top: var(--space-4);
+}
+.audit-head h2 { margin: 0 0 var(--space-2); }
+.audit-head p { margin: 0 0 var(--space-4); max-width: 60ch; }
+.audit-group { margin-bottom: var(--space-3); }
+.audit-group summary { cursor: pointer; display: flex; gap: var(--space-3); flex-wrap: wrap; }
+.audit-folder { font-family: var(--font-mono); word-break: break-all; }
+.audit-list { list-style: none; margin: var(--space-3) 0 0; padding: 0; }
+.audit-row {
+  border-left: 3px solid var(--audit);
+  background: var(--bg-metric);
+  padding: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+.audit-row-head { display: flex; gap: var(--space-2); flex-wrap: wrap; align-items: center; }
+.badge-audit { color: var(--audit); border-color: var(--audit); letter-spacing: 0.08em; }
+.audit-summary { margin: var(--space-2) 0; }
+.audit-paths {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--space-1) var(--space-3);
+  margin: 0 0 var(--space-2);
+}
+.audit-paths dt { color: var(--text-dim); text-transform: uppercase; font-size: 0.8em; }
+.audit-paths dd { margin: 0; font-family: var(--font-mono); word-break: break-all; }
+.audit-why { margin: 0 0 var(--space-2); }
+
+@media (max-width: 40rem) {
+  .audit-paths { grid-template-columns: 1fr; gap: 0 0; }
+  .audit-paths dt { margin-top: var(--space-2); }
 }

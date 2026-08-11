@@ -517,3 +517,83 @@ button, so a page of fifty rows does not fetch a hundred previews.
 ## Accessing Files
 
 Use the Access page for SMB/FTP/WebDAV pointers. LibrAIry does not serve those protocols; your NAS or operating system does.
+
+## Library Audit
+
+Review asks *where should this new file go?* Library Audit asks a different
+question about files you already own: **is this in the right place?**
+
+They are kept apart on purpose. Filing a file you just dropped in is routine;
+changing one you filed two years ago is not, so audit findings sit in their own
+section of Review, every row is labelled **LIBRARY AUDIT** in words, and none of
+the inbox bulk actions can reach them.
+
+### Running one
+
+Nothing runs on a timer. You press a button:
+
+- **Browse → Audit this folder** on any folder you are looking at.
+- **Browse → Audit the whole library** from the top.
+
+or from a terminal:
+
+```bash
+librairy audit run --scope Music/Pop
+```
+
+```bash
+librairy audit list
+```
+
+Reading embedded tags costs roughly 30 ms a file, so a folder answers in about a
+second and a whole large library belongs on the command line. `--no-tags` skips
+the tag reading and runs on filesystem and index evidence alone.
+
+### What it will never do
+
+An audit **reads**. It writes findings and nothing else — it does not rename,
+move, delete, re-index, download artwork, or quarantine anything, and that
+holds for a finding it is completely certain about. Your library is read-only
+input while it runs, exactly as it is during Browse.
+
+### What it looks for
+
+| Finding | Means |
+|---|---|
+| **Unexpected file type** | A PDF under Music, a spreadsheet under Movies. |
+| **Loose file** | Filed shallower than the rest of your library files things. |
+| **Naming inconsistency** | A folder capitalised unlike the ones beside it. |
+| **Tags disagree with the folder** | Embedded artist tags point at an artist folder you already have elsewhere. |
+| **Possible duplicate** | Identical bytes in two places. |
+| **Missing artwork** | An album with tracks and no cover — reported once per album, not once per folder. |
+| **Not indexed** | On disk but never scanned, so Search cannot see it. |
+| **System file** | `.DS_Store` and friends. Reported, never deleted. |
+
+### Why it says so little
+
+A audit that reports eight hundred harmless style differences gets ignored, and
+then it is protecting nothing. So **your layout is treated as evidence, not as a
+mistake**: `Music/Pop/Abba/` is your convention even though a catalog would call
+Abba disco, and genre disagreement alone never moves anything. A library with no
+consistent depth has no convention to be inconsistent with, so it gets no *loose
+file* findings at all. A library that shouts throughout is a style, not 400
+naming problems.
+
+Against a real 140-file library, a full audit reports **three** things.
+
+### Answering a finding
+
+**Keep as it is** records that the organisation is deliberate. The next audit
+leaves it alone unless the file itself changes, so the same question does not
+come back every week. A finding whose problem has gone away disappears on its
+own.
+
+### Corrections are not executable yet
+
+A finding that suggests a destination shows you the suggestion and stops there.
+The plan/commit/undo machinery **is** proven safe for library-to-library moves —
+containment, source fingerprint, collision, journal and exact-path undo all hold
+— but two pieces are missing before a button can act on it: companions
+(an album's cue, artwork and playlist) must move together, and the source must
+be re-checked against the fingerprint recorded when the finding was made. Until
+both exist, corrections are advice.

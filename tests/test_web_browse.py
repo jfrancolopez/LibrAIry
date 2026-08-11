@@ -149,6 +149,19 @@ def test_browse_templates_have_no_mutating_affordances(tmp_path: Path) -> None:
     # The shared app header (logout form) is chrome, not a browse affordance.
     html = re.sub(r"<header class=\"app-header\".*?</header>", "", html, flags=re.S)
 
+    # One deliberate exception, named rather than waved through: the Audit
+    # button posts. It writes findings and cannot move, rename or delete a
+    # file — the whole audit module is read-only against the library — so it
+    # does not break the invariant this test exists to defend. Every other
+    # write verb stays banned, including a second POST to anywhere else.
+    audit_forms = re.findall(
+        r"<form[^>]*method=\"post\"[^>]*action=\"([^\"]+)\"[^>]*>", html, flags=re.I
+    )
+    assert set(audit_forms) <= {"/browse/audit"}, f"unexpected write form: {audit_forms}"
+    html = re.sub(
+        r"<form method=\"post\" action=\"/browse/audit\".*?</form>", "", html, flags=re.S
+    )
+
     # The invariant is that Browse cannot change anything, not that it has no
     # controls at all: it now carries the search box that used to be its own
     # tab, and a GET form reads. Anything that writes is still forbidden.

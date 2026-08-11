@@ -140,6 +140,8 @@ its usage and exits `2` rather than doing nothing quietly.
 | `undo --op <id> \| --plan <id> --yes` | Put moves back. |
 | `quarantine list \| restore <id> \| restore --all` | The shelf. |
 | `vanished list \| clear --root <root> --yes` | Records whose file is no longer on disk. Deletes no file and no record. |
+| `audit run [--scope <folder>] [--no-tags]` | Examine files already in the library. Writes findings; moves nothing. |
+| `audit list [--scope <folder>]` | Show open findings. |
 | `index rebuild [--content]` | Rebuild the search index from existing rows. Discovers nothing. |
 | `db path \| migrate` | Where the database is; apply migrations. |
 | `ai status \| test [provider]` | Provider configuration and a live round trip. |

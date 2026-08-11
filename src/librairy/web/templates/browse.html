@@ -12,6 +12,14 @@
         Everything filed and committed. Nothing here can be changed from the portal —
         <a href="/access">open it over SMB, FTP or WebDAV</a> to work with the files themselves.
       </p>
+      {# Manual only. Nothing audits on a timer, and an audit never moves,
+         renames or deletes anything — it writes findings to Review and stops. #}
+      <form method="post" action="/browse/audit" class="audit-trigger">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="scope" value="{{ '' }}">
+        <button type="submit">Audit the whole library</button>
+        <span class="muted">Reads your files and reports what looks out of place. Changes nothing.</span>
+      </form>
       {# Browse counts files on disk and Search answers from the index, so the
          two can legitimately disagree. One line saying whether they do beats
          finding out by searching for something you are looking straight at.

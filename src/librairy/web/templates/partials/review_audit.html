@@ -1,0 +1,59 @@
+{# Library Audit findings.
+
+   Deliberately outside the inbox <form> above. The bulk toolbar there acts on
+   checkboxes inside that form, so a finding about a file already in the
+   library cannot be swept up by "Approve all confident" — the page structure
+   guarantees it rather than a filter someone has to remember.
+
+   Every row carries the words LIBRARY AUDIT. The purple edge reinforces it and
+   is never the only thing saying it: colour is not a label. #}
+{% if audit_groups %}
+<section class="audit" id="library-audit">
+  <header class="audit-head">
+    <h2>Library audit</h2>
+    <p class="muted">
+      {{ audit_open }} thing{{ '' if audit_open == 1 else 's' }} worth a look in
+      files you have <strong>already filed</strong>. These are not new files
+      waiting to come in — nothing here has been changed, and nothing here
+      changes unless you say so.
+    </p>
+  </header>
+
+  {% for group in audit_groups %}
+  <details class="audit-group" {% if loop.first %}open{% endif %}>
+    <summary>
+      <span class="audit-folder">{{ group.folder }}</span>
+      <span class="muted">{{ group.count }} finding{{ '' if group.count == 1 else 's' }}</span>
+    </summary>
+    <ul class="audit-list">
+      {% for finding in group.findings %}
+      <li class="audit-row audit-{{ finding.severity }}">
+        <div class="audit-row-head">
+          <span class="badge badge-audit">LIBRARY AUDIT</span>
+          <span class="badge">{{ finding.label }}</span>
+          {% if finding.severity == 'high' %}<span class="badge badge-warn">worth acting on</span>
+          {% else %}<span class="badge">your call</span>{% endif %}
+        </div>
+        <p class="audit-summary">{{ finding.summary }}</p>
+        <dl class="audit-paths">
+          <dt>Currently</dt>
+          <dd>{{ finding.current }}</dd>
+          {# No "suggested" line at all for an observation. A finding with
+             nowhere to go must not look as though it has somewhere to go. #}
+          {% if finding.suggested %}
+          <dt>Suggested</dt>
+          <dd>{{ finding.suggested }}</dd>
+          {% endif %}
+        </dl>
+        {% if finding.why %}<p class="muted audit-why">{{ finding.why }}</p>{% endif %}
+        <form method="post" action="/review/audit/{{ finding.id }}/keep">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button type="submit">Keep as it is</button>
+        </form>
+      </li>
+      {% endfor %}
+    </ul>
+  </details>
+  {% endfor %}
+</section>
+{% endif %}

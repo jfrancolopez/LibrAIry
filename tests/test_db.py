@@ -69,6 +69,8 @@ def test_fresh_db_migrates_to_current_schema(tmp_path: Path) -> None:
         "idx_backup_queue_state",
         "idx_backup_queue_item_id",
         "idx_vision_results_fingerprint",
+        "idx_audit_findings_status",
+        "idx_audit_findings_kind",
     }
 
     columns = {row[1] for row in conn.execute("PRAGMA table_info(provider_status)")}
@@ -129,6 +131,7 @@ def test_migration_011_closes_proposals_for_files_already_filed(tmp_path: Path) 
         DROP TABLE IF EXISTS duplicate_reports;
         DROP TABLE IF EXISTS review_undo;
         DROP TABLE IF EXISTS vision_results;
+        DROP TABLE IF EXISTS audit_findings;
         PRAGMA user_version=10;
         """
     )

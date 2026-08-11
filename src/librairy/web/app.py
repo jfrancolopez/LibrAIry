@@ -22,6 +22,7 @@ from librairy.ai.lmstudio import is_chat_model, normalize_host
 from librairy.ai.lmstudio import probe as lmstudio_probe
 from librairy.ai.lmstudio import try_classify as lmstudio_try_classify
 from librairy.alternatives import options_for_proposal
+from librairy.audit import audit_library, keep_as_is, sanitize_scope
 from librairy.backup import request_backup_now
 from librairy.catalog_probe import UnknownCatalog, probe_catalog
 from librairy.catalogs import catalog_enabled
@@ -30,6 +31,7 @@ from librairy.db import connect
 from librairy.dedup import DedupConfigError
 from librairy.lifecycle import forget_vanished
 from librairy.logging import configure_logging
+from librairy.paths import PathValidationError
 from librairy.review_undo import undo_last
 from librairy.scanner import VALID_ROOTS
 from librairy.search import (
@@ -756,6 +758,39 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             return RedirectResponse("/review", status_code=303)
         forget_vanished(conn, root=root)
         return RedirectResponse("/review", status_code=303)
+
+    @app.post("/review/audit/{finding_id}/keep", include_in_schema=False)
+    def review_audit_keep(
+        request: Request,  # noqa: ARG001
+        finding_id: int,
+    ) -> RedirectResponse:
+        """"This organisation is deliberate." Records the answer and moves on.
+
+        The finding stays as a record rather than vanishing, and the next audit
+        leaves it alone unless the file itself changes — otherwise the same
+        question comes back every week and the list stops being read.
+        """
+        keep_as_is(conn, finding_id)
+        return RedirectResponse("/review#library-audit", status_code=303)
+
+    @app.post("/browse/audit", include_in_schema=False)
+    def browse_audit(
+        request: Request,  # noqa: ARG001
+        scope: Annotated[str, Form()] = "",
+    ) -> RedirectResponse:
+        """Audit a folder you are looking at, or the whole library.
+
+        Synchronous, and scoped for that reason: reading embedded tags costs
+        roughly 30 ms a file, so a folder answers in a second and a very large
+        library belongs on the command line. Reads only — this cannot move,
+        rename or delete anything, whatever the findings say.
+        """
+        try:
+            clean = sanitize_scope(scope, settings.library_dir)
+        except PathValidationError:
+            return RedirectResponse("/browse", status_code=303)
+        audit_library(conn, settings, scope=clean)
+        return RedirectResponse("/review#library-audit", status_code=303)
 
     @app.post("/review/action", response_class=HTMLResponse)
     def review_action(

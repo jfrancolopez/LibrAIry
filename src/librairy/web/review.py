@@ -5,6 +5,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+from librairy.audit import KINDS, open_findings
 from librairy.classify.images import vision_disagrees, vision_for_items
 from librairy.config import Settings
 from librairy.duplicates import items_with_reports, reports_for_item
@@ -103,6 +104,7 @@ class ReviewFilters:
 def review_data(conn: sqlite3.Connection, filters: ReviewFilters) -> dict[str, object]:
     rows = _proposal_rows(conn, filters)
     total = _proposal_count(conn, filters)
+    audit_groups = audit_view(conn)
     return {
         "filters": filters,
         "groups": _group_rows(rows) if filters.grouped else _flat_group(rows),
@@ -130,6 +132,9 @@ def review_data(conn: sqlite3.Connection, filters: ReviewFilters) -> dict[str, o
         # honest way to use it was not to.
         "confident": CONFIDENT,
         "confident_ready": _confident_count(conn, filters),
+        # A separate list for a separate question. See audit_view.
+        "audit_groups": audit_groups,
+        "audit_open": sum(len(group["findings"]) for group in audit_groups),
     }
 
 
@@ -791,3 +796,35 @@ def vanished_view(conn: sqlite3.Connection) -> list[dict[str, object]]:
 def _why_summary(evidence: str | None) -> str:
     views = humanize_evidence(evidence) if evidence else []
     return " · ".join(view.text for view in views[:2])
+
+
+def audit_view(conn: sqlite3.Connection) -> list[dict[str, object]]:
+    """Library Audit findings, grouped by folder, for the Review page.
+
+    Kept in its own table and rendered outside the inbox form on purpose. The
+    inbox bulk actions ("Approve all confident") select checkboxes inside that
+    form; a finding about a file you already own must not be reachable by a
+    button meant for files arriving. Structure enforces it, not a filter
+    somebody could forget.
+    """
+    groups: dict[str, list[dict[str, object]]] = {}
+    for row in open_findings(conn):
+        folder = row["relpath"].rpartition("/")[0] or row["relpath"]
+        groups.setdefault(folder, []).append(
+            {
+                "id": row["id"],
+                "kind": row["kind"],
+                "label": KINDS.get(row["kind"], row["kind"]),
+                "severity": row["severity"],
+                "summary": row["summary"],
+                "current": row["relpath"],
+                # Empty for an observation. The template must not render a
+                # "suggested" line for a finding that has nowhere to suggest.
+                "suggested": row["dest_relpath"] or "",
+                "why": _why_summary(row["evidence"]),
+            }
+        )
+    return [
+        {"folder": folder, "count": len(findings), "findings": findings}
+        for folder, findings in sorted(groups.items())
+    ]

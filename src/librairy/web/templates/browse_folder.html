@@ -6,6 +6,14 @@
     {% endfor %}
   </nav>
   <p class="muted">Read-only. <kbd>↑</kbd><kbd>↓</kbd> move · <kbd>←</kbd><kbd>→</kbd> change column · <kbd>Enter</kbd> open · <kbd>Backspace</kbd> up</p>
+      {# Manual only. Nothing audits on a timer, and an audit never moves,
+         renames or deletes anything — it writes findings to Review and stops. #}
+      <form method="post" action="/browse/audit" class="audit-trigger">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="scope" value="{{ (top ~ '/' ~ folder) if folder else top }}">
+        <button type="submit">Audit this folder</button>
+        <span class="muted">Reads your files and reports what looks out of place. Changes nothing.</span>
+      </form>
 
   <div class="explorer" id="explorer">
     <section class="explorer-pane" data-pane="0" aria-label="Categories">

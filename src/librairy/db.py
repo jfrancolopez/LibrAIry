@@ -6,7 +6,7 @@ from pathlib import Path
 
 from librairy.config import Settings
 
-SCHEMA_VERSION = 15
+SCHEMA_VERSION = 16
 
 
 class DatabaseVersionError(RuntimeError):
@@ -322,6 +322,36 @@ CREATE TABLE vision_results (
 CREATE INDEX idx_vision_results_fingerprint ON vision_results(fingerprint);
 """
 
+MIGRATION_016 = """
+CREATE TABLE audit_findings (
+  id            INTEGER PRIMARY KEY,
+  -- NULL for a physical file nothing has indexed: the audit can see it even
+  -- though no items row exists yet, and saying so is one of its findings.
+  item_id       INTEGER REFERENCES items(id),
+  root          TEXT NOT NULL,
+  relpath       TEXT NOT NULL,
+  kind          TEXT NOT NULL,
+  severity      TEXT NOT NULL,
+  summary       TEXT NOT NULL,
+  -- NULL for an observation. Not every finding is a move, and overloading a
+  -- destination onto "this album has no cover" would make Commit believe it
+  -- had somewhere to put something.
+  dest_root     TEXT,
+  dest_relpath  TEXT,
+  evidence      TEXT NOT NULL DEFAULT '[]',
+  -- What the file was when the finding was made. Applying a correction to a
+  -- file that has changed since is exactly what must not happen.
+  fingerprint   TEXT,
+  status        TEXT NOT NULL DEFAULT 'open',
+  detected_at   TEXT NOT NULL,
+  updated_at    TEXT NOT NULL,
+  -- Re-running the audit re-finds the same thing; it must not stack up.
+  UNIQUE(root, relpath, kind)
+);
+CREATE INDEX idx_audit_findings_status ON audit_findings(status);
+CREATE INDEX idx_audit_findings_kind ON audit_findings(kind);
+"""
+
 MIGRATIONS = {
     1: MIGRATION_001,
     2: MIGRATION_002,
@@ -338,6 +368,7 @@ MIGRATIONS = {
     13: MIGRATION_013,
     14: MIGRATION_014,
     15: MIGRATION_015,
+    16: MIGRATION_016,
 }
 
 

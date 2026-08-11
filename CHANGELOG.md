@@ -6,6 +6,50 @@ Review becomes usable on a real queue, and four detectors that had never worked
 start working. Most of what follows was found by pointing the new comparison
 panel at a real library and reading what it said.
 
+### Added — Library Audit
+
+A second question, kept firmly apart from the first. Review asks *where should
+this new file go?*; Library Audit asks *is this file, which I already own, in
+the right place?* See [the guide](docs/using-librairy.md#library-audit).
+
+- **Manual only.** A button in Browse — *Audit this folder* / *Audit the whole
+  library* — or `librairy audit run [--scope Music/Pop]`. Nothing runs on a
+  timer, deliberately: an audit that reorganises in the background is the
+  opposite of what this program is for.
+- **Analysis never writes to the library.** It reads the filesystem, the index
+  and embedded tags, and produces findings. No rename, no move, no delete, no
+  re-index, not even for a finding it is sure about. Every test that builds a
+  tree asserts the tree is byte-identical afterwards.
+- **Findings live in their own table and their own section of Review**, outside
+  the inbox form. That is what makes it structurally impossible for *Approve
+  all confident* to sweep up a change to a file you already own — a guarantee
+  from the shape of the thing rather than from a filter someone might forget.
+  Every row is labelled **LIBRARY AUDIT** in words; the colour only reinforces.
+- **Eight detectors**, all deterministic: unexpected file type, loose file,
+  naming inconsistency, tags disagreeing with the folder, exact duplicate,
+  missing artwork, unindexed, system junk. An observation renders no
+  *Suggested* line at all, because not every finding is a move.
+- **Silence is the target.** Your layout is evidence, not a mistake: genre
+  disagreement alone never moves anything, a library with no consistent depth
+  gets no *loose file* findings, and a library that shouts throughout is a
+  style rather than four hundred naming problems. Against the author's real
+  140-file library a full audit reports **three** things.
+- **Missing artwork is per album, not per folder.** Written per-folder first,
+  and the real library rejected it: a 45-track compilation filed
+  one-artist-per-folder produced twenty-eight identical rows for one missing
+  cover. Found by running it, not by a test.
+- **Keep as it is** is remembered. The next audit leaves that finding alone
+  unless the file itself changes.
+
+**Corrections are not executable yet, and that is deliberate.** The immutable
+plan and undo turn out to handle library-to-library moves already — the
+executor never asked which root it was working in — and `test_library_to_library.py`
+pins down containment, source fingerprint, collision, journal and exact-path
+undo for them. Two things are still missing before a button may act on a
+finding: companions (an album's cue, artwork and playlist) must move together,
+and the source must be re-checked against the fingerprint the finding was made
+against. Until both exist, a suggested destination is advice.
+
 ### Changed — the CLI is now something you can script against
 
 Once maintenance work has a command, its exit code is an API. Three habits made
