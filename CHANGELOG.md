@@ -6,6 +6,39 @@ Review becomes usable on a real queue, and four detectors that had never worked
 start working. Most of what follows was found by pointing the new comparison
 panel at a real library and reading what it said.
 
+### Changed — the CLI is now something you can script against
+
+Once maintenance work has a command, its exit code is an API. Three habits made
+that unreliable, and all three are fixed. See [the command line](docs/cli.md).
+
+- **`librairy --json ai status` printed plain text.** `ai status` and `ai test`
+  declared their own `--json`; a subparser copies every key it sets back over
+  the parent's namespace, so their default of `False` overwrote the global
+  `True` you had just typed. `--json` is now inherited by every subcommand with
+  `default=SUPPRESS`, so it works before or after the command and cannot be
+  shadowed. A test walks the parser tree and fails on *any* subcommand flag that
+  shadows a global one, rather than on this one instance.
+- **A refusal exited `0`.** `commit`, `undo` and `vanished clear` without
+  `--yes`, and `quarantine restore` without an entry, all printed a complaint
+  and reported success. Now `2`. Nothing-to-do still exits `0`, because
+  `cleared: 0` is an answer and not a fault, and a partly finished commit still
+  exits `1`.
+- **`error` is a machine code now** — `confirmation_required`,
+  `argument_required`, `provider_not_found`, `internal_error` — with the English
+  in a new `message` field, so a script never has to match on a sentence.
+- **In `--json` mode, stdout is exactly one JSON document**, errors included.
+  Errors used to go to stderr, which left a pipe holding nothing. Human mode is
+  unchanged: results on stdout, diagnostics on stderr.
+- **`ai status` and `ai test` fail differently, on purpose.** Status exits `0`
+  while reporting every provider offline — you asked what the state was and got
+  told. `ai test` exits `1` when the round trip does not complete, because the
+  round trip was the request.
+- **Grouped commands require a subcommand.** `librairy vanished`, `librairy ai`
+  and five others used to print nothing and exit `0`.
+- **Nested values no longer print as Python reprs.** `ai test` rendered its
+  health block as `{'ok': True, ...}`; dicts, tuples and values containing
+  newlines all render line-oriented now, the way list values already did.
+
 ### Fixed — three duplicate detectors had never once run
 
 - **rmlint wrote its JSON to a file literally named `-`.** The flag was

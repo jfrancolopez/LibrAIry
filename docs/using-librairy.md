@@ -169,9 +169,10 @@ librairy vanished clear --root inbox --yes
 
 `list` is also the preview: it prints exactly the entries `clear` would resolve,
 with relative paths only. `clear` needs an explicit root and `--yes` — without
-it, it reports what it would do and changes nothing — and running it again when
-there is nothing left succeeds with `cleared: 0`. It is the same function the
-Review button calls.
+it, it reports what it would do, changes nothing, and exits `2` — and running it
+again when there is nothing left succeeds with `cleared: 0`. It is the same
+function the Review button calls. See [the command line](cli.md) for the
+`--json`, confirmation and exit-code rules every command follows.
 
 ### What a missing record's page shows
 
