@@ -1017,6 +1017,16 @@ tbody tr:hover { background: var(--bg-metric); }
 }
 .sync-paths li { margin-bottom: var(--space-1); }
 
+/* Files lying directly in the library root. Below the tiles, in the same row
+   language the explorer uses, so a file does not need a folder made for it
+   before Browse will admit it is there. */
+.root-files { margin-top: var(--space-5); }
+.root-files h2 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-base);
+  color: var(--text-dim);
+}
+
 /* ---- Filter bar ------------------------------------------------------- */
 /* Fields sized to their content instead of every one stretching to fill the
    row: a confidence box does not need the width of a category name. */

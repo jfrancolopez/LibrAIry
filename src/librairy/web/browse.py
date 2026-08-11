@@ -16,7 +16,9 @@ from librairy.web.thumbs import PreviewError, preview_for_item
 PAGE_SIZE = 50
 
 
-def browse_home(conn: sqlite3.Connection, settings: Settings) -> dict[str, object]:
+def browse_home(
+    conn: sqlite3.Connection, settings: Settings, page: int = 1
+) -> dict[str, object]:
     """The top level of the library: the folders that are actually there.
 
     This used to be a hard-coded tuple of the eight classification categories,
@@ -33,10 +35,36 @@ def browse_home(conn: sqlite3.Connection, settings: Settings) -> dict[str, objec
     reconstruct folders out of indexed rows. Existence comes from the
     filesystem now.
 
-    One walk answers both questions: which folders hold how many files, and
-    whether the index still describes them. The database is read only to
-    compare against — it no longer decides what is here.
+    One walk answers all three questions: which folders hold how many files,
+    which files are lying loose at the top level, and whether the index still
+    describes them. The database is read only to compare against — it no longer
+    decides what is here.
     """
+    on_disk = visible_files(settings.library_dir, settings.ignore_patterns)
+    # A file directly in the library root was indexed, searchable and had a
+    # detail page, but there was nowhere in Browse it could appear: this screen
+    # showed directories, and the explorer only opens one. Nothing should have
+    # to be put in a folder before the library will admit it is there.
+    loose = [settings.library_dir / relpath for relpath in on_disk if "/" not in relpath]
+    window = loose[(page - 1) * PAGE_SIZE : page * PAGE_SIZE]
+    return {
+        "roots": library_roots(settings, on_disk),
+        "items": _enriched(conn, "", window),
+        # Directories are complete and files page, the same way round as the
+        # explorer: no number of loose files can hide a folder.
+        "files_url": "/browse/root-files",
+        "folder": "",
+        "page": page,
+        "has_next": len(loose) > page * PAGE_SIZE,
+        "consistency": consistency_view(library_consistency(conn, settings, on_disk)),
+    }
+
+
+def library_panes(conn: sqlite3.Connection, settings: Settings) -> dict[str, object]:
+    """The two things every Browse screen carries: the folder list and the
+    consistency reading. Deliberately narrower than `browse_home` — the
+    explorer has its own file list and its own paging, and spreading the root
+    screen's `page` and `has_next` over them would page the wrong list."""
     on_disk = visible_files(settings.library_dir, settings.ignore_patterns)
     return {
         "roots": library_roots(settings, on_disk),
@@ -150,9 +178,10 @@ def browse_folder(
         "has_prev": page > 1,
         "crumbs": _crumbs(top, folder),
         "parent_href": _parent_href(top, folder),
+        "files_url": f"{top_href(top)}/files",
         # Pane 1 of the explorer: every top-level folder, so you can switch
         # without bouncing through /browse.
-        **browse_home(conn, settings),
+        **library_panes(conn, settings),
     }
 
 

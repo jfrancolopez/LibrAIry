@@ -629,3 +629,132 @@ def test_a_folder_count_ignores_the_same_junk_the_tile_does(tmp_path: Path) -> N
     data = browse_folder(conn, settings, "Photos")
 
     assert data["folders"][0]["count"] == 1
+
+
+# --- files lying directly in the library root -------------------------------
+#
+# Indexed, searchable, with a detail page — and nowhere in Browse they could
+# appear, because the root screen lists directories and the explorer only opens
+# one. Nothing should have to be put in a folder before Browse admits it exists.
+
+
+def test_a_file_in_the_library_root_is_shown(tmp_path: Path) -> None:
+    client, conn, settings = client_for(tmp_path)
+    write(settings, "Photos/a.png")
+    (settings.library_dir / "loose-root.pdf").write_text("x", encoding="utf-8")
+    index_all(conn, settings)
+
+    home = client.get("/browse").text
+
+    assert "loose-root.pdf" in home
+    assert "In the library root" in home
+    assert "<span>Photos</span>" in home, "and the folder tiles are still there"
+
+
+def test_the_section_is_absent_when_the_root_holds_only_folders(tmp_path: Path) -> None:
+    client, conn, settings = client_for(tmp_path)
+    write(settings, "Photos/a.png")
+    index_all(conn, settings)
+
+    assert "In the library root" not in client.get("/browse").text
+
+
+def test_an_unindexed_root_file_is_shown_and_says_so(tmp_path: Path) -> None:
+    client, conn, settings = client_for(tmp_path)
+    write(settings, "Photos/a.png")
+    index_all(conn, settings)
+    (settings.library_dir / "dropped-in.pdf").write_text("x", encoding="utf-8")
+
+    home = client.get("/browse").text
+
+    assert "dropped-in.pdf" in home
+    assert "not indexed" in home
+    assert conn.execute(
+        "SELECT COUNT(*) FROM items WHERE relpath='dropped-in.pdf'"
+    ).fetchone()[0] == 0, "looking at it does not index it"
+
+
+def test_root_hidden_junk_and_symlinks_stay_out(tmp_path: Path) -> None:
+    client, conn, settings = client_for(tmp_path)
+    settings.ignore_patterns = ["*.tmp"]
+    write(settings, "Photos/a.png")
+    (settings.library_dir / "real.pdf").write_text("x", encoding="utf-8")
+    (settings.library_dir / ".DS_Store").write_text("x", encoding="utf-8")
+    (settings.library_dir / "scratch.tmp").write_text("x", encoding="utf-8")
+    outside = tmp_path / "elsewhere.pdf"
+    outside.write_text("secret", encoding="utf-8")
+    with contextlib.suppress(OSError):  # a platform without symlink permission
+        (settings.library_dir / "linked.pdf").symlink_to(outside)
+    index_all(conn, settings)
+
+    home = client.get("/browse").text
+
+    assert "real.pdf" in home
+    for hidden in (".DS_Store", "scratch.tmp", "linked.pdf"):
+        assert hidden not in home
+
+
+def test_root_files_page_but_folders_never_do(tmp_path: Path) -> None:
+    client, conn, settings = client_for(tmp_path)
+    for name in ("Music", "Photos", "Zulu"):
+        write(settings, f"{name}/a.png")
+    for index in range(PAGE_SIZE + 12):
+        (settings.library_dir / f"loose-{index:03d}.pdf").write_text("x", encoding="utf-8")
+    index_all(conn, settings)
+
+    home = client.get("/browse").text
+    more = client.get("/browse/root-files", params={"page": 2}).text
+
+    assert home.count('class="browse-row is-item') == PAGE_SIZE
+    for folder in ("Music", "Photos", "Zulu"):
+        assert f"<span>{folder}</span>" in home, "a folder cannot be paged away"
+    assert "Load more" in home
+    assert '/browse/root-files?folder=&page=2' in home
+    assert more.count('class="browse-row is-item') == 12
+    assert "<html" not in more, "a fragment, not a whole page"
+    assert "Load more" not in more
+
+
+def test_the_root_files_route_wins_over_a_folder_of_that_name(tmp_path: Path) -> None:
+    """`/browse/root-files` is registered before `/browse/{top}`."""
+    client, conn, settings = client_for(tmp_path)
+    (settings.library_dir / "root-files").mkdir()
+    write(settings, "root-files/decoy.png")
+    (settings.library_dir / "loose.pdf").write_text("x", encoding="utf-8")
+    index_all(conn, settings)
+
+    response = client.get("/browse/root-files")
+
+    assert "loose.pdf" in response.text
+    assert "decoy.png" not in response.text
+
+
+def test_a_root_file_keeps_its_preview_and_detail_page(tmp_path: Path) -> None:
+    client, conn, settings = client_for(tmp_path)
+    write(settings, "Photos/a.png")
+    (settings.library_dir / "snap.png").write_text("x", encoding="utf-8")
+    index_all(conn, settings)
+    item_id = conn.execute(
+        "SELECT id FROM items WHERE relpath='snap.png'"
+    ).fetchone()[0]
+
+    home = client.get("/browse").text
+
+    assert f'href="/items/{item_id}"' in home
+    assert f'/preview/items/{item_id}/thumb' in home
+    assert client.get(f"/items/{item_id}").status_code == 200
+    assert 'id="lightbox"' in home, "the viewer ships with the page that shows previews"
+
+
+def test_a_root_file_counts_towards_consistency_but_no_tile(tmp_path: Path) -> None:
+    """It is in the library, so the total counts it. It is in no folder, so no
+    tile claims it — and the two numbers are allowed to differ by exactly that."""
+    client, conn, settings = client_for(tmp_path)
+    write(settings, "Photos/a.png")
+    (settings.library_dir / "loose.pdf").write_text("x", encoding="utf-8")
+    index_all(conn, settings)
+
+    home = client.get("/browse").text
+
+    assert roots(settings) == {"Photos": 1}
+    assert "2 files · index up to date" in home

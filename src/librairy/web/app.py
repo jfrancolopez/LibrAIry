@@ -1155,7 +1155,10 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             "searching": bool(q.strip() or category or year or genre),
             "scopes": SEARCH_SCOPES,
             "scope": root or DEFAULT_SEARCH_ROOT,
-            **browse_home(conn, settings),
+            # `page` pages whichever list this request is showing: the search
+            # results, or the loose files in the library root. Never both —
+            # the body renders tiles or results, not the two together.
+            **browse_home(conn, settings, page),
             **search_data(conn, settings, q, filters),
         }
 
@@ -1171,6 +1174,17 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
                 "host_quarantine_dir": settings.host_quarantine_dir,
                 **access_data(conn, settings),
             },
+        )
+
+    @app.get("/browse/root-files", response_class=HTMLResponse)
+    def browse_root_files(request: Request, page: PageNumber = 1) -> HTMLResponse:
+        """One more batch of the files lying directly in the library root.
+
+        Registered before `/browse/{top}` so the literal path wins over a
+        folder that happens to be called `root-files`.
+        """
+        return TEMPLATES.TemplateResponse(
+            request, "partials/browse_files.html", browse_home(conn, settings, page)
         )
 
     @app.get("/browse/{top}", response_class=HTMLResponse)

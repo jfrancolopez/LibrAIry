@@ -23,5 +23,18 @@
         <a class="metric" href="{{ root.href }}"><strong>{{ root.count }}</strong><span>{{ root.name }}</span></a>
       {% endfor %}
     </div>
+    {# A file sitting directly in the library root was indexed and searchable
+       and had a detail page, and there was nowhere in Browse it could appear:
+       this screen lists directories and the explorer only opens one. Same rows
+       as any other folder, so nothing needs a folder made for it first. Only
+       rendered when there are some. #}
+    {% if items %}
+      <section class="root-files">
+        <h2>In the library root</h2>
+        <div class="pane-list">
+          {% include "partials/browse_files.html" %}
+        </div>
+      </section>
+    {% endif %}
   {% endif %}
 </div>
