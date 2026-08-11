@@ -198,9 +198,9 @@ def test_the_remedy_named_is_the_one_that_would_work(tmp_path: Path) -> None:
 
 
 def test_a_stale_record_is_offered_no_command_that_would_not_work(tmp_path: Path) -> None:
-    """A scan sets missing_since and keeps the row, and Search still returns
-    it. Naming a command that does not clear this would be a lie; deleting the
-    row would be an unasked-for repair. So it explains and offers neither."""
+    """A scan sets missing_since and keeps the row. Naming a command that does
+    not clear this would be a lie; deleting the row would be an unasked-for
+    repair. So it explains the state and offers neither."""
     settings = settings_for(tmp_path)
     conn = connect(settings)
     write(settings, "Photos/gone.png")
@@ -211,7 +211,7 @@ def test_a_stale_record_is_offered_no_command_that_would_not_work(tmp_path: Path
     view = consistency_view(library_consistency(conn, settings))
 
     assert [note["remedy"] for note in view["notes"]] == [None]
-    assert "Search can still return them" in view["notes"][0]["text"]
+    assert "Search no longer returns them" in view["notes"][0]["text"]
     assert conn.execute("SELECT COUNT(*) FROM items WHERE root='library'").fetchone()[0] == 1
 
 
@@ -307,3 +307,65 @@ def _snapshot(conn, settings: Settings) -> tuple:
         conn.execute("SELECT COUNT(*) FROM search_fts").fetchone()[0],
         sorted(path.name for path in settings.library_dir.rglob("*")),
     )
+
+
+# --- the same definition Search uses ----------------------------------------
+
+
+def test_the_reading_and_search_agree_on_what_is_live(tmp_path: Path) -> None:
+    """One definition of "here", checked from both ends: what Search will
+    return, and what the status line calls indexed."""
+    from librairy.search import SearchFilters, search_items
+
+    settings = settings_for(tmp_path)
+    conn = connect(settings)
+    for name in ("a.png", "b.png", "c.png"):
+        write(settings, f"Photos/{name}")
+    scan(conn, settings)
+    (settings.library_dir / "Photos" / "b.png").unlink()
+    write(settings, "Photos/d.png")
+    scan(conn, settings)
+
+    state = library_consistency(conn, settings)
+    live = search_items(conn, "png", SearchFilters(root="library"))
+
+    assert state.physical_files == state.indexed_files == len(live) == 3
+    assert state.missing_files == 1
+    assert state.unindexed_files == 0
+    assert {Path(str(row["relpath"])).name for row in live} == {"a.png", "c.png", "d.png"}
+
+
+def test_a_disappearing_file_moves_between_the_two_numbers(tmp_path: Path) -> None:
+    settings = settings_for(tmp_path)
+    conn = connect(settings)
+    write(settings, "Photos/here.png")
+    scan(conn, settings)
+    assert library_consistency(conn, settings).matches
+
+    (settings.library_dir / "Photos" / "here.png").unlink()
+    scan(conn, settings)
+    gone = library_consistency(conn, settings)
+
+    assert gone.physical_files == 0
+    assert gone.indexed_files == 0
+    assert gone.missing_files == 1
+
+    write(settings, "Photos/here.png")
+    scan(conn, settings)
+
+    assert library_consistency(conn, settings).matches
+
+
+def test_a_structural_file_is_not_reported_as_a_problem(tmp_path: Path) -> None:
+    """A DVD's .IFO and .BUP are indexed like anything else, so they are never
+    counted as drift — there is no visible-but-unindexable tier to be stuck in."""
+    settings = settings_for(tmp_path)
+    conn = connect(settings)
+    for name in ("VIDEO_TS.IFO", "VIDEO_TS.BUP", "VTS_01_1.VOB"):
+        write(settings, f"Movies/Disc/VIDEO_TS/{name}")
+    scan(conn, settings)
+
+    state = library_consistency(conn, settings)
+
+    assert state.matches
+    assert state.indexed_files == 3

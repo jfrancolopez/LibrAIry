@@ -95,9 +95,11 @@ def consistency_view(state: LibraryConsistency) -> dict[str, object]:
     the library is also what teaches LibrAIry the layout it already keeps.
 
     A stale row gets no command at all, because there is no honest one to give.
-    A scan sets `missing_since` and stops there — the row survives, and Search
-    can still return it — and inventing a delete here would be exactly the kind
-    of unasked-for repair this page is supposed to avoid.
+    A scan sets `missing_since` and stops there; the row survives on purpose,
+    carrying the decisions made about that file, and inventing a delete here
+    would be exactly the kind of unasked-for repair this page exists to avoid.
+    So the note explains the state rather than pointing at a command that would
+    not change it.
     """
     notes: list[dict[str, str | None]] = []
     if state.unindexed_files:
@@ -119,9 +121,10 @@ def consistency_view(state: LibraryConsistency) -> dict[str, object]:
             {
                 "text": (
                     f"{count} indexed {'entry has' if count == 1 else 'entries have'} no file on "
-                    "disk — moved or removed outside LibrAIry. A scan marks them missing but "
-                    "keeps the record, so Search can still return them. Nothing here will delete "
-                    "a record for you."
+                    "disk — moved or removed outside LibrAIry. Search no longer returns them and "
+                    "Browse never did; the record is kept for its history and its evidence, and "
+                    "a scan will pick the file up again if it comes back. Nothing here will "
+                    "delete a record for you."
                 ),
                 "remedy": None,
             }
