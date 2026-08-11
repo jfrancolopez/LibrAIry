@@ -216,6 +216,23 @@ panel at a real library and reading what it said.
   - `/items/{id}` says *Not on disk*, when it was last seen and where, and
     stops offering a preview of nothing — that page used to attempt one, fail
     on the open, and print the errno where the photograph should be.
+- **You can look at the vanished entries before resolving them.** Review has
+  offered to clear proposals whose file is gone for a while; what it did not
+  offer was any way to see them. One click, every root at once, from a notice
+  counting only one of them, behind a label that reads destructive next to a
+  warning triangle — for something that marks seven proposals superseded.
+  - A disclosure per root now holds the list: filename, path, when it went,
+    what it would have been filed as, and the one line of evidence saying why.
+    Then what clearing does, then a button that names its own scope.
+  - Three fixes in `forget_vanished`, found by running it rather than reading
+    it: it cleared every root in one call, it wrote `items.state` directly (the
+    only place in the codebase skipping the lifecycle check), and it superseded
+    a proposal without re-syncing the search entry — leaving the index claiming
+    a category no proposal made any more.
+  - **Nothing is deleted**, and 23 tests hold the line: item, proposal,
+    evidence, search entry and history counts are identical across a clear.
+    `missing_since` stays set, a file that comes back leaves the list on its
+    own with its decision intact, and running it twice does nothing.
 - **Files in the library root are reachable.** A file sitting directly in
   `library/` was scanned, indexed, searchable and had a detail page, and there
   was nowhere in Browse it could appear: the root screen lists directories, and

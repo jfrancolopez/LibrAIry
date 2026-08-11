@@ -87,3 +87,50 @@ docker exec librairy librairy ai status
 ```
 
 If startup fails, the logs list numbered errors in plain language. Common fixes are creating the host directories, correcting ownership for `PUID:PGID`, separating nested inbox/library paths, or changing `DASHBOARD_PORT`.
+
+## Reclaiming Docker disk space
+
+Rebuilding the image repeatedly — during development, or after several
+upgrades — leaves layers behind that nothing references. On Docker Desktop
+these accumulate inside a fixed-size VM disk, and when it fills the symptom is
+not obvious: the container dies with `No space left on device` writing a
+temporary file, and no LibrAIry log explains why.
+
+See what is actually there first:
+
+```bash
+docker system df
+```
+
+The two lines that grow are **Images** and **Build cache**. Both are
+regenerable — an image can be rebuilt or re-pulled, cache is only a speed-up:
+
+```bash
+docker image prune
+```
+
+```bash
+docker builder prune --keep-storage 2GB
+```
+
+Check the space came back, from inside the VM rather than from the host — on
+macOS the host file stays the same size:
+
+```bash
+docker run --rm --privileged alpine df -h /
+```
+
+**Never pass `--volumes`, and never use `docker system prune --volumes`.** If
+your inbox, library, quarantine and appdata are bind mounts they are not at
+risk, but a named volume holding appdata would be, and the flag gives no
+warning. There is nothing in a Docker volume that a LibrAIry cleanup needs.
+
+Two other things worth knowing before reaching for `docker image prune -a`: it
+removes every image not attached to a container, including other projects' and
+any release tag you have not pushed. And a stopped container's writable layer
+counts towards **Containers** in `docker system df` — often the largest line —
+but removing a stopped container discards whatever is in that layer, so leave
+any you did not create yourself.
+
+This is a manual step on purpose. There is no automated cleanup job and none
+should be added: it would eventually run against something you wanted.

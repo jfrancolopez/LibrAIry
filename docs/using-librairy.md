@@ -112,9 +112,49 @@ It only reconciles the root you scanned. `--root library` cannot mark an inbox
 record missing, and the background worker only ever scans the inbox — which is
 why inbox records can sit missing while the library is perfectly clean.
 
-There is deliberately no "clean up stale records" command. A missing file is
-usually an unmounted disk, and discarding a volume's worth of decisions the
-moment it drops offline would be worse than a stale row.
+Scanning never deletes a record. Resolving the workflow entries left behind is
+a separate, manual decision — see below.
+
+### Clearing entries whose file is gone
+
+When a file disappears while LibrAIry was still waiting for you to decide about
+it, the proposal is left over: not in Review (it is filtered out), not
+committable, but still counted. Review says so, and offers to resolve them:
+
+> **7 files moved or deleted outside LibrAIry**, so they are not listed below.
+> Usually an unmounted disk — plug it back in and the next scan picks them up
+> with the decisions intact.
+>
+> ▸ 7 inbox entries — waiting to be filed
+
+Open the disclosure and you get the list — filename, path, when it went, what
+it would have been filed as, and why LibrAIry thought so — then the button.
+
+**Clearing does not delete anything.** The proposal is marked superseded and
+the item goes back to being an unclassified file. Specifically:
+
+| | |
+|---|---|
+| The file | Already gone. Nothing on disk is touched, then or ever. |
+| The item record | Kept. |
+| The proposal row and its evidence | Kept, marked superseded. |
+| The search entry | Kept, re-synced. |
+| History | Untouched. |
+| `missing_since` | Left set — clearing is not finding. |
+| What you lose | The item's page stops showing a category and a *why here?*. Put the file back and a scan works it out again. |
+
+It is scoped to one root: the button beside a count of inbox entries clears
+inbox entries. Running it twice does nothing the second time.
+
+**Nothing does this on a timer.** A missing file is usually an unmounted disk,
+and discarding a volume's worth of decisions the moment it drops offline would
+be worse than a stale row. If the file comes back before you clear anything,
+the next scan takes it off the list by itself, decision intact.
+
+One count worth understanding: **records whose file is missing** and **entries
+worth clearing** are different numbers. A proposal you already rejected is not
+waiting on anybody, so its file vanishing changes nothing about it and clearing
+does not apply. Eight missing records here, seven entries to clear.
 
 ### The words, and what they mean here
 
