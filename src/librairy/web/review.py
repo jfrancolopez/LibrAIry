@@ -742,6 +742,7 @@ def vanished_view(conn: sqlite3.Connection) -> list[dict[str, object]]:
         groups.setdefault(row["root"], []).append(
             {
                 "item_id": row["item_id"],
+                "root": row["root"],
                 "name": PurePosixPath(row["relpath"]).name,
                 "relpath": row["relpath"],
                 "missing_since": (row["missing_since"] or "")[:10],

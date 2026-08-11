@@ -370,6 +370,10 @@ def test_the_notice_lists_the_entries_and_scopes_its_button(tmp_path: Path) -> N
 
     assert "Test.Show.S01E01.mkv" in page
     assert "lib-gone.mkv" in page
+    # The whole path, root included — "/_drop/..." with the root missing is
+    # not a location anybody can act on.
+    assert "inbox/_drop/Test.Show.S01E01.mkv" in page
+    assert "library/Shows/lib-gone.mkv" in page
     assert "Clear 1 inbox entry" in page
     assert "Clear 1 library entry" in page
     assert 'name="root" value="inbox"' in page
