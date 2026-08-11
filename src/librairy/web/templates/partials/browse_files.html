@@ -1,3 +1,4 @@
+{% from "partials/ext_info.html" import ext_info %}
 {% for item in items %}
   {# An unindexed file is still a file. It is listed, and says so, rather than
      being hidden because LibrAIry has no row for it — but it has no detail
@@ -13,13 +14,13 @@
       {% endif %}
       <span class="row-name mono">{{ item.name }}</span>
       <span class="row-size muted">{{ item.size }}</span>
-    </a>
+    </a>{{ ext_info(item.name) }}
   {% else %}
     <div class="browse-row is-item is-unindexed" title="On disk, but LibrAIry has no record of it yet — run a library scan">
       <span class="row-thumb is-placeholder" aria-hidden="true"></span>
       <span class="row-name mono">{{ item.name }}</span>
       <span class="row-size muted">{{ item.size }}</span>
-      <span class="badge badge-info">not indexed</span>
+      <span class="badge badge-info">not indexed</span>{{ ext_info(item.name) }}
     </div>
   {% endif %}
 {% else %}

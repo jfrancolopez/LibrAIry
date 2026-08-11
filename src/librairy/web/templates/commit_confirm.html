@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "partials/ext_info.html" import ext_info %}
 {% block content %}
   {# This is the last screen before files move, and it used to open with a
      UUID and a SHA-256 — the two things on it least useful to the person
@@ -42,7 +43,7 @@
             <div class="from-to">
               <span class="mono muted">{{ op.src_root }}/{{ op.src_relpath }}</span>
               <span aria-hidden="true">→</span>
-              <span class="mono">{{ op.dest_root }}/{{ op.dest_relpath }}</span>
+              <span class="mono">{{ op.dest_root }}/{{ op.dest_relpath }}</span>{{ ext_info(op.dest_relpath) }}
             </div>
             {% if op.evidence_views %}
               <details class="why"><summary>Why?</summary>

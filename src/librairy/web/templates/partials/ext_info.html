@@ -1,0 +1,36 @@
+{# The info control that appears beside a filename, everywhere one is shown.
+
+   A native <details>: no JavaScript, keyboard-operable for free, closes by
+   the same key that opened it, and degrades to visible text if the CSS never
+   arrives. The CSP forbids inline script, so a popover library was never an
+   option and is not missed for two sentences of reference text.
+
+   Import it rather than including it, so the filename can be passed in:
+     {% from "partials/ext_info.html" import ext_info %}
+     {{ ext_info(row.relpath) }}
+#}
+{% macro ext_info(name) %}
+{%- set info = extension_info(name) -%}
+{%- if info -%}
+<details class="ext-info">
+  <summary
+    class="ext-info-toggle"
+    title="{{ ext_aria_label(name) }}"
+    aria-label="{{ ext_aria_label(name) }}"
+  ><span aria-hidden="true">?</span></summary>
+  <div class="ext-info-panel" role="note">
+    <p class="ext-info-head">
+      <strong>{{ info.title or 'This file' }}</strong>
+      <span class="muted">{{ info.label }}</span>
+    </p>
+    <p>{{ info.description }}</p>
+    {% if info.common_context %}<p class="muted">{{ info.common_context }}</p>{% endif %}
+    {# Advice about handling the format, never about whether to keep the file:
+       nothing here tells you something is safe to delete. #}
+    {% if info.caution %}<p class="ext-info-caution">{{ info.caution }}</p>{% endif %}
+    {% if info.role %}<p class="muted">In LibrAIry: {{ info.role }}</p>{% endif %}
+    {% if not info.known and info.mime %}<p class="muted mono">{{ info.mime }}</p>{% endif %}
+  </div>
+</details>
+{%- endif -%}
+{% endmacro %}

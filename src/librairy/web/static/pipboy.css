@@ -2390,3 +2390,73 @@ summary.timeline-head::-webkit-details-marker { display: none; }
   .audit-paths { grid-template-columns: 1fr; gap: 0 0; }
   .audit-paths dt { margin-top: var(--space-2); }
 }
+
+/* --- File type info ------------------------------------------------------
+   A native <details> beside a filename. Secondary by design: Review already
+   has a strong hierarchy and an extension is reference text, not a decision,
+   so it gets one neutral mark rather than a coloured badge per format. */
+.ext-info {
+  display: inline-block;
+  position: relative;
+  vertical-align: baseline;
+}
+.ext-info-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* 1.5rem is the tap target; the mark inside it is small. Anything less is
+     a coin toss on a phone. */
+  min-width: 1.5rem;
+  min-height: 1.5rem;
+  margin-left: var(--space-1);
+  border: var(--border-thin) solid var(--text-dim);
+  border-radius: 50%;
+  color: var(--text-dim);
+  font-size: 0.75em;
+  line-height: 1;
+  cursor: help;
+  list-style: none;
+  user-select: none;
+}
+.ext-info-toggle::-webkit-details-marker { display: none; }
+.ext-info-toggle:hover,
+.ext-info-toggle:focus-visible {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.ext-info[open] > .ext-info-toggle { color: var(--accent); border-color: var(--accent); }
+.ext-info-panel {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + var(--space-1));
+  left: 0;
+  width: max-content;
+  max-width: min(28rem, calc(100vw - 2rem));
+  padding: var(--space-3);
+  border: var(--border-thin) solid var(--border);
+  background: var(--bg-panel);
+  box-shadow: var(--panel-shadow);
+  text-align: left;
+  white-space: normal;
+  font-weight: normal;
+}
+.ext-info-panel p { margin: 0 0 var(--space-2); }
+.ext-info-panel p:last-child { margin-bottom: 0; }
+.ext-info-head { display: flex; gap: var(--space-2); flex-wrap: wrap; align-items: baseline; }
+.ext-info-caution { color: var(--warn); }
+
+/* Near the right edge the panel would run off screen; anchor it to the right
+   instead. Cheap and static — no measuring, no script. */
+.ext-info-right .ext-info-panel { left: auto; right: 0; }
+
+@media (max-width: 40rem) {
+  /* On a phone there is no room to float beside anything: pin it to the
+     viewport width so long paths wrap instead of pushing the page sideways. */
+  .ext-info-panel {
+    position: fixed;
+    left: var(--space-2);
+    right: var(--space-2);
+    width: auto;
+    max-width: none;
+  }
+}

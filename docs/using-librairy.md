@@ -518,6 +518,35 @@ button, so a page of fifty rows does not fetch a hundred previews.
 
 Use the Access page for SMB/FTP/WebDAV pointers. LibrAIry does not serve those protocols; your NAS or operating system does.
 
+## File type info
+
+Beside every filename is a small **?**. It explains what that file extension
+is and what such files are normally for — useful when a folder turns out to
+contain `VTS_01_1.VOB`, `.BUP`, `.LRC` or something nobody recognises.
+
+```
+.IFO — DVD information file
+Stores navigation and playback metadata for DVD-Video.
+Part of a VIDEO_TS folder, alongside .VOB and .BUP files.
+Structural DVD filenames are meaningful to players and are preserved
+rather than tidied.
+```
+
+It appears in Review, Library Audit, Browse, Search, Quarantine, History,
+item detail and the commit confirmation, and it says the same thing in all of
+them because they read from one list.
+
+**It is reference information only.** It describes the *format*, never the
+contents: `.mp4` is a video container, which may be a family clip or a film,
+and `.jpg` is an image rather than a photograph. It never changes a category,
+a confidence, a destination, a filename or a proposal, and it never tells you
+a file is safe to delete — including `.DS_Store`, which it describes and
+leaves to you.
+
+An extension it does not know says so plainly rather than guessing. Roughly 90
+formats are covered; the list exists to remove the "what is this?" pause while
+you organise, not to catalogue every format there is.
+
 ## Library Audit
 
 Review asks *where should this new file go?* Library Audit asks a different

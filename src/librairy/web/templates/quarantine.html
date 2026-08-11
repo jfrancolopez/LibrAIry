@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "partials/ext_info.html" import ext_info %}
 {% block content %}
   {# The page used to speak in the vocabulary of the tables underneath it —
      "Staged", "Approve Stage", "Un-stage", "Executed" — which are the states
@@ -107,7 +108,7 @@
           <article class="qrow{% if entry.restored_at %} is-restored{% elif entry.marked %} is-marked{% endif %}">
             <header class="qrow-head">
               <h3 class="qrow-name" title="{{ entry.item_relpath or entry.original_relpath }}">
-                {{ entry.display_name }}{% if entry.size_label %}<span class="name-size"> · {{ entry.size_label }}</span>{% endif %}
+                {{ entry.display_name }}{% if entry.size_label %}<span class="name-size"> · {{ entry.size_label }}</span>{% endif %}{{ ext_info(entry.item_relpath or entry.original_relpath) }}
               </h3>
               <span class="qrow-meta">
                 {# One consistent meaning per colour: info is a fact about the

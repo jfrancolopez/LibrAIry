@@ -1,3 +1,4 @@
+{% from "partials/ext_info.html" import ext_info %}
 {# Library Audit findings.
 
    Deliberately outside the inbox <form> above. The bulk toolbar there acts on
@@ -37,7 +38,7 @@
         <p class="audit-summary">{{ finding.summary }}</p>
         <dl class="audit-paths">
           <dt>Currently</dt>
-          <dd>{{ finding.current }}</dd>
+          <dd>{{ finding.current }}{{ ext_info(finding.current) }}</dd>
           {# No "suggested" line at all for an observation. A finding with
              nowhere to go must not look as though it has somewhere to go. #}
           {% if finding.suggested %}

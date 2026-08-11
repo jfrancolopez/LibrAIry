@@ -1,3 +1,4 @@
+{% from "partials/ext_info.html" import ext_info %}
 {% set conf = proposal.confidence %}
 {% set band = 'conf-high' if conf >= 0.85 and proposal.dest_relpath else ('conf-low' if conf < 0.6 or not proposal.dest_relpath else 'conf-mid') %}
 {% set csrf = request.state.session.csrf_token %}
@@ -15,7 +16,7 @@
       {# The size is a property of the file, so it belongs to the filename. It
          was sitting in the confidence cluster, where it read as part of the
          score. #}
-      <h3 class="proposal-name" title="{{ proposal.item_relpath }}">{{ proposal.display_name or proposal.item_relpath }}{% if proposal.size_label %}<span class="name-size"> · {{ proposal.size_label }}</span>{% endif %}</h3>
+      <h3 class="proposal-name" title="{{ proposal.item_relpath }}">{{ proposal.display_name or proposal.item_relpath }}{% if proposal.size_label %}<span class="name-size"> · {{ proposal.size_label }}</span>{% endif %}{{ ext_info(proposal.item_relpath) }}</h3>
       <span class="proposal-meta">
         {% if proposal.rechecking %}<span class="badge badge-info">looking again</span>{% endif %}
         {# Says there is something in Why worth opening. Without it the caption

@@ -1,3 +1,4 @@
+{% from "partials/ext_info.html" import ext_info %}
 <div id="search-results">
   {% if not query and not filters.category and not filters.root and not filters.year and not filters.genre and not filters.content %}
     <p>Search is ready. Try: <code>queen night opera</code>, <code>photos 2026</code>, or filter by root/category after files are indexed.</p>
@@ -20,7 +21,7 @@
                  plain filename. #}
               <span class="mono">{{ row.name|safe }}</span>
             </p>
-            <p class="result-path mono muted">{{ row.root }}/{{ row.relpath }}</p>
+            <p class="result-path mono muted">{{ row.root }}/{{ row.relpath }}{{ ext_info(row.relpath) }}</p>
             {% if row.snippet %}<p class="result-snippet muted">{{ row.snippet|safe }}</p>{% endif %}
 
             <p class="result-facts">

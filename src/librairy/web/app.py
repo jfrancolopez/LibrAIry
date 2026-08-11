@@ -29,6 +29,8 @@ from librairy.catalogs import catalog_enabled
 from librairy.config import Settings
 from librairy.db import connect
 from librairy.dedup import DedupConfigError
+from librairy.filetypes import aria_label as ext_aria_label
+from librairy.filetypes import extension_info
 from librairy.lifecycle import forget_vanished
 from librairy.logging import configure_logging
 from librairy.paths import PathValidationError
@@ -173,6 +175,11 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
     app.mount("/static", RevalidatedStatics(directory=PACKAGE_DIR / "static"), name="static")
     TEMPLATES.env.globals["provider_header"] = lambda: provider_header(conn, settings)
     TEMPLATES.env.globals["app_version"] = __version__
+    # One source for "what is a .VOB?", reachable from any template. Static
+    # reference text: no file is read, nothing is looked up over the network,
+    # and nothing it returns can change a classification.
+    TEMPLATES.env.globals["extension_info"] = extension_info
+    TEMPLATES.env.globals["ext_aria_label"] = ext_aria_label
     TEMPLATES.env.globals["welcome_banner_visible"] = lambda request: welcome_banner_visible(
         conn, request.state.session
     )
