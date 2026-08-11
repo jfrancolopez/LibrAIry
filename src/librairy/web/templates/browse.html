@@ -12,6 +12,25 @@
         Everything filed and committed. Nothing here can be changed from the portal —
         <a href="/access">open it over SMB, FTP or WebDAV</a> to work with the files themselves.
       </p>
+      {# Browse counts files on disk and Search answers from the index, so the
+         two can legitimately disagree. One line saying whether they do beats
+         finding out by searching for something you are looking straight at.
+         Measured when this page was rendered — nothing watches it after. #}
+      {% if consistency.matches %}
+        <p class="sync-line"><span class="sync-dot is-ok" aria-hidden="true"></span>{{ consistency.summary }}</p>
+      {% else %}
+        <details class="sync-line is-drift">
+          <summary><span class="sync-dot is-warn" aria-hidden="true"></span>{{ consistency.summary }}</summary>
+          {% for note in consistency.notes %}<p>{{ note }}</p>{% endfor %}
+          <ul class="sync-paths">
+            {% for example in consistency.examples %}
+              <li><span class="muted">{{ example.label }}</span> <span class="mono">{{ example.path }}</span></li>
+            {% endfor %}
+            {% if consistency.more %}<li class="muted">and {{ consistency.more }} more</li>{% endif %}
+          </ul>
+          <p>Reconcile it with <code>{{ consistency.remedy }}</code>. LibrAIry will not do it on its own — nothing here is indexed, moved or deleted just because you looked at it.</p>
+        </details>
+      {% endif %}
     </div>
   </header>
 

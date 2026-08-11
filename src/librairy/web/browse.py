@@ -5,17 +5,18 @@ from pathlib import Path, PurePosixPath
 from urllib.parse import quote, urlencode
 
 from librairy.config import Settings
+from librairy.consistency import consistency_view, library_consistency, top_level
 from librairy.mediakind import IMAGE_EXTENSIONS, VIDEO_EXTENSIONS
 from librairy.paths import PathValidationError, validate_relpath
 from librairy.proposals import decode_evidence
-from librairy.scanner import count_visible_files, is_visible_entry
+from librairy.scanner import is_visible_entry, visible_files
 from librairy.search import host_path
 from librairy.web.thumbs import PreviewError, preview_for_item
 
 PAGE_SIZE = 50
 
 
-def browse_home(settings: Settings) -> dict[str, object]:
+def browse_home(conn: sqlite3.Connection, settings: Settings) -> dict[str, object]:
     """The top level of the library: the folders that are actually there.
 
     This used to be a hard-coded tuple of the eight classification categories,
@@ -30,29 +31,56 @@ def browse_home(settings: Settings) -> dict[str, object]:
     SMB could never appear at all, because the screen was a list of
     classifications rather than a listing — the same way the explorer used to
     reconstruct folders out of indexed rows. Existence comes from the
-    filesystem here too now, and the database is not consulted at all.
+    filesystem now.
+
+    One walk answers both questions: which folders hold how many files, and
+    whether the index still describes them. The database is read only to
+    compare against — it no longer decides what is here.
     """
-    return {"roots": library_roots(settings)}
+    on_disk = visible_files(settings.library_dir, settings.ignore_patterns)
+    return {
+        "roots": library_roots(settings, on_disk),
+        "consistency": consistency_view(library_consistency(conn, settings, on_disk)),
+    }
 
 
-def library_roots(settings: Settings) -> list[dict[str, object]]:
-    """Top-level library directories, each with the files beneath it.
+def library_root_names(settings: Settings) -> list[str]:
+    """Visible top-level directory names, in a stable order.
 
-    The count is every visible file at any depth, by the same rule the scanner
-    indexes by — not direct children, not indexed rows, not folders.
+    Directories only: a file lying loose in the library root is not a section
+    of the library, and neither is a symlink or a dotfile.
     """
     try:
         entries = sorted(settings.library_dir.iterdir(), key=lambda path: path.name.lower())
     except OSError:
         return []
     return [
-        {
-            "name": entry.name,
-            "count": count_visible_files(entry, settings.ignore_patterns, entry.name),
-            "href": top_href(entry.name),
-        }
+        entry.name
         for entry in entries
         if entry.is_dir() and is_visible_entry(entry, entry.name, settings.ignore_patterns)
+    ]
+
+
+def library_roots(
+    settings: Settings, on_disk: list[str] | None = None
+) -> list[dict[str, object]]:
+    """Top-level library directories, each with the files beneath it.
+
+    The count is every visible file at any depth, by the same rule the scanner
+    indexes by — not direct children, not indexed rows, not folders. An empty
+    directory is still a directory, so it is listed with a zero rather than
+    left out.
+    """
+    if on_disk is None:
+        on_disk = visible_files(settings.library_dir, settings.ignore_patterns)
+    counts: dict[str, int] = {}
+    for relpath in on_disk:
+        top = top_level(relpath)
+        if top:
+            counts[top] = counts.get(top, 0) + 1
+    return [
+        {"name": name, "count": counts.get(name, 0), "href": top_href(name)}
+        for name in library_root_names(settings)
     ]
 
 
@@ -124,7 +152,7 @@ def browse_folder(
         "parent_href": _parent_href(top, folder),
         # Pane 1 of the explorer: every top-level folder, so you can switch
         # without bouncing through /browse.
-        **browse_home(settings),
+        **browse_home(conn, settings),
     }
 
 
@@ -142,7 +170,7 @@ def resolve_top(settings: Settings, segment: str) -> str | None:
     """
     if not segment:
         return None
-    names = [entry["name"] for entry in library_roots(settings)]
+    names = library_root_names(settings)
     if segment in names:
         return segment
     lowered = segment.lower()

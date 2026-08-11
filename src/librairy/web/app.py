@@ -1155,7 +1155,7 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             "searching": bool(q.strip() or category or year or genre),
             "scopes": SEARCH_SCOPES,
             "scope": root or DEFAULT_SEARCH_ROOT,
-            **browse_home(settings),
+            **browse_home(conn, settings),
             **search_data(conn, settings, q, filters),
         }
 

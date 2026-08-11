@@ -988,6 +988,35 @@ tbody tr:hover { background: var(--bg-metric); }
 .page-head h1 { margin: 0; }
 .page-head p { margin: var(--space-1) 0 0; }
 
+/* Whether the index still describes the library. A status line, not a panel:
+   when the two agree — which is nearly always — it is one quiet sentence, and
+   it only opens into detail when there is something to explain. */
+.sync-line {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-sm);
+  color: var(--text-dim);
+}
+.sync-line summary { cursor: pointer; list-style: none; }
+.sync-line summary::-webkit-details-marker { display: none; }
+.sync-line.is-drift summary { color: var(--warn); }
+.sync-line.is-drift p { margin: var(--space-2) 0 0; max-width: 68ch; }
+.sync-dot {
+  display: inline-block;
+  width: 0.5em;
+  height: 0.5em;
+  margin-right: var(--space-2);
+  border-radius: 50%;
+  vertical-align: middle;
+}
+.sync-dot.is-ok { background: var(--ok); }
+.sync-dot.is-warn { background: var(--warn); }
+.sync-paths {
+  margin: var(--space-2) 0 0;
+  padding-left: var(--space-4);
+  font-size: var(--text-sm);
+}
+.sync-paths li { margin-bottom: var(--space-1); }
+
 /* ---- Filter bar ------------------------------------------------------- */
 /* Fields sized to their content instead of every one stretching to fill the
    row: a confidence box does not need the width of a category name. */
