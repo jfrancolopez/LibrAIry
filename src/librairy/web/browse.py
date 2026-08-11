@@ -214,26 +214,32 @@ def _direct_children(
         if is_visible_entry(entry, f"{prefix}/{entry.name}" if prefix else entry.name,
                             settings.ignore_patterns)
     ]
-    folders = [(entry.name, _child_count(settings, entry)) for entry in visible if entry.is_dir()]
+    counts = _subtree_counts(settings, base, prefix)
+    folders = [(entry.name, counts.get(entry.name, 0)) for entry in visible if entry.is_dir()]
     files = [entry for entry in visible if entry.is_file()]
     return folders, files
 
 
-def _child_count(settings: Settings, directory: Path) -> int:
-    """How many visible entries are directly inside — not a recursive count.
+def _subtree_counts(settings: Settings, base: Path, prefix: str) -> dict[str, int]:
+    """Files beneath each subfolder of this directory, by the same rule as a tile.
 
-    Cheap and honest. A recursive total would mean walking the whole tree of
-    every sibling on every page load, which on a NAS is not a thing to do to
-    render a folder list.
+    A bare number next to a folder name has to mean one thing everywhere in
+    Browse, and the root tiles already say "files underneath, at any depth". So
+    the folder pane says that too. It used to count *direct entries* —
+    subfolders included — which read as the same kind of number and was not.
+
+    One walk of this subtree, bucketed, rather than a walk per child: listing a
+    folder costs what its own contents cost, not that multiplied by how many
+    children it has. Nothing above or beside this directory is touched.
     """
-    try:
-        return sum(
-            1
-            for entry in directory.iterdir()
-            if is_visible_entry(entry, entry.name, settings.ignore_patterns)
-        )
-    except OSError:
-        return 0
+    counts: dict[str, int] = {}
+    start = len(prefix) + 1 if prefix else 0
+    for relpath in visible_files(base, settings.ignore_patterns, prefix):
+        rest = relpath[start:]
+        head, separator, _ = rest.partition("/")
+        if separator:
+            counts[head] = counts.get(head, 0) + 1
+    return counts
 
 
 def _enriched(

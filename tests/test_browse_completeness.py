@@ -596,3 +596,36 @@ def test_going_in_and_back_out_leaves_the_root_identical(tmp_path: Path) -> None
 
     assert client.get("/browse").text == first
     assert client.get("/browse").text == first, "and again on refresh"
+
+
+def test_a_folder_count_means_the_same_thing_as_a_tile(tmp_path: Path) -> None:
+    """A bare number has to mean one thing. It used to count direct entries in
+    the folder pane — subfolders included — and files-at-any-depth on a tile."""
+    settings = settings_for(tmp_path)
+    conn = connect(settings)
+    write(settings, "Photos/2022/a.png")
+    write(settings, "Photos/2022/Deep/b.png")
+    write(settings, "Photos/2022/Deep/Deeper/c.png")
+    write(settings, "Photos/loose.png")
+    (settings.library_dir / "Photos" / "Empty").mkdir(parents=True)
+    index_all(conn, settings)
+
+    data = browse_folder(conn, settings, "Photos")
+    counts = {entry["name"]: entry["count"] for entry in data["folders"]}
+
+    assert counts == {"2022": 3, "Empty": 0}
+    assert roots(settings)["Photos"] == 4, "and the tile counts the loose file too"
+
+
+def test_a_folder_count_ignores_the_same_junk_the_tile_does(tmp_path: Path) -> None:
+    settings = settings_for(tmp_path)
+    settings.ignore_patterns = ["*.tmp"]
+    conn = connect(settings)
+    write(settings, "Photos/2022/a.png")
+    write(settings, "Photos/2022/.DS_Store")
+    write(settings, "Photos/2022/scratch.tmp")
+    index_all(conn, settings)
+
+    data = browse_folder(conn, settings, "Photos")
+
+    assert data["folders"][0]["count"] == 1

@@ -192,64 +192,53 @@ def is_visible_entry(path: Path, relpath: str, patterns: list[str]) -> bool:
     are skipped rather than followed: `followlinks=False` in the walk below is
     what keeps a loop from hanging the scan and a link from escaping the root.
     """
-    return (
-        not _is_hidden(path.name) and not _ignored(relpath, patterns) and not path.is_symlink()
-    )
+    return _visible(path.name, relpath, patterns, path.is_symlink())
 
 
-def count_visible_files(base: Path, patterns: list[str], prefix: str = "") -> int:
-    """How many files `scan_root` would index beneath this directory.
+def _visible(name: str, relpath: str, patterns: list[str], is_symlink: bool) -> bool:
+    """The rule itself, off a name and a flag rather than off a `Path`.
 
-    The same predicate, the same recursion, the same skipped symlinks — so a
-    count shown next to a folder means "files LibrAIry considers part of the
-    library", and not some second, subtly different idea of what counts. If
-    this and the scanner ever disagree, the number is a lie the user has no way
-    to check.
-
-    Directories are not counted, only the files inside them, at any depth.
-    An unreadable directory contributes nothing rather than raising: a
-    permission problem somewhere in the tree should not take out the page.
+    `os.scandir` hands both out of the cached directory entry, so a walk that
+    calls this does not pay a stat per file to ask whether it is a symlink.
+    Locally that halves the cost of a listing; over a network share, where the
+    stat is the expensive part, it matters considerably more.
     """
-    total = 0
-    try:
-        entries = list(base.iterdir())
-    except OSError:
-        return 0
-    for entry in entries:
-        relpath = f"{prefix}/{entry.name}" if prefix else entry.name
-        if not is_visible_entry(entry, relpath, patterns):
-            continue
-        if entry.is_dir():
-            total += count_visible_files(entry, patterns, relpath)
-        elif entry.is_file():
-            total += 1
-    return total
+    return not _is_hidden(name) and not _ignored(relpath, patterns) and not is_symlink
 
 
-def visible_files(base: Path, patterns: list[str], prefix: str = "") -> list[str]:
+def visible_files(base: Path | str, patterns: list[str], prefix: str = "") -> list[str]:
     """Every file `scan_root` would index beneath this directory, as relpaths.
 
-    `count_visible_files` in list form, for the times the paths themselves are
-    the answer — comparing the library against the index, say.
+    The same predicate, the same recursion, the same skipped symlinks as the
+    scan — so a count taken from this means "files LibrAIry considers part of
+    the library" and not some second, subtly different idea of what counts. If
+    this and the scanner disagreed, the number would be a claim the owner has
+    no way to check.
+
+    Directories are not returned, only the files inside them, at any depth.
+    Paths are library-relative POSIX strings, spelled exactly the way
+    `scan_root` stores them, so the two can be compared without normalising
+    either side. An unreadable directory contributes nothing rather than
+    raising: a permission problem in one corner should not take out the page.
     """
     found: list[str] = []
     try:
-        entries = sorted(base.iterdir(), key=lambda path: path.name.lower())
+        entries = sorted(os.scandir(base), key=lambda entry: entry.name.lower())
     except OSError:
         return found
     for entry in entries:
         relpath = f"{prefix}/{entry.name}" if prefix else entry.name
-        if not is_visible_entry(entry, relpath, patterns):
+        if not _visible(entry.name, relpath, patterns, entry.is_symlink()):
             continue
         if entry.is_dir():
-            found.extend(visible_files(entry, patterns, relpath))
+            found.extend(visible_files(entry.path, patterns, relpath))
         elif entry.is_file():
             found.append(relpath)
     return found
 
 
 def _ignored(relpath: str, patterns: list[str]) -> bool:
-    name = Path(relpath).name
+    name = relpath.rpartition("/")[2]
     return any(
         fnmatch.fnmatch(relpath, pattern) or fnmatch.fnmatch(name, pattern) for pattern in patterns
     )
