@@ -171,3 +171,29 @@ def validate_action(action: str, dest_root: str) -> None:
     expected_root = "quarantine" if action == "quarantine" else "library"
     if dest_root != expected_root:
         raise ProposalError(f"{action} proposals must target {expected_root}")
+
+
+# What a proposal's status means to somebody who did not write the schema.
+# `proposed` is the machine's guess and `pending` is not a proposal status at
+# all — printing either raw makes the reader translate, and they can only
+# translate it wrong.
+PROPOSAL_LABELS = {
+    "proposed": "Waiting for review",
+    "approved": "Approved, not committed",
+    "postponed": "Postponed",
+    "rejected": "Rejected",
+    "committed": "Committed",
+    "superseded": "Superseded",
+}
+
+
+def proposal_label(status: str | None) -> str:
+    """A readable name for a proposal status, or the raw value if it is new.
+
+    Falling back to the raw value rather than to "unknown": if a status is
+    added and nobody updates this map, an odd-looking word on screen is a
+    better bug report than a confident wrong label.
+    """
+    if not status:
+        return ""
+    return PROPOSAL_LABELS.get(status, status)

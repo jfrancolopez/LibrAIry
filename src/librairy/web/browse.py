@@ -9,6 +9,7 @@ from librairy.consistency import consistency_view, library_consistency, top_leve
 from librairy.mediakind import IMAGE_EXTENSIONS, VIDEO_EXTENSIONS
 from librairy.paths import PathValidationError, validate_relpath
 from librairy.proposals import decode_evidence
+from librairy.quarantine import destination_intent
 from librairy.scanner import is_visible_entry, visible_files
 from librairy.search import host_path
 from librairy.web.thumbs import PreviewError, preview_for_item
@@ -438,6 +439,19 @@ def item_detail(conn: sqlite3.Connection, settings: Settings, item_id: int) -> d
         "preview": preview,
         "preview_error": preview_error,
         "missing_since": missing_since,
+        # Bytes, humanised. For a missing record this is the size the file had
+        # when a scan last saw it — the scanner keeps it rather than zeroing it
+        # — so the page labels it last known rather than printing a bare number
+        # in the present tense about a file nobody can measure.
+        "size": human_size(row["size"]),
+        # "library/Shows/..." and "quarantine/_to-delete/..." are both just
+        # paths until something says which is filing and which is setting
+        # aside.
+        "destination_intent": destination_intent(
+            proposal["dest_root"], proposal["dest_relpath"]
+        )
+        if proposal
+        else "",
         # Where to look for it is only useful advice if it is there. For a
         # record whose file is gone the page shows the library-relative path it
         # last had, and no location to go and open.

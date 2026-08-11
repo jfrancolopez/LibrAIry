@@ -233,3 +233,22 @@ def _root_path(settings: Settings, root: str):
     if root == "quarantine":
         return settings.quarantine_dir
     raise QuarantineError(f"unknown root: {root}")
+
+
+def destination_intent(dest_root: str | None, dest_relpath: str | None) -> str:
+    """What a destination *means*, not just where it points.
+
+    Three proposals can carry a quarantine path and mean different things, and
+    the path alone does not say which. One vanished entry here reads
+
+        quarantine/2026-08-06/_drop/Test.Show.S01E05.1080p.mkv
+
+    under a heading that used to say nothing at all, and next to six entries
+    genuinely bound for the library it looks like one more filing decision. It
+    is the opposite: that file had been set aside, not filed.
+    """
+    if not dest_relpath:
+        return ""
+    if dest_root == "quarantine":
+        return "Marked for deletion" if marked_for_deletion(dest_relpath) else "Set aside"
+    return "Would have been filed as"

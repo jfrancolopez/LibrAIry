@@ -161,6 +161,33 @@ def vanished_count(conn: sqlite3.Connection, root: str | None = None) -> int:
     )
 
 
+def resolved_missing_count(conn: sqlite3.Connection, root: str | None = None) -> int:
+    """Records whose file is gone but which have nothing left to clear.
+
+    A rejected proposal, a superseded one, or none at all: the file vanishing
+    changes nothing about any of them, because none is waiting on the owner.
+
+    This exists so the two numbers can be shown together. Eight records here
+    are missing and seven are clearable, and a reader who is only ever told one
+    of those has no way to reconcile them with the other.
+    """
+    where = "i.missing_since IS NOT NULL AND (p.status IS NULL OR p.status NOT IN (?, ?, ?))"
+    params: list[object] = list(VANISHED_STATUSES)
+    if root is not None:
+        where += " AND i.root=?"
+        params.append(root)
+    return int(
+        conn.execute(
+            f"""
+            SELECT COUNT(*) FROM items i
+            LEFT JOIN proposals p ON p.item_id = i.id
+            WHERE {where}
+            """,  # noqa: S608 - placeholders only
+            params,
+        ).fetchone()[0]
+    )
+
+
 def vanished_entries(conn: sqlite3.Connection, root: str | None = None) -> list[sqlite3.Row]:
     """The same entries, listed, so the owner can look before deciding.
 
@@ -172,7 +199,7 @@ def vanished_entries(conn: sqlite3.Connection, root: str | None = None) -> list[
     return list(
         conn.execute(
             f"""
-            SELECT i.id AS item_id, i.root, i.relpath, i.missing_since, i.state,
+            SELECT i.id AS item_id, i.root, i.relpath, i.missing_since, i.state, i.size,
                    p.id AS proposal_id, p.status, p.category, p.confidence,
                    p.dest_root, p.dest_relpath, p.evidence
             FROM proposals p JOIN items i ON i.id = p.item_id

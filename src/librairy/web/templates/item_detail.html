@@ -2,7 +2,12 @@
 {% block content %}
   
   <h1>{{ item.relpath }}</h1>
-  <p>root: {{ item.root }} / state: {{ item.state }} / size: {{ item.size }}</p>
+  {# "size: 0" for a file that is not there reads as a fact about the present:
+     a zero-byte file rather than one nobody can measure. The scanner keeps the
+     last size it saw, so the number is real — the tense was the lie. #}
+  <p>root: {{ item.root }} / state: {{ item.state }} /
+    {% if missing_since %}last known size: {{ size or 'not recorded' }}
+    {%- else %}size: {{ size or '0 B' }}{% endif %}</p>
   {# The record outlives the file, so this page has to be able to say the file
      is gone. Not a warning to act on — nothing is broken and nothing needs
      repairing — just the one fact that changes how to read everything below. #}
@@ -23,7 +28,15 @@
   {% include "partials/lightbox.html" %}
   <section class="metric wide">
     <h2>Metadata</h2>
-    {% if proposal %}<span>category: {{ proposal.category }}</span><span>confidence: {{ '%.2f'|format(proposal.confidence) }}</span><span>destination: {{ proposal.dest_root }}/{{ proposal.dest_relpath }}</span>{% else %}<span class="muted">No proposal metadata.</span>{% endif %}
+    {% if proposal %}
+      <span>category: {{ proposal.category }}</span>
+      <span>confidence: {{ '%.2f'|format(proposal.confidence) }}</span>
+      {# Not "destination": a quarantine path is not a filing decision, and
+         printing both under the same word makes setting a file aside look
+         like putting it away. #}
+      <span>{{ destination_intent or 'destination' }}:
+        {{ proposal.dest_root }}/{{ proposal.dest_relpath }}</span>
+    {% else %}<span class="muted">No proposal metadata.</span>{% endif %}
   </section>
   <section class="metric wide">
     <h2>Evidence</h2>

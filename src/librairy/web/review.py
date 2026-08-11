@@ -9,11 +9,20 @@ from librairy.classify.images import vision_disagrees, vision_for_items
 from librairy.config import Settings
 from librairy.duplicates import items_with_reports, reports_for_item
 from librairy.flags import flags_for, unhidden_name
-from librairy.lifecycle import transition_item, vanished_count, vanished_entries
+from librairy.lifecycle import (
+    resolved_missing_count,
+    transition_item,
+    vanished_count,
+    vanished_entries,
+)
 from librairy.paths import PathValidationError, sanitize_component, validate_dest
 from librairy.planner import utc_now
-from librairy.proposals import decode_evidence
-from librairy.quarantine import deletion_operation, quarantine_operation
+from librairy.proposals import decode_evidence, proposal_label
+from librairy.quarantine import (
+    deletion_operation,
+    destination_intent,
+    quarantine_operation,
+)
 from librairy.review_undo import latest as latest_undo
 from librairy.review_undo import record as record_undo
 from librairy.review_undo import snapshot_proposals
@@ -746,9 +755,19 @@ def vanished_view(conn: sqlite3.Connection) -> list[dict[str, object]]:
                 "name": PurePosixPath(row["relpath"]).name,
                 "relpath": row["relpath"],
                 "missing_since": (row["missing_since"] or "")[:10],
-                "status": row["status"],
+                # Readable, not raw: "proposed" is the machine's word for it.
+                "status": proposal_label(row["status"]),
                 "category": row["category"],
-                "destination": row["dest_relpath"] or "",
+                # What that destination *means*. Six of the author's seven were
+                # bound for the library and one had been set aside; printed as
+                # bare paths under one heading they read as seven filing
+                # decisions, which is wrong about the seventh.
+                "intent": destination_intent(row["dest_root"], row["dest_relpath"]),
+                "destination": f"{row['dest_root']}/{row['dest_relpath']}"
+                if row["dest_relpath"]
+                else "",
+                # Last known, not current — there is no file left to measure.
+                "size": human_size(row["size"]),
                 # The one line that says why LibrAIry thought what it thought.
                 # It is what makes clearing a decision rather than a shrug.
                 "why": _why_summary(row["evidence"]),
@@ -760,6 +779,10 @@ def vanished_view(conn: sqlite3.Connection) -> list[dict[str, object]]:
             "label": ROOT_LABELS.get(root, root),
             "count": len(entries),
             "entries": entries,
+            # Missing records in this root with nothing left to clear. Without
+            # it the page says seven while a diagnostic says eight, and nothing
+            # on screen reconciles them.
+            "resolved": resolved_missing_count(conn, root=root),
         }
         for root, entries in sorted(groups.items())
     ]
