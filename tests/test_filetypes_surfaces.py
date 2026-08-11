@@ -281,7 +281,15 @@ def test_the_panel_is_constrained_so_it_cannot_widen_the_page() -> None:
     assert "100vw" in block, "bounded by the viewport, not by the text"
     assert "white-space: normal" in block, "long paths wrap"
     mobile = css.split("@media (max-width: 40rem) {", 2)[-1]
-    assert ".ext-info-panel" in mobile
+    mobile_panel = mobile.split(".ext-info-panel {", 1)[1].split("}", 1)[0]
+    # Found on a real phone-sized page, not here: the mobile rule switched to
+    # position:fixed while the desktop `top: calc(100% + ...)` still applied,
+    # and a percentage top on a fixed element resolves against the viewport.
+    # The panel rendered at 816px on an 812px screen -- present in the DOM,
+    # invisible to the user. Anchoring to the bottom removes the percentage.
+    assert "position: fixed" in mobile_panel
+    assert "top: auto" in mobile_panel, "or a percentage top pushes it off-screen"
+    assert "bottom:" in mobile_panel
 
 
 def test_the_tap_target_is_big_enough_to_hit() -> None:

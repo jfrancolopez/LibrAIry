@@ -2450,10 +2450,18 @@ summary.timeline-head::-webkit-details-marker { display: none; }
 .ext-info-right .ext-info-panel { left: auto; right: 0; }
 
 @media (max-width: 40rem) {
-  /* On a phone there is no room to float beside anything: pin it to the
-     viewport width so long paths wrap instead of pushing the page sideways. */
+  /* On a phone there is no room to float beside anything, so it becomes a
+     small sheet at the bottom of the screen.
+
+     It was `position: fixed` with the desktop `top: calc(100% + ...)` still
+     applying, and a percentage top against a fixed element resolves to the
+     *viewport*, not the parent: the panel rendered at 816px on an 812px
+     screen and was never visible. Anchoring to the bottom edge removes the
+     percentage entirely, so there is nothing left to resolve wrongly. */
   .ext-info-panel {
     position: fixed;
+    top: auto;
+    bottom: var(--space-2);
     left: var(--space-2);
     right: var(--space-2);
     width: auto;
