@@ -76,7 +76,7 @@ from librairy.web.auth import (
     verify_admin_password,
     welcome_banner_visible,
 )
-from librairy.web.browse import browse_category, browse_home, item_detail
+from librairy.web.browse import browse_folder, browse_home, item_detail
 from librairy.web.commit import (
     CommitState,
     commit_confirm_data,
@@ -1155,7 +1155,7 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             "searching": bool(q.strip() or category or year or genre),
             "scopes": SEARCH_SCOPES,
             "scope": root or DEFAULT_SEARCH_ROOT,
-            **browse_home(conn),
+            **browse_home(settings),
             **search_data(conn, settings, q, filters),
         }
 
@@ -1173,27 +1173,28 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             },
         )
 
-    @app.get("/browse/{category}", response_class=HTMLResponse)
-    def browse_category_route(
-        request: Request, category: str, folder: str = "", page: PageNumber = 1
+    @app.get("/browse/{top}", response_class=HTMLResponse)
+    def browse_folder_route(
+        request: Request, top: str, folder: str = "", page: PageNumber = 1
     ) -> HTMLResponse:
+        """A top-level library folder. `top` names a real directory on disk."""
         try:
-            data = browse_category(conn, settings, category, folder=folder, page=page)
+            data = browse_folder(conn, settings, top, folder=folder, page=page)
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         return TEMPLATES.TemplateResponse(
             request,
-            "browse_category.html",
+            "browse_folder.html",
             {"title": "Browse", **data},
         )
 
-    @app.get("/browse/{category}/files", response_class=HTMLResponse)
+    @app.get("/browse/{top}/files", response_class=HTMLResponse)
     def browse_files_route(
-        request: Request, category: str, folder: str = "", page: PageNumber = 1
+        request: Request, top: str, folder: str = "", page: PageNumber = 1
     ) -> HTMLResponse:
         """One more batch of file rows, appended in place by "Load more"."""
         try:
-            data = browse_category(conn, settings, category, folder=folder, page=page)
+            data = browse_folder(conn, settings, top, folder=folder, page=page)
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         return TEMPLATES.TemplateResponse(request, "partials/browse_files.html", data)

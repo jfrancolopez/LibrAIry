@@ -30,6 +30,6 @@
      in place. Prev/Next threw away everything you had already scrolled past.
      Only files page — folders are always listed in full. #}
   <button type="button" class="load-more btn-block"
-          hx-get="/browse/{{ category }}/files?folder={{ folder|urlencode }}&page={{ page + 1 }}"
+          hx-get="{{ top_href }}/files?folder={{ folder|urlencode }}&page={{ page + 1 }}"
           hx-target="this" hx-swap="outerHTML">Load more</button>
 {% endif %}

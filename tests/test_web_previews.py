@@ -444,8 +444,10 @@ def test_every_page_that_can_show_a_preview_carries_the_viewer(tmp_path: Path) -
     """
     client, conn, settings = client_for(tmp_path)
     item = insert_file(conn, settings, "photo.jpg", b"not really a jpeg")
+    # The explorer only opens a folder that is really there.
+    (settings.library_dir / "Photos").mkdir(parents=True, exist_ok=True)
 
-    for path in ("/review", "/browse", "/browse/photos", f"/items/{item}"):
+    for path in ("/review", "/browse", "/browse/Photos", f"/items/{item}"):
         page = client.get(path).text
         assert 'id="lightbox"' in page, f"{path} renders previews without a viewer"
         assert "/static/lightbox.js" in page, f"{path} has the markup but no behaviour"

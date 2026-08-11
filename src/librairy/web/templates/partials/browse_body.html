@@ -12,12 +12,15 @@
     </div>
     {% include "partials/search_results.html" %}
   {% else %}
-    {% if categories|sum(attribute=1) == 0 %}
+    {% if not roots %}
       <p class="muted">Nothing here yet — Browse fills up as you commit files out of Review.</p>
     {% endif %}
+    {# One tile per folder that is really there, so this grid is a listing of
+       the library rather than a list of the categories LibrAIry knows about.
+       The count is every visible file underneath, at any depth. #}
     <div class="dashboard-grid">
-      {% for category, count in categories %}
-        <a class="metric" href="/browse/{{ category }}"><strong>{{ count }}</strong><span>{{ category }}</span></a>
+      {% for root in roots %}
+        <a class="metric" href="{{ root.href }}"><strong>{{ root.count }}</strong><span>{{ root.name }}</span></a>
       {% endfor %}
     </div>
   {% endif %}

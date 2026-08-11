@@ -11,9 +11,9 @@
     <section class="explorer-pane" data-pane="0" aria-label="Categories">
       <h3>Library</h3>
       <div class="pane-list">
-        {% for name, count in categories %}
-          <a class="browse-row{% if name == category %} is-current{% endif %}" href="/browse/{{ name }}">
-            <span>{{ name }}</span><span class="muted">{{ count }}</span>
+        {% for root in roots %}
+          <a class="browse-row{% if root.name == top %} is-current{% endif %}" href="{{ root.href }}">
+            <span>{{ root.name }}</span><span class="muted">{{ root.count }}</span>
           </a>
         {% endfor %}
       </div>

@@ -197,6 +197,57 @@ def is_visible_entry(path: Path, relpath: str, patterns: list[str]) -> bool:
     )
 
 
+def count_visible_files(base: Path, patterns: list[str], prefix: str = "") -> int:
+    """How many files `scan_root` would index beneath this directory.
+
+    The same predicate, the same recursion, the same skipped symlinks — so a
+    count shown next to a folder means "files LibrAIry considers part of the
+    library", and not some second, subtly different idea of what counts. If
+    this and the scanner ever disagree, the number is a lie the user has no way
+    to check.
+
+    Directories are not counted, only the files inside them, at any depth.
+    An unreadable directory contributes nothing rather than raising: a
+    permission problem somewhere in the tree should not take out the page.
+    """
+    total = 0
+    try:
+        entries = list(base.iterdir())
+    except OSError:
+        return 0
+    for entry in entries:
+        relpath = f"{prefix}/{entry.name}" if prefix else entry.name
+        if not is_visible_entry(entry, relpath, patterns):
+            continue
+        if entry.is_dir():
+            total += count_visible_files(entry, patterns, relpath)
+        elif entry.is_file():
+            total += 1
+    return total
+
+
+def visible_files(base: Path, patterns: list[str], prefix: str = "") -> list[str]:
+    """Every file `scan_root` would index beneath this directory, as relpaths.
+
+    `count_visible_files` in list form, for the times the paths themselves are
+    the answer — comparing the library against the index, say.
+    """
+    found: list[str] = []
+    try:
+        entries = sorted(base.iterdir(), key=lambda path: path.name.lower())
+    except OSError:
+        return found
+    for entry in entries:
+        relpath = f"{prefix}/{entry.name}" if prefix else entry.name
+        if not is_visible_entry(entry, relpath, patterns):
+            continue
+        if entry.is_dir():
+            found.extend(visible_files(entry, patterns, relpath))
+        elif entry.is_file():
+            found.append(relpath)
+    return found
+
+
 def _ignored(relpath: str, patterns: list[str]) -> bool:
     name = Path(relpath).name
     return any(

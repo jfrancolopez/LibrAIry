@@ -2,42 +2,64 @@ from __future__ import annotations
 
 import sqlite3
 from pathlib import Path, PurePosixPath
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 from librairy.config import Settings
 from librairy.mediakind import IMAGE_EXTENSIONS, VIDEO_EXTENSIONS
 from librairy.paths import PathValidationError, validate_relpath
 from librairy.proposals import decode_evidence
-from librairy.scanner import is_visible_entry
+from librairy.scanner import count_visible_files, is_visible_entry
 from librairy.search import host_path
 from librairy.web.thumbs import PreviewError, preview_for_item
 
-CATEGORIES = ("music", "movies", "shows", "photos", "documents", "books", "projects", "misc")
 PAGE_SIZE = 50
 
 
-def browse_home(conn: sqlite3.Connection) -> dict[str, object]:
-    # Count only what Browse can actually show: committed library files. Items
-    # still sitting in the inbox are indexed and searchable, but they are not
-    # browsable yet, and counting them made the panes look broken.
-    counts = {
-        row["category"] or "misc": row["count"]
-        for row in conn.execute(
-            """
-            SELECT s.category, COUNT(*) AS count
-            FROM search_fts s JOIN items i ON i.id = s.item_id
-            WHERE i.root = 'library'
-            GROUP BY s.category
-            """
-        )
-    }
-    return {"categories": [(category, counts.get(category, 0)) for category in CATEGORIES]}
+def browse_home(settings: Settings) -> dict[str, object]:
+    """The top level of the library: the folders that are actually there.
+
+    This used to be a hard-coded tuple of the eight classification categories,
+    counted with a GROUP BY on `search_fts.category` — so the tile said how
+    many files carried a classification, while the link beside it went to a
+    physical folder. They agreed only because the destination templates happen
+    to file each category into a folder of the same name.
+
+    Two things were wrong with that, and the invisible one is the worse one.
+    Five tiles read zero forever because `Movies/` and friends did not exist;
+    that is merely untidy. But a directory the owner created themselves over
+    SMB could never appear at all, because the screen was a list of
+    classifications rather than a listing — the same way the explorer used to
+    reconstruct folders out of indexed rows. Existence comes from the
+    filesystem here too now, and the database is not consulted at all.
+    """
+    return {"roots": library_roots(settings)}
 
 
-def browse_category(
+def library_roots(settings: Settings) -> list[dict[str, object]]:
+    """Top-level library directories, each with the files beneath it.
+
+    The count is every visible file at any depth, by the same rule the scanner
+    indexes by — not direct children, not indexed rows, not folders.
+    """
+    try:
+        entries = sorted(settings.library_dir.iterdir(), key=lambda path: path.name.lower())
+    except OSError:
+        return []
+    return [
+        {
+            "name": entry.name,
+            "count": count_visible_files(entry, settings.ignore_patterns, entry.name),
+            "href": top_href(entry.name),
+        }
+        for entry in entries
+        if entry.is_dir() and is_visible_entry(entry, entry.name, settings.ignore_patterns)
+    ]
+
+
+def browse_folder(
     conn: sqlite3.Connection,
     settings: Settings,
-    category: str,
+    segment: str,
     folder: str = "",
     page: int = 1,
 ) -> dict[str, object]:
@@ -64,22 +86,30 @@ def browse_category(
     Directories now come from `iterdir()` and are never paginated — there is no
     number of files that can hide a folder. Only the file list pages.
     """
-    if category not in CATEGORIES:
-        raise ValueError("unknown category")
-    prefix = _category_prefix(category, folder)
+    top = resolve_top(settings, segment)
+    if top is None:
+        raise ValueError("no such folder")
+    prefix = f"{top}/{folder}".rstrip("/")
     base = _library_dir(settings, prefix)
+    if base is None:
+        # A path that is not a directory under the library root does not get an
+        # empty listing — it gets a 404. Rendering the page anyway put the
+        # requested path into the breadcrumb, so a made-up folder came back
+        # looking like somewhere you had merely arrived at too early.
+        raise ValueError("no such folder")
     folders, files = _direct_children(settings, base, prefix)
     total_files = len(files)
     window = files[(page - 1) * PAGE_SIZE : page * PAGE_SIZE]
     items = _enriched(conn, prefix, window)
     return {
-        "category": category,
+        "top": top,
+        "top_href": top_href(top),
         "folder": folder,
         # Built here rather than concatenated in the template: a folder called
         # "R&B" turned "?folder=R&B" into folder=R plus a stray B parameter,
         # and the pane came up empty with nothing to explain why.
         "folders": [
-            {"name": name, "count": count, "href": folder_href(category, folder, name)}
+            {"name": name, "count": count, "href": folder_href(top, folder, name)}
             for name, count in folders
         ],
         "items": items,
@@ -90,12 +120,33 @@ def browse_category(
         "page": page,
         "has_next": total_files > page * PAGE_SIZE,
         "has_prev": page > 1,
-        "crumbs": _crumbs(category, folder),
-        "parent_href": _parent_href(category, folder),
-        # Pane 1 of the explorer: every category, so you can switch without
-        # bouncing through /browse.
-        **browse_home(conn),
+        "crumbs": _crumbs(top, folder),
+        "parent_href": _parent_href(top, folder),
+        # Pane 1 of the explorer: every top-level folder, so you can switch
+        # without bouncing through /browse.
+        **browse_home(settings),
     }
+
+
+def resolve_top(settings: Settings, segment: str) -> str | None:
+    """A `/browse/<segment>` URL to the real directory it names, or None.
+
+    The name is taken from the filesystem rather than from the URL, which is
+    what makes this safe: the caller cannot construct a path here, only pick
+    one that already exists. Traversal, encoded traversal and absolute paths
+    match nothing and get a 404.
+
+    Matching is exact first, then case-insensitive, so the links this app has
+    been emitting for a year — `/browse/music` for a folder named `Music` —
+    keep working while the folder's real name is what gets displayed.
+    """
+    if not segment:
+        return None
+    names = [entry["name"] for entry in library_roots(settings)]
+    if segment in names:
+        return segment
+    lowered = segment.lower()
+    return next((name for name in names if name.lower() == lowered), None)
 
 
 def _library_dir(settings: Settings, relpath: str) -> Path | None:
@@ -222,7 +273,16 @@ def human_size(size: int | None) -> str:
     return ""
 
 
-def folder_href(category: str, folder: str, name: str) -> str:
+def top_href(name: str) -> str:
+    """Link to a top-level library folder, under its real name.
+
+    Escaped for the same reason as `folder_href` — this is a directory name,
+    not a slug, and "Movies & TV" has to survive being put in a URL.
+    """
+    return f"/browse/{quote(name)}"
+
+
+def folder_href(top: str, folder: str, name: str) -> str:
     """Link into a subfolder, with the folder name properly escaped.
 
     Every folder link in Browse goes through here. Folder names come from the
@@ -230,33 +290,39 @@ def folder_href(category: str, folder: str, name: str) -> str:
     something in a URL.
     """
     child = f"{folder}/{name}" if folder else name
-    return _folder_url(category, child)
+    return _folder_url(top, child)
 
 
-def _folder_url(category: str, folder: str) -> str:
+def _folder_url(top: str, folder: str) -> str:
     if not folder:
-        return f"/browse/{category}"
-    return f"/browse/{category}?{urlencode({'folder': folder})}"
+        return top_href(top)
+    return f"{top_href(top)}?{urlencode({'folder': folder})}"
 
 
-def _crumbs(category: str, folder: str) -> list[dict[str, str]]:
-    """Breadcrumb trail: All → Category → each folder segment."""
+def _crumbs(top: str, folder: str) -> list[dict[str, str]]:
+    """Breadcrumb trail: All → folder → each folder segment.
+
+    Every label past the first is a real directory name, printed as it is on
+    disk. The top level used to be `category.capitalize()`, which quietly
+    renamed the owner's folders in the one place that claims to be telling them
+    where they are.
+    """
     trail = [
         {"label": "All", "href": "/browse"},
-        {"label": category.capitalize(), "href": f"/browse/{category}"},
+        {"label": top, "href": top_href(top)},
     ]
     walked = ""
     for part in [segment for segment in folder.split("/") if segment]:
         walked = f"{walked}/{part}" if walked else part
-        trail.append({"label": part, "href": _folder_url(category, walked)})
+        trail.append({"label": part, "href": _folder_url(top, walked)})
     return trail
 
 
-def _parent_href(category: str, folder: str) -> str:
+def _parent_href(top: str, folder: str) -> str:
     parts = [segment for segment in folder.split("/") if segment]
     if not parts:
         return "/browse"
-    return _folder_url(category, "/".join(parts[:-1]))
+    return _folder_url(top, "/".join(parts[:-1]))
 
 
 def item_detail(conn: sqlite3.Connection, settings: Settings, item_id: int) -> dict[str, object]:
@@ -327,14 +393,3 @@ def _siblings(conn: sqlite3.Connection, item: sqlite3.Row, proposal: sqlite3.Row
     ).fetchall()
 
 
-def _category_prefix(category: str, folder: str) -> str:
-    top = category.capitalize() if category != "misc" else "Misc"
-    if category == "movies":
-        top = "Movies"
-    if category == "shows":
-        top = "Shows"
-    return f"{top}/{folder}".rstrip("/")
-
-
-def _prefix_end(prefix: str) -> str:
-    return prefix + "\uffff"

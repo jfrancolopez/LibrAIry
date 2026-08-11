@@ -33,21 +33,48 @@ def client_for(tmp_path: Path) -> tuple[TestClient, object, Settings]:
     return client, conn, settings
 
 
-def test_browse_all_categories_counts_and_folder_drilldown(tmp_path: Path) -> None:
+def test_browse_home_lists_the_folders_that_exist_and_drills_down(tmp_path: Path) -> None:
+    """The root is a listing of the library, not a list of known categories.
+
+    It used to render all eight classification categories whether or not the
+    folders were there — five permanent zeroes — and, worse, could not show a
+    folder the owner made themselves.
+    """
     client, conn, settings = client_for(tmp_path)
     seed_item(conn, settings, "Music/Queen/Opera/Bohemian.flac", "music")
     seed_item(conn, settings, "Photos/2026/Italy/img.jpg", "photos")
+    (settings.library_dir / "Archives").mkdir()
 
     home = client.get("/browse")
-    music = client.get("/browse/music")
-    music_folder = client.get("/browse/music?folder=Queen/Opera")
+    music = client.get("/browse/Music")
+    music_folder = client.get("/browse/Music?folder=Queen/Opera")
 
-    categories = ["music", "movies", "shows", "photos", "documents", "books", "projects", "misc"]
-    for category in categories:
-        assert f"/browse/{category}" in home.text
-    assert "<strong>1</strong><span>music</span>" in home.text
+    assert "<strong>1</strong><span>Music</span>" in home.text
+    assert "<strong>1</strong><span>Photos</span>" in home.text
+    # A directory nobody classified anything into is still a directory.
+    assert "<strong>0</strong><span>Archives</span>" in home.text
+    for absent in ("Movies", "Shows", "Documents", "Books", "Misc"):
+        assert f"<span>{absent}</span>" not in home.text
     assert "Queen" in music.text
     assert "Bohemian.flac" in music_folder.text
+
+
+def test_a_browse_url_names_a_real_folder(tmp_path: Path) -> None:
+    """Old lowercase links keep working; anything invented is a 404."""
+    client, conn, settings = client_for(tmp_path)
+    seed_item(conn, settings, "Music/Queen/Opera/Bohemian.flac", "music")
+
+    assert client.get("/browse/Music").status_code == 200
+    assert client.get("/browse/music").status_code == 200
+    assert client.get("/browse/Movies").status_code == 404
+    # `/browse/..` never reaches the app — httpx collapses it to /browse — so
+    # the traversal that matters is the encoded one, which does arrive intact.
+    assert client.get("/browse/%2e%2e").status_code == 404
+    assert client.get("/browse/%2e%2e%2f%2e%2e").status_code == 404
+    # Case-insensitive on the folder name, but the folder query is still a
+    # path, and a traversal through it is not somewhere you can arrive.
+    assert client.get("/browse/MUSIC").status_code == 200
+    assert client.get("/browse/MUSIC", params={"folder": "../../etc"}).status_code == 404
 
 
 def test_item_detail_shows_preview_metadata_evidence_siblings_and_history(tmp_path: Path) -> None:
@@ -184,10 +211,10 @@ def test_browse_breadcrumbs_and_parent_link(tmp_path: Path) -> None:
 
     assert 'class="crumbs"' in page
     assert 'href="/browse"' in page
-    assert 'href="/browse/photos"' in page
-    assert 'href="/browse/photos?folder=2026"' in page
+    assert 'href="/browse/Photos"' in page
+    assert 'href="/browse/Photos?folder=2026"' in page
     # ".." row goes up one level
-    assert 'data-parent="/browse/photos?folder=2026"' in page
+    assert 'data-parent="/browse/Photos?folder=2026"' in page
 
 
 def test_browse_detail_panel_reuses_item_detail(tmp_path: Path) -> None:
@@ -225,12 +252,13 @@ def test_browse_counts_only_committed_library_files(tmp_path: Path) -> None:
     home = client.get("/browse").text
 
     # One browsable music file, not two.
-    assert "<strong>1</strong><span>music</span>" in home
+    assert "<strong>1</strong><span>Music</span>" in home
 
 
 def test_explorer_renders_four_panes(tmp_path: Path) -> None:
     client, conn, settings = client_for(tmp_path)
     seed_item(conn, settings, "Photos/2026/Italy/a.jpg", "photos")
+    seed_item(conn, settings, "Music/song.flac", "music")
 
     page = client.get("/browse/photos").text
 
@@ -239,7 +267,7 @@ def test_explorer_renders_four_panes(tmp_path: Path) -> None:
         assert f'data-pane="{pane}"' in page
     assert 'id="browse-panel"' in page
     # Category pane lets you switch library sections without leaving the page.
-    assert 'href="/browse/music"' in page
+    assert 'href="/browse/Music"' in page
     assert "/static/browse.js" in page
 
 
@@ -295,7 +323,7 @@ def test_folder_pane_stays_when_it_holds_the_parent_link(tmp_path: Path) -> None
     page = client.get("/browse/photos?folder=2026/Italy").text
 
     assert 'class="explorer-pane" data-pane="1"' in page
-    assert 'data-parent="/browse/photos?folder=2026"' in page
+    assert 'data-parent="/browse/Photos?folder=2026"' in page
 
 
 def test_human_size_formatting() -> None:
@@ -319,7 +347,7 @@ def test_load_more_appends_instead_of_paging(tmp_path: Path) -> None:
     assert "Load more" in page
     assert "Prev" not in page and "page 1" not in page
     assert 'hx-target="this"' in page
-    assert "/browse/documents/files?folder=&page=2" in page
+    assert "/browse/Documents/files?folder=&page=2" in page
 
 
 def test_load_more_returns_only_rows_and_the_next_button(tmp_path: Path) -> None:
@@ -369,7 +397,7 @@ def test_folder_with_an_ampersand_is_reachable(tmp_path: Path) -> None:
 
     inside = client.get("/browse/music", params={"folder": "R&B Soul"})
     assert "track.mp3" in inside.text
-    assert 'data-parent="/browse/music"' in inside.text
+    assert 'data-parent="/browse/Music"' in inside.text
     assert "folder=R%26B+Soul%2FAlicia" in inside.text, "and so must the link one level down"
 
 

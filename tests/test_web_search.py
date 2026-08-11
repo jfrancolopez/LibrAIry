@@ -225,7 +225,7 @@ def test_browse_shows_categories_until_you_actually_search(tmp_path: Path) -> No
     idle = client.get("/browse").text
     searching = client.get("/browse?q=bohemian").text
 
-    assert 'href="/browse/music"' in idle
+    assert 'href="/browse/Music"' in idle
     assert "Back to categories" not in idle
-    assert 'href="/browse/music"' not in searching
+    assert 'href="/browse/Music"' not in searching
     assert "Back to categories" in searching

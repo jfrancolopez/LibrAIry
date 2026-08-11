@@ -17,8 +17,10 @@ The invariant, and the reason for every test below:
 
 from __future__ import annotations
 
+import contextlib
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from librairy.config import Settings
@@ -27,7 +29,7 @@ from librairy.models import EvidenceEntry
 from librairy.proposals import upsert_proposal
 from librairy.scanner import scan_root
 from librairy.web.app import create_app
-from librairy.web.browse import PAGE_SIZE, browse_category
+from librairy.web.browse import PAGE_SIZE, browse_folder, library_roots
 
 
 def settings_for(tmp_path: Path) -> Settings:
@@ -75,7 +77,7 @@ def index_all(conn, settings: Settings, category: str = "photos") -> None:
 
 
 def children(conn, settings, category: str, folder: str = "") -> tuple[set[str], set[str]]:
-    data = browse_category(conn, settings, category, folder=folder)
+    data = browse_folder(conn, settings, category, folder=folder)
     return (
         {entry["name"] for entry in data["folders"]},
         {item["name"] for item in data["items"]},
@@ -209,7 +211,7 @@ def test_an_indexed_file_carries_its_metadata(tmp_path: Path) -> None:
     write(settings, "Photos/2022/a.png", "hello")
     index_all(conn, settings)
 
-    data = browse_category(conn, settings, "photos", folder="2022")
+    data = browse_folder(conn, settings, "photos", folder="2022")
     entry = data["items"][0]
 
     assert entry["item_id"] is not None
@@ -224,7 +226,7 @@ def test_an_unindexed_file_is_listed_and_says_so(tmp_path: Path) -> None:
     index_all(conn, settings)
     write(settings, "Photos/2022/later.png", "written after the scan")
 
-    data = browse_category(conn, settings, "photos", folder="2022")
+    data = browse_folder(conn, settings, "photos", folder="2022")
     by_name = {item["name"]: item for item in data["items"]}
 
     assert set(by_name) == {"indexed.png", "later.png"}
@@ -320,7 +322,7 @@ def test_breadcrumbs_lead_back_to_the_same_listing(tmp_path: Path) -> None:
     index_all(conn, settings)
 
     deep = client.get("/browse/photos?folder=2022/Deep").text
-    assert 'href="/browse/photos"' in deep, "a crumb back to the category"
+    assert 'href="/browse/Photos"' in deep, "a crumb back to the category"
 
     up = client.get("/browse/photos").text
     assert _folder_names(up) == ["2022", "Unknown"]
@@ -333,11 +335,11 @@ def test_ordering_is_deterministic_and_not_insertion_order(tmp_path: Path) -> No
         write(settings, f"Photos/{name}/a.png")
     index_all(conn, settings)
 
-    data = browse_category(conn, settings, "photos")
+    data = browse_folder(conn, settings, "photos")
     names = [entry["name"] for entry in data["folders"]]
 
     assert names == sorted(names, key=str.lower)
-    assert browse_category(conn, settings, "photos")["folders"] == data["folders"]
+    assert browse_folder(conn, settings, "photos")["folders"] == data["folders"]
 
 
 # --- security ---------------------------------------------------------------
@@ -351,9 +353,8 @@ def test_traversal_cannot_escape_the_library_root(tmp_path: Path) -> None:
     (tmp_path / "outside.txt").write_text("secret", encoding="utf-8")
 
     for attack in ("../..", "../../..", "2022/../../..", "/etc", "..%2F..", "....//"):
-        data = browse_category(conn, settings, "photos", folder=attack)
-        assert data["folders"] == []
-        assert data["items"] == []
+        with pytest.raises(ValueError, match="no such folder"):
+            browse_folder(conn, settings, "photos", folder=attack)
 
 
 def test_traversal_through_the_route_is_refused(tmp_path: Path) -> None:
@@ -425,3 +426,173 @@ def test_browse_matches_the_filesystem_across_a_whole_tree(tmp_path: Path) -> No
         # Files page; compare only when the folder fits on one page.
         if len(disk_files) <= PAGE_SIZE:
             assert disk_files == browse_files, f"files differ at Photos/{folder}"
+
+
+# --- the root screen --------------------------------------------------------
+#
+# The same invariant one level up. The root used to be a hard-coded tuple of
+# eight classification categories counted with a GROUP BY on
+# `search_fts.category`, so it could not show a folder the owner made and it
+# counted rows rather than files.
+
+
+def roots(settings: Settings) -> dict[str, int]:
+    return {entry["name"]: entry["count"] for entry in library_roots(settings)}
+
+
+def test_a_top_level_folder_appears_with_nothing_indexed_in_it(tmp_path: Path) -> None:
+    settings = settings_for(tmp_path)
+    conn = connect(settings)
+    write(settings, "Photos/a.png")
+    index_all(conn, settings)
+    write(settings, "Archives/scan.pdf")
+
+    assert roots(settings) == {"Archives": 1, "Photos": 1}
+
+
+def test_an_empty_top_level_folder_appears(tmp_path: Path) -> None:
+    settings = settings_for(tmp_path)
+    (settings.library_dir / "Archives").mkdir()
+
+    assert roots(settings) == {"Archives": 0}
+
+
+def test_the_count_is_every_file_underneath_at_any_depth(tmp_path: Path) -> None:
+    settings = settings_for(tmp_path)
+    for relpath in ("Photos/a.png", "Photos/2022/b.png", "Photos/2022/Deep/c.png"):
+        write(settings, relpath)
+
+    # Three files, not one direct child and not two subfolders.
+    assert roots(settings) == {"Photos": 3}
+
+
+def test_an_unindexed_file_counts_towards_the_tile(tmp_path: Path) -> None:
+    settings = settings_for(tmp_path)
+    conn = connect(settings)
+    write(settings, "Photos/indexed.png")
+    index_all(conn, settings)
+    write(settings, "Photos/later.png")
+
+    assert roots(settings) == {"Photos": 2}
+
+
+def test_a_stale_row_does_not_count_towards_the_tile(tmp_path: Path) -> None:
+    """A row whose file is gone used to keep inflating the number."""
+    settings = settings_for(tmp_path)
+    conn = connect(settings)
+    write(settings, "Photos/here.png")
+    write(settings, "Photos/gone.png")
+    index_all(conn, settings)
+    (settings.library_dir / "Photos" / "gone.png").unlink()
+
+    assert roots(settings) == {"Photos": 1}
+    assert conn.execute("SELECT COUNT(*) FROM items WHERE root='library'").fetchone()[0] == 2
+
+
+def test_hidden_and_ignored_files_do_not_inflate_the_tile(tmp_path: Path) -> None:
+    settings = settings_for(tmp_path)
+    settings.ignore_patterns = ["*.tmp"]
+    write(settings, "Photos/a.png")
+    write(settings, "Photos/.DS_Store")
+    write(settings, "Photos/2022/.hidden.png")
+    write(settings, "Photos/2022/scratch.tmp")
+
+    assert roots(settings) == {"Photos": 1}
+
+
+def test_a_hidden_or_symlinked_top_level_folder_is_not_a_root(tmp_path: Path) -> None:
+    settings = settings_for(tmp_path)
+    write(settings, "Photos/a.png")
+    (settings.library_dir / ".cache").mkdir()
+    outside = tmp_path / "elsewhere"
+    outside.mkdir()
+    (outside / "secret.png").write_text("secret", encoding="utf-8")
+    with contextlib.suppress(OSError):  # a platform without symlink permission
+        (settings.library_dir / "linked").symlink_to(outside)
+
+    assert roots(settings) == {"Photos": 1}
+
+
+def test_a_loose_file_at_the_library_root_is_not_a_root(tmp_path: Path) -> None:
+    settings = settings_for(tmp_path)
+    write(settings, "Photos/a.png")
+    (settings.library_dir / "stray.txt").write_text("x", encoding="utf-8")
+
+    assert roots(settings) == {"Photos": 1}
+
+
+def test_root_order_is_deterministic_and_not_creation_order(tmp_path: Path) -> None:
+    settings = settings_for(tmp_path)
+    for name in ("Zulu", "archives", "Photos", "2019"):
+        write(settings, f"{name}/a.png")
+
+    names = [entry["name"] for entry in library_roots(settings)]
+
+    assert names == ["2019", "archives", "Photos", "Zulu"]
+    assert names == [entry["name"] for entry in library_roots(settings)]
+
+
+def test_paging_below_the_root_cannot_change_the_root(tmp_path: Path) -> None:
+    """The old count came off the same table the old folder list was truncated
+    from; this pins that the two can no longer interact at all."""
+    settings = settings_for(tmp_path)
+    conn = connect(settings)
+    for index in range(PAGE_SIZE + 30):
+        write(settings, f"Photos/2022/f-{index:03d}.png")
+    write(settings, "Photos/Unknown/a.png")
+    index_all(conn, settings)
+
+    before = roots(settings)
+    for page in (1, 2, 3):
+        assert browse_folder(conn, settings, "photos", page=page)
+
+    assert before == {"Photos": PAGE_SIZE + 31} == roots(settings)
+
+
+def test_the_tile_count_equals_what_the_explorer_can_reach(tmp_path: Path) -> None:
+    """Walk the explorer the way a person would and count what it shows."""
+    settings = settings_for(tmp_path)
+    conn = connect(settings)
+    write(settings, "Photos/loose.png")
+    write(settings, "Photos/2022/a.png")
+    write(settings, "Photos/Unknown/Unsorted/b.png")
+    (settings.library_dir / "Photos" / "Empty").mkdir(parents=True)
+    index_all(conn, settings)
+
+    def walk(folder: str = "") -> int:
+        data = browse_folder(conn, settings, "Photos", folder=folder)
+        total = len(data["items"])
+        for entry in data["folders"]:
+            child = f"{folder}/{entry['name']}" if folder else entry["name"]
+            total += walk(child)
+        return total
+
+    assert walk() == roots(settings)["Photos"] == 3
+
+
+def test_a_root_tile_opens_the_folder_it_names(tmp_path: Path) -> None:
+    client, conn, settings = client_for(tmp_path)
+    write(settings, "Movies & TV/a.mkv")
+    index_all(conn, settings)
+
+    entry = library_roots(settings)[0]
+    opened = client.get(entry["href"])
+
+    assert entry["name"] == "Movies & TV"
+    assert entry["href"] == "/browse/Movies%20%26%20TV"
+    assert opened.status_code == 200
+    assert "a.mkv" in opened.text
+
+
+def test_going_in_and_back_out_leaves_the_root_identical(tmp_path: Path) -> None:
+    client, conn, settings = client_for(tmp_path)
+    write(settings, "Photos/2022/a.png")
+    write(settings, "Music/song.flac")
+    index_all(conn, settings)
+
+    first = client.get("/browse").text
+    client.get("/browse/Photos?folder=2022")
+    client.get("/browse/Music")
+
+    assert client.get("/browse").text == first
+    assert client.get("/browse").text == first, "and again on refresh"
