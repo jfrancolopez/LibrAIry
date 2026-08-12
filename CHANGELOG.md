@@ -83,6 +83,58 @@ that unreliable, and all three are fixed. See [the command line](docs/cli.md).
   health block as `{'ok': True, ...}`; dicts, tuples and values containing
   newlines all render line-oriented now, the way list values already did.
 
+### Changed — one definition of "companion file"
+
+The Library Audit carried its own hand-written list of companion extensions,
+and within a single release it had drifted in both directions: it called `.log`
+a sidecar when the classifier treats it as extractable text, and it had never
+heard of `.ass`, `.ssa`, `.vtt` or `.md5`, so a subtitle sitting under `Music`
+was reported as an unexpected file type. It now derives its set from
+`companions.SIDECAR_KINDS`, which is the only such list left in the codebase.
+
+- **`.lrc` is a companion now.** It was not in the classifier's set at all, so
+  a lyrics file got its own destination and voted on where the album belonged —
+  a file with no opinion casting one. Like a subtitle, it is found by filename,
+  so it follows its track's final name; lyrics that match no track fall back to
+  the album folder rather than being attached to the nearest song.
+- **The three extension registries are documented as three.**
+  `filetypes.REGISTRY` explains a format to a human, `mediakind` says what
+  LibrAIry can do with it, `SIDECAR_KINDS` says whether a file belongs to
+  another file. They disagree on purpose, in two places, both now written down
+  in `mediakind.py` and asserted in `tests/test_taxonomy_boundary.py`. No
+  classification behaviour changed: the office formats that render no preview
+  are still filed as documents, and the real library's `.xlsx` files were
+  correct all along.
+
+### Fixed — "database is locked" while a scan was running
+
+Loading Review during a scan could return a *System Fault* instead of a page.
+It was not a slow query or a long transaction: reads never block under WAL, and
+every connection is already in autocommit. The page was **writing**.
+
+- **Drawing a page no longer writes to the database.** The site header asks for
+  the AI provider chain, and asking used to mirror every provider into
+  `provider_status` and seed default Ollama endpoints as a side effect. Two
+  writes on every page view, competing with the worker for the single writer
+  lock. The defaults are computed identically each time and Settings still
+  writes the real row when you save one, so nothing is lost. GET paths that
+  write dropped from 26 to 13 of 25 audited; the remaining ones are all the
+  session INSERT on a first-ever visit.
+- **The session `last_seen_at` refresh is now best-effort, and rare.** It
+  happened on every single request; it now happens once the session is past
+  halfway through its life, and if it cannot get the lock inside 250 ms it is
+  skipped. It is a timestamp — nobody should be logged out, or made to wait,
+  because a bookkeeping update lost a race. Only `database is locked` is
+  swallowed; every other `OperationalError` still surfaces.
+- **A first visit that cannot mint a session still renders.** It gets a
+  transient in-memory session with a working CSRF token rather than a 500. Auth
+  is untouched: in auth-required mode a transient session grants nothing, and
+  the next request tries again.
+- **No PRAGMA was widened.** `busy_timeout` stays at 5 s for real work. Raising
+  it to 30 s would have converted an intermittent 500 into an intermittent
+  thirty-second hang, which is worse — the first version of this fix took the
+  test suite from 15 s to 8m28s and proved the point.
+
 ### Fixed — three duplicate detectors had never once run
 
 - **rmlint wrote its JSON to a file literally named `-`.** The flag was
