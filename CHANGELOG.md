@@ -83,6 +83,49 @@ that unreliable, and all three are fixed. See [the command line](docs/cli.md).
   health block as `{'ok': True, ...}`; dicts, tuples and values containing
   newlines all render line-oriented now, the way list values already did.
 
+### Added — Library Audit corrections can be applied
+
+The audit stopped at "this looks wrong" because two guarantees were missing.
+Both now exist, so a finding can become an approved library → library move
+through the plan/commit/history/undo machinery that already carries inbox
+filing. See [the guide](docs/using-librairy.md#library-audit).
+
+- **A finding is only true about the file it was made against.** It carries the
+  fingerprint from the moment it was made, and a file that has been re-tagged,
+  replaced, renamed or deleted since gets **Needs re-analysis** or **Not on
+  disk** — never a correction. Not by timestamp: copying a library between
+  disks rewrites every mtime without changing a byte, and a file can be
+  replaced with its timestamps preserved. Stale findings are looked at again,
+  never quietly rewritten to match the new file.
+- **Companions travel with their media.** The old probe proved the executor was
+  safe and proved the gap in the same breath — *"a companion only travels when
+  the plan names it"*. A correction now resolves the whole group before the
+  plan exists. Files named after the primary (`Song.lrc`,
+  `Movie.en.forced.srt`, `Movie.nfo`) follow its final name and keep whatever
+  their name adds; files named after the folder (`cover.jpg`, `playlist.m3u`,
+  `Album.cue`) travel only when the folder is emptying, so moving one track out
+  of a ten-track album never takes the album's cover. Proximity is never the
+  evidence. DVD structures are refused outright.
+- **Every move is in the plan, and visible before Commit.** Review lists each
+  file with its role and why it is in the group. Nothing moves as a side
+  effect, so everything is previewable, containment-checked, collision-safe,
+  journalled and undoable.
+- **A correction group is all or nothing.** Sources are re-verified immediately
+  before execution; if any has changed, none move and the finding reopens.
+  Inbox plans keep their per-file independence — one file changing under you
+  must not stop the other forty being filed.
+- **Distinct wording, distinct sections.** The inbox says *Approve*; a finding
+  says *Accept correction*. Commit counts **new files** and **library
+  corrections** apart. History says *Library correction · moved 4 files*
+  instead of *Filed*, read off the journal's two roots rather than a new
+  column.
+- **Only kinds anyone has reasoned about are executable** — for now, just
+  *tags disagree with the folder*. The allowlist is by kind, not by "has a
+  destination", so a future detector cannot become executable by accident.
+  *Missing artwork*, *possible duplicate* and the rest stay observations, and
+  `naming-inconsistency` stays one deliberately: the corrected spelling of
+  `JAMES BROWN` is a judgement this code will not make.
+
 ### Changed — one definition of "companion file"
 
 The Library Audit carried its own hand-written list of companion extensions,

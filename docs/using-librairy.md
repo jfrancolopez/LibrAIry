@@ -612,17 +612,111 @@ Against a real 140-file library, a full audit reports **three** things.
 
 ### Answering a finding
 
+Three answers, and one of them is always available.
+
+**Accept correction** approves one specific library → library move. Note the
+wording: Review's inbox queue says *Approve*, which admits a new file. A
+correction changes something you already own, so it says something else. Nothing
+happens on acceptance except that a plan is written down — the files move when
+you press Commit, and not before.
+
 **Keep as it is** records that the organisation is deliberate. The next audit
 leaves it alone unless the file itself changes, so the same question does not
 come back every week. A finding whose problem has gone away disappears on its
 own.
 
-### Corrections are not executable yet
+**Re-audit** appears when a finding has gone stale. See below.
 
-A finding that suggests a destination shows you the suggestion and stops there.
-The plan/commit/undo machinery **is** proven safe for library-to-library moves —
-containment, source fingerprint, collision, journal and exact-path undo all hold
-— but two pieces are missing before a button can act on it: companions
-(an album's cue, artwork and playlist) must move together, and the source must
-be re-checked against the fingerprint recorded when the finding was made. Until
-both exist, corrections are advice.
+### Stale findings
+
+A finding is a statement about a specific file at a specific moment: *this file,
+with this hash, is in the wrong place*. Between the audit and the button you may
+have re-tagged it, replaced it, renamed it or deleted it — and a correction that
+executed anyway would move a file nobody looked at.
+
+So every finding carries the fingerprint it was made against, and the row says
+which of three things is true:
+
+| State | Means | Offered |
+|---|---|---|
+| *(nothing shown)* | The file is exactly as audited. | Accept correction, Keep as it is |
+| **Needs re-analysis** | The file changed after the audit. | Re-audit, Keep as it is |
+| **Not on disk** | Nothing is at the audited path any more. | Keep as it is |
+
+Timestamps are not used for this. Copying a library between disks rewrites every
+mtime without changing a byte, and a file can be replaced with its timestamps
+preserved — so the test is the hash, the same one Commit uses. **Re-audit** looks
+at the file again and records what is true now; it never quietly rewrites an old
+finding to match a new file.
+
+### Which findings can be corrected
+
+Only kinds whose correction is a concrete, deterministic move:
+
+| Executable | Observation only |
+|---|---|
+| Tags disagree with the folder | Naming inconsistency, possible duplicate, missing artwork, not indexed, system file, unexpected file type, loose file |
+
+The observations are all true and worth showing; none has a move that answers
+it. *Missing artwork* describes a file that is exactly where it belongs.
+*Naming inconsistency* is about a folder, and the corrected spelling of
+`JAMES BROWN` is a judgement — "James Brown"? "James Brown & The J.B.'s"? —
+that LibrAIry will not make on your behalf. *Possible duplicate* has a real
+answer, quarantining the copy, but that is a different action with its own
+safety rules and it is not offered here yet.
+
+### Companions travel with their media
+
+A correction that moved `05 - Song.flac` and left `05 - Song.lrc` behind would
+break something you did not ask to have broken. So a correction resolves the
+whole group first, and every file in it is listed in Review before you accept:
+
+```text
+Correction will move 4 files
+
+  primary     05 - Song.flac
+  companion   05 - Song.lrc      — named after 05 - Song.flac
+  companion   album.nfo          — belongs to the folder, and nothing else is staying in it
+  companion   cover.jpg          — belongs to the folder, and nothing else is staying in it
+```
+
+Two kinds of belonging, and LibrAIry only claims the ones it can prove:
+
+- **Named after the file** — `Song.lrc`, `Movie.en.forced.srt`, `Movie.nfo`.
+  A player finds these by filename, so they follow the primary's final name and
+  keep whatever their name adds. `.en.forced` is the only thing telling two
+  subtitles apart, so it survives.
+- **Named after the folder** — `cover.jpg`, `playlist.m3u`, `Album.cue`. These
+  describe the release, not the track, so they travel **only when the folder is
+  emptying**. Moving one track out of a ten-track album never takes the album's
+  cover with it.
+
+Being nearby is never the evidence. A DVD or Blu-ray structure is refused
+outright: `VIDEO_TS.IFO` points at its siblings by name and position, so a
+correction that lifted one `.VOB` out would produce two broken things instead of
+one tidy one.
+
+### What happens at Commit
+
+Corrections appear on the Commit page under **Library corrections**, counted and
+listed separately from new files, with every move spelled out. Each commits on
+its own.
+
+Immediately before anything moves, every file in the group is re-checked against
+the fingerprint that was approved. If any of them has changed, **none of them
+move** — a correction you approved as one action stays one action, and half an
+album in its new home is worse than either outcome. The finding goes back to
+open so the next audit can look at whatever state things are actually in. A
+group that partly fails is never reported as a success.
+
+History labels the result **Library correction · moved 4 files** rather than
+*Filed*, and every file is undoable — back to its exact original path, with its
+exact original bytes.
+
+### What it will never do
+
+Corrections do not run on a timer, are never approved automatically, and are
+never included in an inbox bulk action. *Approve 40 at 85%+* acts on checkboxes
+inside the inbox form; audit findings live in their own table and render outside
+that form, so the separation is structural rather than a filter someone has to
+remember.
