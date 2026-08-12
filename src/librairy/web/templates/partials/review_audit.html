@@ -143,6 +143,20 @@
       {% endif %}
     </div>
 
+    {# A grouped finding is anchored at one folder and speaks for many. Saying
+       so is not decoration: without it the row reads as an accusation against
+       whichever folder happened to sort first. #}
+    {% if finding.spans %}
+    <details class="audit-affected">
+      <summary>{{ finding.spans.label }}</summary>
+      <ul>
+        {% for path in finding.spans.paths %}
+        <li><span class="mono">{{ path }}</span></li>
+        {% endfor %}
+      </ul>
+    </details>
+    {% endif %}
+
     {% if finding.affected_count > 1 %}
     <details class="audit-affected">
       <summary>Moves {{ finding.affected_count }} files</summary>

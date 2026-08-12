@@ -53,6 +53,15 @@ FILES: dict[str, bytes | None] = {
     "Music/Pop/Wings/07 - Band.flac": b"band bytes",
     "Music/Pop/Wings/07 - Band.lrc": b"[00:01.00] lyrics",
     "Music/Pop/Wings/cover.jpg": None,
+    # 9. one compilation filed as several artist folders — the grouped finding,
+    #    and the one most likely to render badly, because it speaks for many
+    #    folders from a row anchored at one of them.
+    "Music/Disco/Bee Gees/Road Trip Classics/02 - More Than A Woman.flac": b"bg1",
+    "Music/Disco/Abba/Road Trip Classics/36 - SOS.flac": b"abba1",
+    "Music/Disco/Chic/Road Trip Classics/14 - Le Freak.flac": b"chic1",
+    # 10. an artist filed under two sections
+    "Music/Rock/Queen/A Night at the Opera/01 - Death on Two Legs.flac": b"q1",
+    "Music/Pop/Queen/Hot Space/01 - Staying Power.flac": b"q2",
 }
 
 TAG_EVIDENCE = [
@@ -128,14 +137,20 @@ def build_fixture(root: Path) -> TestClient:
         ],
     )
     finding(
-        "Photos/2022/Vacation/foo-copy.jpg",
+        "Photos/2022/foo.jpg",
         "duplicate",
-        "Identical to Photos/2022/foo.jpg.",
+        "Identical bytes to 1 other file(s) in your library.",
         None,
-        [EvidenceEntry("fingerprint", "exact match", "Photos/2022/foo.jpg", 1.0)],
+        [
+            EvidenceEntry("fingerprint", "blake2b", "9f2c41ab77e0", 1.0),
+            EvidenceEntry("filesystem", "also at", "Photos/2022/Vacation/foo-copy.jpg", 1.0),
+        ],
     )
     finding(
-        "Movies/The Matrix (1998)/The Matrix (1998).mkv",
+        # A folder finding, anchored at the folder — `naming-inconsistency` is
+        # always about a folder, and putting a filename here would render it
+        # with a file's extension badge and a Preview that cannot work.
+        "Movies/The Matrix (1998)",
         "naming-inconsistency",
         "The Matrix was released in 1999.",
         None,
@@ -175,6 +190,38 @@ def build_fixture(root: Path) -> TestClient:
         "Tagged 'Wings' but filed under 'Pop'.",
         "Music/Rock/Wings/Band on the Run/07 - Band.flac",
         TAG_EVIDENCE,
+    )
+    finding(
+        "Music/Disco/Abba/Road Trip Classics",
+        "split-album",
+        "'Road Trip Classics' is one compilation filed as 27 artist folders. "
+        "Every one of its 45 tracks is tagged as a compilation.",
+        None,
+        [
+            EvidenceEntry("tags", "album", "Road Trip Classics", 0.95),
+            EvidenceEntry("tags", "album artist", "V.A.", 0.9),
+            EvidenceEntry("filesystem", "folders", "27", 0.9),
+            EvidenceEntry("filesystem", "tracks", "45", 0.9),
+            EvidenceEntry("filesystem", "track numbers", "1-45, complete", 0.9),
+            EvidenceEntry("library-pattern", "all under", "Music/Disco", 0.85),
+            # The folders it speaks for, exactly as the real detector records
+            # them — this is what the "Spans N folders" tray reads back.
+            EvidenceEntry("filesystem", "folder", "Music/Disco/Abba/Road Trip Classics", 0.9),
+            EvidenceEntry("filesystem", "folder", "Music/Disco/Bee Gees/Road Trip Classics", 0.9),
+            EvidenceEntry("filesystem", "folder", "Music/Disco/Chic/Road Trip Classics", 0.9),
+        ],
+    )
+    finding(
+        "Music/Pop/Queen/Hot Space",
+        "artist-split",
+        "'Queen' has folders under 2 different sections. "
+        "3 album(s) under Music/Rock, 1 elsewhere.",
+        None,
+        [
+            EvidenceEntry("filesystem", "artist", "Queen", 0.9),
+            EvidenceEntry("library-pattern", "mostly under", "Music/Rock", 0.85),
+            EvidenceEntry("filesystem", "also under", "Music/Pop", 0.9),
+        ],
     )
     record_findings(conn, batch)
 

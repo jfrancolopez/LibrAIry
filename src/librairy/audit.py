@@ -83,6 +83,26 @@ KINDS = {
 #   exactly where they belong.
 EXECUTABLE_KINDS = frozenset({"tag-path-mismatch", "naming-cleanup"})
 
+# Kinds whose `relpath` names a folder rather than a file. The UI needs this to
+# decide three things it would otherwise get wrong: whether to offer the
+# extension-info badge, whether Preview means anything, and whether the title
+# is a filename. It lived in the web layer as a hand-kept pair, and the first
+# six kinds added after it were all folders and all rendered as files.
+#
+# Declared beside KINDS so a new kind has to say which it is, and asserted
+# exhaustive by `test_audit_music`.
+FOLDER_KINDS = frozenset(
+    {
+        "missing-artwork",
+        "naming-inconsistency",
+        "split-album",
+        "artist-split",
+        "album-name-mismatch",
+        "track-numbering",
+        "loose-tracks",
+    }
+)
+
 # "high" is worth acting on; "review" needs your judgement. Deliberately two
 # bands and not five — a third would only invite arguing about the boundary.
 SEVERITIES = ("high", "review")

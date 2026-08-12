@@ -5,7 +5,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from librairy.audit import KINDS, open_findings
+from librairy.audit import FOLDER_KINDS, KINDS, open_findings
 from librairy.classify.images import vision_disagrees, vision_for_items
 from librairy.config import Settings
 from librairy.corrections import (
@@ -1039,7 +1039,49 @@ def _audit_row(
         "item_id": row["item_id"],
         "can_preview": can_preview,
         "browse_href": _audit_browse_href(row["relpath"], state),
+        # A grouped finding has to say so. One row that speaks for twenty-seven
+        # folders still has to be anchored at one of them, and showing that one
+        # path alone reads as an accusation against Abba specifically.
+        "spans": _spans(row),
     }
+
+
+# The evidence fields that name another place this finding is also about, and
+# what to call the list. Two detectors have the same problem — one row anchored
+# at one path, speaking for several — and it is the same tray in both.
+GROUPED_FIELDS = {
+    "folder": "Spans {count} folders",
+    "also at": "{count} identical copies",
+}
+
+
+def _spans(row: sqlite3.Row) -> dict[str, object]:
+    """Every other place a grouped finding speaks for, the anchor first.
+
+    Read back off the evidence the detector recorded rather than stored beside
+    it, so the list and the reasoning cannot drift apart. The raw entries are
+    needed rather than the humanised views, because the view keeps the label
+    and drops the field name.
+    """
+    from librairy.proposals import decode_evidence
+
+    if not row["evidence"]:
+        return {}
+    try:
+        entries = decode_evidence(row["evidence"])
+    except Exception:  # noqa: BLE001 - a bad row renders plainly, never 500s
+        return {}
+    for field, template in GROUPED_FIELDS.items():
+        paths = [
+            entry.detail
+            for entry in entries
+            if entry.source == "filesystem" and entry.field == field
+        ]
+        anchor = row["relpath"]
+        paths = [anchor, *[path for path in paths if path != anchor]]
+        if len(paths) > 1:
+            return {"label": template.format(count=len(paths)), "paths": paths}
+    return {}
 
 
 def path_change(current: str, suggested: str) -> dict[str, str] | None:
@@ -1069,7 +1111,7 @@ def path_change(current: str, suggested: str) -> dict[str, str] | None:
 
 def _is_folder(row: sqlite3.Row) -> bool:
     """Findings about an album or a folder have no filename and no extension."""
-    return row["kind"] in {"missing-artwork", "naming-inconsistency"}
+    return row["kind"] in FOLDER_KINDS
 
 
 def _sources(views: list) -> list[str]:
