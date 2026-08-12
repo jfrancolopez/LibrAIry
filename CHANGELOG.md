@@ -126,6 +126,44 @@ filing. See [the guide](docs/using-librairy.md#library-audit).
   `naming-inconsistency` stays one deliberately: the corrected spelling of
   `JAMES BROWN` is a judgement this code will not make.
 
+### Changed — Library Audit reads like the rest of Review
+
+It worked, and it still looked like a diagnostic panel bolted onto the page.
+Same interaction quality as the inbox queue now, same different meaning.
+
+- **Wording.** *"Your call"* was a badge on every row that was not high
+  severity and said nothing the buttons below it did not already say — removed
+  rather than renamed. *"Keep as it is"* → **No change**: shorter, and it names
+  the decision instead of describing the file. Status chips are words —
+  *Correction*, *Observation*, *Needs re-analysis*, *Not on disk*, *Waiting for
+  Commit*, *Corrected* — never the stored `open`/`accepted`/`kept`.
+- **Name first**, then the summary, then Current and Suggested, then where the
+  information came from. A folder-level finding shows the album's own name, not
+  an id.
+- **Preview and fullscreen**, through `/preview/items/` — the same endpoint,
+  card, lightbox and video teardown as the inbox row, with no audit-specific
+  preview code. It resolves the *item*, which carries where the file is now, so
+  a suggested destination can never become a preview source.
+- **Evidence, at last.** The audit has always recorded it and it has never once
+  rendered: `decode_evidence` rejected `filesystem` and `fingerprint` as
+  sources, `humanize_evidence` swallowed the error, and every audit *Why* panel
+  said "No evidence recorded". Now Why lists each signal with the weight the
+  detector gave it, and the row summarises the sources actually used.
+- **No invented confidence.** An audit finding has no aggregate score and the
+  page does not manufacture one. The bar shows the *mix* of evidence kinds at a
+  fixed width, the row says LibrAIry does not combine them into a single
+  number, and *Correction* versus *Observation* carries the weight a percentage
+  would carry elsewhere.
+- **Its own selection and bulk actions.** One implementation in `review.js`,
+  two configurations: the inbox selects `proposal_id` inside `#review-list`,
+  the audit selects `finding_id` inside `#library-audit`, and neither handler
+  has a parameter that could hold the other's ids. Bulk accept acts only on
+  eligible corrections, says *"(1 eligible)"* before the press and *"Accepted 1
+  of 3"* after. No "accept all above N%".
+- **⋯** holds *Open in Browse* (the folder the file is in now) and *View
+  details*, and only appears when at least one of them would work.
+- Folder headings only where they group more than one thing.
+
 ### Changed — one definition of "companion file"
 
 The Library Audit carried its own hand-written list of companion extensions,

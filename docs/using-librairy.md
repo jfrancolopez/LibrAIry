@@ -610,6 +610,32 @@ naming problems.
 
 Against a real 140-file library, a full audit reports **three** things.
 
+### Reading a row
+
+Every row answers five questions in this order:
+
+```text
+☐  LIBRARY AUDIT   Correction   Tags disagree with the folder   Worth acting on
+
+   05 - Song.flac  [?]
+   Tagged 'Queen' but filed under 'Pop'.
+
+   CURRENT     Music/Pop/Queen/05 - Song.flac
+   SUGGESTED   Music/Rock/Queen/A Night at the Opera/05 - Song.flac
+
+   ▇▇▇▇▇▇▇▇   Embedded tags · On disk · Your library
+
+   [Accept correction] [No change] [⋯]   Preview  Why
+   ▸ Moves 2 files
+```
+
+The chip after **LIBRARY AUDIT** says what kind of row it is: *Correction*,
+*Observation*, *Needs re-analysis*, *Not on disk*, *Waiting for Commit* or
+*Corrected*. **Worth acting on** appears only where the audit thinks so.
+
+The bar is **evidence composition, not confidence**. Unlike an inbox proposal,
+an audit finding has no single score — see below.
+
 ### Answering a finding
 
 Three answers, and one of them is always available.
@@ -618,14 +644,49 @@ Three answers, and one of them is always available.
 wording: Review's inbox queue says *Approve*, which admits a new file. A
 correction changes something you already own, so it says something else. Nothing
 happens on acceptance except that a plan is written down — the files move when
-you press Commit, and not before.
+you press Commit, and not before. The row then reads *Approved · nothing has
+moved yet*.
 
-**Keep as it is** records that the organisation is deliberate. The next audit
-leaves it alone unless the file itself changes, so the same question does not
-come back every week. A finding whose problem has gone away disappears on its
-own.
+**No change** records that the organisation is deliberate. The next audit leaves
+it alone unless the file itself changes, so the same question does not come back
+every week. A finding whose problem has gone away disappears on its own.
 
 **Re-audit** appears when a finding has gone stale. See below.
+
+Behind **⋯**: *Open in Browse*, which opens the folder the file is in **now**
+rather than any suggested destination, and *View details* when the file is
+indexed. Neither appears when it would not work.
+
+**Preview** shows the file as it is today, through the same preview card,
+fullscreen viewer and video handling as the inbox queue. There is no preview for
+a folder-level finding or for a file that is not on disk.
+
+### Selecting several at once
+
+Tick the box on any row for a toolbar with **No change**, **Re-audit** and
+**Accept corrections**. It is a separate selection from the inbox queue's, and
+deliberately so: the two post different fields to different endpoints, so an
+inbox bulk action cannot reach a library finding and vice versa.
+
+A mixed selection is explained rather than trimmed. Select one correction and
+two observations and the button reads **Accept corrections (1 eligible)**, with
+a note saying the other two cannot be accepted; afterwards the page says
+*Accepted 1 of 3*. There is no "accept everything above N%" — inbox files and
+existing-library corrections do not carry the same risk.
+
+### What the audit knows, and what it does not
+
+An inbox proposal has a confidence: *how sure am I this is where this new file
+belongs?* An audit finding has **no equivalent number**, and the page does not
+invent one.
+
+What is recorded is a weight per piece of evidence — how much that one signal is
+trusted — and those are shown individually in **Why**. They are never added
+together, because there is no scoring model behind the audit that would make the
+total mean anything. The bar on the row shows the *mix* of evidence kinds at a
+fixed width; its length is not a score. A finding is either a *Correction* or an
+*Observation*, and that distinction carries the weight a percentage would carry
+elsewhere.
 
 ### Stale findings
 
