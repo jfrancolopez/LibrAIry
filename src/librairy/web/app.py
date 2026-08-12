@@ -144,7 +144,22 @@ def _backup_categories(form) -> str:  # noqa: ANN001 - starlette FormData
 
 LOGGER = logging.getLogger(__name__)
 PACKAGE_DIR = Path(__file__).parent
-TEMPLATES = Jinja2Templates(directory=PACKAGE_DIR / "templates")
+
+
+def _csrf_context(request: Request) -> dict[str, str]:
+    """`csrf_token` is always defined, in every template.
+
+    It used to be passed by hand, route by route, and both Browse handlers
+    forgot. Jinja renders an undefined name as the empty string, so the hidden
+    field came out blank and the audit buttons answered 403 — a broken button
+    that looked exactly like a working one, in HTML that looked correct. A
+    missing token is now impossible rather than merely unlikely.
+    """
+    session = getattr(request.state, "session", None)
+    return {"csrf_token": session["csrf_token"] if session else ""}
+
+
+TEMPLATES = Jinja2Templates(directory=PACKAGE_DIR / "templates", context_processors=[_csrf_context])
 
 
 class RevalidatedStatics(StaticFiles):
@@ -1495,14 +1510,23 @@ async def _csrf_form_token(request: Request) -> str | None:
 
 
 async def _request_form(request: Request):
-    """Read the form once per request.
+    """Read the form once per request, and leave the body readable.
 
-    The CSRF middleware has to parse the body to find a `csrf_token` field, which
-    drains the receive stream — route handlers building their own `Request` would
-    then see an empty form. The parsed form is cached in the shared request scope.
+    The CSRF middleware has to parse the body to find a `csrf_token` field,
+    which consumes the receive stream. Starlette replays a consumed body to
+    the route below only when `body()` was the thing that consumed it — call
+    `form()` alone and it replays an empty body instead, so the handler is
+    reached with no fields at all. Reading the body first, and caching the
+    parsed form in the shared request scope, keeps both readers whole.
+
+    Nothing caught this for a long time because htmx sends the token as a
+    header, which returns above this function, and the tests sent that same
+    header. A plain `<form method="post">` is the only shape that gets here,
+    and it was arriving empty: "Audit this folder" audited everything.
     """
     cached = getattr(request.state, "form", None)
     if cached is None:
+        await request.body()
         cached = await request.form()
         request.state.form = cached
     return cached
