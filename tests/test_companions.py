@@ -578,6 +578,57 @@ def test_an_episode_subtitle_follows_its_own_episode(tmp_path: Path) -> None:
     assert dest_of(conn, sub)[1] == f"{base}/S01E02.en.srt"
 
 
+def test_lyrics_follow_their_own_track(tmp_path: Path) -> None:
+    """An .lrc is found by filename exactly as an .srt is. Until the audit and
+    the classifier shared one companion list, `.lrc` was not a sidecar at all:
+    it got its own destination and voted on where the album belonged."""
+    settings = settings_for(tmp_path)
+    conn = connect(settings)
+    album = "Music/Pop/Band/Album"
+    for index in (1, 2):
+        track = add_item(conn, f"Album/{index:02d} - Song {index}.flac")
+        propose(
+            conn, track, category="music", dest_relpath=f"{album}/{index:02d}-Song-{index}.flac"
+        )
+    lyrics = add_item(conn, "Album/02 - Song 2.lrc")
+    propose(conn, lyrics, category="misc", dest_relpath=None)
+
+    associate_companions(conn, settings)
+
+    assert dest_of(conn, lyrics)[1] == f"{album}/02-Song-2.lrc"
+
+
+def test_lyrics_that_name_no_track_still_join_the_album(tmp_path: Path) -> None:
+    """No match is not a reason to guess at the nearest song. It falls back to
+    the folder with its own name, like an .m3u."""
+    settings = settings_for(tmp_path)
+    conn = connect(settings)
+    album = "Music/Pop/Band/Album"
+    track = add_item(conn, "Album/01 - Song.flac")
+    propose(conn, track, category="music", dest_relpath=f"{album}/01-Song.flac")
+    lyrics = add_item(conn, "Album/booklet.lrc")
+    propose(conn, lyrics, category="misc", dest_relpath=None)
+
+    associate_companions(conn, settings)
+
+    assert dest_of(conn, lyrics)[1] == f"{album}/booklet.lrc"
+
+
+def test_a_cue_sheet_still_keeps_its_own_name(tmp_path: Path) -> None:
+    """Unchanged by the companion unification: a cue describes the release."""
+    settings = settings_for(tmp_path)
+    conn = connect(settings)
+    album = "Music/Pop/Band/Album"
+    track = add_item(conn, "Album/Album.flac")
+    propose(conn, track, category="music", dest_relpath=f"{album}/Album.flac")
+    cue = add_item(conn, "Album/Album.cue")
+    propose(conn, cue, category="misc", dest_relpath=None)
+
+    associate_companions(conn, settings)
+
+    assert dest_of(conn, cue)[1] == f"{album}/Album.cue"
+
+
 def test_a_lone_nfo_beside_nothing_identified_is_left_for_review(tmp_path: Path) -> None:
     """Conservative: no anchor, no guess."""
     settings = settings_for(tmp_path)

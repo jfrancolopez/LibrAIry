@@ -31,6 +31,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 
+from librairy.classify.companions import SIDECAR_KINDS
 from librairy.config import Settings
 from librairy.models import EvidenceEntry
 from librairy.planner import utc_now
@@ -60,7 +61,12 @@ DOCUMENT = {".pdf", ".epub", ".mobi", ".doc", ".docx", ".txt", ".rtf", ".odt", "
 
 # Files that belong beside media rather than being media. A .srt under Music
 # is not "an unexpected file type", it is a sidecar doing its job.
-COMPANION = {".srt", ".sub", ".idx", ".nfo", ".cue", ".log", ".m3u", ".m3u8", ".lrc", ".sfv"}
+#
+# Derived, not listed. This was a hand-written set and it had already drifted
+# both ways within one release: it claimed .log was a companion when the
+# classifier treats it as extractable text, and it had never heard of .ass,
+# .ssa, .vtt or .md5. One definition, in the module that owns the concept.
+COMPANION = frozenset(SIDECAR_KINDS)
 COVER_NAMES = {"cover", "folder", "front", "album", "albumart", "poster", "thumb"}
 
 # Named by their operating system, not by anyone who wanted them.

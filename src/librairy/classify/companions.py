@@ -46,9 +46,14 @@ from librairy.proposals import upsert_proposal
 ARTWORK_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
 
 # The other kind of companion: files that describe media rather than being it.
-# Four kinds, because four is what the rules actually need — a subtitle follows
-# one specific video, the rest follow the folder. This is not a taxonomy to
-# extend; it is the smallest thing that distinguishes the two behaviours.
+# The kinds exist to separate two behaviours and nothing else — a sidecar in
+# NAMES_ONE_FILE is renamed to follow the one file it names, everything else
+# keeps its own name and follows the folder. This is not a taxonomy to extend;
+# it is the smallest thing that distinguishes those two.
+#
+# It is also the *only* definition of "companion extension" in the codebase.
+# The Library Audit derives its set from this one, and `filetypes.py` reads the
+# labels below, so an extension added here is understood everywhere at once.
 SIDECAR_KINDS = {
     ".m3u": "playlist",
     ".m3u8": "playlist",
@@ -56,6 +61,10 @@ SIDECAR_KINDS = {
     ".sfv": "metadata",
     ".md5": "metadata",
     ".cue": "cue",
+    # Lyrics follow their track the way a subtitle follows its episode. Only
+    # the audit knew that; the classifier let an .lrc vote on where an album
+    # belonged, which is a file with no opinion casting one.
+    ".lrc": "lyrics",
     ".srt": "subtitle",
     ".ass": "subtitle",
     ".ssa": "subtitle",
@@ -64,15 +73,22 @@ SIDECAR_KINDS = {
     ".vtt": "subtitle",
 }
 
+# The kinds that name one specific file rather than describing the folder, and
+# so have to be renamed with it. A player finds `Song.lrc` from `Song.flac` by
+# filename, exactly as it finds `Movie.srt` from `Movie.mkv`; leaving the
+# lyrics behind under the old stem is the same bug in a different folder.
+NAMES_ONE_FILE = frozenset({"subtitle", "lyrics"})
+
 # What the Why panel calls each kind, in words rather than an extension.
 SIDECAR_LABEL = {
     "playlist": "playlist",
     "metadata": "metadata file",
     "cue": "cue sheet",
+    "lyrics": "lyrics",
     "subtitle": "subtitle",
 }
 
-# Media a sidecar can belong to. Used to find the one file a subtitle names.
+# Media a sidecar can belong to. Used to find the one file a sidecar names.
 MEDIA_EXTS = {
     ".mp3", ".flac", ".m4a", ".aac", ".ogg", ".wav",
     ".mkv", ".mp4", ".avi", ".mov", ".m4v", ".webm", ".vob",
@@ -344,7 +360,7 @@ def _repoint_sidecar(
     name = PurePosixPath(item["relpath"]).name
     kind = sidecar_kind(name)
     suffix = PurePosixPath(name).suffix.lower()
-    match = _matching_media(item, items) if kind == "subtitle" else None
+    match = _matching_media(item, items) if kind in NAMES_ONE_FILE else None
 
     if match is not None:
         media, extra = match
