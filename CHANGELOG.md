@@ -130,6 +130,13 @@ every connection is already in autocommit. The page was **writing**.
   transient in-memory session with a working CSRF token rather than a 500. Auth
   is untouched: in auth-required mode a transient session grants nothing, and
   the next request tries again.
+- **It bit hardest exactly where LibrAIry is meant to run.** A bind mount on
+  macOS or an UNRAID FUSE share reports a filesystem whose shared memory cannot
+  be trusted, so the index runs in `DELETE` journal mode rather than WAL — and
+  under `DELETE` a reader and a writer block each other, not just two writers.
+  A page that wrote was therefore competing with the worker on precisely the
+  storage where the fallback exists. No PRAGMA was changed to fix this; the
+  page simply stopped writing.
 - **No PRAGMA was widened.** `busy_timeout` stays at 5 s for real work. Raising
   it to 30 s would have converted an intermittent 500 into an intermittent
   thirty-second hang, which is worse — the first version of this fix took the
