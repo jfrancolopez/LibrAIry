@@ -45,7 +45,14 @@ class ExecutionSummary:
 
 def execute_plan(conn: sqlite3.Connection, plan_id: str, settings: Settings) -> ExecutionSummary:
     with acquire_lock(settings):
-        return _execute_plan_unlocked(conn, plan_id, settings)
+        summary = _execute_plan_unlocked(conn, plan_id, settings)
+    # The one door both the web commit and the CLI go through, which is why the
+    # audit finding is settled here rather than at each caller. It is a no-op
+    # for an ordinary inbox plan.
+    from librairy.corrections import settle_plan
+
+    settle_plan(conn, plan_id)
+    return summary
 
 
 def _execute_plan_unlocked(
@@ -75,6 +82,23 @@ def _execute_plan_unlocked(
         "SELECT * FROM plan_ops WHERE plan_id=? ORDER BY seq",
         (plan_id,),
     ).fetchall()
+    # A library correction is one logical action over several files. If any
+    # part of it has moved on since it was approved, none of it runs: half an
+    # album in its new home and half in the old one is worse than either, and
+    # it is not what the user approved. Ordinary inbox plans are unaffected —
+    # their operations are genuinely independent of one another.
+    if plan["audit_finding_id"] is not None:
+        blocked = _incoherent_ops(rows, settings)
+        if blocked:
+            for row in rows:
+                _finish_op(conn, row["id"], blocked[row["id"]], None)
+                _journal(conn, row, row["dest_relpath"], row["src_fingerprint"], blocked[row["id"]])
+                counts[blocked[row["id"]]] += 1
+            conn.execute(
+                "UPDATE plans SET status='failed', finished_at=? WHERE id=?",
+                (utc_now(), plan_id),
+            )
+            return ExecutionSummary(plan_id, **counts)
     for row in rows:
         if row["result"] in TERMINAL_RESULTS:
             continue
@@ -108,6 +132,36 @@ def _execute_plan_unlocked(
         (final_status, utc_now(), plan_id),
     )
     return ExecutionSummary(plan_id, **counts)
+
+
+def _incoherent_ops(rows: list[sqlite3.Row], settings: Settings) -> dict[int, str]:
+    """Empty when every source in a correction group is still exactly as
+    approved; otherwise the result to record against each operation.
+
+    Checked before anything moves, and for the whole group, because the answer
+    "the primary changed" has to stop the companions too. The per-operation
+    fingerprint check in `_execute_op` still runs afterwards — this does not
+    replace it, it just makes the group's failure mode all-or-nothing.
+    """
+    stale = False
+    for row in rows:
+        if row["result"] in TERMINAL_RESULTS:
+            continue
+        src = validate_relpath(
+            _root_path(settings, row["src_root"]), row["src_relpath"], kind="source"
+        )
+        if not src.exists() or blake2b_file(src) != row["src_fingerprint"]:
+            stale = True
+            break
+    if not stale:
+        return {}
+    blocked: dict[int, str] = {}
+    for row in rows:
+        src = validate_relpath(
+            _root_path(settings, row["src_root"]), row["src_relpath"], kind="source"
+        )
+        blocked[row["id"]] = "skipped_missing" if not src.exists() else "skipped_changed"
+    return blocked
 
 
 def _execute_op(conn: sqlite3.Connection, row: sqlite3.Row, settings: Settings) -> str:

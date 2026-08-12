@@ -9,7 +9,7 @@ from pathlib import Path
 from librairy.config import Settings
 
 LOGGER = logging.getLogger(__name__)
-SCHEMA_VERSION = 16
+SCHEMA_VERSION = 17
 
 
 class DatabaseVersionError(RuntimeError):
@@ -355,6 +355,21 @@ CREATE INDEX idx_audit_findings_status ON audit_findings(status);
 CREATE INDEX idx_audit_findings_kind ON audit_findings(kind);
 """
 
+MIGRATION_017 = """
+-- Which audit finding a plan is executing, if any. A plan with this set is a
+-- correction to a file the owner already had, not a new file being filed, and
+-- Commit and History both have to be able to say so out loud.
+ALTER TABLE plans ADD COLUMN audit_finding_id INTEGER REFERENCES audit_findings(id);
+-- Whether an operation is the file the finding is about or a companion coming
+-- with it. Presentation, and the reason a partial result can say which half
+-- of an album moved.
+ALTER TABLE plan_ops ADD COLUMN role TEXT NOT NULL DEFAULT 'primary';
+-- The plan an accepted finding is waiting on, so Review can say "waiting for
+-- Commit" and a finding cannot be accepted twice into two competing plans.
+ALTER TABLE audit_findings ADD COLUMN plan_id TEXT REFERENCES plans(id);
+CREATE INDEX idx_plans_audit_finding ON plans(audit_finding_id);
+"""
+
 MIGRATIONS = {
     1: MIGRATION_001,
     2: MIGRATION_002,
@@ -372,6 +387,7 @@ MIGRATIONS = {
     14: MIGRATION_014,
     15: MIGRATION_015,
     16: MIGRATION_016,
+    17: MIGRATION_017,
 }
 
 
