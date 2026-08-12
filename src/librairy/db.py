@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import logging
 import os
 import sqlite3
+from contextlib import contextmanager
 from pathlib import Path
 
 from librairy.config import Settings
 
+LOGGER = logging.getLogger(__name__)
 SCHEMA_VERSION = 16
 
 
@@ -480,6 +483,59 @@ def filesystem_type(target: Path) -> str | None:
         if best is None or depth > best[0]:
             best = (depth, fstype)
     return best[1] if best else None
+
+
+# How long a write on a render path is willing to wait for the writer lock
+# before giving up. Deliberately far below the 5s connection-wide timeout: an
+# optional write that blocks the page for five seconds has turned an
+# intermittent error into an intermittent freeze, which is not an improvement.
+RENDER_WRITE_TIMEOUT_MS = 250
+
+
+@contextmanager
+def impatient(conn: sqlite3.Connection, timeout_ms: int = RENDER_WRITE_TIMEOUT_MS):
+    """Briefly shorten this connection's tolerance for a held writer lock.
+
+    Everything off the render path keeps the ordinary five seconds, because a
+    worker that has to retry a real write is a worker doing its job slowly,
+    whereas a page that has to retry is a person watching a blank tab.
+    """
+    previous = conn.execute("PRAGMA busy_timeout").fetchone()[0]
+    conn.execute(f"PRAGMA busy_timeout={int(timeout_ms)}")
+    try:
+        yield
+    finally:
+        conn.execute(f"PRAGMA busy_timeout={int(previous)}")
+
+
+def best_effort_write(
+    conn: sqlite3.Connection, statement: str, params: tuple, *, what: str
+) -> bool:
+    """A write the page does not depend on. Lock contention is not an error.
+
+    Narrow on purpose. Only "database is locked"/"busy" is absorbed, and only
+    for writes whose failure changes nothing the reader can see — a malformed
+    statement, a constraint violation or a corrupt file still raises, because
+    swallowing those would turn a real fault into a page that silently lies.
+
+    It also gives up quickly. Absorbing the error but waiting the full busy
+    timeout first would trade a rare 500 for a routine five-second stall.
+    """
+    try:
+        with impatient(conn):
+            conn.execute(statement, params)
+    except sqlite3.OperationalError as exc:
+        if not is_locked(exc):
+            raise
+        LOGGER.debug("skipped %s: %s", what, exc)
+        return False
+    return True
+
+
+def is_locked(exc: Exception) -> bool:
+    """True only for SQLite's writer-contention errors."""
+    message = str(exc).lower()
+    return "database is locked" in message or "database table is locked" in message
 
 
 def user_version(conn: sqlite3.Connection) -> int:

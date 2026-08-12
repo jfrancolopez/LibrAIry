@@ -10,10 +10,15 @@ from dataclasses import dataclass
 
 from fastapi import HTTPException, Request
 
+from librairy.db import best_effort_write
+
 SESSION_COOKIE = "librairy_session"
 ADMIN_PASSWORD_KEY = "auth.admin_password"
 WELCOME_DISMISSED_KEY = "ux.welcome_dismissed"
 SESSION_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
+# Refresh a sliding session only once it is past halfway. Sooner buys nothing
+# and costs a database write on every page view.
+SESSION_REFRESH_AFTER_SECONDS = SESSION_MAX_AGE_SECONDS // 2
 SCRYPT_N = 2**14
 SCRYPT_R = 8
 SCRYPT_P = 1
@@ -106,6 +111,21 @@ def create_session(conn: sqlite3.Connection) -> Session:
     return Session(token, csrf_token)
 
 
+def transient_session(csrf_token: str | None = None) -> dict[str, str]:
+    """A session-shaped object that was never written down.
+
+    An open portal mints a session on a page load purely so forms have a CSRF
+    token; the row carries no authorisation. When the worker holds the writer
+    lock that insert cannot happen, and the choice is between failing the page
+    and rendering it with a token that will not be honoured later. Rendering
+    wins: reading Browse should not depend on a background scan finishing.
+
+    No cookie is set for one of these, so the next request tries again and
+    gets a real session the moment the lock frees.
+    """
+    return {"csrf_token": csrf_token or secrets.token_urlsafe(32), "transient": "1"}
+
+
 def session_row(conn: sqlite3.Connection, token: str) -> sqlite3.Row | None:
     return conn.execute(
         "SELECT * FROM sessions WHERE token_hash=?", (_token_hash(token),)
@@ -113,20 +133,39 @@ def session_row(conn: sqlite3.Connection, token: str) -> sqlite3.Row | None:
 
 
 def session_from_request(conn: sqlite3.Connection, request: Request) -> sqlite3.Row | None:
+    """Validate the session cookie. Reads; writes only when it has to.
+
+    This used to extend the expiry on *every* request — a SQLite write on the
+    render path of every page in the portal, competing with the worker for the
+    single writer lock. Pushing a seven-day window out by a few milliseconds
+    is not worth a write, so the refresh now happens only once the session is
+    past halfway, which is the same sliding behaviour with three orders of
+    magnitude fewer writes.
+    """
     token = request.cookies.get(SESSION_COOKIE)
     if not token:
         return None
     row = conn.execute(
         "SELECT * FROM sessions WHERE token_hash=?", (_token_hash(token),)
     ).fetchone()
-    if row is None or int(row["expires_at"]) < int(time.time()):
+    now = int(time.time())
+    if row is None or int(row["expires_at"]) < now:
         if row is not None:
-            conn.execute("DELETE FROM sessions WHERE token_hash=?", (row["token_hash"],))
+            # Tidying up, not a precondition: the caller gets None regardless.
+            best_effort_write(
+                conn,
+                "DELETE FROM sessions WHERE token_hash=?",
+                (row["token_hash"],),
+                what="expired session cleanup",
+            )
         return None
-    expires = int(time.time()) + SESSION_MAX_AGE_SECONDS
-    conn.execute(
-        "UPDATE sessions SET expires_at=? WHERE token_hash=?", (str(expires), row["token_hash"])
-    )
+    if int(row["expires_at"]) - now < SESSION_REFRESH_AFTER_SECONDS:
+        best_effort_write(
+            conn,
+            "UPDATE sessions SET expires_at=? WHERE token_hash=?",
+            (str(now + SESSION_MAX_AGE_SECONDS), row["token_hash"]),
+            what="session expiry refresh",
+        )
     return row
 
 

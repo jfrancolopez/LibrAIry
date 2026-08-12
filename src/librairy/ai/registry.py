@@ -88,9 +88,23 @@ def set_provider_order(conn: sqlite3.Connection, order: list[str]) -> None:
 
 
 def ollama_endpoints(conn: sqlite3.Connection, settings: Settings) -> list[dict[str, object]]:
-    _ollama_configs(conn, settings)
-    value = _setting_json(conn, "ai.ollama.endpoints") or []
-    return [dict(endpoint) for endpoint in value]
+    """The endpoints Settings edits: whatever is stored, else the defaults.
+
+    Falls back to the computed defaults rather than to an empty list, because
+    they are no longer written to the database just for having been looked at.
+    """
+    stored = _setting_json(conn, "ai.ollama.endpoints")
+    if stored is not None:
+        return [dict(endpoint) for endpoint in stored]
+    return [
+        {
+            "name": config.name,
+            "url": config.endpoint,
+            "model": config.model,
+            "enabled": config.enabled,
+        }
+        for config in _ollama_configs(conn, settings)
+    ]
 
 
 def set_ollama_endpoints(conn: sqlite3.Connection, endpoints: list[dict[str, object]]) -> None:
@@ -158,10 +172,11 @@ def _ollama_configs(conn: sqlite3.Connection, settings: Settings) -> list[Provid
                     "enabled": bool(settings.ollama_host),
                 }
             )
-        conn.execute(
-            "INSERT OR REPLACE INTO settings(key, value) VALUES (?, ?)",
-            ("ai.ollama.endpoints", json.dumps(endpoints)),
-        )
+        # Deliberately not persisted. This runs on the first render of any
+        # page -- the header asks for the provider chain -- and seeding
+        # defaults from a read path made drawing a page a database write.
+        # The defaults are computed the same way every time, and Settings
+        # writes the real row when you save one.
     return [
         ProviderConfig(
             name=str(endpoint["name"]),

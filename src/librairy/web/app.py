@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import sqlite3
 from html import escape
 from pathlib import Path
@@ -27,7 +28,7 @@ from librairy.backup import request_backup_now
 from librairy.catalog_probe import UnknownCatalog, probe_catalog
 from librairy.catalogs import catalog_enabled
 from librairy.config import Settings
-from librairy.db import connect
+from librairy.db import connect, impatient, is_locked
 from librairy.dedup import DedupConfigError
 from librairy.filetypes import aria_label as ext_aria_label
 from librairy.filetypes import extension_info
@@ -78,6 +79,7 @@ from librairy.web.auth import (
     session_from_request,
     session_row,
     set_admin_password,
+    transient_session,
     verify_admin_password,
     welcome_banner_visible,
 )
@@ -138,6 +140,7 @@ def _backup_categories(form) -> str:  # noqa: ANN001 - starlette FormData
     return ",".join(sorted(chosen))
 
 
+LOGGER = logging.getLogger(__name__)
 PACKAGE_DIR = Path(__file__).parent
 TEMPLATES = Jinja2Templates(directory=PACKAGE_DIR / "templates")
 
@@ -1352,9 +1355,24 @@ def _auth_and_security(conn: sqlite3.Connection, settings: Settings):
         ):
             # Open portal: mint a session on page loads so CSRF tokens and the
             # session-shaped template context keep working without a login.
-            issued = create_session(conn)
-            issued_token = issued.token
-            session = session_row(conn, issued.token)
+            #
+            # This insert is the one write an ordinary page render still needs,
+            # and it must not be able to fail the page. A worker holding the
+            # SQLite writer lock for longer than the busy timeout used to turn
+            # a first visit to Browse into a 500; now the page renders with a
+            # session that was never persisted and no cookie is set, so the
+            # next request mints a real one.
+            try:
+                with impatient(conn):
+                    issued = create_session(conn)
+            except sqlite3.OperationalError as exc:
+                if not is_locked(exc):
+                    raise
+                LOGGER.warning("rendering without a persisted session: %s", exc)
+                session = transient_session()
+            else:
+                issued_token = issued.token
+                session = session_row(conn, issued.token)
         request.state.session = session
         if _protected_path(path) and session is None:
             # An open portal has no login to send anyone to: a session-less
