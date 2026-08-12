@@ -183,7 +183,7 @@ def resolve_group(
     src_relpath = row["relpath"]
     dest_relpath = row["dest_relpath"]
     if not dest_relpath:
-        raise CorrectionRefused("this finding has no destination to move to")
+        raise CorrectionRefused("this row has no destination to move to")
     if _in_dvd_structure(src_relpath) or _in_dvd_structure(dest_relpath):
         # A DVD rip is a structure, not a collection of files. VIDEO_TS.IFO
         # points at its siblings by name and position; lifting one .VOB out of
@@ -318,7 +318,7 @@ def _assert_movable(conn: sqlite3.Connection, settings: Settings, affected: Affe
 def load_finding(conn: sqlite3.Connection, finding_id: int) -> sqlite3.Row:
     row = conn.execute("SELECT * FROM audit_findings WHERE id=?", (finding_id,)).fetchone()
     if row is None:
-        raise CorrectionRefused("that finding no longer exists")
+        raise CorrectionRefused("that row no longer exists")
     return row
 
 
@@ -373,13 +373,19 @@ def accept_correction(conn: sqlite3.Connection, settings: Settings, finding_id: 
 
 
 def _refusal(row: sqlite3.Row, state: str) -> str:
+    """Why this cannot be accepted, in words that reach the page.
+
+    These sentences are read by a person on Review, so they avoid the words
+    this module thinks in. "Finding" is a row in a table; what the reader has
+    is a file and an observation about it.
+    """
     from librairy.audit import EXECUTABLE_KINDS
 
     if row["kind"] not in EXECUTABLE_KINDS or not row["dest_relpath"]:
-        return "this finding is an observation and has no correction to apply"
+        return "this is an observation, and no move answers it"
     if state == MISSING:
         return "this file is not on disk, so there is nothing to correct"
-    return "this finding needs re-analysis: the file changed after it was made"
+    return "this file changed after it was audited and needs re-analysis"
 
 
 def settle_plan(conn: sqlite3.Connection, plan_id: str) -> None:

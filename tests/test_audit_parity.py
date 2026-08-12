@@ -494,6 +494,7 @@ def test_bulk_accept_only_touches_the_eligible_ones(tmp_path: Path) -> None:
 
     assert "Accepted 1 of 2" in result
     assert "observation" in result
+    assert result.endswith(".")
     assert conn.execute("SELECT COUNT(*) FROM plans").fetchone()[0] == 1
 
 
@@ -507,6 +508,8 @@ def test_a_mixed_selection_is_explained_rather_than_silently_trimmed(
     result = apply_audit_bulk(conn, settings, "accept", list(findings_by_path(conn).values()))
 
     assert "Nothing was accepted" in result
+    assert "re-analysis" in result
+    assert "observation" in result
     assert conn.execute("SELECT COUNT(*) FROM plans").fetchone()[0] == 0
     assert conn.execute(
         "SELECT status FROM audit_findings WHERE id=?", (stale,)
@@ -639,3 +642,83 @@ def test_the_row_is_not_a_clickable_container(tmp_path: Path) -> None:
     assert "onclick" not in template
     assert 'class="audit-row' in template
     assert "hx-get" not in template.split('class="audit-row', 1)[1].split("audit-body")[0]
+
+
+# --- mobile -------------------------------------------------------------------
+
+
+def audit_css() -> str:
+    css = Path("src/librairy/web/static/pipboy.css").read_text(encoding="utf-8")
+    return css.split("/* --- Library audit")[1].split("/* --- File type info")[0]
+
+
+def test_nothing_in_an_audit_row_is_wider_than_the_screen() -> None:
+    """375px is the target. A fixed width in ch or px on a path, a bar or a
+    button row is how a page starts scrolling sideways."""
+    for rule in re.findall(r"[^{}]+\{[^}]*\}", audit_css()):
+        if "max-width" in rule or "@media" in rule:
+            continue
+        fixed = re.findall(r"[^-]width:\s*(\d+)(px|rem|ch)", rule)
+        for value, unit in fixed:
+            # 8rem is the evidence bar, which the mobile block widens to 100%.
+            assert not (unit == "px" and int(value) > 320), rule.strip()[:80]
+
+
+def test_long_paths_wrap_instead_of_pushing_the_page_sideways() -> None:
+    css = audit_css()
+
+    assert "word-break: break-all" in css.split(".audit-paths dd")[1].split("}")[0]
+    assert "word-break: break-word" in css.split(".audit-title")[1].split("}")[0]
+
+
+def test_the_evidence_bar_goes_full_width_on_a_phone() -> None:
+    css = Path("src/librairy/web/static/pipboy.css").read_text(encoding="utf-8")
+    mobile = [
+        block.split("\n}")[0]
+        for block in css.split("@media (max-width: 40rem) {")[1:]
+        if ".audit-evidence" in block.split("\n}")[0]
+    ]
+
+    assert mobile
+    assert "width: 100%" in mobile[0]
+
+
+def test_the_secondary_tray_stacks_on_a_phone() -> None:
+    css = Path("src/librairy/web/static/pipboy.css").read_text(encoding="utf-8")
+    mobile = [
+        block.split("\n}")[0]
+        for block in css.split("@media (max-width: 40rem) {")[1:]
+        if ".audit-tray" in block.split("\n}")[0]
+    ]
+
+    assert mobile
+    assert "grid-template-columns: 1fr" in mobile[0]
+
+
+def test_an_already_accepted_correction_is_not_offered_again(tmp_path: Path) -> None:
+    """The toolbar's eligible count has to match what the button will do."""
+    client, conn, settings = scene(tmp_path, correction())
+    accept_correction(conn, settings, findings_by_path(conn)[TRACK])
+
+    section = rows(client.get("/review").text)
+
+    assert "data-audit-eligible" not in section
+    assert 'name="finding_id"' in section
+
+
+def test_every_refusal_reason_is_reported_not_just_the_first(tmp_path: Path) -> None:
+    client, conn, settings = scene(
+        tmp_path,
+        correction(),
+        correction(LYRICS, "Music/Rock/x.lrc"),
+        observation(),
+        files=(TRACK, LYRICS, f"{ALBUM}/01.flac"),
+    )
+    accept_correction(conn, settings, findings_by_path(conn)[TRACK])
+    (settings.library_dir / LYRICS).write_text("changed", encoding="utf-8")
+
+    result = apply_audit_bulk(conn, settings, "accept", list(findings_by_path(conn).values()))
+
+    assert "already waiting" in result
+    assert "re-analysis" in result
+    assert "observation" in result

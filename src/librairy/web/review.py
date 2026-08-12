@@ -906,12 +906,13 @@ def apply_audit_bulk(
             accepted += 1
     if not refused:
         return f"Accepted {accepted} correction(s). Nothing has moved yet — commit to apply."
+    # Every distinct reason, not just the first. "4 could not be accepted:
+    # already waiting for Commit" is actively misleading when two of them were
+    # actually observations and one had changed on disk.
+    reasons = "; ".join(dict.fromkeys(refused))
     if not accepted:
-        return f"Nothing was accepted: {refused[0]}"
-    return (
-        f"Accepted {accepted} of {len(rows)}. "
-        f"{len(refused)} could not be accepted: {refused[0]}"
-    )
+        return f"Nothing was accepted. {reasons}."
+    return f"Accepted {accepted} of {len(rows)}. {len(refused)} could not be: {reasons}."
 
 
 def _corrigible(row: sqlite3.Row) -> bool:

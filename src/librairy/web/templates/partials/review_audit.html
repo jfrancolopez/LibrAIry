@@ -19,8 +19,11 @@
 {% macro audit_row(finding, csrf_token) %}
 <li class="audit-row audit-{{ finding.severity }} audit-is-{{ finding.status_kind }}">
   <label class="audit-pick">
+    {# Eligible means "accepting this would work", which an already-approved
+       correction is not — it would be refused as a duplicate. The count in
+       the toolbar has to match what the button will actually do. #}
     <input form="audit-actions" type="checkbox" name="finding_id" value="{{ finding.id }}"
-           {% if finding.executable %}data-audit-eligible="1"{% endif %}
+           {% if finding.executable and not finding.accepted %}data-audit-eligible="1"{% endif %}
            aria-label="Select library audit finding for {{ finding.current }}">
   </label>
 
