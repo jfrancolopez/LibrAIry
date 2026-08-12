@@ -1,13 +1,190 @@
 {% from "partials/ext_info.html" import ext_info %}
 {# Library Audit findings.
 
-   Deliberately outside the inbox <form> above. The bulk toolbar there acts on
-   checkboxes inside that form, so a finding about a file already in the
-   library cannot be swept up by "Approve all confident" — the page structure
-   guarantees it rather than a filter someone has to remember.
+   Same quality of interaction as the inbox queue, different semantics. It
+   reuses the inbox row's grammar — selection, name-first hierarchy, evidence
+   bar, Why panel, Preview, a `⋯` for the rare actions — because a second way
+   of doing the same thing is a second thing to learn and a second thing to
+   let drift.
+
+   What stays different is everything about *meaning*. Deliberately outside the
+   inbox <form>: the bulk toolbar there acts on checkboxes inside that form, so
+   a finding about a file you already own cannot be swept up by "Approve all
+   confident". The page structure guarantees it, not a filter someone has to
+   remember. The audit's own selection posts a different field name to a
+   different endpoint.
 
    Every row carries the words LIBRARY AUDIT. The purple edge reinforces it and
-   is never the only thing saying it: colour is not a label. #}
+   is never the only thing saying it. #}
+{% macro audit_row(finding, csrf_token) %}
+<li class="audit-row audit-{{ finding.severity }} audit-is-{{ finding.status_kind }}">
+  <label class="audit-pick">
+    <input form="audit-actions" type="checkbox" name="finding_id" value="{{ finding.id }}"
+           {% if finding.executable %}data-audit-eligible="1"{% endif %}
+           aria-label="Select library audit finding for {{ finding.current }}">
+  </label>
+
+  <div class="audit-body">
+    <div class="audit-row-head">
+      <span class="badge badge-audit">LIBRARY AUDIT</span>
+      <span class="badge badge-status-{{ finding.status_kind }}">{{ finding.status_label }}</span>
+      <span class="badge">{{ finding.label }}</span>
+      {# "worth acting on" only where it is true. The old row also carried a
+         "your call" badge on everything else, which said nothing the buttons
+         below did not already say. #}
+      {% if finding.severity == 'high' %}<span class="badge badge-warn">Worth acting on</span>{% endif %}
+    </div>
+
+    {# Name first, like the inbox row. What this is, then why, then where. #}
+    <h3 class="audit-title" title="{{ finding.current }}">{{ finding.title }}{% if finding.is_file %}{{ ext_info(finding.current) }}{% endif %}</h3>
+    <p class="audit-summary">{{ finding.summary }}</p>
+
+    <dl class="audit-paths">
+      <dt>Current</dt>
+      <dd>{{ finding.current }}</dd>
+      {# No "suggested" line at all for an observation. A finding with nowhere
+         to go must not look as though it has somewhere to go. #}
+      {% if finding.suggested %}
+      <dt>Suggested</dt>
+      <dd>{{ finding.suggested }}</dd>
+      {% endif %}
+    </dl>
+
+    {# Where the information came from. Composition, not a score: the audit
+       records a weight per piece of evidence and never adds them up, so a
+       percentage here would be decoration presented as measurement. #}
+    {% if finding.evidence_mix %}
+    <p class="audit-evidence">
+      <span class="conf-track" role="img" aria-label="Evidence {{ finding.evidence_caption }}"
+            title="{{ finding.evidence_caption }}">
+        {% for segment in finding.evidence_mix %}
+        <span class="conf-part is-{{ segment.kind }}" style="width: {{ segment.width_pct }}%"></span>
+        {% endfor %}
+      </span>
+      <span class="muted">{{ finding.sources|join(' · ') }}</span>
+    </p>
+    {% endif %}
+
+    {% if finding.show_stale %}
+    {# The file changed after it was looked at. No scary language and no
+       automatic correction: evidence that has stopped describing reality gets
+       looked at again rather than rewritten behind the user's back. #}
+    <p class="audit-stale">{{ finding.state_detail }}</p>
+    {% elif finding.blocked %}
+    <p class="audit-stale"><span class="badge">NOT YET</span> {{ finding.blocked }}</p>
+    {% endif %}
+
+    <div class="audit-actions">
+      {% if finding.accepted %}
+        <span class="audit-accepted">Approved · nothing has moved yet</span>
+        <a class="btn btn-ghost" href="/commit">View Commit</a>
+      {% else %}
+        {% if finding.executable %}
+        <form method="post" action="/review/audit/{{ finding.id }}/accept">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button type="submit" class="btn-primary">Accept correction</button>
+        </form>
+        {% elif finding.offer_reaudit %}
+        <form method="post" action="/review/audit/{{ finding.id }}/reaudit">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button type="submit">Re-audit</button>
+        </form>
+        {% endif %}
+        {# Separate forms rather than one form with two buttons: nested forms
+           are invalid and the CSP forbids the inline JS that would avoid them. #}
+        <form method="post" action="/review/audit/{{ finding.id }}/keep">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button type="submit">No change</button>
+        </form>
+      {% endif %}
+
+      <span class="action-gap"></span>
+      {% if finding.can_preview %}
+      <button type="button" class="btn-ghost"
+        hx-get="/preview/items/{{ finding.item_id }}"
+        hx-target="#audit-preview-{{ finding.id }}"
+        hx-swap="innerHTML"
+        title="The file as it is now, where it is now">Preview</button>
+      {% endif %}
+      <button type="button" class="btn-ghost" data-panel-toggle="audit-why-{{ finding.id }}">Why</button>
+      {% if finding.browse_href or finding.item_id or (finding.executable and finding.state == 'current') %}
+      <button type="button" class="btn-ghost btn-more" data-panel-toggle="audit-more-{{ finding.id }}"
+              aria-label="More actions for {{ finding.current }}"
+              title="Open in Browse, item details">⋯</button>
+      {% endif %}
+    </div>
+
+    {# Only actions that can actually succeed. A menu padded out with dead
+       controls is worse than a shorter menu. #}
+    <div id="audit-more-{{ finding.id }}" class="audit-tray" hidden>
+      {% if finding.browse_href %}
+      <a class="btn btn-ghost" href="{{ finding.browse_href }}">Open in Browse</a>
+      <span class="muted">The folder this file is in now, on disk.</span>
+      {% endif %}
+      {% if finding.item_id %}
+      <a class="btn btn-ghost" href="/items/{{ finding.item_id }}">View details</a>
+      <span class="muted">Everything LibrAIry has recorded about this file.</span>
+      {% endif %}
+      {% if finding.executable and finding.state == 'current' and not finding.accepted %}
+      <form method="post" action="/review/audit/{{ finding.id }}/reaudit">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button type="submit" class="btn-ghost">Re-audit</button>
+      </form>
+      <span class="muted">Look at this folder again and record what is true now.</span>
+      {% endif %}
+    </div>
+
+    {# Everything that will move, before it moves. Collapsed, so a correction
+       with companions does not make the row three times taller. #}
+    {% if finding.affected_count > 1 %}
+    <details class="audit-affected">
+      <summary>Moves {{ finding.affected_count }} files</summary>
+      <ul>
+        {% for item in finding.affected %}
+        <li>
+          <span class="badge">{{ item.role }}</span>
+          {{ item.name }}{{ ext_info(item.name) }}
+          {% if item.reason %}<span class="muted">— {{ item.reason }}</span>{% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+    </details>
+    {% endif %}
+
+    {# A panel rather than a <details>, matching the inbox row: inside a button
+       row a details is as narrow as its summary while its contents keep their
+       own width, which pushes the page sideways on a phone. #}
+    <div id="audit-why-{{ finding.id }}" class="why" hidden>
+      <h4 class="why-head">Why this was flagged</h4>
+      <ul class="why-list">
+        {% for view in finding.evidence_views %}
+        <li>
+          <span class="badge badge-info">{{ view.label }}</span>
+          {{ view.text }}
+          <span class="muted">{{ view.weight_pct }}%</span>
+        </li>
+        {% else %}
+        <li class="muted">No evidence recorded.</li>
+        {% endfor %}
+      </ul>
+      <dl class="why-paths">
+        <dt>Current path</dt><dd>{{ finding.current }}</dd>
+        {% if finding.suggested %}<dt>Suggested path</dt><dd>{{ finding.suggested }}</dd>{% endif %}
+      </dl>
+      {# The percentage beside each line is that piece of evidence's own
+         weight, which is what the detector recorded. There is no audit-wide
+         score, and the page does not invent one. #}
+      <p class="muted why-note">
+        Each percentage is how much that one signal is trusted. LibrAIry does not
+        add them into a single score for audit findings.
+      </p>
+    </div>
+
+    <div id="audit-preview-{{ finding.id }}" class="audit-preview"></div>
+  </div>
+</li>
+{% endmacro %}
+
 {% if audit_groups %}
 <section class="audit" id="library-audit">
   <header class="audit-head">
@@ -18,98 +195,56 @@
       waiting to come in — nothing here has been changed, and nothing here
       changes unless you say so.
     </p>
+    {# What the last bulk action actually did, including what it declined to
+       do. A mixed selection that quietly accepted one of three would be the
+       worst possible outcome on a page that moves files you already own. #}
+    {% if notice %}<p class="status ok audit-notice">{{ notice }}</p>{% endif %}
   </header>
 
+  {# Its own form, its own field name, its own endpoint. An inbox bulk action
+     posts `proposal_id` to /review/action; this posts `finding_id` to
+     /review/audit/bulk, and neither will accept the other's ids. #}
+  <form id="audit-actions" class="audit-toolbar"
+        method="post" action="/review/audit/bulk">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="toolbar-group">
+      <label class="all-matching"><input type="checkbox" class="audit-select-all">
+        Select all findings</label>
+      <strong class="selected-count" data-audit-selected-count></strong>
+    </div>
+    <div class="toolbar-group" data-audit-selection-only hidden>
+      <button type="submit" name="action" value="accept" class="btn-primary"
+              data-audit-needs-eligible
+              hx-confirm="Accept the selected corrections? Nothing moves until you commit.">
+        Accept corrections</button>
+      <button type="submit" name="action" value="keep" data-audit-needs-selection>No change</button>
+      <button type="submit" name="action" value="reaudit" data-audit-needs-selection>Re-audit</button>
+      <button type="button" class="btn-ghost audit-clear">Clear selection</button>
+      {# Filled in by review.js from the rows themselves, so a selection that
+         mixes an executable correction with two observations says so before
+         the button is pressed rather than afterwards. #}
+      <span class="muted" data-audit-eligibility></span>
+    </div>
+  </form>
+
   {% for group in audit_groups %}
-  <details class="audit-group" {% if loop.first %}open{% endif %}>
-    <summary>
-      <span class="audit-folder">{{ group.folder }}</span>
-      <span class="muted">{{ group.count }} finding{{ '' if group.count == 1 else 's' }}</span>
-    </summary>
-    <ul class="audit-list">
-      {% for finding in group.findings %}
-      <li class="audit-row audit-{{ finding.severity }}">
-        <div class="audit-row-head">
-          <span class="badge badge-audit">LIBRARY AUDIT</span>
-          <span class="badge">{{ finding.label }}</span>
-          {% if finding.severity == 'high' %}<span class="badge badge-warn">worth acting on</span>
-          {% else %}<span class="badge">your call</span>{% endif %}
-        </div>
-        <p class="audit-summary">{{ finding.summary }}</p>
-        <dl class="audit-paths">
-          <dt>Currently</dt>
-          <dd>{{ finding.current }}{{ ext_info(finding.current) }}</dd>
-          {# No "suggested" line at all for an observation. A finding with
-             nowhere to go must not look as though it has somewhere to go. #}
-          {% if finding.suggested %}
-          <dt>Suggested</dt>
-          <dd>{{ finding.suggested }}</dd>
-          {% endif %}
-        </dl>
-        {% if finding.why %}<p class="muted audit-why">{{ finding.why }}</p>{% endif %}
-
-        {# The file changed after it was looked at. No scary language and no
-           automatic correction: the finding is evidence, and evidence that has
-           stopped describing reality gets looked at again rather than
-           rewritten behind the user's back. #}
-        {% if finding.state != 'current' %}
-        <p class="audit-stale">
-          <span class="badge badge-stale">{{ finding.state_label | upper }}</span>
-          {{ finding.state_detail }}
-        </p>
-        {% elif finding.blocked %}
-        <p class="audit-stale">
-          <span class="badge">NOT YET</span> {{ finding.blocked }}
-        </p>
-        {% endif %}
-
-        {# Everything that will move, before it moves. A correction that turned
-           out to touch four files only after Commit would be a surprise, and a
-           surprise is the one thing this workflow cannot afford. #}
-        {% if finding.affected_count > 1 %}
-        <details class="audit-affected">
-          <summary>{{ finding.affected_count }} files will move</summary>
-          <ul>
-            {% for item in finding.affected %}
-            <li>
-              <span class="badge">{{ 'primary' if item.role == 'primary' else 'companion' }}</span>
-              {{ item.name }}{{ ext_info(item.name) }}
-              {% if item.reason %}<span class="muted">— {{ item.reason }}</span>{% endif %}
-            </li>
-            {% endfor %}
-          </ul>
-        </details>
-        {% endif %}
-
-        {% if finding.accepted %}
-        <p class="audit-accepted">
-          Approved correction · waiting for <a href="/commit">Commit</a>
-        </p>
-        {% else %}
-        {# Separate forms, not one form with two buttons: nested forms are
-           invalid and the CSP forbids the inline JS that would avoid them. #}
-        <div class="audit-actions">
-          {% if finding.executable %}
-          <form method="post" action="/review/audit/{{ finding.id }}/accept">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <button type="submit" class="primary">Accept correction</button>
-          </form>
-          {% elif finding.state == 'stale' %}
-          <form method="post" action="/review/audit/{{ finding.id }}/reaudit">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <button type="submit">Re-audit</button>
-          </form>
-          {% endif %}
-          <form method="post" action="/review/audit/{{ finding.id }}/keep">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <button type="submit">Keep as it is</button>
-          </form>
-        </div>
-        {% endif %}
-      </li>
-      {% endfor %}
+    {% if group.count > 1 %}
+    {# A heading per folder only where it groups something. Six headings for
+       six single findings is six lines of furniture. #}
+    <details class="audit-group" open>
+      <summary>
+        <span class="audit-folder">{{ group.folder }}</span>
+        <span class="muted">{{ group.count }} items</span>
+      </summary>
+      <ul class="audit-list">
+        {% for finding in group.findings %}{{ audit_row(finding, csrf_token) }}{% endfor %}
+      </ul>
+    </details>
+    {% else %}
+    <ul class="audit-list audit-list-loose">
+      {% for finding in group.findings %}{{ audit_row(finding, csrf_token) }}{% endfor %}
     </ul>
-  </details>
+    {% endif %}
   {% endfor %}
 </section>
 {% endif %}

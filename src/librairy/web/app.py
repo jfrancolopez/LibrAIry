@@ -113,6 +113,7 @@ from librairy.web.quarantine import (
 )
 from librairy.web.review import (
     action_toast,
+    apply_audit_bulk,
     apply_review_action,
     duplicate_comparison,
     edit_proposal,
@@ -783,6 +784,40 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         """
         keep_as_is(conn, finding_id)
         return RedirectResponse("/review#library-audit", status_code=303)
+
+    @app.post("/review/audit/bulk", include_in_schema=False)
+    def review_audit_bulk(
+        request: Request,
+        action: Annotated[str, Form()] = "",
+        finding_id: Annotated[list[int], Form()] = [],  # noqa: B006 - starlette form list
+    ) -> HTMLResponse:
+        """Bulk actions over Library Audit findings, and nothing else.
+
+        The field is `finding_id`, not `proposal_id`, and it is read here and
+        nowhere else. An inbox bulk action posts `proposal_id` to
+        /review/action and could not name a finding if it tried; this endpoint
+        could not name a proposal. The separation is the two signatures, not a
+        filter inside a shared handler.
+
+        Ineligible selections are reported, never silently skipped: a mixed
+        selection that quietly accepted one of three would be the worst
+        possible outcome on a page that moves files you already own.
+        """
+        try:
+            result = apply_audit_bulk(conn, settings, action, finding_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        # Rendered rather than redirected, so the sentence can name a file
+        # without putting a library path into a URL.
+        return TEMPLATES.TemplateResponse(
+            request,
+            "review.html",
+            {
+                "title": "Review",
+                **review_data(conn, filters_from_query(), settings),
+                "notice": result,
+            },
+        )
 
     @app.post("/review/audit/{finding_id}/accept", include_in_schema=False)
     def review_audit_accept(

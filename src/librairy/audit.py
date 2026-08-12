@@ -425,8 +425,8 @@ def _tag_path_mismatches(view: LibraryView) -> list[Finding]:
                 summary=f"Tagged {artist!r} but filed under {folder_artist!r}.",
                 dest_relpath=dest,
                 evidence=[
-                    EvidenceEntry("embedded-tags", "artist", artist, 0.9),
-                    EvidenceEntry("embedded-tags", "album", album, 0.8) if album else None,
+                    EvidenceEntry("tags", "artist", artist, 0.9),
+                    EvidenceEntry("tags", "album", album, 0.8) if album else None,
                     EvidenceEntry("filesystem", "current folder", folder_artist, 0.9),
                     EvidenceEntry("library-pattern", "existing folder", home, 0.85),
                 ],

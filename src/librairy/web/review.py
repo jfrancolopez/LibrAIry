@@ -10,6 +10,8 @@ from librairy.classify.images import vision_disagrees, vision_for_items
 from librairy.config import Settings
 from librairy.corrections import (
     CURRENT,
+    MISSING,
+    STALE,
     STATE_LABEL,
     CorrectionRefused,
     describe_state,
@@ -39,7 +41,13 @@ from librairy.review_undo import record as record_undo
 from librairy.review_undo import snapshot_proposals
 from librairy.search import sync_search_item
 from librairy.taxonomy import CATEGORIES, render_destination
-from librairy.web.evidence import confidence_caption, confidence_segments, humanize_evidence
+from librairy.web.evidence import (
+    confidence_caption,
+    confidence_segments,
+    evidence_caption,
+    evidence_mix,
+    humanize_evidence,
+)
 
 PAGE_SIZE = 50
 DEFAULT_CATEGORY_FIELDS = {
@@ -838,6 +846,114 @@ def audit_view(
     ]
 
 
+AUDIT_BULK_ACTIONS = ("accept", "keep", "reaudit")
+
+
+def apply_audit_bulk(
+    conn: sqlite3.Connection,
+    settings: Settings,
+    action: str,
+    finding_ids: list[int],
+) -> str:
+    """Act on selected Library Audit findings, and say exactly what happened.
+
+    Only ever reads `audit_findings`. There is no path from here to a proposal:
+    every id is looked up in the findings table, so an inbox id simply does not
+    resolve — and the caller's field is named `finding_id`, so one cannot be
+    passed by accident either.
+
+    Returns a sentence for the page, because "accepted 1 of 3" is the whole
+    point of allowing a mixed selection at all.
+    """
+    from librairy.audit import audit_library, keep_as_is, sanitize_scope
+    from librairy.corrections import CorrectionRefused, accept_correction
+
+    if action not in AUDIT_BULK_ACTIONS:
+        raise ValueError(f"unknown audit action: {action}")
+    rows = [
+        row
+        for row in (
+            conn.execute("SELECT * FROM audit_findings WHERE id=?", (finding_id,)).fetchone()
+            for finding_id in finding_ids
+        )
+        if row is not None
+    ]
+    if not rows:
+        return "Nothing was selected."
+
+    if action == "keep":
+        for row in rows:
+            keep_as_is(conn, row["id"])
+        return f"Marked {len(rows)} as no change."
+
+    if action == "reaudit":
+        # One audit per distinct folder, not one per row: re-auditing the same
+        # folder five times is the same answer five times, slowly.
+        folders = {row["relpath"].rpartition("/")[0] for row in rows}
+        for folder in sorted(folders):
+            audit_library(
+                conn, settings, scope=sanitize_scope(folder, settings.library_dir)
+            )
+        return f"Looked again at {len(folders)} folder(s)."
+
+    accepted, refused = 0, []
+    for row in rows:
+        try:
+            accept_correction(conn, settings, row["id"])
+        except CorrectionRefused as exc:
+            refused.append(str(exc))
+        else:
+            accepted += 1
+    if not refused:
+        return f"Accepted {accepted} correction(s). Nothing has moved yet — commit to apply."
+    if not accepted:
+        return f"Nothing was accepted: {refused[0]}"
+    return (
+        f"Accepted {accepted} of {len(rows)}. "
+        f"{len(refused)} could not be accepted: {refused[0]}"
+    )
+
+
+def _corrigible(row: sqlite3.Row) -> bool:
+    """Could this kind of finding ever produce a move, staleness aside?"""
+    from librairy.audit import EXECUTABLE_KINDS
+
+    return row["kind"] in EXECUTABLE_KINDS and bool(row["dest_relpath"])
+
+
+def _audit_status(
+    row: sqlite3.Row, state: str, executable: bool, stale_matters: bool
+) -> tuple[str, str]:
+    """The chip on the row, in words a person would use.
+
+    Never the stored status value. `open`, `accepted` and `kept` are database
+    states; "Waiting for Commit" is what someone is actually looking at.
+
+    Staleness is only mentioned where it changes what you can do. An unindexed
+    file has no recorded hash, so it can never be *proved* unchanged — but
+    "Needs re-analysis" on an observation that is perfectly accurate would be
+    a warning about nothing, followed by a button that re-finds the same thing.
+    """
+    if row["status"] == "accepted":
+        return "waiting", "Waiting for Commit"
+    if row["status"] == "corrected":
+        return "corrected", "Corrected"
+    if row["status"] == "kept":
+        return "kept", "No change"
+    if state == MISSING:
+        return "missing", "Not on disk"
+    if state == STALE and stale_matters:
+        return "stale", "Needs re-analysis"
+    return ("correction", "Correction") if executable else ("observation", "Observation")
+
+
+def _audit_title(relpath: str, kind: str) -> str:
+    """What to call this row. A filename for a file, the folder's own name for
+    a finding about a folder — never an id, and never "audit finding #7"."""
+    name = PurePosixPath(relpath).name
+    return name or relpath if kind != "missing-artwork" else PurePosixPath(relpath).name
+
+
 def _audit_row(
     conn: sqlite3.Connection, settings: Settings | None, row: sqlite3.Row
 ) -> dict[str, object]:
@@ -877,23 +993,83 @@ def _audit_row(
             }
             for op in plan_files(conn, row["plan_id"])
         ]
+    views = humanize_evidence(row["evidence"]) if row["evidence"] else []
+    # A stale observation is still a true observation. Only a finding that
+    # could otherwise move a file has anything to gain from being looked at
+    # again, so only that one says so and only that one offers Re-audit.
+    stale_matters = state == STALE and _corrigible(row)
+    status_kind, status_label = _audit_status(row, state, executable, stale_matters)
+    # Preview resolves the item, which carries its *current* root and relpath —
+    # so it can only ever show the file where it is now, never the destination
+    # being suggested for it. A file that is not there gets no control at all.
+    can_preview = bool(row["item_id"]) and state != MISSING and not _is_folder(row)
     return {
         "id": row["id"],
         "kind": row["kind"],
         "label": KINDS.get(row["kind"], row["kind"]),
         "severity": row["severity"],
         "summary": row["summary"],
+        "title": _audit_title(row["relpath"], row["kind"]),
+        "is_file": not _is_folder(row),
         "current": row["relpath"],
         # Empty for an observation. The template must not render a
         # "suggested" line for a finding that has nowhere to suggest.
         "suggested": row["dest_relpath"] or "",
         "why": _why_summary(row["evidence"]),
+        "evidence_views": views,
+        "evidence_mix": evidence_mix(views),
+        "evidence_caption": evidence_caption(views),
+        "sources": _sources(views),
         "state": state,
         "state_label": STATE_LABEL[state],
         "state_detail": describe_state(row, state),
+        # What the template branches on: say "this changed" only where saying
+        # it leads somewhere.
+        "show_stale": stale_matters or state == MISSING,
+        "offer_reaudit": stale_matters,
+        "status_kind": status_kind,
+        "status_label": status_label,
         "executable": executable,
         "accepted": accepted,
         "blocked": blocked,
         "affected": affected,
         "affected_count": len(affected),
+        "item_id": row["item_id"],
+        "can_preview": can_preview,
+        "browse_href": _audit_browse_href(row["relpath"], state),
     }
+
+
+def _is_folder(row: sqlite3.Row) -> bool:
+    """Findings about an album or a folder have no filename and no extension."""
+    return row["kind"] in {"missing-artwork", "naming-inconsistency"}
+
+
+def _sources(views: list) -> list[str]:
+    """The distinct evidence labels, in order, for the one-line summary.
+
+    Only what was actually recorded. A source that contributed nothing is not
+    listed as having contributed nothing.
+    """
+    seen: list[str] = []
+    for view in views:
+        if view.label not in seen:
+            seen.append(view.label)
+    return seen
+
+
+def _audit_browse_href(relpath: str, state: str) -> str | None:
+    """Browse, at the folder the file is in *now*.
+
+    Built from the physical path, not from a category the classifier would
+    compute — the whole point of the link is to show where the file actually
+    is. Nothing to open if nothing is there.
+    """
+    if state == MISSING:
+        return None
+    parts = relpath.split("/")
+    if len(parts) < 2:
+        return None
+    category = parts[0].lower()
+    folder = "/".join(parts[1:-1])
+    return f"/browse/{category}?folder={folder}" if folder else f"/browse/{category}"

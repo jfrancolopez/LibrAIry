@@ -2367,12 +2367,73 @@ summary.timeline-head::-webkit-details-marker { display: none; }
 .audit-group summary { cursor: pointer; display: flex; gap: var(--space-3); flex-wrap: wrap; }
 .audit-folder { font-family: var(--font-mono); word-break: break-all; }
 .audit-list { list-style: none; margin: var(--space-3) 0 0; padding: 0; }
+.audit-list-loose { margin-top: 0; }
+.audit-notice { margin: 0 0 var(--space-3); }
+/* Its own toolbar, sitting above its own rows. The inbox toolbar is a
+   different element posting a different field to a different endpoint. */
+.audit-toolbar {
+  display: flex;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: var(--space-3);
+}
 .audit-row {
   border-left: 3px solid var(--audit);
   background: var(--bg-metric);
   padding: var(--space-3);
   margin-bottom: var(--space-3);
+  /* Checkbox in its own column, body in the other — the same two-column shape
+     the inbox row uses, so a page of both reads as one list of decisions. */
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--space-3);
+  align-items: start;
 }
+.audit-pick { padding-top: 0.2rem; }
+.audit-body { min-width: 0; }
+/* Name first, then why, then where: the same order as the inbox row. */
+.audit-title {
+  margin: var(--space-2) 0 var(--space-1);
+  font-size: 1rem;
+  word-break: break-word;
+}
+.audit-evidence {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 0 0 var(--space-2);
+}
+/* The composition bar is always full width: it says what the evidence is made
+   of, never how sure anything is. Length must not read as a score. */
+.audit-evidence .conf-track { width: 8rem; flex: none; }
+.audit-tray {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--space-2) var(--space-3);
+  align-items: center;
+  margin: 0 0 var(--space-2);
+}
+.audit-tray form { margin: 0; }
+.audit-preview:empty { display: none; }
+.why-head { margin: 0 0 var(--space-2); font-size: 0.95rem; }
+.why-paths {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--space-1) var(--space-3);
+  margin: var(--space-2) 0 0;
+}
+.why-paths dt { color: var(--text-dim); text-transform: uppercase; font-size: 0.8em; }
+.why-paths dd { margin: 0; font-family: var(--font-mono); word-break: break-all; }
+.why-note { margin: var(--space-2) 0 0; font-size: 0.85em; }
+/* Status chips. Neutral by default — a finding is information, not a fault. */
+.badge-status-correction { color: var(--audit); border-color: var(--audit); }
+.badge-status-observation,
+.badge-status-stale,
+.badge-status-missing { color: var(--text-dim); border-color: var(--border); }
+.badge-status-waiting { color: var(--audit); border-color: var(--audit); }
+.badge-status-corrected { color: var(--ok, var(--text-dim)); }
 .audit-row-head { display: flex; gap: var(--space-2); flex-wrap: wrap; align-items: center; }
 .badge-audit { color: var(--audit); border-color: var(--audit); letter-spacing: 0.08em; }
 .audit-summary { margin: var(--space-2) 0; }
@@ -2394,6 +2455,7 @@ summary.timeline-head::-webkit-details-marker { display: none; }
   gap: var(--space-2);
   align-items: baseline;
   flex-wrap: wrap;
+  color: var(--text-dim);
 }
 .badge-stale { color: var(--text-dim); border-color: var(--border); letter-spacing: 0.08em; }
 .audit-affected { margin: 0 0 var(--space-2); }
@@ -2434,10 +2496,17 @@ summary.timeline-head::-webkit-details-marker { display: none; }
 @media (max-width: 40rem) {
   .audit-paths { grid-template-columns: 1fr; gap: 0 0; }
   .audit-paths dt { margin-top: var(--space-2); }
-  /* Full-width targets rather than two buttons squeezed onto one line: the
-     accept and the keep must never be a mis-tap apart. */
-  .audit-actions { flex-direction: column; }
-  .audit-actions form, .audit-actions button { width: 100%; }
+  .why-paths { grid-template-columns: 1fr; gap: 0; }
+  .audit-tray { grid-template-columns: 1fr; }
+  /* Full-width targets rather than several buttons squeezed onto one line:
+     the accept and the no-change must never be a mis-tap apart. */
+  .audit-actions { flex-direction: column; align-items: stretch; }
+  .audit-actions form, .audit-actions button, .audit-actions .btn { width: 100%; }
+  .audit-actions .action-gap { display: none; }
+  /* The checkbox keeps its column; everything else gets the full width rather
+     than being squeezed into what is left beside it. */
+  .audit-row { gap: var(--space-2); }
+  .audit-evidence .conf-track { width: 100%; }
 }
 
 /* --- File type info ------------------------------------------------------

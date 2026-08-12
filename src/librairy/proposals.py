@@ -25,6 +25,16 @@ LOCAL_EVIDENCE_SOURCES = frozenset(
         # Not a catalog and not a guess: the file is *named* like cover art and
         # the folder it arrived in was identified as one album or film.
         "artwork",
+        # What the Library Audit reads. It records evidence in this same shape,
+        # and until these were listed here `decode_evidence` rejected every
+        # audit finding — so the evidence was stored faithfully and then thrown
+        # away by the one function that renders it, and every Why panel on the
+        # audit said "No evidence recorded".
+        #
+        # Neither is a catalog and neither is a guess: one is the shape of the
+        # library on disk, the other is the file's own bytes.
+        "filesystem",
+        "fingerprint",
         # The same idea for the files that describe media rather than being it
         # — subtitles, playlists, .nfo. Its own source because Review says
         # "Companion file", not "Cover art", when it explains one.

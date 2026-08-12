@@ -6,41 +6,109 @@
 //
 // Delegated from the document so it survives htmx swapping the list.
 (function () {
+  // Two selections on one page, and they must never touch. The inbox queue
+  // selects proposals; Library Audit selects findings about files you already
+  // own, and an inbox bulk action must be structurally incapable of receiving
+  // one. So each scope names its own field, its own container and its own
+  // toolbar, and every query below is scoped to one of them. One
+  // implementation, two configurations — not two copies to drift apart.
+  var SCOPES = [
+    {
+      field: "proposal_id",
+      root: "review-list",
+      group: ".review-group",
+      selectAll: "select-all",
+      count: "[data-selected-count]",
+      needs: "[data-needs-selection]",
+      only: "[data-selection-only]",
+      clear: null,
+      eligibility: null
+    },
+    {
+      field: "finding_id",
+      root: "library-audit",
+      group: ".audit-group",
+      selectAll: "audit-select-all",
+      count: "[data-audit-selected-count]",
+      needs: "[data-audit-needs-selection]",
+      only: "[data-audit-selection-only]",
+      clear: ".audit-clear",
+      eligibility: "[data-audit-eligibility]"
+    }
+  ];
+
+  function scopeFor(node) {
+    for (var i = 0; i < SCOPES.length; i++) {
+      var root = document.getElementById(SCOPES[i].root);
+      if (root && root.contains(node)) return SCOPES[i];
+      if (node.name === SCOPES[i].field) return SCOPES[i];
+      if (node.classList && node.classList.contains(SCOPES[i].selectAll)) return SCOPES[i];
+    }
+    return null;
+  }
+
   // A select-all in a group heading covers that group; the one in the toolbar
-  // sits outside every group and so covers the page.
-  function rowsUnder(header) {
-    var scope = header.closest(".review-group") || document.getElementById("review-list");
-    return scope
-      ? Array.prototype.slice.call(scope.querySelectorAll('input[name="proposal_id"]'))
+  // sits outside every group and so covers that scope's whole list.
+  function rowsUnder(header, scope) {
+    var container = header.closest(scope.group) || document.getElementById(scope.root);
+    return container
+      ? Array.prototype.slice.call(
+          container.querySelectorAll('input[name="' + scope.field + '"]')
+        )
       : [];
   }
 
-  function allBoxes() {
-    return Array.prototype.slice.call(
-      document.querySelectorAll('#review-list input[name="proposal_id"]')
-    );
+  function allBoxes(scope) {
+    var root = document.getElementById(scope.root);
+    return root
+      ? Array.prototype.slice.call(root.querySelectorAll('input[name="' + scope.field + '"]'))
+      : [];
   }
 
-  function refreshCount() {
-    var label = document.querySelector("[data-selected-count]");
+  function refreshCount(scope) {
+    var label = document.querySelector(scope.count);
     if (!label) return;
-    var selected = allBoxes().filter(function (box) {
+    var chosen = allBoxes(scope).filter(function (box) {
       return box.checked;
-    }).length;
+    });
+    var selected = chosen.length;
     label.textContent = selected ? selected + " selected" : "";
-    document.querySelectorAll("[data-needs-selection]").forEach(function (button) {
+    document.querySelectorAll(scope.needs).forEach(function (button) {
       button.disabled = selected === 0;
     });
     // Five disabled buttons held a permanent line in a sticky bar for a
     // selection that does not exist yet. They appear when they can be used.
-    document.querySelectorAll("[data-selection-only]").forEach(function (group) {
+    document.querySelectorAll(scope.only).forEach(function (group) {
       group.hidden = selected === 0;
     });
+    if (scope.eligibility) refreshEligibility(scope, chosen);
   }
 
-  function syncHeaders() {
-    document.querySelectorAll(".select-all").forEach(function (header) {
-      var boxes = rowsUnder(header);
+  // Mixed selections are explained before the button is pressed, not after.
+  // Selecting one correction and two observations must not look as though
+  // three things are about to be accepted.
+  function refreshEligibility(scope, chosen) {
+    var note = document.querySelector(scope.eligibility);
+    var eligible = chosen.filter(function (box) {
+      return box.dataset.auditEligible === "1";
+    }).length;
+    document.querySelectorAll("[data-audit-needs-eligible]").forEach(function (button) {
+      button.disabled = eligible === 0;
+      button.textContent =
+        eligible && eligible !== chosen.length
+          ? "Accept corrections (" + eligible + " eligible)"
+          : "Accept corrections";
+    });
+    if (!note) return;
+    var rest = chosen.length - eligible;
+    note.textContent = rest
+      ? rest + " of " + chosen.length + " cannot be accepted — observations, or changed since the audit"
+      : "";
+  }
+
+  function syncHeaders(scope) {
+    document.querySelectorAll("." + scope.selectAll).forEach(function (header) {
+      var boxes = rowsUnder(header, scope);
       var checked = boxes.filter(function (box) {
         return box.checked;
       }).length;
@@ -50,18 +118,42 @@
     });
   }
 
+  function refreshAll() {
+    SCOPES.forEach(function (scope) {
+      syncHeaders(scope);
+      refreshCount(scope);
+    });
+  }
+
   document.addEventListener("change", function (event) {
     var target = event.target;
-    if (target.classList && target.classList.contains("select-all")) {
+    var scope = scopeFor(target);
+    if (!scope) return;
+    if (target.classList && target.classList.contains(scope.selectAll)) {
       var checked = target.checked;
-      rowsUnder(target).forEach(function (box) {
+      rowsUnder(target, scope).forEach(function (box) {
         box.checked = checked;
       });
-    } else if (!(target.name === "proposal_id")) {
+    } else if (target.name !== scope.field) {
       return;
     }
-    syncHeaders();
-    refreshCount();
+    syncHeaders(scope);
+    refreshCount(scope);
+  });
+
+  // Clearing one selection leaves the other exactly as it was.
+  document.addEventListener("click", function (event) {
+    var button = event.target.closest(".audit-clear");
+    if (!button) return;
+    var scope = SCOPES[1];
+    allBoxes(scope).forEach(function (box) {
+      box.checked = false;
+    });
+    document.querySelectorAll("." + scope.selectAll).forEach(function (header) {
+      header.checked = false;
+      header.indeterminate = false;
+    });
+    refreshCount(scope);
   });
 
   // "Change…" and "Cancel" open and close the edit panel. A <details> would
@@ -92,7 +184,14 @@
   // already said so; a single click should too.
   document.body.addEventListener("htmx:responseError", function (event) {
     var target = event.detail.target;
-    if (!target || !target.classList.contains("proposal-preview")) return;
+    if (
+      !target ||
+      !(
+        target.classList.contains("proposal-preview") ||
+        target.classList.contains("audit-preview")
+      )
+    )
+      return;
     var reason =
       event.detail.xhr.status === 404
         ? "Preview unavailable — the file has moved or been removed."
@@ -101,11 +200,7 @@
     target.firstChild.textContent = reason;
   });
 
-  document.body.addEventListener("htmx:afterSwap", function () {
-    syncHeaders();
-    refreshCount();
-  });
+  document.body.addEventListener("htmx:afterSwap", refreshAll);
 
-  syncHeaders();
-  refreshCount();
+  refreshAll();
 })();

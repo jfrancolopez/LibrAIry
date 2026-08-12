@@ -25,6 +25,13 @@ _SOURCE_LABEL = {
     "vision": "Looked at it",
     "artwork": "Cover art",
     "companion": "Companion file",
+    # The Library Audit's own sources. It records evidence in the same shape as
+    # a proposal and renders through this same code, but it reads things
+    # nothing else does — "On disk" is not the same claim as "Name & type".
+    # Embedded tags reuse the existing `tags` source rather than inventing a
+    # second spelling of it.
+    "filesystem": "On disk",
+    "fingerprint": "Exact hash",
 }
 
 
@@ -50,6 +57,11 @@ TRUST = {
     #  the whole point of the segmented bar is that those are different things.
     "vision": "vision",
     "heuristic": "guess",
+    # What the audit reads. Both are the file and the library themselves,
+    # never a catalog and never a model — which is most of why a deterministic
+    # audit finding is worth trusting.
+    "filesystem": "local",
+    "fingerprint": "local",
 }
 TRUST_LABELS = {
     "catalog": "a public catalog",
@@ -112,6 +124,48 @@ def confidence_segments(views: list[EvidenceView], confidence: float) -> list[Se
         first = segments[0]
         segments[0] = Segment(first.kind, first.label, first.width_pct + drift)
     return [segment for segment in segments if segment.width_pct > 0]
+
+
+def evidence_mix(views: list[EvidenceView]) -> list[Segment]:
+    """The same bar, for something that has evidence but no overall score.
+
+    A Library Audit finding records a weight per piece of evidence but never
+    aggregates them — there is no audit-wide scoring model, and inventing one
+    to fill a percentage would be decoration presented as measurement. So the
+    bar shows *composition* at full width and no number is claimed: which
+    kinds of evidence this rests on, in the proportions actually stored.
+
+    See `docs/using-librairy.md` for what the audit does and does not know.
+    """
+    if not views:
+        return []
+    by_kind: dict[str, int] = {}
+    for view in views:
+        by_kind[view.kind] = by_kind.get(view.kind, 0) + max(view.weight_pct, 1)
+    total = sum(by_kind.values())
+    order = ["catalog", "vision", "local", "ai", "cloud", "guess"]
+    segments = [
+        Segment(kind, TRUST_LABELS.get(kind, kind), round(100 * weight / total))
+        for kind, weight in sorted(
+            by_kind.items(), key=lambda pair: order.index(pair[0]) if pair[0] in order else 99
+        )
+    ]
+    drift = 100 - sum(segment.width_pct for segment in segments)
+    if drift and segments:
+        first = segments[0]
+        segments[0] = Segment(first.kind, first.label, first.width_pct + drift)
+    return [segment for segment in segments if segment.width_pct > 0]
+
+
+def evidence_caption(views: list[EvidenceView]) -> str:
+    """The mix in words. Deliberately says nothing about how sure anyone is."""
+    if not views:
+        return "nothing recorded"
+    sources = []
+    for view in views:
+        if view.label not in sources:
+            sources.append(view.label)
+    return "based on " + ", ".join(sources)
 
 
 def confidence_caption(views: list[EvidenceView], confidence: float) -> str:

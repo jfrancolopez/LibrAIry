@@ -67,6 +67,16 @@ def scene(tmp_path: Path, *relpaths: str, kind: str = "tag-path-mismatch"):
     return TestClient(create_app(settings, conn)), conn, settings, finding
 
 
+def rows(body: str) -> str:
+    """Just the finding rows: everything after the bulk toolbar.
+
+    The toolbar carries "Accept corrections" and "Re-audit" of its own, so a
+    bare substring check over the whole page cannot tell a per-row control from
+    a bulk one.
+    """
+    return body.split('class="audit-list', 1)[1] if 'class="audit-list' in body else ""
+
+
 def post(client, path: str, **data):
     client.get("/review")
     token = client.cookies["csrf_token"]
@@ -86,9 +96,10 @@ def test_an_executable_finding_offers_to_accept_the_correction(tmp_path: Path) -
 
     body = client.get("/review").text
 
-    assert "Accept correction" in body
+    assert ">Accept correction</button>" in rows(body)
     assert "LIBRARY AUDIT" in body
-    assert "Keep as it is" in body
+    assert ">No change</button>" in rows(body)
+    assert "Keep as it is" not in body
 
 
 def test_the_wording_is_never_the_inbox_wording(tmp_path: Path) -> None:
@@ -99,7 +110,7 @@ def test_the_wording_is_never_the_inbox_wording(tmp_path: Path) -> None:
     body = client.get("/review").text
     audit_section = body.split('id="library-audit"', 1)[1]
 
-    assert "Accept correction" in audit_section
+    assert ">Accept correction</button>" in audit_section
     assert "Approve all confident" not in audit_section
 
 
@@ -109,8 +120,9 @@ def test_an_observation_offers_no_correction(tmp_path: Path) -> None:
     body = client.get("/review").text
 
     assert "LIBRARY AUDIT" in body
-    assert "Accept correction" not in body
-    assert "Keep as it is" in body
+    assert ">Accept correction</button>" not in rows(body)
+    assert ">No change</button>" in rows(body)
+    assert ">Observation<" in body
 
 
 def test_every_affected_file_is_listed_before_commit(tmp_path: Path) -> None:
@@ -118,7 +130,7 @@ def test_every_affected_file_is_listed_before_commit(tmp_path: Path) -> None:
 
     body = client.get("/review").text
 
-    assert "2 files will move" in body
+    assert "Moves 2 files" in rows(body)
     assert "05 - Song.lrc" in body
     assert "companion" in body
 
@@ -128,8 +140,8 @@ def test_a_one_file_correction_does_not_shout_about_a_group(tmp_path: Path) -> N
 
     body = client.get("/review").text
 
-    assert "files will move" not in body
-    assert "Accept correction" in body
+    assert "audit-affected" not in rows(body)
+    assert ">Accept correction</button>" in rows(body)
 
 
 def test_a_stale_finding_offers_re_analysis_and_not_a_correction(tmp_path: Path) -> None:
@@ -138,10 +150,10 @@ def test_a_stale_finding_offers_re_analysis_and_not_a_correction(tmp_path: Path)
 
     body = client.get("/review").text
 
-    assert "NEEDS RE-ANALYSIS" in body
+    assert "Needs re-analysis" in rows(body)
     assert "The file changed after this audit was created." in body
-    assert "Re-audit" in body
-    assert "Accept correction" not in body
+    assert ">Re-audit</button>" in rows(body)
+    assert ">Accept correction</button>" not in rows(body)
 
 
 def test_a_finding_whose_file_is_gone_says_so_plainly(tmp_path: Path) -> None:
@@ -150,10 +162,10 @@ def test_a_finding_whose_file_is_gone_says_so_plainly(tmp_path: Path) -> None:
 
     body = client.get("/review").text
 
-    assert "NOT ON DISK" in body
-    assert "Accept correction" not in body
+    assert "Not on disk" in rows(body)
+    assert ">Accept correction</button>" not in rows(body)
     # Nothing to re-analyse either: the file is not there to look at.
-    assert "Re-audit" not in body
+    assert ">Re-audit</button>" not in rows(body)
 
 
 def test_the_stale_wording_is_not_alarming(tmp_path: Path) -> None:
@@ -173,8 +185,9 @@ def test_accepting_marks_the_finding_as_waiting_for_commit(tmp_path: Path) -> No
 
     assert response.status_code == 303
     body = client.get("/review").text
-    assert "waiting for" in body
-    assert "Accept correction" not in body
+    assert "Waiting for Commit" in rows(body)
+    assert "nothing has moved yet" in rows(body)
+    assert ">Accept correction</button>" not in rows(body)
 
 
 def test_accepting_a_stale_finding_over_http_is_refused(tmp_path: Path) -> None:
@@ -372,17 +385,18 @@ def test_keeping_a_finding_stops_it_coming_back(tmp_path: Path) -> None:
 
 
 def test_the_correction_actions_stack_on_a_narrow_screen() -> None:
-    """Accept and Keep must never be a mis-tap apart at 375px."""
+    """Accept correction and No change must never be a mis-tap apart at
+    375px, so at that width they stop sharing a line."""
     css = Path("src/librairy/web/static/pipboy.css").read_text(encoding="utf-8")
-    blocks = css.split("@media (max-width: 40rem) {")[1:]
+    blocks = [block.split("\n}")[0] for block in css.split("@media (max-width: 40rem) {")[1:]]
     stacked = [
         block
         for block in blocks
-        if ".audit-actions { flex-direction: column; }" in block.split("\n}")[0]
+        if ".audit-actions" in block and "flex-direction: column" in block
     ]
 
-    assert stacked, "the accept/keep pair must stack inside a narrow-screen block"
-    assert ".audit-actions form, .audit-actions button { width: 100%; }" in stacked[0]
+    assert stacked, "the accept/no-change pair must stack inside a narrow-screen block"
+    assert "width: 100%" in stacked[0]
 
 
 def test_the_audit_colour_is_never_the_only_signal() -> None:
@@ -391,5 +405,5 @@ def test_the_audit_colour_is_never_the_only_signal() -> None:
         "src/librairy/web/templates/partials/review_audit.html"
     ).read_text(encoding="utf-8")
     assert "LIBRARY AUDIT" in template
-    assert "state_label" in template
-    assert "badge-stale" in template
+    assert "status_label" in template
+    assert "state_detail" in template

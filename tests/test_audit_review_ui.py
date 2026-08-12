@@ -145,7 +145,7 @@ def test_current_and_suggested_are_distinguishable(tmp_path: Path) -> None:
 
     html = client.get("/review").text
 
-    assert "<dt>Currently</dt>" in html
+    assert "<dt>Current</dt>" in html
     assert "Music/Rock/Queen/tax-return.pdf" in html
 
 
