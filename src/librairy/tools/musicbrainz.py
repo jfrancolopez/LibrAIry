@@ -74,13 +74,28 @@ def search_release(artist: str, album: str, *, opener=urlopen, sleeper=time.slee
     previews in quick succession earned a 503 from MusicBrainz the first time
     this was tried against the live service.
     """
+    found = search_release_detail(artist, album, opener=opener, sleeper=sleeper)
+    return found["id"] if found else None
+
+
+def search_release_detail(
+    artist: str, album: str, *, opener=urlopen, sleeper=time.sleep
+) -> dict[str, str] | None:
+    """The same search, keeping the names as well as the id.
+
+    The audit needs the canonical spelling, not only the identifier: a folder
+    called `Unpluged` is worth mentioning precisely because MusicBrainz and
+    the embedded tags both spell it `Unplugged`. `search_release` is the
+    id-only view of this, unchanged for its existing callers, and both share
+    one request and one cache entry.
+    """
     artist, album = artist.strip(), album.strip()
     if not artist or not album:
         return None
     cache_key = f"search|{artist}|{album}".casefold()
     if cache_key in _CACHE:
         cached = _CACHE[cache_key]
-        return str(cached["id"]) if cached else None
+        return dict(cached) if cached else None
 
     query = f'artist:"{_escape(artist)}" AND release:"{_escape(album)}"'
     params = {"query": query, "fmt": "json", "limit": "1"}
@@ -104,9 +119,21 @@ def search_release(artist: str, album: str, *, opener=urlopen, sleeper=time.slee
 
     releases = payload.get("releases") if isinstance(payload, dict) else None
     first = releases[0] if isinstance(releases, list) and releases else None
-    mbid = str(first.get("id") or "") if isinstance(first, dict) else ""
-    _CACHE[cache_key] = {"id": mbid} if mbid else None
-    return mbid or None
+    if not isinstance(first, dict) or not first.get("id"):
+        _CACHE[cache_key] = None
+        return None
+    credit = first.get("artist-credit") or []
+    named = credit[0] if isinstance(credit, list) and credit else {}
+    named = named if isinstance(named, dict) else {}
+    inner = named.get("artist") if isinstance(named.get("artist"), dict) else {}
+    found = {
+        "id": str(first["id"]),
+        "title": str(first.get("title") or "").strip(),
+        "artist": str(named.get("name") or inner.get("name") or "").strip(),
+        "artist_id": str(inner.get("id") or ""),
+    }
+    _CACHE[cache_key] = found
+    return dict(found)
 
 
 def _escape(value: str) -> str:

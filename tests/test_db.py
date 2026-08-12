@@ -72,6 +72,7 @@ def test_fresh_db_migrates_to_current_schema(tmp_path: Path) -> None:
         "idx_audit_findings_status",
         "idx_audit_findings_kind",
         "idx_plans_audit_finding",
+        "idx_catalog_identity_scope",
     }
 
     columns = {row[1] for row in conn.execute("PRAGMA table_info(provider_status)")}
@@ -132,6 +133,8 @@ def test_migration_011_closes_proposals_for_files_already_filed(tmp_path: Path) 
         DROP TABLE IF EXISTS duplicate_reports;
         DROP TABLE IF EXISTS review_undo;
         DROP TABLE IF EXISTS vision_results;
+        DROP INDEX IF EXISTS idx_catalog_identity_scope;
+        DROP TABLE IF EXISTS catalog_identity;
         DROP INDEX IF EXISTS idx_plans_audit_finding;
         ALTER TABLE plans DROP COLUMN audit_finding_id;
         ALTER TABLE plan_ops DROP COLUMN role;

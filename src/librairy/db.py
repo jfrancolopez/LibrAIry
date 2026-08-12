@@ -9,7 +9,7 @@ from pathlib import Path
 from librairy.config import Settings
 
 LOGGER = logging.getLogger(__name__)
-SCHEMA_VERSION = 17
+SCHEMA_VERSION = 18
 
 
 class DatabaseVersionError(RuntimeError):
@@ -370,6 +370,40 @@ ALTER TABLE audit_findings ADD COLUMN plan_id TEXT REFERENCES plans(id);
 CREATE INDEX idx_plans_audit_finding ON plans(audit_finding_id);
 """
 
+MIGRATION_018 = """
+-- What a catalog said this folder is, kept so the next audit does not have to
+-- ask again by string.
+--
+-- Identity used to be discarded the moment classification finished, which is
+-- why cover art could not be fetched later: nothing remembered that
+-- `Music/R&BSoul/Alicia Keys/Unplugged (20th Anniversary)` was MusicBrainz
+-- release 8f3b… A string search is not an identity — it is a guess that has
+-- to be re-made, re-rate-limited and re-risked on every pass.
+--
+-- Deliberately not the whole response. Five columns that stay useful: who
+-- answered, what kind of thing it is, its stable id, and the canonical names,
+-- which are the only part a finding ever quotes.
+CREATE TABLE catalog_identity (
+  id INTEGER PRIMARY KEY,
+  -- 'album' | 'movie' | 'show'. What `scope_key` names.
+  scope_kind TEXT NOT NULL,
+  -- The library-relative folder. Identity belongs to the folder, not to each
+  -- of its forty tracks.
+  scope_key TEXT NOT NULL,
+  provider TEXT NOT NULL,
+  entity TEXT NOT NULL,
+  -- Empty means "asked, and this provider had no answer". Kept, so a fruitless
+  -- lookup is not repeated on every audit; `looked_up_at` is how it expires.
+  catalog_id TEXT NOT NULL DEFAULT '',
+  canonical_title TEXT NOT NULL DEFAULT '',
+  canonical_artist TEXT NOT NULL DEFAULT '',
+  artist_id TEXT NOT NULL DEFAULT '',
+  looked_up_at TEXT NOT NULL,
+  UNIQUE(scope_kind, scope_key, provider)
+);
+CREATE INDEX idx_catalog_identity_scope ON catalog_identity(scope_kind, scope_key);
+"""
+
 MIGRATIONS = {
     1: MIGRATION_001,
     2: MIGRATION_002,
@@ -388,6 +422,7 @@ MIGRATIONS = {
     15: MIGRATION_015,
     16: MIGRATION_016,
     17: MIGRATION_017,
+    18: MIGRATION_018,
 }
 
 

@@ -26,6 +26,7 @@ two can never disagree about what exists.
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -36,6 +37,8 @@ from librairy.config import Settings
 from librairy.models import EvidenceEntry
 from librairy.planner import utc_now
 from librairy.scanner import visible_files
+
+LOGGER = logging.getLogger(__name__)
 
 # What a finding is about. Only kinds with real detection logic behind them —
 # there is no value in a category that exists to make the page look busy.
@@ -61,6 +64,9 @@ KINDS = {
     "track-numbering": "Tracks missing from an album",
     "naming-outlier": "Named unlike its neighbours",
     "loose-tracks": "Loose tracks beside album folders",
+    # Tier 2. A catalog only ever gets a say when the embedded tags already
+    # agree with it against the folder — see `audit_catalog`.
+    "catalog-name-mismatch": "A catalog spells this differently",
 }
 
 # Kinds whose correction is a concrete, deterministic filesystem move that
@@ -100,6 +106,7 @@ FOLDER_KINDS = frozenset(
         "album-name-mismatch",
         "track-numbering",
         "loose-tracks",
+        "catalog-name-mismatch",
     }
 )
 
@@ -168,6 +175,10 @@ class AuditSummary:
     high: int
     review: int
     kinds: dict[str, int]
+    # What the catalog tier did, if it ran. Reported rather than hidden: "AI
+    # unavailable for 3 ambiguous files" is a successful audit that should say
+    # which part of itself was missing.
+    catalog: object | None = None
 
 
 @dataclass
@@ -198,14 +209,25 @@ def audit_library(
     *,
     scope: str = "",
     read_tags: bool = True,
+    use_catalogs: bool = True,
 ) -> AuditSummary:
     """Examine a scope of the library and record what looks wrong.
 
-    Writes to `audit_findings` and to nothing else. `scope` is a relative
-    folder — `Music`, `Music/Pop` — or empty for everything.
+    Writes to `audit_findings` and `catalog_identity`, and to nothing else on
+    disk. `scope` is a relative folder — `Music`, `Music/Pop` — or empty for
+    everything.
+
+    The tiers cost very different amounts, so each can be turned off without
+    turning off the ones below it. `read_tags=False` is a fast structural pass;
+    `use_catalogs=False` keeps the whole audit local. A catalog that is
+    disabled, unreachable or slow degrades to "no answer" — the deterministic
+    findings do not depend on it and the audit still succeeds.
     """
+    from librairy.audit_catalog import CatalogRun
+
     view = gather(conn, settings, scope=scope, read_tags=read_tags)
-    findings = detect(view)
+    run = CatalogRun()
+    findings = detect(view, conn=conn if use_catalogs else None, run=run)
     record_findings(conn, findings, scope=scope)
     kinds: dict[str, int] = defaultdict(int)
     for finding in findings:
@@ -217,6 +239,7 @@ def audit_library(
         high=sum(1 for finding in findings if finding.severity == "high"),
         review=sum(1 for finding in findings if finding.severity == "review"),
         kinds=dict(kinds),
+        catalog=run,
     )
 
 
@@ -261,14 +284,26 @@ def gather(
     )
 
 
-def detect(view: LibraryView) -> list[Finding]:
+def detect(
+    view: LibraryView,
+    *,
+    conn: sqlite3.Connection | None = None,
+    run: object | None = None,
+) -> list[Finding]:
     """Every detector, over one gathered view.
 
-    Two tiers, and the split is about cost rather than importance. The first
-    group reads only the filesystem and the index and is always safe to run.
-    `audit_music` additionally needs embedded tags, which cost roughly 30 ms a
-    file to read, so it does nothing at all when tags were not gathered — a
-    `--no-tags` audit is a fast structural pass, not a broken one.
+    Three tiers, split by what each one costs rather than by how much it
+    matters:
+
+    * **Tier 0** reads the filesystem and the index. Microseconds, always run.
+    * **Tier 1** (`audit_music`) needs embedded tags, roughly 30 ms a file, so
+      it does nothing at all when tags were not gathered — `read_tags=False`
+      is a fast structural pass, not a broken audit.
+    * **Tier 2** (`audit_catalog`) leaves the machine. It needs a connection,
+      because an answer worth waiting for is worth remembering, and it is
+      skipped entirely when the caller passes none.
+
+    Each tier can be absent without the ones below it changing their answers.
     """
     from librairy import audit_music
 
@@ -287,12 +322,28 @@ def detect(view: LibraryView) -> list[Finding]:
         findings.extend(detector(view))
     if view.tags:
         findings.extend(audit_music.detect(view))
+        if conn is not None:
+            findings.extend(_catalog_tier(conn, view, run))
     for finding in findings:
         row = view.indexed.get(finding.relpath)
         if row is not None:
             finding.item_id = row["id"]
             finding.fingerprint = row["fingerprint"]
     return sorted(findings, key=lambda finding: (finding.relpath, finding.kind))
+
+
+def _catalog_tier(conn: sqlite3.Connection, view: LibraryView, run: object | None) -> list[Finding]:
+    """Ask outside, once, and never let the answer decide the audit's fate."""
+    from librairy import audit_catalog, audit_music
+
+    try:
+        lookup = audit_catalog.musicbrainz_lookup(conn)
+        return audit_catalog.reconcile_music(
+            conn, view, audit_music.albums_in(view), lookup, run=run
+        )
+    except Exception:  # noqa: BLE001 - a catalog outage is not an audit failure
+        LOGGER.warning("catalog reconciliation skipped", exc_info=True)
+        return []
 
 
 # --- detectors ---------------------------------------------------------------
