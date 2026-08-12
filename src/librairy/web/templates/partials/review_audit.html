@@ -107,10 +107,13 @@
         title="The file as it is now, where it is now">Preview</button>
       {% endif %}
       <button type="button" class="btn-ghost" data-panel-toggle="audit-why-{{ finding.id }}">Why</button>
-      {% if finding.browse_href or finding.item_id or (finding.executable and finding.state == 'current') %}
+      {# Only when the tray has something in it. A `⋯` that opens an empty
+         panel is a worse control than no `⋯`. #}
+      {% set has_more = finding.browse_href or finding.item_id or (finding.executable and not finding.accepted) %}
+      {% if has_more %}
       <button type="button" class="btn-ghost btn-more" data-panel-toggle="audit-more-{{ finding.id }}"
               aria-label="More actions for {{ finding.current }}"
-              title="Open in Browse, item details">⋯</button>
+              title="More actions">⋯</button>
       {% endif %}
     </div>
 
