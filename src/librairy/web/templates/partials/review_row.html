@@ -5,7 +5,7 @@
 {# Two bands, not four. Where a file is going and what you can do about it are
    one decision, so they share a line; the row was 136px tall for a filename, a
    path and six buttons, which is five files on a screen. #}
-<article id="proposal-{{ proposal.id }}" class="proposal {{ band }}">
+<article id="proposal-{{ proposal.id }}" class="row-shell proposal {{ band }}">
   <label class="proposal-pick">
     <input form="review-actions" id="row-{{ proposal.id }}" name="proposal_id" type="checkbox"
            aria-label="select {{ proposal.item_relpath }}" value="{{ proposal.id }}">

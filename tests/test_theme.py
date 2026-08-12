@@ -253,7 +253,11 @@ def test_long_names_and_paths_are_clamped_not_wrapped_forever() -> None:
     value stays in the title attribute either way.
     """
     for selector in (".proposal-name", ".dest-path"):
-        rule = re.search(re.escape(selector) + r"\s*\{([^}]*)\}", CSS)
+        # The selector may be one of several sharing a rule — the inbox row and
+        # the library row use the same clamp — so match it anywhere in the list.
+        rule = re.search(
+            re.escape(selector) + r"[^{}]*\{([^}]*)\}", CSS
+        )
         assert rule, f"{selector} lost its rule"
         assert "line-clamp: 2" in rule.group(1), selector
         assert "overflow: hidden" in rule.group(1), selector

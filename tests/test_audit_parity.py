@@ -12,6 +12,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from librairy.audit import Finding, record_findings
@@ -254,8 +255,8 @@ def test_no_overall_percentage_is_claimed_for_a_finding(tmp_path: Path) -> None:
 
     section = rows(client.get("/review").text)
 
-    assert "conf-score" not in section
-    assert "does not" in section and "single score" in section
+    assert "%</span>" not in section.split("why-list")[0]
+    assert re.search(r'class="conf-score">\d+ sources?</span>', section)
 
 
 def test_the_per_evidence_weights_are_the_stored_ones(tmp_path: Path) -> None:
@@ -292,9 +293,9 @@ def test_the_why_panel_explains_the_current_path(tmp_path: Path) -> None:
 
     section = rows(client.get("/review").text)
 
-    assert "Why this was flagged" in section
-    assert "Current path" in section
-    assert "Suggested path" in section
+    assert "why-list" in section
+    assert "<dt>Now</dt>" in section
+    assert "<dt>Would become</dt>" in section
 
 
 # --- the secondary menu -------------------------------------------------------
@@ -570,7 +571,7 @@ def test_a_single_finding_gets_no_folder_heading(tmp_path: Path) -> None:
     body = client.get("/review").text
 
     assert "audit-group" not in body
-    assert "audit-list-loose" in body
+    assert body.count('class="audit-list"') == 1
 
 
 def test_two_findings_in_one_folder_do_get_a_heading(tmp_path: Path) -> None:
@@ -619,7 +620,7 @@ def test_an_unrelated_sibling_is_not_in_the_affected_list(tmp_path: Path) -> Non
 def test_the_library_audit_marker_is_text(tmp_path: Path) -> None:
     client, *_ = scene(tmp_path, correction())
 
-    assert "LIBRARY AUDIT" in rows(client.get("/review").text)
+    assert "EXISTING LIBRARY" in rows(client.get("/review").text)
 
 
 def test_the_state_is_never_carried_by_colour_alone(tmp_path: Path) -> None:
@@ -640,8 +641,8 @@ def test_the_row_is_not_a_clickable_container(tmp_path: Path) -> None:
     ).read_text(encoding="utf-8")
 
     assert "onclick" not in template
-    assert 'class="audit-row' in template
-    assert "hx-get" not in template.split('class="audit-row', 1)[1].split("audit-body")[0]
+    assert "audit-row" in template
+    assert "hx-get" not in template.split("audit-row", 1)[1].split("row-body")[0]
 
 
 # --- mobile -------------------------------------------------------------------
@@ -665,10 +666,9 @@ def test_nothing_in_an_audit_row_is_wider_than_the_screen() -> None:
 
 
 def test_long_paths_wrap_instead_of_pushing_the_page_sideways() -> None:
-    css = audit_css()
-
-    assert "word-break: break-all" in css.split(".audit-paths dd")[1].split("}")[0]
-    assert "word-break: break-word" in css.split(".audit-title")[1].split("}")[0]
+    shared = Path("src/librairy/web/static/pipboy.css").read_text(encoding="utf-8")
+    clamp = shared.split(".proposal-name,\n.row-name {")[1].split("}")[0]
+    assert "overflow-wrap: anywhere" in clamp
 
 
 def test_the_evidence_bar_goes_full_width_on_a_phone() -> None:
@@ -676,7 +676,7 @@ def test_the_evidence_bar_goes_full_width_on_a_phone() -> None:
     mobile = [
         block.split("\n}")[0]
         for block in css.split("@media (max-width: 40rem) {")[1:]
-        if ".audit-evidence" in block.split("\n}")[0]
+        if ".conf-track" in block.split("\n}")[0]
     ]
 
     assert mobile
@@ -688,7 +688,7 @@ def test_the_secondary_tray_stacks_on_a_phone() -> None:
     mobile = [
         block.split("\n}")[0]
         for block in css.split("@media (max-width: 40rem) {")[1:]
-        if ".audit-tray" in block.split("\n}")[0]
+        if ".why-paths" in block.split("\n}")[0]
     ]
 
     assert mobile
@@ -722,3 +722,141 @@ def test_every_refusal_reason_is_reported_not_just_the_first(tmp_path: Path) -> 
     assert "already waiting" in result
     assert "re-analysis" in result
     assert "observation" in result
+
+
+# --- one visual grammar -------------------------------------------------------
+
+
+def test_both_sections_use_the_same_row_shell(tmp_path: Path) -> None:
+    """Not a copy of the markup — the same CSS. `.row-shell` carries the grid,
+    the padding and the border for an inbox row and a library row alike, so
+    the two cannot drift into different shapes."""
+    css = Path("src/librairy/web/static/pipboy.css").read_text(encoding="utf-8")
+    shell = css.split(".proposal,\n.row-shell {", 1)[1].split("}")[0]
+
+    assert "display: grid" in shell
+    assert "padding" in shell
+    inbox = Path("src/librairy/web/templates/partials/review_row.html").read_text("utf-8")
+    audit = Path("src/librairy/web/templates/partials/review_audit.html").read_text("utf-8")
+    assert "row-shell" in inbox
+    assert "row-shell" in audit
+
+
+@pytest.mark.parametrize(
+    "shared", ["row-head", "row-name", "row-meta", "row-line", "row-dest", "row-actions"]
+)
+def test_the_row_parts_are_shared_selectors(shared: str) -> None:
+    css = Path("src/librairy/web/static/pipboy.css").read_text(encoding="utf-8")
+    audit = Path("src/librairy/web/templates/partials/review_audit.html").read_text("utf-8")
+
+    assert f".{shared}" in css
+    assert shared in audit
+
+
+def test_why_and_preview_are_the_same_components(tmp_path: Path) -> None:
+    client, *_ = scene(tmp_path, correction())
+
+    section = rows(client.get("/review").text)
+
+    # The inbox row's own panel classes, not audit-specific ones.
+    assert 'class="why"' in section
+    assert "why-list" in section
+    assert "proposal-preview" in section
+
+
+def test_the_actions_use_the_inbox_button_hierarchy(tmp_path: Path) -> None:
+    client, *_ = scene(tmp_path, correction())
+
+    section = rows(client.get("/review").text)
+
+    assert 'class="btn-primary">Accept correction' in section
+    assert 'class="btn-ghost"' in section
+    assert "action-gap" in section
+
+
+def test_the_selection_column_matches_the_inbox(tmp_path: Path) -> None:
+    client, *_ = scene(tmp_path, correction())
+    inbox = Path("src/librairy/web/templates/partials/review_row.html").read_text("utf-8")
+
+    section = rows(client.get("/review").text)
+
+    assert 'class="row-pick"' in section
+    assert "proposal-pick" in inbox
+
+
+def test_an_observation_renders_no_empty_suggested_slot(tmp_path: Path) -> None:
+    client, *_ = scene(
+        tmp_path, observation(), files=(f"{ALBUM}/01.flac", f"{ALBUM}/02.flac")
+    )
+
+    section = rows(client.get("/review").text)
+
+    assert "dest-arrow" not in section
+    assert "change-after" not in section
+    assert ALBUM.replace("&", "&amp;") in section
+
+
+def test_a_one_component_change_is_shown_as_a_diff(tmp_path: Path) -> None:
+    """A naming fix can be a single character. Nobody should diff two long
+    paths by eye to find it."""
+    client, conn, settings = scene(
+        tmp_path,
+        Finding(
+            relpath="Photos/  Trip 2022/shot.jpg",
+            kind="naming-inconsistency",
+            severity="review",
+            summary="Starts with a space.",
+            dest_relpath="Photos/Trip 2022/shot.jpg",
+        ),
+        files=("Photos/  Trip 2022/shot.jpg",),
+    )
+
+    section = rows(client.get("/review").text)
+
+    assert "change-before" in section
+    assert "change-after" in section
+    assert ">Photos/</span>" in section
+
+
+def test_a_whole_path_change_shows_only_the_destination(tmp_path: Path) -> None:
+    """Like the inbox row does. The old path is the row's own title."""
+    client, *_ = scene(tmp_path, correction())
+
+    section = rows(client.get("/review").text)
+
+    assert "change-after" in section
+    assert "change-before" not in section
+
+
+def test_no_technical_caveat_is_repeated_on_every_row(tmp_path: Path) -> None:
+    """It was on all six. The bar's label never claims a score, and the
+    explanation lives in the docs rather than seven times down the page."""
+    client, *_ = scene(tmp_path, correction(), observation())
+
+    section = rows(client.get("/review").text)
+
+    assert "single score" not in section
+    assert "does not add" not in section
+
+
+def test_the_zero_state_is_one_line(tmp_path: Path) -> None:
+    settings = settings_for(tmp_path)
+    conn = connect(settings)
+    client = TestClient(create_app(settings, conn))
+
+    body = client.get("/review").text
+    section = body.split('id="library-audit"', 1)[1]
+
+    assert "Nothing to look at" in section
+    assert "audit-toolbar" not in section
+    assert len(section.split("</section>")[0]) < 400
+
+
+def test_both_sections_announce_themselves_the_same_way(tmp_path: Path) -> None:
+    client, *_ = scene(tmp_path, correction())
+
+    body = client.get("/review").text
+
+    assert body.count('class="section-head"') == 2
+    assert "<h2>New files</h2>" in body
+    assert "<h2>Library Review</h2>" in body

@@ -665,7 +665,8 @@ tbody tr:hover { background: var(--bg-metric); }
    preview was opening inside a 15rem cell — a stamp of picture in a column of
    empty page. A card owns the full width when it needs it. */
 .proposal-list { display: grid; gap: var(--space-3); }
-.proposal {
+.proposal,
+.row-shell {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   gap: var(--space-3);
@@ -683,24 +684,33 @@ tbody tr:hover { background: var(--bg-metric); }
 .proposal.conf-mid { --conf-hue: var(--warn); }
 .proposal.conf-low { --conf-hue: var(--fail); }
 .proposal.conf-high, .proposal.conf-mid, .proposal.conf-low { border-left-color: var(--conf-hue); }
-.proposal-pick { display: flex; align-items: start; padding-top: 0.2rem; }
-.proposal-body { min-width: 0; display: grid; gap: var(--space-2); }
+.proposal-pick, .row-pick { display: flex; align-items: start; padding-top: 0.2rem; }
+.proposal-body, .row-body { min-width: 0; display: grid; gap: var(--space-2); }
 
-.proposal-head {
+.proposal-head,
+.row-head {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
   justify-content: space-between;
   gap: var(--space-2);
 }
+/* A flex item will not shrink below its content by default, so a long title
+   with an inline-block `?` beside it pushed the row four pixels past a
+   375px screen. Measured, not theorised. */
 /* Two lines, then an ellipsis. A UUID-named attachment three folders deep
    wraps to eight lines otherwise, and one such row was 496px tall — half a
    screen to say one filename. The whole value stays in the title attribute,
    and the preview shows it in full. */
-.proposal-name {
+.proposal-name,
+.row-name {
   margin: 0;
   font-size: var(--text-base);
   font-weight: 600;
+  /* A flex item will not shrink below its content by default, so a long title
+     with an inline-block `?` beside it pushed the row past a 375px screen.
+     Measured at 375px in a headless render, not theorised. */
+  min-width: 0;
   overflow-wrap: anywhere;
   display: -webkit-box;
   -webkit-box-orient: vertical;
@@ -714,20 +724,22 @@ tbody tr:hover { background: var(--bg-metric); }
 .name-size { font-weight: 400; color: var(--text-dim); white-space: nowrap; }
 /* Wraps: `flex: none` with nowrap held a size, a score and up to two badges on
    one unbreakable line, which pushed the whole page sideways on a phone. */
-.proposal-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.proposal-meta, .row-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 
 /* Destination and actions share a line. They were two stacked bands, which
    made a row 136px tall to say a filename, a path and six buttons — five
    files on a screen. Below 900px they stack again, because a path and four
    buttons side by side on a phone is neither. */
-.proposal-line {
+.proposal-line,
+.row-line {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-2) var(--space-3);
 }
-.proposal-dest {
+.proposal-dest,
+.row-dest {
   display: flex;
   align-items: baseline;
   gap: var(--space-2);
@@ -773,7 +785,8 @@ tbody tr:hover { background: var(--bg-metric); }
   cursor: pointer;
 }
 
-.proposal-actions {
+.proposal-actions,
+.row-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -788,7 +801,7 @@ tbody tr:hover { background: var(--bg-metric); }
    them. Six buttons at the old padding pushed 26 of 50 paths onto a second
    line — one narrow button's worth of padding, spread across the row, was
    costing 8px on every row in the queue. */
-.proposal-actions button { min-height: 2rem; padding: var(--space-1) var(--space-2); }
+.proposal-actions button, .row-actions button, .row-actions .btn { min-height: 2rem; padding: var(--space-1) var(--space-2); }
 /* Inspect, then decide. The gap is the seam between the two, so Approve is
    always in the same place on every row and the thumb learns it once. */
 .action-gap { width: var(--space-3); }
@@ -2366,9 +2379,14 @@ summary.timeline-head::-webkit-details-marker { display: none; }
 .audit-group { margin-bottom: var(--space-3); }
 .audit-group summary { cursor: pointer; display: flex; gap: var(--space-3); flex-wrap: wrap; }
 .audit-folder { font-family: var(--font-mono); word-break: break-all; }
-.audit-list { list-style: none; margin: var(--space-3) 0 0; padding: 0; }
-.audit-list-loose { margin-top: 0; }
-.audit-notice { margin: 0 0 var(--space-3); }
+.audit-list { display: grid; gap: var(--space-3); margin: var(--space-3) 0 0; }
+.audit-notice { margin: var(--space-2) 0 0; }
+.audit-empty { margin: 0; }
+/* Both sections announce themselves the same way, so Library Review reads as
+   the second half of one page rather than as an appendix to it. */
+.section-head { margin: var(--space-6, 2rem) 0 var(--space-3); }
+.section-head h2 { margin: 0 0 var(--space-1); }
+.section-head p { margin: 0; max-width: 68ch; }
 /* Its own toolbar, sitting above its own rows. The inbox toolbar is a
    different element posting a different field to a different endpoint. */
 .audit-toolbar {
@@ -2378,45 +2396,27 @@ summary.timeline-head::-webkit-details-marker { display: none; }
   align-items: center;
   margin-bottom: var(--space-3);
 }
-.audit-row {
-  border-left: 3px solid var(--audit);
-  background: var(--bg-metric);
-  padding: var(--space-3);
-  margin-bottom: var(--space-3);
-  /* Checkbox in its own column, body in the other — the same two-column shape
-     the inbox row uses, so a page of both reads as one list of decisions. */
-  display: grid;
-  grid-template-columns: max-content 1fr;
-  gap: var(--space-3);
-  align-items: start;
+/* The row itself is `.row-shell`, exactly as the inbox row is. All this adds
+   is the source accent — subtle, because the badge is what carries the
+   meaning and a block of colour would only re-create the "separate module"
+   feeling this section just lost. */
+.audit-row { border-left-color: var(--audit); }
+/* The inbox score slot is a right-aligned monospace numeral sized for "94%".
+   "3 sources" is words, not a number, so it gets to be words — a tabular slot
+   two-and-a-half characters wide overflowed it at 375px. */
+.audit-row .conf-score {
+  min-width: 0;
+  text-align: left;
+  font-family: inherit;
+  white-space: nowrap;
 }
-.audit-pick { padding-top: 0.2rem; }
-.audit-body { min-width: 0; }
-/* Name first, then why, then where: the same order as the inbox row. */
-.audit-title {
-  margin: var(--space-2) 0 var(--space-1);
-  font-size: 1rem;
-  word-break: break-word;
-}
-.audit-evidence {
-  display: flex;
-  gap: var(--space-2);
-  align-items: center;
-  flex-wrap: wrap;
-  margin: 0 0 var(--space-2);
-}
-/* The composition bar is always full width: it says what the evidence is made
-   of, never how sure anything is. Length must not read as a score. */
-.audit-evidence .conf-track { width: 8rem; flex: none; }
-.audit-tray {
-  display: grid;
-  grid-template-columns: max-content 1fr;
-  gap: var(--space-2) var(--space-3);
-  align-items: center;
-  margin: 0 0 var(--space-2);
-}
-.audit-tray form { margin: 0; }
-.audit-preview:empty { display: none; }
+.audit-summary { margin: 0; color: var(--text-dim); font-size: var(--text-sm); }
+/* The changed component, picked out of the path around it. Breaking between
+   words rather than inside them: `Risque` split across two lines as `Ris` and
+   `que` is harder to read than the wrap it avoided. */
+.change-before { text-decoration: line-through; opacity: 0.7; }
+.change-after { color: var(--audit); }
+.row-dest .mono { overflow-wrap: anywhere; word-break: normal; }
 .why-head { margin: 0 0 var(--space-2); font-size: 0.95rem; }
 .why-paths {
   display: grid;
@@ -2434,30 +2434,11 @@ summary.timeline-head::-webkit-details-marker { display: none; }
 .badge-status-missing { color: var(--text-dim); border-color: var(--border); }
 .badge-status-waiting { color: var(--audit); border-color: var(--audit); }
 .badge-status-corrected { color: var(--ok, var(--text-dim)); }
-.audit-row-head { display: flex; gap: var(--space-2); flex-wrap: wrap; align-items: center; }
 .badge-audit { color: var(--audit); border-color: var(--audit); letter-spacing: 0.08em; }
-.audit-summary { margin: var(--space-2) 0; }
-.audit-paths {
-  display: grid;
-  grid-template-columns: max-content 1fr;
-  gap: var(--space-1) var(--space-3);
-  margin: 0 0 var(--space-2);
-}
-.audit-paths dt { color: var(--text-dim); text-transform: uppercase; font-size: 0.8em; }
-.audit-paths dd { margin: 0; font-family: var(--font-mono); word-break: break-all; }
-.audit-why { margin: 0 0 var(--space-2); }
 
 /* A stale finding. Stated plainly and in words — the file changed, so it gets
    looked at again. No red, no alarm: nothing has gone wrong. */
-.audit-stale {
-  margin: 0 0 var(--space-2);
-  display: flex;
-  gap: var(--space-2);
-  align-items: baseline;
-  flex-wrap: wrap;
-  color: var(--text-dim);
-}
-.badge-stale { color: var(--text-dim); border-color: var(--border); letter-spacing: 0.08em; }
+.audit-stale { margin: 0; color: var(--text-dim); font-size: var(--text-sm); }
 .audit-affected { margin: 0 0 var(--space-2); }
 .audit-affected summary { cursor: pointer; }
 .audit-affected ul { list-style: none; margin: var(--space-2) 0 0; padding: 0; }
@@ -2470,10 +2451,7 @@ summary.timeline-head::-webkit-details-marker { display: none; }
   flex-wrap: wrap;
   word-break: break-all;
 }
-.audit-accepted { margin: 0; color: var(--audit); }
-/* Two separate forms side by side. Nested forms are invalid and the CSP
-   forbids the inline script that would let one form post to two places. */
-.audit-actions { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+.audit-accepted { color: var(--audit); font-size: var(--text-sm); }
 
 /* --- Commit: new files versus library corrections ----------------------- */
 .commit-section {
@@ -2494,19 +2472,18 @@ summary.timeline-head::-webkit-details-marker { display: none; }
 .correction details summary { cursor: pointer; margin-bottom: var(--space-2); }
 
 @media (max-width: 40rem) {
-  .audit-paths { grid-template-columns: 1fr; gap: 0 0; }
-  .audit-paths dt { margin-top: var(--space-2); }
   .why-paths { grid-template-columns: 1fr; gap: 0; }
-  .audit-tray { grid-template-columns: 1fr; }
   /* Full-width targets rather than several buttons squeezed onto one line:
-     the accept and the no-change must never be a mis-tap apart. */
-  .audit-actions { flex-direction: column; align-items: stretch; }
-  .audit-actions form, .audit-actions button, .audit-actions .btn { width: 100%; }
-  .audit-actions .action-gap { display: none; }
-  /* The checkbox keeps its column; everything else gets the full width rather
-     than being squeezed into what is left beside it. */
-  .audit-row { gap: var(--space-2); }
-  .audit-evidence .conf-track { width: 100%; }
+     the accept and the no-change must never be a mis-tap apart.
+     `flex: 1 1 100%` as well as `stretch`: the buttons were already stretching
+     to their container, but the container itself was sizing to its longest
+     label, so a row whose widest button said "No change" got a 99px column of
+     controls while the row above it got 215px. Measured at 375px, not guessed. */
+  .row-actions { flex-direction: column; align-items: stretch; flex: 1 1 100%; }
+  .row-actions form, .row-actions button, .row-actions .btn { width: 100%; }
+  .row-actions .action-gap { display: none; }
+  .row-shell { gap: var(--space-2); }
+  .audit-row .conf-track { width: 100%; }
 }
 
 /* --- File type info ------------------------------------------------------

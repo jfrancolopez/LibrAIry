@@ -1016,6 +1016,7 @@ def _audit_row(
         # Empty for an observation. The template must not render a
         # "suggested" line for a finding that has nowhere to suggest.
         "suggested": row["dest_relpath"] or "",
+        "change": path_change(row["relpath"], row["dest_relpath"] or ""),
         "why": _why_summary(row["evidence"]),
         "evidence_views": views,
         "evidence_mix": evidence_mix(views),
@@ -1039,6 +1040,31 @@ def _audit_row(
         "can_preview": can_preview,
         "browse_href": _audit_browse_href(row["relpath"], state),
     }
+
+
+def path_change(current: str, suggested: str) -> dict[str, str] | None:
+    """The part of the path that actually changes, and its context.
+
+    `Music/Pop/JAMES BROWN/Album/song.flac` against
+    `Music/Pop/James Brown/Album/song.flac` is one component moving, and
+    showing two full paths one above the other makes a person diff them by
+    eye. Component comparison is enough — there is no need for a real diff
+    algorithm — and when more than one component moves, or the depth changes,
+    it falls back to the whole path rather than inventing a summary.
+    """
+    if not suggested or current == suggested:
+        return None
+    before, after = current.split("/"), suggested.split("/")
+    if len(before) == len(after):
+        differing = [index for index in range(len(before)) if before[index] != after[index]]
+        if len(differing) == 1:
+            index = differing[0]
+            return {
+                "context": "/".join(before[:index]),
+                "before": before[index],
+                "after": after[index],
+            }
+    return {"context": "", "before": current, "after": suggested}
 
 
 def _is_folder(row: sqlite3.Row) -> bool:

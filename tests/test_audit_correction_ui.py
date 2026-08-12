@@ -97,7 +97,7 @@ def test_an_executable_finding_offers_to_accept_the_correction(tmp_path: Path) -
     body = client.get("/review").text
 
     assert ">Accept correction</button>" in rows(body)
-    assert "LIBRARY AUDIT" in body
+    assert "EXISTING LIBRARY" in body
     assert ">No change</button>" in rows(body)
     assert "Keep as it is" not in body
 
@@ -119,7 +119,7 @@ def test_an_observation_offers_no_correction(tmp_path: Path) -> None:
 
     body = client.get("/review").text
 
-    assert "LIBRARY AUDIT" in body
+    assert "EXISTING LIBRARY" in body
     assert ">Accept correction</button>" not in rows(body)
     assert ">No change</button>" in rows(body)
     assert ">Observation<" in body
@@ -276,7 +276,7 @@ def test_commit_separates_new_files_from_library_corrections(tmp_path: Path) -> 
     body = client.get("/commit").text
 
     assert "Library corrections" in body
-    assert "LIBRARY AUDIT" in body
+    assert "EXISTING LIBRARY" in body or "LIBRARY AUDIT" in body
     assert "library correction" in body
     assert "you already own" in body
 
@@ -392,7 +392,7 @@ def test_the_correction_actions_stack_on_a_narrow_screen() -> None:
     stacked = [
         block
         for block in blocks
-        if ".audit-actions" in block and "flex-direction: column" in block
+        if ".row-actions" in block and "flex-direction: column" in block
     ]
 
     assert stacked, "the accept/no-change pair must stack inside a narrow-screen block"
@@ -404,6 +404,6 @@ def test_the_audit_colour_is_never_the_only_signal() -> None:
     template = Path(
         "src/librairy/web/templates/partials/review_audit.html"
     ).read_text(encoding="utf-8")
-    assert "LIBRARY AUDIT" in template
+    assert "EXISTING LIBRARY" in template
     assert "status_label" in template
     assert "state_detail" in template

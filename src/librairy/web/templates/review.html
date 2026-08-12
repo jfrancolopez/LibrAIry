@@ -296,6 +296,16 @@
     </form>
   </div>
 
+  {# Two questions, one page, announced the same way. Before this the inbox
+     queue simply began, and Library Review appeared underneath it looking
+     like a different application had been appended. #}
+  <header class="section-head">
+    <h2>New files</h2>
+    <p class="muted">
+      {{ total }} waiting in your inbox. Nothing has been moved — approving
+      decides where a file goes, committing moves it.
+    </p>
+  </header>
   {% include "partials/review_list.html" %}
   {% include "partials/review_audit.html" %}
   {% include "partials/lightbox.html" %}

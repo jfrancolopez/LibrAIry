@@ -124,7 +124,7 @@ def test_the_audit_section_renders_separately_from_the_inbox_queue(tmp_path: Pat
     html = client.get("/review").text
 
     assert 'id="library-audit"' in html
-    assert "Library audit" in html
+    assert "Library Review" in html
     assert "new-arrival.mkv" in html, "the inbox queue is still there"
 
 
@@ -133,11 +133,11 @@ def test_every_audit_row_says_so_in_words(tmp_path: Path) -> None:
     client, _, _ = scene(tmp_path)
 
     html = client.get("/review").text
-    rows = re.findall(r'<li class="audit-row[^"]*">(.*?)</li>', html, flags=re.S)
+    rows = re.findall(r'class="row-shell audit-row[^"]*">(.*?)</article>', html, flags=re.S)
 
     assert rows
     for row in rows:
-        assert "LIBRARY AUDIT" in row
+        assert "EXISTING LIBRARY" in row
 
 
 def test_current_and_suggested_are_distinguishable(tmp_path: Path) -> None:
@@ -145,7 +145,7 @@ def test_current_and_suggested_are_distinguishable(tmp_path: Path) -> None:
 
     html = client.get("/review").text
 
-    assert "<dt>Current</dt>" in html
+    assert "row-dest" in html and "dest-arrow" in html
     assert "Music/Rock/Queen/tax-return.pdf" in html
 
 
@@ -209,7 +209,12 @@ def test_a_healthy_library_shows_no_audit_section_at_all(tmp_path: Path) -> None
     conn = connect(settings)
     client = TestClient(create_app(settings, conn))
 
-    assert 'id="library-audit"' not in client.get("/review").text
+    body = client.get("/review").text
+    # The section stays, as one compact line. A feature that vanishes when it
+    # has nothing to say is a feature nobody knows they have.
+    assert "Nothing to look at" in body
+    assert "audit-list" not in body
+    assert "audit-toolbar" not in body
 
 
 def test_the_browse_trigger_audits_and_changes_nothing(tmp_path: Path) -> None:
