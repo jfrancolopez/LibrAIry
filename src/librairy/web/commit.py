@@ -67,6 +67,10 @@ def commit_overview(conn: sqlite3.Connection) -> dict[str, Any]:
             for row in rows
         ],
         "sample": sample,
+        # Corrections to files already in the library are counted and listed
+        # apart from new files, all the way through. They are a different
+        # promise: one of these moves something the owner already had.
+        "corrections": _corrections(conn),
         "unfinished": _unfinished_plans(conn),
         "waiting_review": conn.execute(
             """
@@ -83,17 +87,57 @@ def commit_overview(conn: sqlite3.Connection) -> dict[str, Any]:
 
 
 def _unfinished_plans(conn: sqlite3.Connection) -> list[sqlite3.Row]:
-    """Plans created but never executed — otherwise they are invisible forever."""
+    """Plans created but never executed — otherwise they are invisible forever.
+
+    Correction plans are excluded: they are approved on purpose and listed in
+    their own section, so calling them "started but never run" would be both
+    wrong and alarming.
+    """
     return list(
         conn.execute(
             """
             SELECT p.*, (SELECT COUNT(*) FROM plan_ops WHERE plan_id = p.id) AS op_count
             FROM plans p
-            WHERE p.status IN ('draft', 'approved')
+            WHERE p.status IN ('draft', 'approved') AND p.audit_finding_id IS NULL
             ORDER BY p.created_at DESC LIMIT 5
             """
         )
     )
+
+
+def _corrections(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    """Accepted library corrections waiting to be executed, with their files.
+
+    Each is its own plan, which is what makes a correction one logical action:
+    it commits as a unit, journals as a unit, and undoes as a unit. They are
+    never folded into the inbox plan, and the inbox plan could not reach them
+    if it tried — it is built from `proposals`, and a correction has no
+    proposal row.
+    """
+    from librairy.corrections import pending_corrections, plan_files
+
+    found = []
+    for row in pending_corrections(conn):
+        ops = plan_files(conn, row["plan_id"])
+        found.append(
+            {
+                "finding_id": row["id"],
+                "plan_id": row["plan_id"],
+                "current": row["relpath"],
+                "suggested": row["dest_relpath"],
+                "summary": row["summary"],
+                "op_count": len(ops),
+                "files": [
+                    {
+                        "role": op["role"],
+                        "src": op["src_relpath"],
+                        "dest": op["dest_relpath"],
+                    }
+                    for op in ops
+                ],
+            }
+        )
+    return found
 
 
 def human_bytes(size: int | None) -> str:

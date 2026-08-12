@@ -28,6 +28,7 @@ from librairy.backup import request_backup_now
 from librairy.catalog_probe import UnknownCatalog, probe_catalog
 from librairy.catalogs import catalog_enabled
 from librairy.config import Settings
+from librairy.corrections import CorrectionRefused, accept_correction
 from librairy.db import connect, impatient, is_locked
 from librairy.dedup import DedupConfigError
 from librairy.filetypes import aria_label as ext_aria_label
@@ -674,7 +675,7 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         return TEMPLATES.TemplateResponse(
             request,
             "review.html",
-            {"title": "Review", **review_data(conn, filters)},
+            {"title": "Review", **review_data(conn, filters, settings)},
         )
 
     @app.get("/review/list", response_class=HTMLResponse)
@@ -700,7 +701,7 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         return TEMPLATES.TemplateResponse(
             request,
             "partials/review_list.html",
-            review_data(conn, filters),
+            review_data(conn, filters, settings),
         )
 
     @app.post("/review/undo", response_class=HTMLResponse)
@@ -718,7 +719,7 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         return TEMPLATES.TemplateResponse(
             request,
             "partials/review_list.html",
-            {**review_data(conn, filters), "notice": result.message},
+            {**review_data(conn, filters, settings), "notice": result.message},
         )
 
     @app.get("/review/duplicates/{item_id}", response_class=HTMLResponse)
@@ -783,6 +784,43 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         keep_as_is(conn, finding_id)
         return RedirectResponse("/review#library-audit", status_code=303)
 
+    @app.post("/review/audit/{finding_id}/accept", include_in_schema=False)
+    def review_audit_accept(
+        request: Request,  # noqa: ARG001
+        finding_id: int,
+    ) -> RedirectResponse:
+        """Approve one library -> library correction, companions and all.
+
+        Every refusal lives in `accept_correction`, not in the template that
+        decides whether to draw the button: the same request can arrive from a
+        page left open since yesterday, from a second tab, or from curl.
+        """
+        try:
+            accept_correction(conn, settings, finding_id)
+        except CorrectionRefused as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return RedirectResponse("/review#library-audit", status_code=303)
+
+    @app.post("/review/audit/{finding_id}/reaudit", include_in_schema=False)
+    def review_audit_reaudit(
+        request: Request,  # noqa: ARG001
+        finding_id: int,
+    ) -> RedirectResponse:
+        """Look at the file again, and record what is true now.
+
+        The stale finding is not patched — it is replaced by whatever this run
+        finds, against the file's current fingerprint. If the problem has gone
+        away the row goes with it.
+        """
+        row = conn.execute(
+            "SELECT relpath FROM audit_findings WHERE id=?", (finding_id,)
+        ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="that finding no longer exists")
+        folder = row["relpath"].rpartition("/")[0]
+        audit_library(conn, settings, scope=sanitize_scope(folder, settings.library_dir))
+        return RedirectResponse("/review#library-audit", status_code=303)
+
     @app.post("/browse/audit", include_in_schema=False)
     def browse_audit(
         request: Request,  # noqa: ARG001
@@ -835,7 +873,7 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         return TEMPLATES.TemplateResponse(
             request,
             "partials/review_list.html",
-            {"toast": action_toast(action, changed), **review_data(conn, filters)},
+            {"toast": action_toast(action, changed), **review_data(conn, filters, settings)},
         )
 
     @app.post("/review/proposals/{proposal_id}/edit", response_class=HTMLResponse)

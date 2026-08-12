@@ -58,6 +58,9 @@
           <details class="timeline-plan card">
             <summary class="timeline-head">
               <span class="day-time mono">{{ group.time }}</span>
+              {# In words, not only in the wording of the summary: a move
+                 between two places you chose is not a file being filed. #}
+              {% if group.correction %}<span class="badge badge-audit">LIBRARY AUDIT</span>{% endif %}
               <strong class="plan-summary">{{ group.summary }}</strong>
               <span class="badge {{ 'badge-ok' if group.status == 'done' else 'badge-warn' }}">{{ group.status or 'plan' }}</span>
             </summary>

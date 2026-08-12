@@ -77,6 +77,7 @@ def _days(entries: list[dict[str, object]], plans: dict) -> list[dict[str, objec
             days.append(bucket)
         group["time"] = str(group.get("ts") or "")[11:16]
         group["summary"] = _plan_summary(group["entries"])
+        group["correction"] = _is_correction(group["entries"])
         bucket["plans"].append(group)
         bucket["files"] = int(bucket["files"]) + len(group["entries"])
     return days
@@ -95,12 +96,29 @@ def _day_label(day: str) -> str:
     return parsed.strftime("%-d %B %Y")
 
 
+def _is_correction(entries: list[dict[str, object]]) -> bool:
+    """Library in, library out: a file the owner already had was moved.
+
+    Read from the journal rather than from a new column, because the journal
+    already records both roots and has since the first release. "Filed 4 files"
+    is the wrong sentence for a correction — nothing was filed, something was
+    rearranged.
+    """
+    moves = [entry for entry in entries if entry.get("action") == "move"]
+    return bool(moves) and all(
+        entry.get("src_root") == "library" and entry.get("dest_root") == "library"
+        for entry in moves
+    )
+
+
 def _plan_summary(entries: list[dict[str, object]]) -> str:
     """What this plan did, in the words the buttons that caused it used."""
     count = len(entries)
     files = "file" if count == 1 else "files"
     if all(entry.get("action") == "undo_move" for entry in entries):
         return f"Put {count} {files} back"
+    if _is_correction(entries):
+        return f"Library correction · moved {count} {files}"
     quarantined = sum(1 for entry in entries if entry.get("dest_root") == "quarantine")
     if quarantined == count:
         return f"Quarantined {count} {files}"

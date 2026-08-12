@@ -13,8 +13,14 @@
     </div>
   </header>
 
-  {% if approved_count %}
+  {% if approved_count or corrections %}
+  <p class="commit-split muted">
+    <strong>{{ approved_count }}</strong> new file{{ '' if approved_count == 1 else 's' }} from your inbox{% if corrections %}, and <strong>{{ corrections|length }}</strong> library correction{{ '' if corrections|length == 1 else 's' }} affecting {{ corrections|sum(attribute='op_count') }} file{{ '' if corrections|sum(attribute='op_count') == 1 else 's' }} you already own{% endif %}.
+  </p>
+  {% endif %}
 
+  {% if approved_count %}
+    <h2 class="commit-section">New files</h2>
     <div class="widget-grid">
       <section class="widget card centerpiece">
         <h3>Ready to move</h3>
@@ -52,7 +58,7 @@
         {% endif %}
       </section>
     </div>
-  {% else %}
+  {% elif not corrections %}
     <section class="card empty-state">
       <h3>Nothing is approved yet</h3>
       {% if waiting_review %}
@@ -62,6 +68,48 @@
         <p>Nothing is waiting for review either. Drop files into your inbox and LibrAIry will propose where they belong.</p>
         <p><a href="/dashboard">Back to dashboard</a></p>
       {% endif %}
+    </section>
+  {% endif %}
+
+  {# Never mixed into the list above. A new file arriving and a file you
+     already own being moved are different promises, and the second one
+     deserves to be read before it happens. #}
+  {% if corrections %}
+    <h2 class="commit-section">Library corrections</h2>
+    <section class="card audit">
+      <p class="muted">
+        These move files <strong>already in your library</strong> — approved one
+        at a time in Review, each committed on its own, each undoable on its own
+        from History.
+      </p>
+      <ul class="correction-list">
+        {% for correction in corrections %}
+          <li class="correction">
+            <div class="audit-row-head">
+              <span class="badge badge-audit">LIBRARY AUDIT</span>
+              <span class="muted">{{ correction.op_count }} file{{ '' if correction.op_count == 1 else 's' }}</span>
+            </div>
+            <p class="audit-summary">{{ correction.summary }}</p>
+            <details>
+              <summary>Every move in this correction</summary>
+              <ul class="sample-moves">
+                {% for file in correction.files %}
+                  <li class="from-to">
+                    <span class="badge">{{ file.role }}</span>
+                    <span class="mono muted">{{ file.src }}</span>
+                    <span aria-hidden="true">→</span>
+                    <span class="mono">{{ file.dest }}</span>
+                  </li>
+                {% endfor %}
+              </ul>
+            </details>
+            <form method="post" action="/commit/execute/{{ correction.plan_id }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button type="submit" class="primary">Commit this correction</button>
+            </form>
+          </li>
+        {% endfor %}
+      </ul>
     </section>
   {% endif %}
 

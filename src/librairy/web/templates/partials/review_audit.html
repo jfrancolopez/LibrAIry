@@ -47,10 +47,65 @@
           {% endif %}
         </dl>
         {% if finding.why %}<p class="muted audit-why">{{ finding.why }}</p>{% endif %}
-        <form method="post" action="/review/audit/{{ finding.id }}/keep">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-          <button type="submit">Keep as it is</button>
-        </form>
+
+        {# The file changed after it was looked at. No scary language and no
+           automatic correction: the finding is evidence, and evidence that has
+           stopped describing reality gets looked at again rather than
+           rewritten behind the user's back. #}
+        {% if finding.state != 'current' %}
+        <p class="audit-stale">
+          <span class="badge badge-stale">{{ finding.state_label | upper }}</span>
+          {{ finding.state_detail }}
+        </p>
+        {% elif finding.blocked %}
+        <p class="audit-stale">
+          <span class="badge">NOT YET</span> {{ finding.blocked }}
+        </p>
+        {% endif %}
+
+        {# Everything that will move, before it moves. A correction that turned
+           out to touch four files only after Commit would be a surprise, and a
+           surprise is the one thing this workflow cannot afford. #}
+        {% if finding.affected_count > 1 %}
+        <details class="audit-affected">
+          <summary>{{ finding.affected_count }} files will move</summary>
+          <ul>
+            {% for item in finding.affected %}
+            <li>
+              <span class="badge">{{ 'primary' if item.role == 'primary' else 'companion' }}</span>
+              {{ item.name }}{{ ext_info(item.name) }}
+              {% if item.reason %}<span class="muted">— {{ item.reason }}</span>{% endif %}
+            </li>
+            {% endfor %}
+          </ul>
+        </details>
+        {% endif %}
+
+        {% if finding.accepted %}
+        <p class="audit-accepted">
+          Approved correction · waiting for <a href="/commit">Commit</a>
+        </p>
+        {% else %}
+        {# Separate forms, not one form with two buttons: nested forms are
+           invalid and the CSP forbids the inline JS that would avoid them. #}
+        <div class="audit-actions">
+          {% if finding.executable %}
+          <form method="post" action="/review/audit/{{ finding.id }}/accept">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button type="submit" class="primary">Accept correction</button>
+          </form>
+          {% elif finding.state == 'stale' %}
+          <form method="post" action="/review/audit/{{ finding.id }}/reaudit">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button type="submit">Re-audit</button>
+          </form>
+          {% endif %}
+          <form method="post" action="/review/audit/{{ finding.id }}/keep">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button type="submit">Keep as it is</button>
+          </form>
+        </div>
+        {% endif %}
       </li>
       {% endfor %}
     </ul>

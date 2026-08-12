@@ -659,8 +659,17 @@ def _retire_resolved(
             conn.execute("DELETE FROM audit_findings WHERE id=?", (row["id"],))
 
 
-def open_findings(conn: sqlite3.Connection, *, scope: str = "") -> list[sqlite3.Row]:
-    sql = "SELECT * FROM audit_findings WHERE status='open'"
+def open_findings(
+    conn: sqlite3.Connection, *, scope: str = "", include_accepted: bool = False
+) -> list[sqlite3.Row]:
+    """Findings still awaiting an answer.
+
+    `include_accepted` adds the ones already approved and waiting for Commit.
+    Review wants them — a correction you accepted should stay visible, saying
+    what it is waiting for — while the CLI's "what is open" count does not.
+    """
+    statuses = "('open','accepted')" if include_accepted else "('open')"
+    sql = f"SELECT * FROM audit_findings WHERE status IN {statuses}"  # noqa: S608
     params: list[object] = []
     if scope:
         sql += " AND relpath LIKE ?"

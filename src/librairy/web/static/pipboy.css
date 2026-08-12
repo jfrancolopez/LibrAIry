@@ -2386,9 +2386,58 @@ summary.timeline-head::-webkit-details-marker { display: none; }
 .audit-paths dd { margin: 0; font-family: var(--font-mono); word-break: break-all; }
 .audit-why { margin: 0 0 var(--space-2); }
 
+/* A stale finding. Stated plainly and in words — the file changed, so it gets
+   looked at again. No red, no alarm: nothing has gone wrong. */
+.audit-stale {
+  margin: 0 0 var(--space-2);
+  display: flex;
+  gap: var(--space-2);
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+.badge-stale { color: var(--text-dim); border-color: var(--border); letter-spacing: 0.08em; }
+.audit-affected { margin: 0 0 var(--space-2); }
+.audit-affected summary { cursor: pointer; }
+.audit-affected ul { list-style: none; margin: var(--space-2) 0 0; padding: 0; }
+.audit-affected li {
+  font-family: var(--font-mono);
+  padding: var(--space-1) 0;
+  display: flex;
+  gap: var(--space-2);
+  align-items: baseline;
+  flex-wrap: wrap;
+  word-break: break-all;
+}
+.audit-accepted { margin: 0; color: var(--audit); }
+/* Two separate forms side by side. Nested forms are invalid and the CSP
+   forbids the inline script that would let one form post to two places. */
+.audit-actions { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+
+/* --- Commit: new files versus library corrections ----------------------- */
+.commit-section {
+  margin: var(--space-6, 2rem) 0 var(--space-3);
+  font-size: 1.1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+}
+.commit-split { max-width: 70ch; }
+.correction-list { list-style: none; margin: 0; padding: 0; }
+.correction {
+  border-left: 3px solid var(--audit);
+  background: var(--bg-metric);
+  padding: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+.correction details summary { cursor: pointer; margin-bottom: var(--space-2); }
+
 @media (max-width: 40rem) {
   .audit-paths { grid-template-columns: 1fr; gap: 0 0; }
   .audit-paths dt { margin-top: var(--space-2); }
+  /* Full-width targets rather than two buttons squeezed onto one line: the
+     accept and the keep must never be a mis-tap apart. */
+  .audit-actions { flex-direction: column; }
+  .audit-actions form, .audit-actions button { width: 100%; }
 }
 
 /* --- File type info ------------------------------------------------------
