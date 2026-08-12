@@ -597,6 +597,47 @@ input while it runs, exactly as it is during Browse.
 | **Missing artwork** | An album with tracks and no cover — reported once per album, not once per folder. |
 | **Not indexed** | On disk but never scanned, so Search cannot see it. |
 | **System file** | `.DS_Store` and friends. Reported, never deleted. |
+| **One album in several folders** | The same release split across folders — most often a compilation filed one artist at a time. |
+| **Artist filed in two places** | The same artist has folders under two different sections. |
+| **Folder name disagrees with the tags** | Every track says one album name; the folder says another. |
+| **Tracks missing from an album** | A numbered album with a hole in the middle. |
+| **Named unlike its neighbours** | One file in a folder where every other file follows a pattern. |
+| **Loose tracks beside album folders** | Tracks directly in an artist folder that otherwise uses albums. |
+| **A catalog spells this differently** | The tags *and* an outside catalog agree on a spelling the folder does not use. |
+
+### How much it looks at
+
+Three tiers, split by what each one costs, and each can be absent without
+changing the answers of the ones below it:
+
+| Tier | Reads | Cost |
+|---|---|---|
+| **Structure** | The filesystem and the index | Microseconds. Always. |
+| **Metadata** | Embedded tags | ~30 ms a file. Skip with `--no-tags`. |
+| **Catalogs** | MusicBrainz, and what it said last time | One request per album, once. |
+
+The catalog tier runs **only when you press Audit**. Browsing never queries
+anything, nothing polls on a timer, and there is no background audit service.
+What a catalog answers is written down — the release id, the canonical names —
+so the next audit reads it instead of asking again, and a failure to match is
+remembered too, for a shorter time. A catalog that is switched off, unreachable
+or slow degrades to *no answer*: the audit still succeeds, and every finding
+above that tier is unaffected.
+
+A catalog never wins an argument on its own. It gets a say only when the
+embedded tags already agree with it **against** the folder — three witnesses,
+and only the folder-alone case means anything:
+
+```text
+folder differs, tags and catalog agree   →  reported.  JAMES BROWN → James Brown
+folder and tags agree, catalog differs   →  nothing.   ABBA stays ABBA
+folder and catalog agree, tags differ    →  nothing.
+```
+
+The real library shows why the middle row matters. Its one non-compilation album
+matches a MusicBrainz release whose canonical title is *Unplugged: 20th
+Anniversary*, while the folder and every tag in it say *Unplugged (20th
+Anniversary)*. The catalog is outvoted and nothing is suggested.
 
 ### Why it says so little
 
@@ -608,7 +649,19 @@ consistent depth has no convention to be inconsistent with, so it gets no *loose
 file* findings at all. A library that shouts throughout is a style, not 400
 naming problems.
 
-Against a real 140-file library, a full audit reports **three** things.
+Against a real 140-file library, a full audit reports **six** things — and the
+grouping is doing most of that work. Forty-five of its forty-eight music tracks
+are one compilation filed as twenty-seven artist folders, which is **one** row
+saying so, not twenty-seven and not forty-five. The same split would otherwise
+have produced a *tracks missing from an album* row for every one of those
+folders, since each is "missing" forty of the forty-five numbers; a finding that
+explains another one suppresses it.
+
+A row that speaks for several places says so, and lists them:
+
+```text
+▸ Spans 27 folders          ▸ 2 identical copies
+```
 
 ### Reading a row
 
