@@ -42,6 +42,11 @@ from librairy.scanner import visible_files
 KINDS = {
     "unexpected-file-type": "Unexpected file type",
     "loose-file": "Loose file",
+    # Two naming kinds, split by what can safely be executed rather than by
+    # what the problem is. Renaming a file is one move the existing plan
+    # already represents; renaming a folder is every file beneath it, which is
+    # a different proof. See EXECUTABLE_KINDS.
+    "naming-cleanup": "Naming cleanup",
     "naming-inconsistency": "Naming inconsistency",
     "tag-path-mismatch": "Tags disagree with the folder",
     "duplicate": "Possible duplicate",
@@ -59,15 +64,16 @@ KINDS = {
 # executing it would mean, and the allowlist is where that thinking is
 # recorded. Three kinds were considered and left out on purpose:
 #
-# * `naming-inconsistency` proposes no destination and never will from here —
-#   it is about a *folder*, and the corrected spelling of `JAMES BROWN` is a
-#   judgement ("James Brown"? "James Brown & The J.B.'s"?) that this module
-#   cannot make. Renaming a folder is also not one move but every file in it.
+# * `naming-inconsistency` is always about a *folder*. Renaming one is not one
+#   move but every file beneath it, and the existing correction group resolves
+#   a primary plus its companions in one directory — not a subtree. Until that
+#   is built and proven, a folder rename stays a suggestion. This is why
+#   `JAMES BROWN` is shown with its corrected spelling and no button.
 # * `duplicate` has a correct answer — quarantine the copy — but that is a
 #   different action class with its own safety semantics, not a move.
 # * `missing-artwork`, `unindexed` and `system-junk` describe files that are
 #   exactly where they belong.
-EXECUTABLE_KINDS = frozenset({"tag-path-mismatch"})
+EXECUTABLE_KINDS = frozenset({"tag-path-mismatch", "naming-cleanup"})
 
 # "high" is worth acting on; "review" needs your judgement. Deliberately two
 # bands and not five — a third would only invite arguing about the boundary.
@@ -233,6 +239,7 @@ def detect(view: LibraryView) -> list[Finding]:
     for detector in (
         _unexpected_file_types,
         _loose_files,
+        _naming_hygiene,
         _naming_inconsistencies,
         _tag_path_mismatches,
         _duplicates,
@@ -344,12 +351,77 @@ def _typical_depth(view: LibraryView) -> int | None:
     return depth if count * 2 > total else None
 
 
-def _naming_inconsistencies(view: LibraryView) -> list[Finding]:
-    """A folder shouting among siblings that do not.
+def _naming_hygiene(view: LibraryView) -> list[Finding]:
+    """Path components that break LibrAIry's own naming rules.
 
-    `JAMES BROWN` next to `Barry White` and `Diana Ross` is a real
-    inconsistency, but it is a judgement call and never a correction — the
-    audit will not rename a folder because it dislikes the case.
+    Deterministic: leading spaces, doubled spaces, emoji, typographic quotes,
+    characters Windows rejects. No tags, no catalog and no model needed to be
+    sure about any of them.
+
+    It checks *components*, not paths, and reports each bad component once —
+    so a folder called `  Vacation 2022 🔥 ` holding forty files is one finding
+    and not forty. That is the same lesson the artwork detector learned when a
+    45-track compilation produced twenty-eight identical rows.
+
+    House style is deliberately not enforced here. `slugify` would also turn
+    every space into a dash and drop apostrophes, and against the author's real
+    library that rewrites 118 of 140 files — see the note in `naming.py`.
+    """
+    from librairy.naming import hygiene_issues, is_structural, tidy_component
+
+    seen: dict[str, Finding] = {}
+    for relpath in view.files:
+        parts = relpath.split("/")
+        for index, part in enumerate(parts):
+            key = "/".join(parts[: index + 1])
+            if key in seen or is_structural(part, tuple(parts[:index])):
+                continue
+            is_file = index == len(parts) - 1
+            issues = hygiene_issues(part, is_filename=is_file)
+            if not issues:
+                continue
+            tidy = tidy_component(part, is_filename=is_file)
+            if tidy == part:
+                continue
+            parent = "/".join(parts[:index])
+            seen[key] = Finding(
+                relpath=key,
+                # A file can be renamed by one move the plan already
+                # represents. A folder is every file beneath it.
+                kind="naming-cleanup" if is_file else "naming-inconsistency",
+                severity="high" if _breaks_things(issues) else "review",
+                summary=" ".join(issue.detail for issue in issues),
+                dest_relpath=f"{parent}/{tidy}" if parent else tidy,
+                evidence=[
+                    EvidenceEntry("filesystem", "name", part, 1.0),
+                    *[
+                        EvidenceEntry("filesystem", issue.rule, issue.detail, 1.0)
+                        for issue in issues
+                    ],
+                ],
+            )
+    return list(seen.values())
+
+
+def _breaks_things(issues: list) -> bool:
+    """Cosmetic, or actually broken on somebody's laptop."""
+    serious = {"windows-forbidden", "control", "reserved", "invisible", "too-long"}
+    return any(issue.rule in serious for issue in issues)
+
+
+def _naming_inconsistencies(view: LibraryView) -> list[Finding]:
+    """A folder shouting when its own files say it has a name with lower case.
+
+    `str.isupper()` is not the test and must never be. `ABBA`, `MF DOOM`,
+    `NASA` and `AC/DC` are all correctly upper case, and "lower-case it because
+    it looks loud" would turn a right name into a wrong one.
+
+    So the evidence decides. The tags inside the folder know what the artist is
+    actually called: if they say `James Brown` where the folder says
+    `JAMES BROWN`, that is a real inconsistency with a real correction. If they
+    say `ABBA`, the folder is right and there is no finding. With no tags at
+    all it falls back to the weaker sibling-convention signal and proposes
+    nothing — an observation, not a rename.
     """
     by_parent: dict[str, set[str]] = defaultdict(set)
     for relpath in view.files:
@@ -358,33 +430,83 @@ def _naming_inconsistencies(view: LibraryView) -> list[Finding]:
             by_parent["/".join(parts[:index])].add(parts[index])
     findings = []
     for parent, names in sorted(by_parent.items()):
-        if len(names) < 4:
-            continue
         shouting = sorted(name for name in names if _is_shouting(name))
-        if not shouting or len(shouting) * 2 >= len(names):
-            continue
         for name in shouting:
+            folder = f"{parent}/{name}"
+            canonical = _canonical_casing(view, folder, name)
+            if canonical == name:
+                # The tags agree with the folder. ABBA is called ABBA.
+                continue
+            if canonical:
+                findings.append(
+                    Finding(
+                        relpath=folder,
+                        kind="naming-inconsistency",
+                        severity="high",
+                        summary=(
+                            f"The files inside are tagged {canonical!r}, "
+                            f"but the folder is {name!r}."
+                        ),
+                        dest_relpath=f"{parent}/{canonical}",
+                        evidence=[
+                            EvidenceEntry("filesystem", "folder", name, 1.0),
+                            EvidenceEntry("tags", "canonical name", canonical, 0.9),
+                        ],
+                    )
+                )
+                continue
+            # No tags to appeal to. The siblings are the only evidence, and
+            # they are weak enough that four of them are the minimum.
+            others = names - set(shouting)
+            if len(names) < 4 or len(shouting) * 2 >= len(names) or not others:
+                continue
             findings.append(
                 Finding(
-                    relpath=f"{parent}/{name}",
+                    relpath=folder,
                     kind="naming-inconsistency",
                     severity="review",
                     summary=(
-                        f"Capitalised differently from the {len(names) - len(shouting)} "
-                        f"folders beside it."
+                        f"Capitalised differently from the {len(others)} folders beside it."
                     ),
                     evidence=[
                         EvidenceEntry("filesystem", "folder", name, 0.6),
                         EvidenceEntry(
-                            "library-pattern",
-                            "siblings",
-                            ", ".join(sorted(names - set(shouting))[:3]),
-                            0.6,
+                            "library-pattern", "siblings", ", ".join(sorted(others)[:3]), 0.6
                         ),
                     ],
                 )
             )
     return findings
+
+
+def _canonical_casing(view: LibraryView, folder: str, name: str) -> str | None:
+    """What the files inside call this folder, if they agree and it is a name.
+
+    Only the same name spelled differently counts. A tag that is a different
+    string altogether is a `tag-path-mismatch`, which is a different finding
+    with a different answer, and letting this one propose a rename as well
+    would give the same file two competing corrections.
+    """
+    # Both tags, not the usual album_artist-then-artist preference. On a
+    # compilation the album artist is "Various Artists", which is a true
+    # statement about the album and says nothing about the artist folder the
+    # track sits in — and preferring it is why `JAMES BROWN` found no
+    # canonical spelling on the author's real library.
+    prefix = f"{folder}/"
+    values = {
+        (tags.get(field) or "").strip()
+        for relpath, tags in view.tags.items()
+        if relpath.startswith(prefix)
+        for field in ("album_artist", "artist")
+    }
+    candidates = {value for value in values if value and _same(value, name)}
+    if len(candidates) != 1:
+        return None
+    canonical = candidates.pop()
+    from librairy.naming import hygiene_issues
+
+    # A tag with its own naming problems is not an improvement.
+    return canonical if not hygiene_issues(canonical) else None
 
 
 def _is_shouting(name: str) -> bool:

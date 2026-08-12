@@ -15,7 +15,10 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from dataclasses import dataclass
 from pathlib import PurePosixPath
+
+from librairy.paths import CONTROL_CHARS
 
 SEPARATOR = "-"
 
@@ -166,3 +169,181 @@ def is_clean(name: str) -> bool:
     filename should not turn up in Review as a move to itself.
     """
     return slugify_filename(name) == name
+
+
+# --- naming hygiene, for names LibrAIry did not choose ------------------------
+#
+# `slugify` answers "what should LibrAIry call this new file?" and its answer
+# is house style: whitespace becomes a dash, apostrophes are dropped, `&`
+# becomes `and`. That is right for a name being invented, and wrong as a
+# verdict on a library somebody else already organised.
+#
+# Measured before this was written: of 140 files in the author's real library,
+# **118 would be renamed by `tidy_relpath`**, and 142 of 183 path components
+# contain a space. Auditing against house style would report 84% of the
+# library as broken — the "eight hundred harmless warnings" the audit exists
+# to avoid, and a direct contradiction of its founding rule that your layout
+# is evidence rather than a mistake.
+#
+# So the audit enforces the *hygiene* half: the rules that say a name is
+# damaged rather than differently-styled. Same module, same character tables,
+# one policy split at a line that is written down here:
+#
+#   hygiene (audited)      leading/trailing/repeated whitespace, control
+#                          characters, Windows-forbidden characters, emoji and
+#                          other symbols, typographic quotes, reserved device
+#                          names, trailing dots, over-length, non-NFC forms
+#   house style (not)      space -> dash, ASCII apostrophe dropped, & -> and
+#
+# The ASCII apostrophe is the one place the audit is deliberately narrower
+# than `slugify`. It is legal on every filesystem LibrAIry targets and it
+# appears in real titles — `Guns N' Roses`, `You're My Best Friend` — so
+# flagging it would turn correct names into worse ones. Typographic quotes
+# (`’ ‘ “ ”`) are still hygiene: they are almost always a copy-paste artifact
+# and they are what makes two visually identical paths different strings.
+
+# Everything `slugify` drops except the plain apostrophe. `"` and `` ` `` are
+# not punctuation anybody puts in a title on purpose and both break shell
+# quoting; `'` is in real names and is safe everywhere LibrAIry runs.
+KEPT_QUOTE = "'"
+DROPPED_QUOTES = frozenset(DROPPED) - {KEPT_QUOTE}
+SMART_QUOTES = frozenset("’‘“”„‟′″")
+# Whitespace that is not a plain space, plus the zero-width and directional
+# characters that make two identical-looking names different strings.
+ODD_SPACE = re.compile(r"[\t\n\r\f\v   -     　]")
+INVISIBLE = re.compile(r"[​-‏‪-‮⁠-⁤﻿]")
+REPEATED_SPACE = re.compile(r"  +")
+
+
+@dataclass(frozen=True)
+class NamingIssue:
+    """One rule a path component breaks, in words fit for the page."""
+
+    rule: str
+    detail: str
+
+
+def hygiene_issues(component: str, *, is_filename: bool = False) -> list[NamingIssue]:
+    """Every hygiene rule this one path component breaks.
+
+    Deterministic and evidence-free: none of these needs tags, a catalog or a
+    model to be certain about. Casing is deliberately absent — it is a
+    judgement about a name rather than a defect in one, and it is decided
+    elsewhere with evidence.
+    """
+    stem, suffix = _split_name(component) if is_filename else (component, "")
+    issues: list[NamingIssue] = []
+    if component != component.strip():
+        where = "starts" if component != component.lstrip() else "ends"
+        issues.append(NamingIssue("edge-space", f"{where.capitalize()} with a space."))
+    if is_filename and stem != stem.rstrip():
+        issues.append(NamingIssue("space-before-extension", "Has a space before the extension."))
+    if REPEATED_SPACE.search(component):
+        issues.append(NamingIssue("repeated-space", "Contains a run of two or more spaces."))
+    if ODD_SPACE.search(component):
+        issues.append(NamingIssue("odd-space", "Contains a tab, newline or unusual space."))
+    if INVISIBLE.search(component):
+        issues.append(NamingIssue("invisible", "Contains invisible formatting characters."))
+    if CONTROL_CHARS.search(component):
+        issues.append(NamingIssue("control", "Contains control characters."))
+    forbidden = sorted({char for char in component if char in WINDOWS_FORBIDDEN})
+    if forbidden:
+        issues.append(
+            NamingIssue(
+                "windows-forbidden",
+                f"Contains {' '.join(forbidden)}, which Windows and SMB shares reject.",
+            )
+        )
+    if any(char in SMART_QUOTES or char in DROPPED_QUOTES for char in component):
+        issues.append(NamingIssue("smart-quotes", "Contains typographic quote characters."))
+    symbols = sorted({char for char in component if _is_symbol(char)})
+    if symbols:
+        issues.append(
+            NamingIssue("symbol", f"Contains {' '.join(symbols)}, which is not part of a name.")
+        )
+    if unicodedata.normalize("NFC", component) != component:
+        issues.append(NamingIssue("unicode-form", "Uses a decomposed Unicode form."))
+    if stem.endswith("."):
+        issues.append(NamingIssue("trailing-dot", "Ends in a dot, which Windows silently drops."))
+    if stem.upper() in RESERVED:
+        issues.append(NamingIssue("reserved", f"{stem} is a reserved device name on Windows."))
+    if len(component) > MAX_COMPONENT:
+        issues.append(NamingIssue("too-long", f"Longer than {MAX_COMPONENT} characters."))
+    return issues
+
+
+def tidy_component(component: str, *, is_filename: bool = False) -> str:
+    """The same name with its hygiene problems fixed and nothing else changed.
+
+    Spaces stay spaces and apostrophes stay apostrophes: this repairs a name,
+    it does not restyle one. An unsafe character is *removed* rather than
+    turned into a dash, because the surrounding text is space-joined — turning
+    `🔥 Queen 🔥` into `-Queen-` would fix one problem by causing another.
+    """
+    stem, suffix = _split_name(component) if is_filename else (component, "")
+    cleaned = unicodedata.normalize("NFC", stem)
+    # Odd spacing becomes a space before control characters are stripped: a
+    # tab is both, and removing it would join two words into one.
+    cleaned = ODD_SPACE.sub(" ", cleaned)
+    cleaned = CONTROL_CHARS.sub("", cleaned)
+    cleaned = INVISIBLE.sub("", cleaned)
+    cleaned = "".join(
+        ""
+        if char in SMART_QUOTES or char in DROPPED_QUOTES or _is_symbol(char)
+        else char
+        for char in cleaned
+    )
+    cleaned = "".join("-" if char in WINDOWS_FORBIDDEN else char for char in cleaned)
+    # A run of forbidden characters is one problem, not five dashes.
+    cleaned = _SEPARATOR_RUN.sub(SEPARATOR, cleaned)
+    cleaned = REPEATED_SPACE.sub(" ", cleaned).strip().strip("-").strip().rstrip(".")
+    cleaned = cleaned[:MAX_COMPONENT].strip()
+    if not cleaned:
+        return slugify(component)
+    if cleaned.upper() in RESERVED:
+        cleaned = f"{cleaned}_"
+    return f"{cleaned}{suffix}"
+
+
+def _split_name(name: str) -> tuple[str, str]:
+    """Stem and suffix, keeping every dot a subtitle depends on.
+
+    `Movie.en.forced.srt` is stem `Movie.en.forced` and suffix `.srt`, so the
+    language and forced markers survive being tidied — losing them is how two
+    subtitles collapse into one filename no player can tell apart.
+    """
+    path = PurePosixPath(name)
+    suffix = path.suffix if 0 < len(path.suffix) <= 10 else ""
+    return (name[: -len(suffix)] if suffix else name), suffix
+
+
+def _is_symbol(char: str) -> bool:
+    """Emoji, arrows, currency signs — a picture, not a letter.
+
+    Anything alphanumeric in any script is a name: Japanese is a name, not a
+    weird character. `KEEP` covers the punctuation people genuinely use.
+    """
+    if char.isalnum() or char.isspace() or char in KEEP or char in DROPPED:
+        return False
+    if char in WINDOWS_FORBIDDEN:
+        # `<` and `>` are maths symbols to Unicode and forbidden characters to
+        # Windows. The forbidden rule owns them, so a run of them collapses to
+        # one separator instead of vanishing and joining two words.
+        return False
+    return unicodedata.category(char).startswith("S") or ord(char) > 0x2100
+
+
+def is_structural(component: str, parts: tuple[str, ...] = ()) -> bool:
+    """Names that are a contract with a player rather than a description.
+
+    `VIDEO_TS.IFO` points at its siblings by name and `VTS_01_1.VOB` is what a
+    DVD player looks for. Tidying either produces a folder that reads better
+    and no longer plays, so nothing inside a disc directory is ever audited
+    for style.
+    """
+    if component.upper() in DISC_DIRECTORIES:
+        return True
+    if any(part.upper() in DISC_DIRECTORIES for part in parts):
+        return True
+    stem = PurePosixPath(component).stem.upper()
+    return stem in DISC_DIRECTORIES or bool(re.match(r"^VTS_\d+_\d+$", stem))
