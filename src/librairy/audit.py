@@ -53,6 +53,14 @@ KINDS = {
     "missing-artwork": "Missing artwork",
     "unindexed": "Not indexed",
     "system-junk": "System file",
+    # Music reconciliation. Each of these is about a folder or a set of them,
+    # which is why none appear in EXECUTABLE_KINDS. See `audit_music`.
+    "split-album": "One album in several folders",
+    "artist-split": "Artist filed in two places",
+    "album-name-mismatch": "Folder name disagrees with the tags",
+    "track-numbering": "Tracks missing from an album",
+    "naming-outlier": "Named unlike its neighbours",
+    "loose-tracks": "Loose tracks beside album folders",
 }
 
 # Kinds whose correction is a concrete, deterministic filesystem move that
@@ -234,7 +242,16 @@ def gather(
 
 
 def detect(view: LibraryView) -> list[Finding]:
-    """Every detector, over one gathered view."""
+    """Every detector, over one gathered view.
+
+    Two tiers, and the split is about cost rather than importance. The first
+    group reads only the filesystem and the index and is always safe to run.
+    `audit_music` additionally needs embedded tags, which cost roughly 30 ms a
+    file to read, so it does nothing at all when tags were not gathered — a
+    `--no-tags` audit is a fast structural pass, not a broken one.
+    """
+    from librairy import audit_music
+
     findings: list[Finding] = []
     for detector in (
         _unexpected_file_types,
@@ -248,6 +265,8 @@ def detect(view: LibraryView) -> list[Finding]:
         _system_junk,
     ):
         findings.extend(detector(view))
+    if view.tags:
+        findings.extend(audit_music.detect(view))
     for finding in findings:
         row = view.indexed.get(finding.relpath)
         if row is not None:
