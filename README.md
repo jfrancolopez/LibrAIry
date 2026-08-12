@@ -48,6 +48,28 @@ python -m venv .venv
 docker compose config
 ```
 
+### Looking at a page
+
+DOM assertions pass happily while a page is visibly wrong, so there is a
+harness that opens one in a real browser and measures it:
+
+```bash
+.venv/bin/python scripts/ui_check.py review
+```
+
+It builds a throwaway library containing one of every finding shape,
+screenshots the page at 1280px and at a true 375px, and reports anything
+sticking out past the edge. Screenshots land in `.dev/`, which is gitignored.
+
+**Headless Chrome is a development validation tool only. It is not part of
+LibrAIry production runtime.** There is no browser in the image, no browser
+service in Compose, nothing in `src/librairy` that imports the harness, and
+nothing that starts a browser on a timer or in the background. The harness
+uses whatever Chrome the developer already has, in a temporary profile it
+deletes on the way out, and it says so plainly and exits if there is none.
+`tests/test_dev_tooling.py` asserts each of those rather than trusting this
+paragraph.
+
 ## Safety Guarantees
 
 - No deletion path exists for user files.
