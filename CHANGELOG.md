@@ -126,6 +126,34 @@ filing. See [the guide](docs/using-librairy.md#library-audit).
   `naming-inconsistency` stays one deliberately: the corrected spelling of
   `JAMES BROWN` is a judgement this code will not make.
 
+### Added — Library Review checks names against LibrAIry's own naming rules
+
+The same module that names a file LibrAIry is filing, not a second standard —
+but only half of it, and the line is written down in `naming.py`.
+
+- **Hygiene is audited**: leading, trailing and repeated whitespace, tabs and
+  invisible characters, emoji and symbols, typographic quotes, characters
+  Windows rejects, reserved device names, trailing dots, decomposed Unicode,
+  over-long names. All deterministic; none needs a tag or a model.
+- **House style is not.** `slugify` also turns spaces into dashes and drops
+  apostrophes, which is right for a name being invented and wrong as a verdict
+  on an existing library: measured against the author's real library it would
+  rewrite **118 of 140 files**, since 142 of 183 path components contain a
+  space. The ASCII apostrophe is spared for the same reason — `Guns N' Roses`
+  is a correct name.
+- **Capitals are never a rule.** `ABBA`, `MF DOOM` and `NASA` are correct. A
+  shouting folder is checked against the tags of the files inside it: tags
+  saying `James Brown` under a `JAMES BROWN` folder is a correction, tags
+  saying `ABBA` is nothing at all, and no tags is an observation with no
+  suggestion. On the real library `JAMES BROWN` is now **not** reported — its
+  own tags spell it that way, and the old sibling-only rule was a false
+  positive.
+- **One bad name is one finding.** A folder holding forty files produces one
+  row, not forty.
+- Disc structures are never audited for style.
+- File-level naming fixes are executable; folder renames are observations
+  until a subtree rename is proven safe.
+
 ### Changed — Library Audit reads like the rest of Review
 
 It worked, and it still looked like a diagnostic panel bolted onto the page.

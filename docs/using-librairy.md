@@ -710,13 +710,69 @@ preserved — so the test is the hash, the same one Commit uses. **Re-audit** lo
 at the file again and records what is true now; it never quietly rewrites an old
 finding to match a new file.
 
+### Naming
+
+Library Review checks every file and folder name against LibrAIry's own naming
+rules — the same module that names files it is filing, not a second standard.
+
+That policy has two halves, and only one of them is audited.
+
+**Hygiene is audited.** These say a name is *damaged*, and none of them needs
+tags or a catalog to be certain about:
+
+| Rule | `  Queen` → `Queen` |
+|---|---|
+| Leading and trailing spaces | `Queen  ` → `Queen` |
+| Repeated spaces | `Queen  Live` → `Queen Live` |
+| A space before the extension | `Song .flac` → `Song.flac` |
+| Tabs, newlines, unusual and invisible spaces | joined back into one space |
+| Emoji and other symbols | `🔥 Song 🔥.mp3` → `Song.mp3` |
+| Typographic quotes, `"` and backtick | `“Fancy”.pdf` → `Fancy.pdf` |
+| Characters Windows and SMB reject — `< > : \| ? *` | replaced with `-` |
+| Reserved device names | `CON.txt` → `CON_.txt` |
+| Trailing dots | `Title...` → `Title` |
+| Decomposed Unicode, over-long names | normalised, trimmed |
+
+**House style is not audited.** When LibrAIry names a file it is filing, it
+also turns spaces into dashes, drops apostrophes and spells `&` as `and`:
+`A Night at the Opera` becomes `A-Night-at-the-Opera`. That is right for a
+name being invented and wrong as a verdict on a library you already organised
+— against a real 140-file library it would rewrite **118 of them**. Your
+layout is evidence, not a mistake.
+
+The ASCII apostrophe is the one place the audit is deliberately narrower than
+the sanitizer. `Guns N' Roses` and `You're My Best Friend` are correct names,
+legal on every filesystem LibrAIry runs on, and flagging them would turn right
+names into wrong ones.
+
+**Capitals are never a rule.** `str.isupper()` is not a defect — `ABBA`,
+`MF DOOM`, `NASA` and `AC/DC` are all correct. A shouting folder is checked
+against the tags of the files inside it:
+
+```text
+folder JAMES BROWN + tags say "James Brown"  → correction, with a suggestion
+folder ABBA        + tags say "ABBA"          → nothing at all
+folder SHOUTY BAND + no tags                  → observation, no suggestion
+```
+
+**Disc structures are never touched.** `VIDEO_TS`, `VTS_01_1.VOB` and their
+siblings are a contract with a player, not a description of anything.
+
+One bad name is one finding. A folder called `  Vacation 2022 🔥 ` holding
+forty files produces a single row, not forty.
+
 ### Which findings can be corrected
 
 Only kinds whose correction is a concrete, deterministic move:
 
 | Executable | Observation only |
 |---|---|
-| Tags disagree with the folder | Naming inconsistency, possible duplicate, missing artwork, not indexed, system file, unexpected file type, loose file |
+| Tags disagree with the folder, naming cleanup on a **file** | Naming inconsistency (any **folder**), possible duplicate, missing artwork, not indexed, system file, unexpected file type, loose file |
+
+Renaming a file is one move the plan already represents. Renaming a folder is
+every file beneath it, and the correction group resolves a file plus its
+companions in one directory — not a subtree. Until that is built and proven, a
+folder rename is shown with its suggested spelling and no button.
 
 The observations are all true and worth showing; none has a move that answers
 it. *Missing artwork* describes a file that is exactly where it belongs.
