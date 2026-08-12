@@ -50,6 +50,25 @@ KINDS = {
     "system-junk": "System file",
 }
 
+# Kinds whose correction is a concrete, deterministic filesystem move that
+# someone has reasoned about end to end. Everything else is an observation:
+# true, worth showing, and with no move that answers it.
+#
+# The test is deliberately the *kind* and not "has a dest_relpath". A detector
+# added later could set a destination without anyone having thought about what
+# executing it would mean, and the allowlist is where that thinking is
+# recorded. Three kinds were considered and left out on purpose:
+#
+# * `naming-inconsistency` proposes no destination and never will from here —
+#   it is about a *folder*, and the corrected spelling of `JAMES BROWN` is a
+#   judgement ("James Brown"? "James Brown & The J.B.'s"?) that this module
+#   cannot make. Renaming a folder is also not one move but every file in it.
+# * `duplicate` has a correct answer — quarantine the copy — but that is a
+#   different action class with its own safety semantics, not a move.
+# * `missing-artwork`, `unindexed` and `system-junk` describe files that are
+#   exactly where they belong.
+EXECUTABLE_KINDS = frozenset({"tag-path-mismatch"})
+
 # "high" is worth acting on; "review" needs your judgement. Deliberately two
 # bands and not five — a third would only invite arguing about the boundary.
 SEVERITIES = ("high", "review")
