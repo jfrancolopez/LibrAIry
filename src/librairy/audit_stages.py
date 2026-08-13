@@ -84,6 +84,8 @@ class Context:
     artwork_pending: list | None = None
     catalog_pending: list | None = None
     collections_pending: list | None = None
+    storage_pending: list | None = None
+    storage_found: list = field(default_factory=list)
     ai_pending: list | None = None
 
     @property
@@ -524,6 +526,58 @@ def _ai(context: Context) -> bool:
     return True
 
 
+# --- 3b: what could be smaller -------------------------------------------------
+
+
+def _storage(context: Context) -> bool:
+    """Cheap discovery, and the one stage with a hard prohibition attached.
+
+    Reads cached probe data, runs `ffprobe` for media it has not seen before,
+    applies arithmetic, and writes rows. It does not encode anything and there
+    is no call path from here that could — `test_audit_never_transcodes`
+    asserts it against the module's own imports, because the risk is not that
+    somebody adds a transcode on purpose but that a helper grows one.
+
+    Pressing Audit must never make a NAS start working for an hour.
+    """
+    from librairy import optimization
+
+    if context.view is None:
+        return True
+    media = [
+        relpath
+        for relpath in context.view.files
+        if PurePosixPath(relpath).suffix.lower() in optimization.MEDIA_SUFFIXES
+    ]
+    context.counters.storage_total = len(media)
+    if not media:
+        context.storage_pending = []
+        return True
+    remaining = context.storage_pending
+    if remaining is None:
+        remaining = list(media)
+        context.storage_found = []
+    while remaining:
+        relpath = remaining.pop(0)
+        row = context.view.indexed.get(relpath)
+        found, probes = optimization.scan_one(
+            context.conn, context.settings, relpath, row
+        )
+        context.counters.storage_checked += 1
+        context.counters.storage_probes += probes
+        if found is not None:
+            context.storage_found.append(found)
+        if remaining and context.stop():
+            context.storage_pending = remaining
+            return False
+    context.counters.storage_opportunities = len(context.storage_found)
+    optimization.record_opportunities(
+        context.conn, context.storage_found, scope=context.scope
+    )
+    context.storage_pending = []
+    return True
+
+
 # --- 4: write it down ----------------------------------------------------------
 
 
@@ -550,6 +604,7 @@ STAGE_HANDLERS: dict[str, Callable[[Context], bool]] = {
     "catalogs": _catalogs,
     "artwork": _artwork,
     "duplicates": _duplicates,
+    "storage": _storage,
     "ai": _ai,
     "record": _record,
 }

@@ -67,6 +67,10 @@ STAGES = (
     ("catalogs", "Catalogs"),
     ("artwork", "Artwork"),
     ("duplicates", "Duplicates"),
+    # Cheap on purpose: cached probe data and arithmetic. This stage finds
+    # things that *could* be smaller and records them. It never encodes
+    # anything — pressing Audit must not make a NAS start transcoding.
+    ("storage", "Storage opportunities"),
     ("ai", "AI"),
     ("record", "Finishing"),
 )
@@ -100,6 +104,10 @@ class Counters:
     artwork_total: int = 0
     artwork_found: int = 0
     duplicate_clusters: int = 0
+    storage_checked: int = 0
+    storage_total: int = 0
+    storage_probes: int = 0
+    storage_opportunities: int = 0
     ai_candidates: int = 0
     ai_calls: int = 0
     ai_answers: int = 0
@@ -373,6 +381,7 @@ STAGE_FRACTIONS: dict[str, tuple[str, str, str]] = {
     "metadata": ("files_checked", "files_seen", "{done} of {total} files read"),
     "catalogs": ("collections_judged", "collections", "{done} of {total} collections checked"),
     "artwork": ("artwork_checked", "artwork_total", "{done} of {total} albums checked for artwork"),
+    "storage": ("storage_checked", "storage_total", "{done} of {total} media files checked"),
     "ai": ("ai_calls", "ai_candidates", "{done} of {total} unresolved items reviewed"),
 }
 
@@ -451,6 +460,19 @@ def _tool_rows(counters: Counters) -> list[tuple[str, str]]:
         )
     if counters.files_checked:
         rows.append(("Duplicates", f"{counters.duplicate_clusters} exact sets"))
+    if counters.storage_total:
+        # Prints at zero on purpose. "48 media files checked, 0 opportunities"
+        # is the answer an already-efficient library should get, and hiding
+        # the line would make a working advisor indistinguishable from an
+        # absent one.
+        rows.append(
+            (
+                "Storage",
+                f"{counters.storage_opportunities} "
+                f"opportunit{'y' if counters.storage_opportunities == 1 else 'ies'} "
+                f"in {counters.storage_checked} files",
+            )
+        )
     if counters.ai_candidates or counters.ai_calls:
         detail = f"{counters.ai_answers} of {counters.ai_candidates} answered"
         if counters.ai_unavailable:
