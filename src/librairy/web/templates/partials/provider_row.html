@@ -10,8 +10,13 @@
   <span>
     {% if provider.enabled %}<span class="badge badge-ok">on</span>
     {% else %}<span class="badge">off</span>{% endif %}
+    {# "answered" and "reachable" are different claims. `last_used_at` is
+       written only when a model classified or described a file; `last_ok_at`
+       is also written by a health check. Saying "answered" for the second is
+       how the header came to report a Test press as an answer. #}
     {% if provider.last_error %}<span class="badge badge-fail">not reachable</span>
-    {% elif provider.last_ok_at %}<span class="badge badge-ok">answered</span>
+    {% elif provider.last_used_at %}<span class="badge badge-ok">answered</span>
+    {% elif provider.last_ok_at %}<span class="badge badge-ok">reachable</span>
     {% else %}<span class="badge badge-warn">never tested</span>{% endif %}
     <strong>{{ provider.name }}</strong>
     <span class="muted">{{ provider.model or 'no model chosen' }}</span>
@@ -21,7 +26,8 @@
     {% if not provider.enabled %}switched off, so it is never asked ·
     {% endif %}
     {% if provider.last_error %}{{ provider.last_error }}
-    {% elif provider.last_ok_at %}answered {{ provider.last_ok_at }}{% if provider.latency_ms %} in {{ provider.latency_ms }} ms{% endif %}
+    {% elif provider.last_used_at %}answered {{ provider.last_used_at }}{% if provider.latency_ms %} in {{ provider.latency_ms }} ms{% endif %}
+    {% elif provider.last_ok_at %}checked {{ provider.last_ok_at }}, not yet used to classify anything
     {% elif provider.enabled %}press Test to find out whether it answers
     {% else %}never tested{% endif %}
   </span>

@@ -196,10 +196,20 @@ def provider_header(conn: sqlite3.Connection, settings: Settings) -> str:
     """One line for the site header. Read-only: it is on every page render.
 
     Only the enabled chain gets a look in, so testing a switched-off provider
-    can never promote it here. And the word is now dated: `last_ok_at` is
-    whenever someone last pressed Test, which may have been a fortnight ago,
-    and nothing polls in the background. "online" with no date read as a live
-    reading of something nobody had checked since Tuesday.
+    can never promote it here.
+
+    Two timestamps, two different claims, and the header used to mix them.
+    `last_ok_at` is "this provider last succeeded at *something*" — a health
+    check writes it, and so does an answer. `last_used_at` is written only
+    when a model actually classified or described a file. The header said
+    "answered", which everyone reads as inference, while showing the first
+    one: in the live installation `last_ok_at` was an hour *newer* than
+    `last_used_at`, so the line was reporting when someone last pressed Test
+    and calling it an answer.
+
+    So the word now follows the field. A provider that has answered says
+    when it answered; one that has only ever been tested says it was checked,
+    which is a weaker claim honestly made.
     """
     chain = provider_chain(conn, settings, record=False)
     if not chain:
@@ -208,8 +218,10 @@ def provider_header(conn: sqlite3.Connection, settings: Settings) -> str:
     row = conn.execute("SELECT * FROM provider_status WHERE name=?", (first.name,)).fetchone()
     if row and row["last_error"]:
         status = "last check failed"
+    elif row and row["last_used_at"]:
+        status = f"answered {_ago(row['last_used_at'])}"
     elif row and row["last_ok_at"]:
-        status = f"answered {_ago(row['last_ok_at'])}"
+        status = f"checked {_ago(row['last_ok_at'])}"
     else:
         status = "not tested"
     return f"AI: {first.name} ({first.model}) — {status}"

@@ -216,15 +216,24 @@ def test_the_header_never_names_a_disabled_provider(tmp_path: Path) -> None:
 
 
 def test_the_header_dates_its_claim(tmp_path: Path) -> None:
-    """Nothing polls in the background, so a bare "online" was a fiction."""
+    """Nothing polls in the background, so a bare "online" was a fiction.
+
+    The verb follows the field: a health check is a *check*, and only an
+    inference is an *answer*. See `test_provider_timestamps` for why — the
+    live installation had a Test press an hour newer than its last real
+    answer, and the header was calling the Test press an answer.
+    """
     conn, settings = two_providers(tmp_path)
     config = find_configured_provider(conn, settings, "A")
     upsert_provider_status(conn, config, HealthResult(True, latency_ms=1))
 
-    assert "answered just now" in provider_header(conn, settings)
+    assert "checked just now" in provider_header(conn, settings)
 
     conn.execute("UPDATE provider_status SET last_ok_at='2026-07-01T00:00:00+00:00' WHERE name='A'")
     assert "days ago" in provider_header(conn, settings)
+
+    upsert_provider_status(conn, config, HealthResult(True, latency_ms=1), used=True)
+    assert "answered just now" in provider_header(conn, settings)
 
 
 def test_the_header_says_when_nothing_has_been_tested(tmp_path: Path) -> None:
@@ -267,8 +276,11 @@ def test_settings_shows_on_off_separately_from_reachability(tmp_path: Path) -> N
         for row in live_provider_status(conn, settings)
     }
 
-    assert ">on<" in rows["A"] and "answered" in rows["A"]
-    assert ">off<" in rows["B"] and "answered" in rows["B"]
+    # A health check proves reachability, not usefulness. Both providers were
+    # only tested, so neither may claim to have answered anything.
+    assert ">on<" in rows["A"] and "reachable" in rows["A"]
+    assert ">off<" in rows["B"] and "reachable" in rows["B"]
+    assert "answered" not in rows["A"]
     assert "never asked" in rows["B"]
     assert "never asked" not in rows["A"]
 

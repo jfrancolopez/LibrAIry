@@ -29,11 +29,13 @@ import json
 import logging
 import re
 import sqlite3
+import time
 from dataclasses import dataclass, replace
 from pathlib import PurePosixPath
 
-from librairy.ai.base import ProviderConfig
+from librairy.ai.base import HealthResult, ProviderConfig
 from librairy.ai.registry import provider_chain
+from librairy.ai.status import upsert_provider_status
 from librairy.ai.vision import VISION_EXTENSIONS, VisionResult, describe_image
 from librairy.config import Settings
 from librairy.models import EvidenceEntry, Item
@@ -134,6 +136,7 @@ def enrich_with_vision(
         return result
     model = settings.vision_model.strip() or config.model
     path = settings.inbox_dir / item.relpath
+    started = time.monotonic()
     try:
         answer = describe_image(
             config,
@@ -150,6 +153,17 @@ def enrich_with_vision(
         if state is not None:
             state.failures[key] = state.failures.get(key, 0) + 1
         return result
+    # A model that looked at a photograph and described it has answered, and
+    # the header is entitled to say so. This path recorded nothing at all
+    # before, so LM Studio could work all afternoon on a folder of images
+    # while the site header went on reporting whenever someone last pressed
+    # Test.
+    upsert_provider_status(
+        conn,
+        config,
+        HealthResult(True, latency_ms=max(0, round((time.monotonic() - started) * 1000))),
+        used=True,
+    )
     save_vision(conn, item, answer, provider=config.name, model=model)
     return apply_vision(settings, item, result, answer, model)
 
