@@ -231,6 +231,26 @@
       </section>
       {% endif %}
 
+      {# The cover, where there is one. Display-only: the thumbnail route reads
+         the file and writes into the prunable preview cache, and nothing is
+         ever put beside the music. Same viewer as everywhere else — a second
+         lightbox would be a second set of keyboard bugs. #}
+      {% if finding.artwork_item_id %}
+      <section class="detail-block detail-artwork">
+        <h4>Artwork</h4>
+        <button type="button" class="detail-art"
+                data-lightbox
+                data-lightbox-title="{{ finding.title }}"
+                data-lightbox-kind="image"
+                data-lightbox-image="/preview/items/{{ finding.artwork_item_id }}/thumb?size=large"
+                data-lightbox-facts="Cover art from the tracks in this folder"
+                aria-label="View the cover for {{ finding.title }} full screen"
+                title="View full screen">
+          <img src="/preview/items/{{ finding.artwork_item_id }}/thumb" alt="" loading="lazy">
+        </button>
+      </section>
+      {% endif %}
+
       {% for section in finding.details.sections %}
       <section class="detail-block detail-is-{{ section.kind }}">
         <h4>{{ section.title }}</h4>
@@ -270,6 +290,39 @@
         </dl>
         {% endif %}
       </section>
+      {% endif %}
+
+      {# What "organise individually" would actually do. Collapsed, because
+         forty-five paths in a row is not a preview — it is the row becoming a
+         report — and nested inside the panel rather than beside it, so there
+         is one thing to open and then one thing inside it. #}
+      {% if finding.proposed %}
+      <details class="detail-block detail-proposed">
+        <summary>Proposed organization — {{ finding.proposed.summary }}</summary>
+        <ul class="detail-moves">
+          {% for move in finding.proposed.shown %}
+          <li>
+            <span class="mono">{{ move.from }}</span>
+            <span class="dest-arrow" aria-hidden="true">→</span>
+            <span class="mono change-after">{{ move.to }}</span>
+          </li>
+          {% endfor %}
+        </ul>
+        {% if finding.proposed.more %}
+        <details class="detail-more-moves">
+          <summary>+ {{ finding.proposed.more }} more</summary>
+          <ul class="detail-moves">
+            {% for move in finding.proposed.rest %}
+            <li>
+              <span class="mono">{{ move.from }}</span>
+              <span class="dest-arrow" aria-hidden="true">→</span>
+              <span class="mono change-after">{{ move.to }}</span>
+            </li>
+            {% endfor %}
+          </ul>
+        </details>
+        {% endif %}
+      </details>
       {% endif %}
     </details>
     {% endif %}

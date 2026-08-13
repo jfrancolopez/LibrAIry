@@ -211,6 +211,14 @@ def _cover_for_audio(
     MusicBrainz request per album at one request a second, to fetch art that
     nobody may ever look at. One file at a time, on demand, costs nothing.
     """
+    # The picture inside the file, before anything is asked of the network.
+    # It costs one ffmpeg call, it is already the art the owner chose, and it
+    # is the only art most libraries have — the real installation's albums all
+    # carry a 600×600 front cover and matched no catalog at all, so audio
+    # previews there had no thumbnail despite every file containing one.
+    embedded = _embedded_cover(conn, settings, item_id, path)
+    if embedded is not None:
+        return embedded
     try:
         if not catalog_enabled(conn, "coverart"):
             return None
@@ -226,6 +234,56 @@ def _cover_for_audio(
     except Exception as exc:  # noqa: BLE001 - never break a page over album art
         LOGGER.debug("cover art lookup failed for item %s: %s", item_id, exc)
         return None
+
+
+def _embedded_cover(conn, settings: Settings, item_id: int, path: Path) -> Path | None:
+    """The attached picture in an audio file, copied into the preview cache.
+
+    Written to `appdata/thumbs`, never beside the music. "Do not create
+    `cover.jpg` to preview artwork" is about the library: the album on disk is
+    unchanged, and this file lives in the same prunable cache as every other
+    thumbnail and is keyed by fingerprint so it is written once.
+
+    `-c copy` and not a re-encode: the picture is already a JPEG or a PNG and
+    LibrAIry has no reason to have an opinion about it.
+    """
+    row = _item_row(conn, item_id)
+    key = row["fingerprint"] or f"item-{item_id}"
+    cached = settings.appdata_dir / "thumbs" / f"embedded-{key[:32]}.jpg"
+    if cached.exists():
+        return cached if cached.stat().st_size else None
+    if shutil.which("ffmpeg") is None:
+        return None
+    cached.parent.mkdir(parents=True, exist_ok=True)
+    partial = cached.with_suffix(".jpg.part")
+    try:
+        result = subprocess.run(  # noqa: S603 - fixed argv, no shell
+            [
+                "ffmpeg", "-nostdin", "-y", "-loglevel", "error",
+                "-i", str(path),
+                # The first attached picture, copied rather than re-encoded:
+                # it is already a JPEG or a PNG and LibrAIry has no reason to
+                # have an opinion about it.
+                "-map", "0:v:0", "-c", "copy", "-frames:v", "1",
+                "-f", "image2", str(partial),
+            ],
+            capture_output=True,
+            timeout=THUMBNAIL_TIMEOUT_SECONDS,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        LOGGER.debug("embedded cover extraction failed for %s: %s", path, exc)
+        partial.unlink(missing_ok=True)
+        return None
+    if result.returncode == 0 and partial.exists() and partial.stat().st_size:
+        partial.replace(cached)
+        return cached
+    # A zero-byte marker, because "no picture in this file" is an answer worth
+    # caching: re-running ffmpeg on every page view for a file that has none
+    # is exactly the cost this cache exists to avoid.
+    cached.unlink(missing_ok=True)
+    cached.touch()
+    return None
 
 
 def _release_mbid(

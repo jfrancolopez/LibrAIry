@@ -181,11 +181,21 @@ def test_a_missing_file_offers_no_preview(tmp_path: Path) -> None:
 
 
 def test_a_folder_finding_offers_no_preview(tmp_path: Path) -> None:
+    """No Preview *control*: the row's Preview resolves the finding's own item,
+    and a folder has none.
+
+    The details panel may still show the cover of a track inside the folder —
+    that is a different picture answering a different question, and it is why
+    this asserts on the control rather than on the substring `/preview/items/`,
+    which the artwork thumbnail legitimately uses.
+    """
     client, *_ = scene(
         tmp_path, observation(), files=(f"{ALBUM}/01.flac", f"{ALBUM}/02.flac")
     )
 
-    assert "/preview/items/" not in rows(client.get("/review").text)
+    body = rows(client.get("/review").text)
+    assert "hx-get=\"/preview/items/" not in body
+    assert ">Preview<" not in body
 
 
 def test_the_preview_uses_the_shared_endpoint_and_lightbox(tmp_path: Path) -> None:

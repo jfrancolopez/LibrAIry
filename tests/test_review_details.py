@@ -453,3 +453,77 @@ def test_opening_review_writes_nothing(tmp_path: Path) -> None:
 
     assert conn.execute("SELECT count(*) FROM audit_findings").fetchone()[0] == before
     assert conn.execute("SELECT count(*) FROM plans").fetchone()[0] == 0
+
+
+# --- what "organize individually" would actually do --------------------------------
+
+
+def loose_finding() -> Finding:
+    """A collection with no release identity, so the tracks go to their own
+    artists — and the preview is the only way to see where."""
+    moves = [
+        (f"Music/Pop/{artist}/{COLLECTION}/0{index} - Song.flac",
+         f"Music/Pop/{artist}/0{index} - Song.flac")
+        for index, artist in enumerate(("Abba", "Bee Gees", "Chic", "Cameo", "Chic"), start=1)
+    ]
+    return Finding(
+        relpath=f"Music/Pop/Abba/{COLLECTION}",
+        kind="collection-loose",
+        severity="review",
+        summary="no reliable release identity",
+        evidence=[
+            EvidenceEntry("library-pattern", "collection", "Loose collection", 0.9),
+            EvidenceEntry("filesystem", "tracks", "5", 0.9),
+            *[
+                EvidenceEntry("filesystem", "folder", f"Music/Pop/{artist}/{COLLECTION}", 0.9)
+                for artist in ("Abba", "Bee Gees", "Chic")
+            ],
+            *[
+                EvidenceEntry("filesystem", "move", source, 0.8, note=destination)
+                for source, destination in moves
+            ],
+        ],
+    )
+
+
+def test_the_proposed_organization_is_shown_before_anything_is_chosen(
+    tmp_path: Path,
+) -> None:
+    """"Organise individually" is an abstraction until you can see that Chic's
+    track lands under `Music/Pop/Chic/`."""
+    body = panel(tmp_path, loose_finding())
+
+    assert "Proposed organization" in text_of(body)
+    assert "Music/Pop/Chic/03 - Song.flac" in text_of(body)
+
+
+def test_the_preview_is_collapsed_and_summarised(tmp_path: Path) -> None:
+    body = panel(tmp_path, loose_finding())
+
+    assert "5 files to 4 folders" in text_of(body)
+    assert '<details class="detail-block detail-proposed">' in body
+
+
+def test_a_long_preview_truncates_with_the_rest_behind_one_more_control(
+    tmp_path: Path,
+) -> None:
+    body = panel(tmp_path, loose_finding())
+
+    assert "+ 2 more" in text_of(body)
+    assert body.count("detail-more-moves") >= 1
+
+
+def test_a_finding_with_no_moves_renders_no_preview(tmp_path: Path) -> None:
+    """Keeping a compilation together has no per-track destinations."""
+    body = panel(tmp_path, collection_finding())
+
+    assert "Proposed organization" not in text_of(body)
+
+
+def test_the_preview_never_reuses_the_collection_name(tmp_path: Path) -> None:
+    """The rule the whole policy exists for, checked where a person sees it."""
+    body = text_of(panel(tmp_path, loose_finding()))
+    start = body.index("Proposed organization")
+
+    for line in body[start:].split("Music/Pop/")[1:]:
+        assert COLLECTION not in line.split(" ")[0]

@@ -77,7 +77,7 @@ FACT_LABELS = {
     "blake2b": "Fingerprint",
 }
 # Fields that are plumbing rather than evidence a reader wants in a table.
-HIDDEN_FIELDS = frozenset({"folder", "also at", "agreement", "disagreement"})
+HIDDEN_FIELDS = frozenset({"folder", "also at", "agreement", "disagreement", "move"})
 
 
 @dataclass(frozen=True)
@@ -398,6 +398,9 @@ def proposed(pairs: list[tuple[str, str]], limit: int = PREVIEW_LIMIT) -> dict:
     return {
         "count": len(pairs),
         "shown": shown,
+        "rest": [
+            {"from": source, "to": destination} for source, destination in pairs[limit:]
+        ],
         "more": max(0, len(pairs) - limit),
         "summary": f"{len(pairs)} files to {len(folders)} folders",
     }

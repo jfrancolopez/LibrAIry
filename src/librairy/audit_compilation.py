@@ -77,6 +77,12 @@ DEFAULT_HOME = "Various Artists"
 # barcode is not something a careless tagger produces by accident.
 STRONG_SIGNALS = 3
 
+# How many per-track destinations a finding carries. Enough to show the shape
+# of a real collection in full; bounded because the evidence blob is read on
+# every render of the row, and a thousand-track folder should not make Review
+# slower for everyone else.
+MAX_PREVIEW_MOVES = 200
+
 
 @dataclass(frozen=True)
 class Verdict:
@@ -554,6 +560,15 @@ def evidence_for(verdict: Verdict) -> list[EvidenceEntry]:
         entries.append(EvidenceEntry("catalog", "conflict", verdict.disagreement, 0.7))
     entries.extend(
         EvidenceEntry("filesystem", "folder", folder, 0.9) for folder in verdict.folders
+    )
+    # Where each track would go if the collection were taken apart. Carried as
+    # evidence so Review can show the consequence *before* anyone chooses it —
+    # "organise individually" is an abstraction until you can see that Chic's
+    # track lands under `Music/Disco/Chic/`. Source in the detail, destination
+    # in the note, because a path can contain any separator you might pick.
+    entries.extend(
+        EvidenceEntry("filesystem", "move", source, 0.8, note=destination)
+        for source, destination in verdict.dissolve_to[:MAX_PREVIEW_MOVES]
     )
     return entries
 

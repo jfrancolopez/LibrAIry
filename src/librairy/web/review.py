@@ -1062,11 +1062,13 @@ def _audit_row(
         # The forensic view, behind one expander. The row above stays
         # scannable; this is where the twenty checkable things LibrAIry
         # already knew about this finding finally become reachable.
-        **_decision_support(row, size_label),
+        **_decision_support(conn, row, size_label),
     }
 
 
-def _decision_support(row: sqlite3.Row, size_label: str) -> dict[str, object]:
+def _decision_support(
+    conn: sqlite3.Connection, row: sqlite3.Row, size_label: str
+) -> dict[str, object]:
     """The details panel, the choices, and what each of them would do."""
     from librairy.web import review_details
 
@@ -1076,15 +1078,41 @@ def _decision_support(row: sqlite3.Row, size_label: str) -> dict[str, object]:
         for entry in entries
         if entry.source == "filesystem" and entry.field == "folder"
     ]
+    moves = [
+        (entry.detail, entry.note)
+        for entry in entries
+        if entry.source == "filesystem" and entry.field == "move" and entry.note
+    ]
     return {
         "details": review_details.build(row, entries, size_label=size_label),
+        "proposed": review_details.proposed(moves),
         "decisions": review_details.decisions(row["kind"], row["dest_relpath"] or ""),
         "recommendation": review_details.recommendation(
             row["kind"], row["dest_relpath"] or ""
         ),
         "current_shape": review_details.current_shape(row, folders),
         "current_shape_note": review_details.current_shape_note(row["kind"], folders),
+        "artwork_item_id": _artwork_item(conn, row),
     }
+
+
+def _artwork_item(conn: sqlite3.Connection, row: sqlite3.Row) -> int | None:
+    """An indexed track inside this folder finding, to render its cover from.
+
+    A folder has no item of its own, so the picture has to come from something
+    inside it. Display-only: the thumbnail route reads the file and writes to
+    the prunable preview cache, and nothing is ever put beside the music.
+    """
+    if row["kind"] not in {"artwork-not-on-disk", "missing-artwork"} and not row[
+        "kind"
+    ].startswith("collection-"):
+        return None
+    found = conn.execute(
+        "SELECT id FROM items WHERE root='library' AND missing_since IS NULL "
+        "AND relpath LIKE ? ORDER BY relpath LIMIT 1",
+        (f"{row['relpath'].rstrip('/')}/%",),
+    ).fetchone()
+    return int(found["id"]) if found else None
 
 
 # The evidence field that names another place a finding is also about, and how

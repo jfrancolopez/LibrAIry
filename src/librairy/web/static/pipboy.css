@@ -2587,6 +2587,26 @@ summary.timeline-head::-webkit-details-marker { display: none; }
 /* The one part of the panel that could be wrong, marked as such. A conclusion
    that looks like an observation is a conclusion nobody questions. */
 .detail-is-recommendation { border-left-color: var(--accent); }
+/* Big enough to recognise the sleeve, small enough that the panel is still a
+   panel. A missing picture leaves an empty button rather than a broken-image
+   icon, because "no cover" is a normal state and not a fault. */
+.detail-art {
+  padding: 0;
+  border: var(--border-thin) solid var(--border);
+  background: none;
+  cursor: pointer;
+  line-height: 0;
+}
+.detail-art img { width: 120px; height: auto; display: block; }
+.detail-art img[alt]:not([src]) { display: none; }
+.detail-proposed > summary { cursor: pointer; color: var(--accent); }
+.detail-moves { margin: var(--space-1) 0 0; padding-left: var(--space-3); }
+.detail-moves li {
+  list-style: none;
+  margin-bottom: var(--space-1);
+  overflow-wrap: anywhere;
+}
+.detail-more-moves > summary { cursor: pointer; color: var(--accent); }
 .detail-choice { margin: 0 0 var(--space-1); }
 .detail-dest { margin: 0 0 var(--space-1); overflow-wrap: anywhere; }
 

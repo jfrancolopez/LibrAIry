@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
@@ -542,3 +543,101 @@ def test_the_viewer_never_autoplays() -> None:
 
     assert "autoplay" not in source.replace("// No autoplay", "")
     assert 'player.preload = "metadata"' in source
+
+
+# --- artwork that was already in the file --------------------------------------
+
+
+def test_a_picture_inside_a_track_is_reachable_without_a_catalog(tmp_path, monkeypatch):
+    """The real library's whole music collection was in this state: every album
+    carries a 600x600 front cover, and none of them matched a catalog — so
+    audio previews had no thumbnail despite every file containing one.
+
+    The extraction goes to the prunable preview cache, never beside the music.
+    """
+    from librairy.web import thumbs
+
+    settings, conn, item_id = _audio_scene(tmp_path)
+    calls: list[list[str]] = []
+
+    def fake_run(command, **kwargs):  # noqa: ANN001, ARG001
+        calls.append(command)
+        Path(command[-1]).write_bytes(b"\xff\xd8jpegbytes")
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(thumbs.shutil, "which", lambda _name: "/usr/bin/ffmpeg")
+    monkeypatch.setattr(thumbs.subprocess, "run", fake_run)
+
+    found = thumbs._cover_for_audio(conn, settings, item_id, Path("x.flac"))
+
+    assert found is not None
+    assert found.parent == settings.appdata_dir / "thumbs"
+    assert settings.library_dir not in found.parents
+    assert "-c" in calls[0] and "copy" in calls[0], "the picture is copied, not re-encoded"
+
+
+def test_a_track_with_no_picture_is_only_asked_once(tmp_path, monkeypatch):
+    """Re-running ffmpeg per page view for a file that has no cover is exactly
+    the cost this cache exists to avoid."""
+    from librairy.web import thumbs
+
+    settings, conn, item_id = _audio_scene(tmp_path)
+    calls: list[int] = []
+
+    def failing(command, **kwargs):  # noqa: ANN001, ARG001
+        calls.append(1)
+        return SimpleNamespace(returncode=1)
+
+    monkeypatch.setattr(thumbs.shutil, "which", lambda _name: "/usr/bin/ffmpeg")
+    monkeypatch.setattr(thumbs.subprocess, "run", failing)
+    monkeypatch.setattr(thumbs, "catalog_enabled", lambda *_a: False)
+
+    assert thumbs._cover_for_audio(conn, settings, item_id, Path("x.flac")) is None
+    assert thumbs._cover_for_audio(conn, settings, item_id, Path("x.flac")) is None
+
+    assert len(calls) == 1, "the second look should have read the cached answer"
+
+
+def test_the_library_is_never_written_to_for_a_preview(tmp_path, monkeypatch):
+    """"Do not create cover.jpg to preview artwork" — the album on disk is
+    unchanged."""
+    from librairy.web import thumbs
+
+    settings, conn, item_id = _audio_scene(tmp_path)
+    before = sorted(path.name for path in settings.library_dir.rglob("*"))
+
+    monkeypatch.setattr(thumbs.shutil, "which", lambda _name: "/usr/bin/ffmpeg")
+    monkeypatch.setattr(
+        thumbs.subprocess, "run",
+        lambda command, **_k: (
+            Path(command[-1]).write_bytes(b"\xff\xd8x"), SimpleNamespace(returncode=0)
+        )[1],
+    )
+    thumbs._cover_for_audio(conn, settings, item_id, Path("x.flac"))
+
+    assert sorted(path.name for path in settings.library_dir.rglob("*")) == before
+
+
+def _audio_scene(tmp_path):
+    from librairy.config import Settings
+    from librairy.db import connect
+    from librairy.scanner import scan_root
+
+    settings = Settings(
+        APPDATA_DIR=tmp_path / "appdata",
+        INBOX_DIR=tmp_path / "inbox",
+        LIBRARY_DIR=tmp_path / "library",
+        QUARANTINE_DIR=tmp_path / "quarantine",
+        FILE_STABILITY_SECONDS=0,
+        AUTH_REQUIRED=False,
+        _env_file=None,
+    )
+    for directory in (settings.inbox_dir, settings.library_dir, settings.quarantine_dir):
+        directory.mkdir(parents=True, exist_ok=True)
+    track = settings.library_dir / "Music" / "Pop" / "Abba" / "01 - Song.flac"
+    track.parent.mkdir(parents=True, exist_ok=True)
+    track.write_bytes(b"audio")
+    conn = connect(settings)
+    scan_root(conn, "library", settings.library_dir, settings)
+    item_id = conn.execute("SELECT id FROM items LIMIT 1").fetchone()["id"]
+    return settings, conn, item_id
