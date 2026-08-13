@@ -180,6 +180,20 @@ class Worker:
                 _set_worker_state(self.conn, "current_phase", "audit")
                 audit_stage = self._audit_slice(settings)
                 _set_worker_state(self.conn, "audit_yielding", False)
+                # Tier five, and last for a reason. Optimization is offered
+                # only on a cycle that changed nothing *and* had no audit
+                # slice to run — so an audit waiting for its turn always goes
+                # first, and a busy inbox means nothing expensive begins.
+                #
+                # This only ever *starts* work. A running encode is not
+                # suspended when a file lands in the inbox: stopping and
+                # restarting an encoder repeatedly buys half-written output,
+                # orphaned processes and corrupt staging, in exchange for
+                # very little on a job that is separately constrained to a
+                # small share of the machine.
+                if not audit_stage:
+                    _set_worker_state(self.conn, "current_phase", "optimization")
+                    self._optimization_slice(settings)
             else:
                 # Recorded as a fact rather than inferred from a clock. The
                 # progress panel needs to distinguish "waiting its turn" from
@@ -191,6 +205,50 @@ class Worker:
             if audit_stage:
                 _set_worker_state(self.conn, "last_audit_stage", audit_stage)
             return summary
+
+    def _optimization_slice(self, settings: Settings) -> str:
+        """Evaluate the next queued optimization, and record what it is waiting for.
+
+        Wrapped for the same reason the audit slice is: the inbox is the job,
+        and maintenance is the extra. A broken governor must never be the
+        thing that stops files being filed.
+
+        No encoder is reached from here yet. What this does today is decide
+        and write down the answer, which is exactly the part worth proving
+        before any CPU is spent.
+
+        This module still moves no files, and `tests/test_worker.py` asserts
+        it by reading this source. The invariant holds for maintenance work
+        exactly as it does for everything else here.
+        """
+        from librairy import optimization_queue as queue
+
+        try:
+            job = queue.next_job(self.conn)
+            if job is None:
+                return ""
+            state = queue.system_snapshot(self.conn, settings)
+            state = _with_source_facts(self.conn, settings, job, state)
+            decision = queue.decide(
+                job,
+                state,
+                run_policy=job["run_policy"],
+                window=_window(self.conn, settings),
+            )
+            if decision.eligible:
+                # Encoding lands in a later change. Until then an eligible job
+                # stays queued rather than being marked started, because a
+                # `running` row with no process behind it is a lie the UI
+                # would repeat.
+                return "eligible"
+            if decision.reason == queue.SOURCE_CHANGED:
+                queue.mark_stale(self.conn, job["id"])
+            else:
+                queue.set_waiting(self.conn, job["id"], decision.reason)
+            return decision.reason
+        except Exception:  # noqa: BLE001 - maintenance must never break the worker
+            LOGGER.warning("optimization slice skipped", exc_info=True)
+            return ""
 
     def _audit_slice(self, settings: Settings) -> str:
         """One slice of a requested audit, if one is waiting.
@@ -359,3 +417,50 @@ def _stage_quarantine_proposals(conn: sqlite3.Connection, candidates) -> int:
         transition_item(conn, candidate.duplicate.id, "quarantine-proposed")
         staged += 1
     return staged
+
+
+def _with_source_facts(conn, settings, job, state):
+    """Fill in what the decision needs to know about this job's source file.
+
+    Read here rather than inside `decide` so the decision stays a pure
+    function of its inputs — every branch of it is then testable by building a
+    `SystemState` rather than by arranging a filesystem.
+    """
+    from librairy import optimization_queue as queue
+    from librairy.protected import protected_roots, protecting_root
+
+    row = conn.execute(
+        "SELECT fingerprint FROM items WHERE root=? AND relpath=? AND missing_since IS NULL",
+        (job["root"], job["relpath"]),
+    ).fetchone()
+    return queue.SystemState(
+        now=state.now,
+        higher_priority_work=state.higher_priority_work,
+        running_jobs=state.running_jobs,
+        free_bytes=state.free_bytes,
+        load_per_cpu=state.load_per_cpu,
+        current_fingerprint=(row["fingerprint"] or "") if row else "",
+        protected_by=protecting_root(job["relpath"], protected_roots(conn)),
+    )
+
+
+def _window(conn, settings) -> tuple[str, str]:
+    """The configured maintenance window, defaulting to the small hours.
+
+    01:00–06:00 is the default and it is documented as one: a NAS is usually
+    idle then, and somebody who wants otherwise can say so. It decides *when*
+    a job may begin and nothing else — the resource policy applies at two in
+    the morning exactly as it does at two in the afternoon.
+    """
+    import json
+
+    row = conn.execute(
+        "SELECT value FROM settings WHERE key='optimization.window'"
+    ).fetchone()
+    if row is None:
+        return ("01:00", "06:00")
+    try:
+        start, end = json.loads(row["value"])
+    except (TypeError, ValueError):
+        return ("01:00", "06:00")
+    return (str(start), str(end))
