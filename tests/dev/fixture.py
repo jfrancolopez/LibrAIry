@@ -304,8 +304,57 @@ def build_fixture(root: Path) -> TestClient:
     accept_correction(conn, settings, bowie["id"])
     _running_audit(conn)
     _storage_opportunities(conn)
+    _optimization_jobs(conn)
 
     return TestClient(create_app(settings, conn))
+
+
+def _optimization_jobs(conn) -> None:  # noqa: ANN001
+    """One job in each waiting state, so the queue page can be photographed.
+
+    Every one of these is reachable without an encoder, which is the point of
+    building the orchestration layer first: the states a person actually sees
+    are all decided before any CPU is spent.
+    """
+    from librairy.optimization import LOSSLESS, LOSSY
+    from librairy.optimization_queue import (
+        HIGH_LOAD,
+        NO_DISK,
+        OUTSIDE_WINDOW,
+        QUEUED,
+        SOURCE_CHANGED,
+        STALE,
+        WAITING,
+    )
+    from librairy.planner import utc_now
+
+    mb = 1024 * 1024
+    rows = [
+        ("Music/Live/concert.wav", "audio-to-flac", LOSSLESS, "WAV", "FLAC",
+         842 * mb, 510 * mb, QUEUED, ""),
+        ("Movies/Blade Runner (1982)/Blade Runner.mkv", "video-transcode", LOSSY,
+         "H264", "HEVC", 12800 * mb, 8100 * mb, WAITING, OUTSIDE_WINDOW),
+        ("Movies/Heat (1995)/Heat.mkv", "video-transcode", LOSSY, "H264", "HEVC",
+         9400 * mb, 6100 * mb, WAITING, HIGH_LOAD),
+        ("Movies/Alien (1979)/Alien.mkv", "video-transcode", LOSSY, "H264", "HEVC",
+         11200 * mb, 7300 * mb, WAITING, NO_DISK),
+        ("Music/Sessions/take.aiff", "audio-to-flac", LOSSLESS, "AIFF", "FLAC",
+         600 * mb, 372 * mb, STALE, SOURCE_CHANGED),
+    ]
+    for relpath, kind, quality, source, target, size, estimated, state, reason in rows:
+        conn.execute(
+            """
+            INSERT INTO optimization_jobs(
+              opportunity_id, item_id, root, relpath, fingerprint, kind, quality,
+              from_label, to_label, preset, preset_version, rule_version,
+              source_bytes, estimated_bytes, run_policy, state, wait_reason,
+              queued_at, updated_at
+            ) VALUES (NULL, NULL, 'library', ?, 'fixture', ?, ?, ?, ?,
+                      'fixture-preset', 1, 1, ?, ?, 'window', ?, ?, ?, ?)
+            """,
+            (relpath, kind, quality, source, target, size, estimated, state,
+             reason, utc_now(), utc_now()),
+        )
 
 
 def _storage_opportunities(conn) -> None:  # noqa: ANN001

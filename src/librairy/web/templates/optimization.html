@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% from "partials/ext_info.html" import ext_info %}
+
+{# The optimization queue. Secondary on purpose — reached from Review, absent
+   from the primary navigation.
+
+   Most of the time this page says "Nothing is queued", and a permanent tab for
+   that would make an optional maintenance feature look like part of the daily
+   workflow. The whole product intent is that most of the time nothing happens.
+
+   Waiting is never styled as failure. A job that cannot start is doing exactly
+   what it should; an amber warning beside "waiting for the maintenance window"
+   would teach people to treat patience as a fault. #}
+{% block content %}
+<section class="panel">
+  <header class="page-head">
+    <h1>Optimization Queue</h1>
+    <p class="muted">
+      Optional maintenance. It runs after everything else LibrAIry does, one
+      job at a time, and never replaces an original.
+    </p>
+  </header>
+
+  {% if notice %}<p class="status">{{ notice }}</p>{% endif %}
+
+  {% if not jobs %}
+  <p class="muted queue-empty">Nothing is queued.</p>
+  <p class="muted">
+    Storage opportunities appear in <a href="/review#storage-opportunities">Review</a>.
+  </p>
+  {% else %}
+
+  <dl class="queue-summary">
+    <div><dt>Running</dt><dd>{{ running }}</dd></div>
+    <div><dt>Waiting</dt><dd>{{ waiting }}</dd></div>
+    <div><dt>Ready for review</dt><dd>{{ ready }}</dd></div>
+  </dl>
+  <p class="muted queue-policy">
+    Concurrent optimization jobs: <strong>{{ concurrency }}</strong> ·
+    Maintenance window: <strong>{{ window }}</strong>.
+    {# Said here because it is the thing most easily assumed otherwise. #}
+    The window decides when a job may start; it does not change how much of the
+    machine a job may use.
+  </p>
+
+  <form method="post" action="/maintenance/optimization/bulk" id="queue-actions">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="queue-list">
+      {% for job in jobs %}
+      <article id="job-{{ job.id }}" class="row-shell queue-row queue-is-{{ job.state }}">
+        <label class="row-pick">
+          <input type="checkbox" name="job_id" value="{{ job.id }}"
+                 {% if not job.can_remove %}disabled{% endif %}
+                 aria-label="Select optimization job for {{ job.name }}">
+        </label>
+
+        <div class="row-body">
+          <header class="row-head">
+            <h3 class="row-name" title="{{ job.relpath }}">{{ job.name }}{{ ext_info(job.relpath) }}</h3>
+            <span class="name-size">{{ job.size_label }}</span>
+            <span class="row-meta">
+              <span class="badge badge-quality badge-{{ job.quality }}">{{ job.quality_label }}</span>
+              <span class="badge badge-info">{{ job.state_label | upper }}</span>
+            </span>
+          </header>
+
+          <p class="queue-change mono">{{ job.change }}</p>
+
+          {% if job.wait_text and not job.is_stale %}
+          {# The stored reason in words. A queue that says "waiting" and not
+             what for is a queue people restart at random. #}
+          <p class="muted queue-reason">{{ job.wait_text }}.</p>
+          {% endif %}
+
+          {% if job.is_stale %}
+          <p class="muted queue-stale">
+            The file changed after this was queued, so the decision no longer
+            describes it. Nothing has been converted.
+          </p>
+          {% endif %}
+
+          <dl class="queue-facts">
+            <div><dt>Estimated result</dt><dd>~{{ job.estimated_label }}</dd></div>
+            {% if job.actual_label %}
+            {# Never in place of the estimate. Keeping both is the only way to
+               find out later whether the advisor is any good. #}
+            <div><dt>Actual result</dt><dd>{{ job.actual_label }}</dd></div>
+            {% endif %}
+          </dl>
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+
+    <div class="queue-toolbar">
+      <button type="submit" name="action" value="remove" class="btn-ghost">
+        Remove from queue
+      </button>
+      <span class="muted">
+        Removing a queued job changes nothing on disk.
+      </span>
+    </div>
+  </form>
+  {% endif %}
+</section>
+{% endblock %}

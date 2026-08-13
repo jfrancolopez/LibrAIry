@@ -1389,7 +1389,7 @@ def _storage_row(row: sqlite3.Row) -> dict[str, object]:
     }
 
 
-OPPORTUNITY_BULK_ACTIONS = ("dismiss",)
+OPPORTUNITY_BULK_ACTIONS = ("dismiss", "queue")
 
 
 def apply_opportunity_action(
@@ -1411,6 +1411,8 @@ def apply_opportunity_action(
         raise ValueError(f"unknown opportunity action: {action}")
     if not opportunity_ids:
         return "Nothing was selected."
+    if action == "queue":
+        return _queue_selected(conn, opportunity_ids)
     dismissed = sum(1 for row_id in opportunity_ids if optimization.dismiss(conn, row_id))
     missing = len(opportunity_ids) - dismissed
     if missing:
@@ -1419,3 +1421,121 @@ def apply_opportunity_action(
             f"{missing} had already been answered."
         )
     return f"{dismissed} will not be suggested again."
+
+
+# --- the optimization queue -------------------------------------------------------
+
+
+QUEUE_ACTIONS = ("queue", "dismiss")
+
+
+def queue_data(conn: sqlite3.Connection, settings: Settings | None = None) -> dict:
+    """The queue page: what is waiting, and precisely what for.
+
+    Reads only. Every waiting reason is a stored fact the worker wrote on its
+    last cycle, never a recomputation at render time — a page that re-decided
+    eligibility on every load would disagree with the worker the moment either
+    of them blinked.
+    """
+    from librairy import optimization_queue as queue
+
+    rows = [_queue_row(row) for row in queue.jobs(conn)]
+    live = [row for row in rows if row["live"]]
+    return {
+        "jobs": [row for row in rows if row["state"] not in {"cancelled"}],
+        "running": sum(1 for row in live if row["state"] == queue.RUNNING),
+        "waiting": sum(
+            1 for row in live if row["state"] in {queue.QUEUED, queue.WAITING}
+        ),
+        "ready": sum(1 for row in live if row["state"] == queue.READY),
+        "concurrency": queue.MAX_CONCURRENT,
+        "window": _window_label(conn),
+    }
+
+
+def _window_label(conn: sqlite3.Connection) -> str:
+    from librairy.worker import _window
+
+    start, end = _window(conn, None)
+    return f"{start}–{end}"
+
+
+def _queue_row(row: sqlite3.Row) -> dict[str, object]:
+    from librairy import optimization_queue as queue
+    from librairy.optimization import CLASS_LABEL
+
+    reason = row["wait_reason"] or ""
+    return {
+        "id": row["id"],
+        "name": PurePosixPath(row["relpath"]).name,
+        "relpath": row["relpath"],
+        "state": row["state"],
+        "state_label": queue.STATE_LABEL.get(row["state"], row["state"].title()),
+        "live": row["state"] in queue.LIVE_STATES,
+        "quality": row["quality"],
+        "quality_label": CLASS_LABEL.get(row["quality"], row["quality"].upper()),
+        "change": f"{row['from_label']} → {row['to_label']}",
+        "size_label": human_size(row["source_bytes"]),
+        "estimated_label": human_size(row["estimated_bytes"]),
+        # Kept apart from the estimate, always. Overwriting one with the other
+        # would destroy the only way to find out whether the advisor is good.
+        "actual_label": human_size(row["actual_bytes"]) if row["actual_bytes"] else "",
+        "wait_reason": reason,
+        # The words, not the token. A stored reason is for the code; a person
+        # reading the page needs a sentence.
+        "wait_text": queue.WAIT_TEXT.get(reason, ""),
+        # Waiting is normal, so it is never styled as a failure.
+        "is_waiting": row["state"] in {queue.QUEUED, queue.WAITING},
+        "is_stale": row["state"] == queue.STALE,
+        "can_run_now": row["state"] in {queue.QUEUED, queue.WAITING},
+        "can_remove": row["state"] in {queue.QUEUED, queue.WAITING, queue.STALE},
+        "queued_at": row["queued_at"],
+    }
+
+
+def apply_queue_action(conn: sqlite3.Connection, action: str, job_ids: list[int]) -> str:
+    """Queue-page actions, over `job_id` and nothing else.
+
+    A fourth field name for a fourth workflow. See `apply_opportunity_action`
+    for why these are separate functions rather than one with a branch.
+    """
+    from librairy import optimization_queue as queue
+
+    if action != "remove":
+        raise ValueError(f"unknown queue action: {action}")
+    if not job_ids:
+        return "Nothing was selected."
+    removed = sum(1 for job_id in job_ids if queue.cancel(conn, job_id))
+    if removed != len(job_ids):
+        return (
+            f"{removed} removed. "
+            f"{len(job_ids) - removed} had already started or finished."
+        )
+    return f"{removed} removed from the queue."
+
+
+def _queue_selected(conn: sqlite3.Connection, opportunity_ids: list[int]) -> str:
+    """Queue what can be queued, and say why the rest could not.
+
+    A mixed selection that quietly queued three of four is the worst possible
+    outcome on a page that is about to spend an hour of CPU. Every refusal
+    carries its own reason, and identical reasons are counted together so the
+    sentence stays readable when twenty rows are protected.
+    """
+    from collections import Counter
+
+    from librairy import optimization_queue as queue
+
+    queued = 0
+    refused: Counter[str] = Counter()
+    for opportunity_id in opportunity_ids:
+        try:
+            queue.enqueue(conn, opportunity_id)
+        except queue.QueueRefused as exc:
+            refused[str(exc)] += 1
+        else:
+            queued += 1
+    if not refused:
+        return f"{queued} queued. Nothing has been converted yet."
+    parts = [f"{count} because {reason}" for reason, count in refused.most_common()]
+    return f"{queued} queued. Not queued: " + "; ".join(parts) + "."

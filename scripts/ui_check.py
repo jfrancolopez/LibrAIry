@@ -320,6 +320,9 @@ PAGES = {
     # The advisory section, which is the widest thing on the page after the
     # evidence panel: four classes, each with its own vocabulary.
     "storage": "/review",
+    # Every waiting state at once. All of them are reachable without an
+    # encoder, which is the point of building orchestration before execution.
+    "queue": "/maintenance/optimization",
 }
 
 # Scenes that need something opened before it can be looked at. A closed

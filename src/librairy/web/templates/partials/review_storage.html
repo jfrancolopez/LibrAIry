@@ -110,13 +110,21 @@
     </div>
 
     <div class="storage-toolbar">
+      {# Named for what it does and when. "Optimize" would hide the fact that
+         a lossy re-encode and a lossless repack are the same button. #}
+      <button type="submit" name="action" value="queue" class="btn">
+        Queue for maintenance window
+      </button>
       <button type="submit" name="action" value="dismiss" class="btn-ghost">
         No suggestion
       </button>
       <span class="muted">
-        Stops LibrAIry offering this again while the file and the rules are unchanged.
+        Queued work waits for a quiet moment and never replaces the original.
       </span>
     </div>
+    <p class="muted storage-note">
+      <a href="/maintenance/optimization">Optimization queue</a>
+    </p>
   </form>
   {% endif %}
 </section>

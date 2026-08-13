@@ -115,10 +115,12 @@ from librairy.web.review import (
     action_toast,
     apply_audit_bulk,
     apply_opportunity_action,
+    apply_queue_action,
     apply_review_action,
     duplicate_comparison,
     edit_proposal,
     filters_from_query,
+    queue_data,
     review_data,
 )
 from librairy.web.thumbs import (
@@ -1073,6 +1075,49 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             path,
             media_type=thumbnail_media_type(path),
             headers={"Cache-Control": "public, max-age=31536000, immutable"},
+        )
+
+    @app.get("/maintenance/optimization", response_class=HTMLResponse)
+    def optimization_queue_page(request: Request) -> HTMLResponse:
+        """The optimization queue. A secondary page, reached from Review.
+
+        Deliberately not in the primary navigation. Most of the time this page
+        says "Nothing is queued", and a permanent tab for that would make an
+        optional maintenance feature look like a part of the daily workflow.
+        """
+        return TEMPLATES.TemplateResponse(
+            request,
+            "optimization.html",
+            {
+                "title": "Optimization Queue",
+                **queue_data(conn, settings),
+            },
+        )
+
+    @app.post("/maintenance/optimization/bulk", include_in_schema=False)
+    def optimization_queue_bulk(
+        request: Request,
+        action: Annotated[str, Form()] = "",
+        job_id: Annotated[list[int], Form()] = [],  # noqa: B006 - starlette form list
+    ) -> HTMLResponse:
+        """A fourth field name for a fourth workflow: `job_id`.
+
+        `proposal_id`, `finding_id`, `opportunity_id`, `job_id` — four
+        signatures, and no handler reads two of them. That separation is the
+        only thing keeping one workflow's small integers out of another's.
+        """
+        try:
+            result = apply_queue_action(conn, action, job_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return TEMPLATES.TemplateResponse(
+            request,
+            "optimization.html",
+            {
+                "title": "Optimization Queue",
+                **queue_data(conn, settings),
+                "notice": result,
+            },
         )
 
     @app.get("/quarantine", response_class=HTMLResponse)

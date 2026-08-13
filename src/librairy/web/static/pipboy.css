@@ -2747,3 +2747,47 @@ summary.timeline-head::-webkit-details-marker { display: none; }
 @media (max-width: 40rem) {
   .storage-facts { grid-template-columns: 1fr; }
 }
+
+/* ---- Optimization queue ------------------------------------------------ */
+/* Waiting is never styled as failure. A job that cannot start is doing
+   exactly what it should, and an amber warning beside "waiting for the
+   maintenance window" would teach people to treat patience as a fault. */
+.queue-empty { margin: 0 0 var(--space-2); }
+.queue-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+  margin: 0 0 var(--space-2);
+}
+.queue-summary > div { display: flex; gap: var(--space-2); }
+.queue-summary dt { color: var(--text-muted); }
+.queue-summary dd { margin: 0; font-family: var(--font-mono); }
+.queue-policy { margin: 0 0 var(--space-3); font-size: var(--text-sm); }
+.queue-list { display: grid; gap: var(--space-2); margin-bottom: var(--space-3); }
+.queue-row { border-left: var(--border-thick) solid var(--border); }
+.queue-change { margin: 0 0 var(--space-1); font-size: var(--text-sm); }
+.queue-reason, .queue-stale { margin: 0 0 var(--space-1); font-size: var(--text-sm); }
+.queue-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: var(--space-1) var(--space-4);
+  margin: 0;
+  font-size: var(--text-sm);
+}
+.queue-facts > div { display: flex; justify-content: space-between; gap: var(--space-2); }
+.queue-facts dt { color: var(--text-muted); }
+.queue-facts dd { margin: 0; font-family: var(--font-mono); }
+.queue-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+}
+/* A source that changed is the one state worth marking, because it is the
+   only one that will never resolve itself. */
+.queue-is-stale { border-left-color: var(--warn); }
+
+@media (max-width: 40rem) {
+  .queue-facts { grid-template-columns: 1fr; }
+}
