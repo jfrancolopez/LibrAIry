@@ -6,6 +6,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from librairy.audit import FOLDER_KINDS, KINDS, open_findings
+from librairy.audit_job import progress as audit_progress
 from librairy.classify.images import vision_disagrees, vision_for_items
 from librairy.config import Settings
 from librairy.corrections import (
@@ -155,6 +156,9 @@ def review_data(
         # A separate list for a separate question. See audit_view.
         "audit_groups": audit_groups,
         "audit_open": sum(len(group["findings"]) for group in audit_groups),
+        # None until an audit has ever been asked for, which is what lets the
+        # empty state distinguish "nothing is wrong" from "nobody has looked".
+        "progress": audit_progress(conn),
     }
 
 

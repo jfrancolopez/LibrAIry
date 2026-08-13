@@ -113,8 +113,6 @@ def test_the_posted_scope_actually_reaches_the_handler(tmp_path: Path) -> None:
     So "Audit this folder" arrived with no scope at all and audited the whole
     library — the wrong work, silently, with a success redirect.
     """
-    import librairy.web.app as app_module
-
     settings = settings_for(tmp_path)
     track = settings.library_dir / "Music" / "Rock" / "a.mp3"
     track.parent.mkdir(parents=True, exist_ok=True)
@@ -122,21 +120,13 @@ def test_the_posted_scope_actually_reaches_the_handler(tmp_path: Path) -> None:
     conn = connect(settings)
     scan_root(conn, "library", settings.library_dir, settings)
 
-    seen: list[str] = []
-    real = app_module.audit_library
+    client = TestClient(create_app(settings, conn))
+    submit_form_on(client, "/browse/Music")
 
-    def spy(conn, settings, *, scope="", read_tags=True):  # noqa: ANN001, ANN202
-        seen.append(scope)
-        return real(conn, settings, scope=scope, read_tags=read_tags)
-
-    app_module.audit_library = spy
-    try:
-        client = TestClient(create_app(settings, conn))
-        submit_form_on(client, "/browse/Music")
-    finally:
-        app_module.audit_library = real
-
-    assert seen == ["Music"], "the folder button audited something else"
+    # The scope is now recorded on the queued run rather than passed straight
+    # into a call, which is a better place for it: it survives the request.
+    scopes = [row["scope"] for row in conn.execute("SELECT scope FROM audit_runs")]
+    assert scopes == ["Music"], "the folder button queued something else"
 
 
 def test_every_form_on_browse_carries_a_usable_token(tmp_path: Path) -> None:

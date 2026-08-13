@@ -871,23 +871,58 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         audit_library(conn, settings, scope=sanitize_scope(folder, settings.library_dir))
         return RedirectResponse("/review#library-audit", status_code=303)
 
+    @app.get("/review/audit/progress", response_class=HTMLResponse)
+    def review_audit_progress(request: Request) -> HTMLResponse:
+        """The progress panel, polled while a run is live.
+
+        Reads three columns and renders them. It stops polling itself the
+        moment the run is no longer live — the swapped-in markup simply has no
+        `hx-trigger` — so a finished library costs nothing.
+        """
+        from librairy.audit_job import progress as audit_progress
+
+        return TEMPLATES.TemplateResponse(
+            request,
+            "partials/audit_progress.html",
+            {"progress": audit_progress(conn)},
+        )
+
+    @app.post("/review/audit/cancel", include_in_schema=False)
+    def review_audit_cancel(request: Request) -> RedirectResponse:  # noqa: ARG001
+        """Stop a running audit.
+
+        Safe by construction rather than by care: an audit only reads, so
+        there is no half-finished state to unwind. Everything it had already
+        concluded before the last stage boundary stays.
+        """
+        from librairy.audit_job import cancel
+
+        cancel(conn)
+        return RedirectResponse("/review#library-audit", status_code=303)
+
     @app.post("/browse/audit", include_in_schema=False)
     def browse_audit(
         request: Request,  # noqa: ARG001
         scope: Annotated[str, Form()] = "",
     ) -> RedirectResponse:
-        """Audit a folder you are looking at, or the whole library.
+        """Ask for an audit. Returns at once; the worker does the work.
 
-        Synchronous, and scoped for that reason: reading embedded tags costs
-        roughly 30 ms a file, so a folder answers in a second and a very large
-        library belongs on the command line. Reads only — this cannot move,
-        rename or delete anything, whatever the findings say.
+        This used to run the whole reconciliation inside the request, which was
+        survivable while an audit was filesystem and tags and stopped being
+        survivable the moment it asks a catalog about every album. So it writes
+        a row and redirects, and the worker picks it up *after* inbox work —
+        see `audit_job` for why that ordering is the point.
+
+        Reads only, whichever thread does it: this cannot move, rename or
+        delete anything, whatever the findings say.
         """
+        from librairy.audit_job import enqueue
+
         try:
             clean = sanitize_scope(scope, settings.library_dir)
         except PathValidationError:
             return RedirectResponse("/browse", status_code=303)
-        audit_library(conn, settings, scope=clean)
+        enqueue(conn, clean)
         return RedirectResponse("/review#library-audit", status_code=303)
 
     @app.post("/review/action", response_class=HTMLResponse)

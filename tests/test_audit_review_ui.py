@@ -212,12 +212,26 @@ def test_a_healthy_library_shows_no_audit_section_at_all(tmp_path: Path) -> None
     body = client.get("/review").text
     # The section stays, as one compact line. A feature that vanishes when it
     # has nothing to say is a feature nobody knows they have.
-    assert "Nothing to look at" in body
+    #
+    # Before any audit has run the line says so rather than claiming a clean
+    # bill of health: "no issues" and "nobody has looked" are different, and
+    # only one of them is reassuring.
+    assert "No audit has run yet" in body
     assert "audit-list" not in body
     assert "audit-toolbar" not in body
 
 
 def test_the_browse_trigger_audits_and_changes_nothing(tmp_path: Path) -> None:
+    """The button asks; the worker answers.
+
+    It used to run the whole reconciliation inside the request. Now it writes
+    a row and redirects, so the assertion moves from "findings exist" to
+    "findings exist once the worker has had its slices" — and the part that
+    has not changed, and must not, is that the library is untouched either
+    way.
+    """
+    from librairy.audit_job import advance
+
     client, conn, settings = scene(tmp_path)
     conn.execute("DELETE FROM audit_findings")
     before = sorted(
@@ -229,6 +243,10 @@ def test_the_browse_trigger_audits_and_changes_nothing(tmp_path: Path) -> None:
     response = post(client, "/browse/audit", scope="Music")
 
     assert response.status_code == 303
+    assert conn.execute("SELECT COUNT(*) c FROM audit_runs").fetchone()["c"] == 1
+    for _ in range(20):
+        if advance(conn, settings).finished:
+            break
     assert conn.execute("SELECT COUNT(*) c FROM audit_findings").fetchone()["c"] >= 1
     after = sorted(
         (path.relative_to(settings.library_dir).as_posix(), path.stat().st_size)

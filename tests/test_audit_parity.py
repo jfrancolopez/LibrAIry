@@ -847,9 +847,11 @@ def test_the_zero_state_is_one_line(tmp_path: Path) -> None:
     body = client.get("/review").text
     section = body.split('id="library-audit"', 1)[1]
 
-    assert "Nothing to look at" in section
+    # Before an audit has ever run the line says nobody has looked, rather
+    # than claiming a clean bill of health. Either way it is one line.
+    assert "No audit has run yet" in section
     assert "audit-toolbar" not in section
-    assert len(section.split("</section>")[0]) < 400
+    assert len(section.split("</section>")[0]) < 700
 
 
 def test_both_sections_announce_themselves_the_same_way(tmp_path: Path) -> None:

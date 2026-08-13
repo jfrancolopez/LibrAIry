@@ -9,7 +9,7 @@ from pathlib import Path
 from librairy.config import Settings
 
 LOGGER = logging.getLogger(__name__)
-SCHEMA_VERSION = 18
+SCHEMA_VERSION = 19
 
 
 class DatabaseVersionError(RuntimeError):
@@ -404,6 +404,38 @@ CREATE TABLE catalog_identity (
 CREATE INDEX idx_catalog_identity_scope ON catalog_identity(scope_kind, scope_key);
 """
 
+MIGRATION_019 = """
+-- One requested audit. Not a queue of many: an audit is idempotent and the
+-- second request for the same scope is the same question, so a pending run is
+-- reused rather than stacked.
+--
+-- This is a row, not a thread. The existing worker picks it up *after* inbox
+-- work, one bounded slice per cycle, so a full library reconciliation can
+-- never stand between a newly dropped file and its proposal. There is no
+-- daemon, no schedule and no second process — deliberately, and see
+-- `audit_job` for the whole argument.
+CREATE TABLE audit_runs (
+  id INTEGER PRIMARY KEY,
+  scope TEXT NOT NULL DEFAULT '',
+  -- queued | running | complete | failed | cancelled
+  state TEXT NOT NULL DEFAULT 'queued',
+  -- Which stage is next to run. Stages are the resume point: a slice that
+  -- runs out of time leaves the stage unchanged and continues next cycle.
+  stage TEXT NOT NULL DEFAULT 'scan',
+  -- JSON. What has been counted so far, so the page can say "89 / 140 files"
+  -- rather than "working".
+  counters TEXT NOT NULL DEFAULT '{}',
+  -- Set by the user; read between items. An audit only ever reads the
+  -- library, so stopping half way leaves nothing half done.
+  cancel_requested INTEGER NOT NULL DEFAULT 0,
+  error TEXT NOT NULL DEFAULT '',
+  requested_at TEXT NOT NULL,
+  started_at TEXT,
+  finished_at TEXT
+);
+CREATE INDEX idx_audit_runs_state ON audit_runs(state);
+"""
+
 MIGRATIONS = {
     1: MIGRATION_001,
     2: MIGRATION_002,
@@ -423,6 +455,7 @@ MIGRATIONS = {
     16: MIGRATION_016,
     17: MIGRATION_017,
     18: MIGRATION_018,
+    19: MIGRATION_019,
 }
 
 

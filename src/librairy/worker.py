@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import logging
 import os
 import signal
 import sqlite3
@@ -36,6 +37,8 @@ from librairy.quarantine import quarantine_operation
 from librairy.scanner import scan_root
 from librairy.settings_service import effective_settings
 from librairy.web.thumbs import prune_cache
+
+LOGGER = logging.getLogger(__name__)
 
 IDLE_SLEEP_SECONDS = 5.0
 BUSY_SLEEP_SECONDS = 0.5
@@ -139,10 +142,35 @@ class Worker:
                 backup_copied=backup.copied,
                 backup_failed=backup.failed,
             )
+            # Everything above is inbox work, and it has already happened.
+            # A library audit is asked for, not needed, so it gets a bounded
+            # slice of a cycle that found nothing else to do — a file dropped
+            # in the inbox is never behind a library reconciliation, and the
+            # ordering here is the whole guarantee.
+            audit_stage = ""
+            if not summary.work_found:
+                _set_worker_state(self.conn, "current_phase", "audit")
+                audit_stage = self._audit_slice(settings)
             _set_worker_state(self.conn, "last_cycle_at", utc_now())
             _set_worker_state(self.conn, "current_phase", "idle")
             _set_worker_state(self.conn, "last_summary", asdict(summary))
+            if audit_stage:
+                _set_worker_state(self.conn, "last_audit_stage", audit_stage)
             return summary
+
+    def _audit_slice(self, settings: Settings) -> str:
+        """One slice of a requested audit, if one is waiting.
+
+        Wrapped because a broken audit must not stop the worker: the inbox is
+        the job, and reconciliation is the extra.
+        """
+        from librairy.audit_job import advance
+
+        try:
+            return advance(self.conn, settings).stage
+        except Exception:  # noqa: BLE001 - never let the extra break the job
+            LOGGER.exception("audit slice failed")
+            return ""
 
     def run_forever(self) -> None:
         sleep_seconds = BUSY_SLEEP_SECONDS

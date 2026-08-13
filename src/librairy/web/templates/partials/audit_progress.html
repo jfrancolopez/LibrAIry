@@ -1,0 +1,71 @@
+{# What a running audit is doing, and what it has counted so far.
+
+   Polled while live and static when not, so a finished library costs no
+   requests. The counters are the point: "working" is not information, and
+   "89 / 140 files checked" is something a person can verify by hand. #}
+{% if progress %}
+<section
+  class="audit-progress{% if progress.live %} is-live{% endif %}"
+  id="audit-progress"
+  {% if progress.live %}hx-get="/review/audit/progress" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}
+>
+  {% if progress.live %}
+    <div class="audit-progress-head">
+      <strong>Library audit</strong>
+      <span class="muted">{{ progress.stage_label }}</span>
+      <span class="audit-percent">{{ progress.percent }}%</span>
+    </div>
+    {# aria-valuenow so the number is available to a screen reader, not only
+       to the eye reading the fill width. #}
+    <div class="audit-bar" role="progressbar"
+         aria-valuenow="{{ progress.percent }}" aria-valuemin="0" aria-valuemax="100">
+      <span style="width: {{ progress.percent }}%"></span>
+    </div>
+    <p class="audit-progress-count">
+      {{ progress.counters.files_checked }} / {{ progress.counters.files_seen }} files checked
+    </p>
+    {% if progress.rows %}
+    <dl class="audit-counters">
+      {% for label, value in progress.rows %}
+      <div><dt>{{ label }}</dt><dd>{{ value }}</dd></div>
+      {% endfor %}
+    </dl>
+    {% endif %}
+    <p class="muted audit-priority">
+      Inbox processing has priority, so this runs in the gaps between it.
+    </p>
+    <form method="post" action="/review/audit/cancel">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button type="submit" class="btn-ghost">Stop the audit</button>
+    </form>
+  {% elif progress.state == 'complete' %}
+    <div class="audit-progress-head">
+      <strong>Library audit complete</strong>
+      <span class="muted">
+        {{ progress.counters.files_checked }} files checked ·
+        {{ progress.counters.findings }} suggestion{{ '' if progress.counters.findings == 1 else 's' }}
+      </span>
+    </div>
+    {% if progress.rows %}
+    <dl class="audit-counters">
+      {% for label, value in progress.rows %}
+      <div><dt>{{ label }}</dt><dd>{{ value }}</dd></div>
+      {% endfor %}
+    </dl>
+    {% endif %}
+  {% elif progress.state == 'failed' %}
+    <div class="audit-progress-head">
+      <strong>Library audit stopped</strong>
+      <span class="muted">{{ progress.error }}</span>
+    </div>
+    <p class="muted">Everything it had already worked out is below.</p>
+  {% elif progress.state == 'cancelled' %}
+    <div class="audit-progress-head">
+      <strong>Library audit stopped</strong>
+      <span class="muted">
+        You stopped it after {{ progress.counters.files_checked }} files. Nothing was changed.
+      </span>
+    </div>
+  {% endif %}
+</section>
+{% endif %}

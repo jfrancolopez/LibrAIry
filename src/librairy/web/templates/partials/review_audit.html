@@ -209,9 +209,17 @@
     {% if notice %}<p class="status ok audit-notice">{{ notice }}</p>{% endif %}
   </header>
 
+  {% include "partials/audit_progress.html" %}
+
   {% if not audit_groups %}
-  {# Compact. An empty section should not be the biggest thing on the page. #}
-  <p class="muted audit-empty">Nothing to look at — the last audit found no issues.</p>
+  {# Compact. An empty section should not be the biggest thing on the page.
+     "No issues" is only true if an audit has actually run — before that the
+     honest answer is that nobody has looked. #}
+  <p class="muted audit-empty">
+    {% if progress %}Nothing to look at — the last audit found no issues.
+    {% else %}No audit has run yet. <a href="/browse">Audit your library</a> to see
+    what LibrAIry makes of it.{% endif %}
+  </p>
   {% else %}
 
   <form id="audit-actions" class="audit-toolbar" method="post" action="/review/audit/bulk">

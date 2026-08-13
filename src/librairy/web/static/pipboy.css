@@ -2471,6 +2471,49 @@ summary.timeline-head::-webkit-details-marker { display: none; }
 }
 .correction details summary { cursor: pointer; margin-bottom: var(--space-2); }
 
+/* --- Library audit: what it is doing right now -------------------------- */
+/* Small on purpose. This is a status line, not a dashboard: it appears while
+   an audit runs, states which stage and how far, and gets out of the way. */
+.audit-progress {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--audit);
+  background: var(--bg-metric);
+  padding: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+.audit-progress-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+.audit-percent { margin-left: auto; font-family: var(--font-mono); }
+.audit-bar {
+  display: block;
+  height: 0.55rem;
+  margin: var(--space-2) 0;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+.audit-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--audit);
+  transition: width 0.4s ease;
+}
+.audit-progress-count { margin: 0; font-family: var(--font-mono); font-size: var(--text-sm); }
+.audit-counters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: var(--space-1) var(--space-4);
+  margin: var(--space-2) 0 0;
+}
+.audit-counters > div { display: flex; justify-content: space-between; gap: var(--space-2); }
+.audit-counters dt { color: var(--text-muted); }
+.audit-counters dd { margin: 0; font-family: var(--font-mono); }
+.audit-priority { margin: var(--space-2) 0; font-size: var(--text-sm); }
+
 @media (max-width: 40rem) {
   .why-paths { grid-template-columns: 1fr; gap: 0; }
   /* Full-width targets rather than several buttons squeezed onto one line:
