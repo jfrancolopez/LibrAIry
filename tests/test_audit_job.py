@@ -256,6 +256,36 @@ def test_a_cycle_with_inbox_work_does_not_touch_the_audit(tmp_path: Path) -> Non
     assert state(conn) == QUEUED, "the audit ran while there was inbox work to do"
 
 
+def test_a_settled_inbox_does_not_starve_the_audit(tmp_path: Path) -> None:
+    """The live bug: an inbox with files in it is not an inbox doing work.
+
+    The scan counts every file it walks, not the new ones, so "did the worker
+    find work" was true for as long as the inbox was not empty. On the real
+    installation that meant 95 every cycle, forever, and a queued audit that
+    never ran. What matters is whether the cycle *changed* anything.
+    """
+    from librairy.worker import Worker
+
+    conn, settings = library(tmp_path)
+    (settings.inbox_dir / "already-here.txt").write_text("settled", encoding="utf-8")
+    worker = Worker(conn, settings)
+    # First cycles do the real work: discover, hash, classify.
+    for _ in range(6):
+        worker.run_once()
+    settled = worker.run_once()
+
+    assert settled.scanned, "the file is still in the inbox and still counted"
+    assert not settled.did_work, "nothing actually changed this cycle"
+
+    enqueue(conn)
+    for _ in range(40):
+        worker.run_once()
+        if state(conn) == COMPLETE:
+            break
+
+    assert state(conn) == COMPLETE, "the audit was starved by a settled inbox"
+
+
 def test_an_idle_cycle_gives_the_audit_a_slice(tmp_path: Path) -> None:
     from librairy.worker import Worker
 

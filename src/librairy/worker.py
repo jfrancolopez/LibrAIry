@@ -81,6 +81,30 @@ class WorkerSummary:
             )
         )
 
+    @property
+    def did_work(self) -> bool:
+        """Whether this cycle actually *changed* anything.
+
+        `work_found` includes `scanned`, and `scanned` counts every file the
+        walk saw rather than the new ones — so it is non-zero for as long as
+        the inbox contains anything at all. That is fine for deciding how long
+        to sleep, and useless for deciding whether the worker is busy: on the
+        live installation it meant "95" on every cycle, forever, which starved
+        the library audit completely. Found by watching a queued run sit at
+        `queued` while the worker cycled past it every two seconds.
+        """
+        return any(
+            (
+                self.hashed,
+                self.library_hashed,
+                self.duplicate_candidates,
+                self.similar_flags,
+                self.analyzed,
+                self.content_extracted,
+                self.backup_copied,
+            )
+        )
+
 
 class Worker:
     def __init__(self, conn: sqlite3.Connection, settings: Settings) -> None:
@@ -144,11 +168,15 @@ class Worker:
             )
             # Everything above is inbox work, and it has already happened.
             # A library audit is asked for, not needed, so it gets a bounded
-            # slice of a cycle that found nothing else to do — a file dropped
-            # in the inbox is never behind a library reconciliation, and the
-            # ordering here is the whole guarantee.
+            # slice of a cycle that changed nothing — a file dropped in the
+            # inbox is never behind a library reconciliation, and the ordering
+            # here is the whole guarantee.
+            #
+            # `did_work` and not `work_found`: the latter counts every file the
+            # scan walked, so it is true for as long as the inbox is not empty
+            # and the audit would never run at all.
             audit_stage = ""
-            if not summary.work_found:
+            if not summary.did_work:
                 _set_worker_state(self.conn, "current_phase", "audit")
                 audit_stage = self._audit_slice(settings)
             _set_worker_state(self.conn, "last_cycle_at", utc_now())
