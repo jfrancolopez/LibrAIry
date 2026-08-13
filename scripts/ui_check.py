@@ -222,11 +222,34 @@ def render(page: str, root: Path) -> Path:
     # Scripts would 404 as a file, and layout is what is being looked at.
     html = re.sub(r'<script[^>]+src="/static/[^"]+"[^>]*></script>', "", html)
     OUT.mkdir(parents=True, exist_ok=True)
-    target = OUT / f"{page.strip('/').replace('/', '-') or 'index'}.html"
+    target = OUT / f"{_slug(page)}.html"
     target.write_text(html, encoding="utf-8")
     return target
 
 
+def _slug(page: str) -> str:
+    """A filename safe to put in an `iframe src`.
+
+    A page with a query string produced `review?state=confident.html`, and the
+    `?` in an iframe src is a query string — so the frame asked for `review`,
+    got nothing, and the overflow probe reported "nothing past the edge" for a
+    page it had never loaded. A silent pass is the worst answer a measurement
+    tool can give.
+    """
+    return re.sub(r"[^A-Za-z0-9]+", "-", page.strip("/")).strip("-") or "index"
+
+
+# `checkVisibility()` and not `offsetParent !== null`, and this mattered.
+#
+# The children of a *closed* `<details>` still get a layout box in Chrome, laid
+# out unconstrained, so they have client rects and a non-null offsetParent. The
+# old test therefore reported the Review filter panel as 30px past a 375px
+# screen — every run, for several passes — for a panel nobody could see. Open
+# the panel and it fits with 150px to spare.
+#
+# A measurement tool that cries wolf is worse than none: the real overflows it
+# found got the same shrug as the phantom. `checkVisibility` is the browser's
+# own answer to "can a person see this", which is the question being asked.
 PROBE = """
 window.addEventListener('load', function () {
   setTimeout(function () {
@@ -234,13 +257,16 @@ window.addEventListener('load', function () {
     var w = d.documentElement.clientWidth, out = [];
     d.querySelectorAll('body *').forEach(function (el) {
       var r = el.getBoundingClientRect();
-      if (r.right > w + 1 && el.offsetParent !== null) {
-        out.push({
-          el: el.tagName.toLowerCase() + '.' + String(el.className || '').split(' ')[0],
-          right: Math.round(r.right),
-          text: (el.textContent || '').trim().slice(0, 30)
-        });
-      }
+      if (r.right <= w + 1) return;
+      var shown = el.checkVisibility
+        ? el.checkVisibility({checkVisibilityCSS: true, contentVisibilityAuto: true})
+        : el.offsetParent !== null;
+      if (!shown) return;
+      out.push({
+        el: el.tagName.toLowerCase() + '.' + String(el.className || '').split(' ')[0],
+        right: Math.round(r.right),
+        text: (el.textContent || '').trim().slice(0, 30)
+      });
     });
     document.title = JSON.stringify({
       viewport: w, scrollWidth: d.documentElement.scrollWidth, past_edge: out.slice(0, 10)
@@ -280,6 +306,11 @@ PAGES = {
     "browse": "/browse",
     "commit": "/commit",
     "dashboard": "/",
+    # The filter panel folds away when nothing is filtered, and a collapsed
+    # panel measures as no overflow at all — which is how a real 375px
+    # overflow in it survived several passes of this harness. Filtering forces
+    # `<details open>`, so the thing being measured is on screen.
+    "review-filters": "/review?state=confident",
 }
 
 

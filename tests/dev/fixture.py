@@ -144,6 +144,19 @@ def build_fixture(root: Path) -> TestClient:
         [
             EvidenceEntry("fingerprint", "blake2b", "9f2c41ab77e0", 1.0),
             EvidenceEntry("filesystem", "also at", "Photos/2022/Vacation/foo-copy.jpg", 1.0),
+            EvidenceEntry("filesystem", "each", "5033164", 1.0),
+        ],
+    )
+    finding(
+        "Music/Pop/Chic/Risque",
+        "artwork-not-on-disk",
+        "'Risque': the cover is inside the tracks, but there is no cover file "
+        "beside them. Some players show one and some do not.",
+        None,
+        [
+            EvidenceEntry("filesystem", "album", "Risque", 0.8),
+            EvidenceEntry("filesystem", "tracks", "3", 0.8),
+            EvidenceEntry("tags", "embedded picture", "yes", 0.9),
         ],
     )
     finding(
@@ -192,20 +205,29 @@ def build_fixture(root: Path) -> TestClient:
         TAG_EVIDENCE,
     )
     finding(
+        # The real library's shape, and the widest row on the page: a long
+        # title, three facts beside it, and a tray naming every folder. If a
+        # 375px screen survives this one it survives the rest.
         "Music/Disco/Abba/Road Trip Classics",
-        "split-album",
-        "'Road Trip Classics' is one compilation filed as 27 artist folders. "
-        "Every one of its 45 tracks is tagged as a compilation.",
-        None,
+        "collection-custom",
+        "'Road Trip Classics' looks like one compilation — 45 tracks by 27 "
+        "artists that agree with each other — but no configured catalog "
+        "recognises the release. It is currently spread across 27 artist folders.",
+        "Music/Disco/Various Artists/Road Trip Classics",
         [
+            EvidenceEntry("library-pattern", "collection", "Custom compilation", 0.95),
             EvidenceEntry("tags", "album", "Road Trip Classics", 0.95),
-            EvidenceEntry("tags", "album artist", "V.A.", 0.9),
-            EvidenceEntry("filesystem", "folders", "27", 0.9),
             EvidenceEntry("filesystem", "tracks", "45", 0.9),
-            EvidenceEntry("filesystem", "track numbers", "1-45, complete", 0.9),
-            EvidenceEntry("library-pattern", "all under", "Music/Disco", 0.85),
+            EvidenceEntry("filesystem", "artists", "27", 0.9),
+            EvidenceEntry("filesystem", "total bytes", "1449985635", 0.9),
+            EvidenceEntry("musicbrainz", "release", "no match", 0.4),
+            EvidenceEntry("discogs", "release", "no match", 0.4),
+            EvidenceEntry(
+                "tags", "agreement", "tracks 1-45 complete, none missing and none repeated", 0.85
+            ),
+            EvidenceEntry("tags", "agreement", "one barcode on every track: 0602455907691", 0.85),
             # The folders it speaks for, exactly as the real detector records
-            # them — this is what the "Spans N folders" tray reads back.
+            # them — this is what the grouped tray reads back.
             EvidenceEntry("filesystem", "folder", "Music/Disco/Abba/Road Trip Classics", 0.9),
             EvidenceEntry("filesystem", "folder", "Music/Disco/Bee Gees/Road Trip Classics", 0.9),
             EvidenceEntry("filesystem", "folder", "Music/Disco/Chic/Road Trip Classics", 0.9),
@@ -230,5 +252,36 @@ def build_fixture(root: Path) -> TestClient:
     # 8 is accepted and waiting for Commit.
     bowie = conn.execute("SELECT id FROM audit_findings WHERE relpath LIKE '%Heroes%'").fetchone()
     accept_correction(conn, settings, bowie["id"])
+    _running_audit(conn)
 
     return TestClient(create_app(settings, conn))
+
+
+def _running_audit(conn) -> None:  # noqa: ANN001
+    """A run stopped mid-catalog, so the progress panel has something to draw.
+
+    Written straight into the table rather than advanced for real: the point
+    of the fixture is a deterministic page to photograph, and a real slice
+    would finish in milliseconds and render the completed panel instead.
+    """
+    from librairy.audit_job import RUNNING, Counters
+    from librairy.planner import utc_now
+
+    counters = Counters(
+        files_seen=140,
+        files_checked=140,
+        albums=28,
+        collections=1,
+        collections_judged=1,
+        catalog_requests=2,
+        artwork_checked=1,
+        artwork_total=2,
+        ai_candidates=1,
+        findings=11,
+        per_root={"Music": [48, 48], "Photos": [89, 89], "Projects": [3, 3]},
+    )
+    conn.execute(
+        "INSERT INTO audit_runs(scope, state, stage, counters, requested_at, started_at) "
+        "VALUES ('', ?, 'artwork', ?, ?, ?)",
+        (RUNNING, counters.as_json(), utc_now(), utc_now()),
+    )

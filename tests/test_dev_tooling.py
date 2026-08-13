@@ -284,3 +284,45 @@ def still_running(marker: str) -> bool:
     )
     mine = str(os.getpid())
     return any(line.strip() and line.strip() != mine for line in found.stdout.splitlines())
+
+
+# --- the probe has to be believable --------------------------------------------
+
+
+def test_the_overflow_probe_asks_the_browser_what_is_visible() -> None:
+    """`offsetParent !== null` reported a phantom overflow for months.
+
+    The children of a *closed* `<details>` still get a layout box in Chrome,
+    laid out unconstrained, so they have client rects and a non-null
+    offsetParent. The probe therefore reported the Review filter panel 30px
+    past a 375px screen on every run — for a panel nobody could see. Measured
+    open, it fits with 150px to spare. `checkVisibility()` is the browser's own
+    answer to the question actually being asked.
+    """
+    from scripts.ui_check import PROBE
+
+    assert "checkVisibility" in PROBE
+    assert "offsetParent" in PROBE, "still needed as a fallback for older Chrome"
+    assert PROBE.index("checkVisibility") < PROBE.index("offsetParent")
+
+
+def test_a_page_with_a_query_string_gets_a_usable_filename() -> None:
+    """`review?state=confident.html` in an iframe src is a query string, so
+    the frame asked for `review`, got nothing, and the probe reported
+    "nothing past the edge" for a page it had never loaded. A measurement tool
+    that passes silently is worse than one that fails."""
+    from scripts.ui_check import _slug
+
+    assert _slug("/review?state=confident") == "review-state-confident"
+    assert _slug("/review") == "review"
+    assert _slug("/") == "index"
+    assert "?" not in _slug("/browse?path=Music/Pop&sort=name")
+
+
+def test_the_filter_panel_is_measured_open_not_closed() -> None:
+    """The scene exists so the overflow check looks at a panel that is on
+    screen. Without a filter in the query the panel is folded away."""
+    from scripts.ui_check import PAGES
+
+    assert "?" in PAGES["review-filters"]
+    assert PAGES["review-filters"].startswith("/review")

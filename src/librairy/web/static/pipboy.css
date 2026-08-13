@@ -746,6 +746,11 @@ tbody tr:hover { background: var(--bg-metric); }
 .row-dest {
   display: flex;
   align-items: baseline;
+  /* Wrap whole path components onto the next line before squeezing any of
+     them. Without this the three spans are flex items that shrink below their
+     content and then break inside a word: at 375px a folder correction read
+     `Music/Disc` / `o/ Abb` / `a`, which is not a path anyone can check. */
+  flex-wrap: wrap;
   gap: var(--space-2);
   margin: 0;
   min-width: 0;
