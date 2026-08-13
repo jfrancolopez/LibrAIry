@@ -118,17 +118,34 @@ def albums_in(view: LibraryView) -> list[Album]:
     return found
 
 
-def detect(view: LibraryView) -> list[Finding]:
+def detect(
+    view: LibraryView,
+    *,
+    identities: dict[str, tuple] | None = None,
+    collections: bool = True,
+) -> list[Finding]:
     """Every music detector, and the order matters.
 
     A split compilation explains most of what the later detectors would
     otherwise report about the same files — twenty-seven "this folder is
     missing tracks 1 to 8" rows are one problem seen twenty-seven times. So
     the split runs first and the folders it claims are excluded from the rest.
+
+    `collections=False` finds the multi-artist groups and stays silent about
+    them, which is what the staged audit wants: the verdict on a collection
+    depends on what the catalogs say, and the catalog stage has not run yet
+    when structure does. The folders are still claimed either way, so the
+    later detectors do not fill Review with the consequences of a question
+    nobody has answered yet.
     """
     albums = albums_in(view)
-    findings = list(_split_albums(view, albums))
-    claimed = {folder for finding in findings for folder in _folders_of(finding)}
+    groups = album_groups(view, albums)
+    findings = list(
+        _split_albums(view, groups, identities=identities, collections=collections)
+    )
+    claimed = {
+        album.folder for members in groups.values() for album in members
+    }
     rest = [album for album in albums if album.folder not in claimed]
     findings.extend(_artist_in_two_branches(view, rest))
     findings.extend(_album_folder_disagrees_with_tags(view, rest))
@@ -150,51 +167,104 @@ def _folders_of(finding: Finding) -> set[str]:
 # --- the big one: one album filed as many -------------------------------------
 
 
-def _split_albums(view: LibraryView, albums: list[Album]) -> list[Finding]:
+def album_groups(view: LibraryView, albums: list[Album]) -> dict[str, list[Album]]:
+    """Album titles that live in more than one folder, keyed by normalised name.
+
+    Exposed because the staged audit needs the *groups* before it needs the
+    findings: the catalog stage looks each one up as a release, and the
+    structure stage has to know which folders those are so it can stay quiet
+    about them in the meantime.
+    """
+    by_album: dict[str, list[Album]] = defaultdict(list)
+    for album in albums:
+        if album.album_tag:
+            by_album[key(album.album_tag)].append(album)
+    return {name: members for name, members in by_album.items() if len(members) > 1}
+
+
+def is_multi_artist(view: LibraryView, members: list[Album]) -> bool:
+    """More than one performer actually named in the tags.
+
+    Two artists with no compilation flag is still a collection, so the flag is
+    not required. But the flag is not sufficient either: one artist across two
+    folders with `album_artist: V.A.` is a *mistag*, and sending it to the
+    compilation policy would answer a Queen album with `Various Artists/`. The
+    flag only decides it when the tracks name no performer at all, because
+    then there is nothing better to go on.
+    """
+    performers = {
+        (view.tags.get(track) or {}).get("artist", "").strip()
+        for album in members
+        for track in album.tracks
+    } - {""}
+    if performers:
+        return len(performers) > 1
+    return any(album.is_compilation for album in members)
+
+
+def _split_albums(
+    view: LibraryView,
+    groups: dict[str, list[Album]],
+    *,
+    identities: dict[str, tuple] | None = None,
+    collections: bool = True,
+) -> list[Finding]:
     """The same album, in more than one folder.
 
-    Two shapes, one finding each:
+    Two shapes, and only one of them has an obvious answer:
 
-    * a *compilation* scattered one-artist-per-folder, which is what the real
-      library does — the tags say `V.A.` and the album name is identical in
-      every one of them;
     * an *album* whose tracks ended up in two folders for the same artist,
-      usually a half-finished copy or a second rip.
+      usually a half-finished copy or a second rip. Put them back together.
+    * a *multi-artist collection* scattered one-artist-per-folder, which is
+      what the real library does. Whether it should be put back together at
+      all is a real question, and `audit_compilation` answers it rather than
+      this function assuming.
 
     The suggestion is a destination, but the kind is not in
     `audit.EXECUTABLE_KINDS`: gathering forty-five files out of twenty-seven
     directories is a subtree restructure, and the correction plan resolves a
     file plus its companions in one directory. Showing the answer is useful;
     pretending there is a button for it would not be.
+
+    `identities` is what the catalog tier found, keyed by normalised album
+    title. It arrives already looked up because this runs inside the structure
+    stage, which is not allowed to touch the network.
     """
     from librairy.audit import Finding
+    from librairy.audit_compilation import (
+        classify_collection,
+        evidence_for,
+        library_convention,
+        summarize,
+    )
 
-    by_album: dict[str, list[Album]] = defaultdict(list)
-    for album in albums:
-        if album.album_tag:
-            by_album[key(album.album_tag)].append(album)
-
+    convention = library_convention(view)
     findings = []
-    for members in by_album.values():
-        if len(members) < 2:
-            continue
+    for album_key, members in groups.items():
         folders = sorted(album.folder for album in members)
         tracks = sorted(track for album in members for track in album.tracks)
         title = members[0].album_tag
-        compilation = any(album.is_compilation for album in members)
-        branches = {album.branch for album in members}
-        suggested = _suggested_home(members, compilation)
 
-        if compilation:
-            summary = (
-                f"{title!r} is one compilation filed as {len(folders)} artist folders. "
-                f"Every one of its {len(tracks)} tracks is tagged as a compilation."
+        if is_multi_artist(view, members):
+            if not collections:
+                continue
+            verdict = classify_collection(
+                view,
+                members,
+                catalogs=(identities or {}).get(album_key, ()),
+                convention=convention,
             )
-        else:
-            summary = (
-                f"{title!r} is split across {len(folders)} folders "
-                f"holding {len(tracks)} tracks between them."
+            findings.append(
+                Finding(
+                    relpath=folders[0],
+                    kind=f"collection-{verdict.kind}",
+                    severity="review",
+                    summary=summarize(verdict),
+                    dest_relpath=verdict.home,
+                    evidence=evidence_for(verdict),
+                )
             )
+            continue
 
         evidence = [
             EvidenceEntry("tags", "album", title, 0.95),
@@ -202,6 +272,7 @@ def _split_albums(view: LibraryView, albums: list[Album]) -> list[Finding]:
             EvidenceEntry("filesystem", "folders", str(len(folders)), 0.9),
             EvidenceEntry("filesystem", "tracks", str(len(tracks)), 0.9),
         ]
+        branches = {album.branch for album in members}
         if len(branches) == 1:
             evidence.append(
                 EvidenceEntry("library-pattern", "all under", next(iter(branches)), 0.85)
@@ -219,37 +290,38 @@ def _split_albums(view: LibraryView, albums: list[Album]) -> list[Finding]:
                 relpath=folders[0],
                 kind="split-album",
                 severity="review",
-                summary=summary,
-                dest_relpath=suggested,
+                summary=(
+                    f"{title!r} is split across {len(folders)} folders "
+                    f"holding {len(tracks)} tracks between them."
+                ),
+                dest_relpath=_suggested_home(members, compilation=False),
                 evidence=evidence,
             )
         )
     return findings
 
 
-def _suggested_home(members: list[Album], compilation: bool) -> str | None:
-    """Where the album would live if it were one folder.
+def _suggested_home(members: list[Album], *, compilation: bool) -> str | None:
+    """Where a single-artist album would live if it were one folder.
 
     Only proposed when every piece already sits under the same branch, so the
     suggestion never moves music between the genre folders the library owner
-    chose. A compilation goes under the name this library already uses for
-    compilations if it has one, and otherwise is left without a suggestion —
-    inventing `Various Artists/` for a library that has never used it would be
-    imposing a convention rather than reading one.
+    chose. Multi-artist collections do not come through here at all — where
+    one of those belongs, or whether it belongs anywhere as a unit, is
+    `audit_compilation`'s question.
     """
+    if compilation:
+        return None
     branches = {album.branch for album in members}
     if len(branches) != 1:
         return None
     branch = next(iter(branches))
     if not branch:
         return None
-    title = members[0].album_tag
-    if not compilation:
-        artists = {album.artist_folder for album in members if album.artist_folder}
-        if len(artists) != 1:
-            return None
-        return f"{branch}/{next(iter(artists))}/{title}"
-    return None
+    artists = {album.artist_folder for album in members if album.artist_folder}
+    if len(artists) != 1:
+        return None
+    return f"{branch}/{next(iter(artists))}/{members[0].album_tag}"
 
 
 def _album_artist_label(members: list[Album]) -> str:

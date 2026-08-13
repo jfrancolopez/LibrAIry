@@ -310,11 +310,18 @@ def _has_embedded_art(context: Context, tracks: list[str]) -> bool:
 
     A cover inside a FLAC is a video stream with the `attached_pic`
     disposition — the same shape ffprobe reports for an mp3's APIC frame.
+
+    The gather pass already asked ffprobe this question while it was reading
+    the tags, so the recorded answer is used when there is one and the file is
+    only re-probed when there is not.
     """
     from librairy.tools.ffprobe import probe
 
     if not tracks:
         return False
+    view = context.view
+    if view is not None and tracks[0] in view.artwork:
+        return view.artwork[tracks[0]]
     try:
         result = probe(context.settings.library_dir / tracks[0], context.settings)
     except Exception:  # noqa: BLE001 - a probe failure is not an artwork answer

@@ -86,14 +86,14 @@ def real_compilation() -> dict:
 def test_one_compilation_in_twenty_seven_folders_is_one_finding() -> None:
     findings = audit_music.detect(view_for(real_compilation()))
 
-    split = only(findings, "split-album")
+    split = only(findings, "collection-custom")
     assert "27 artist folders" in split.summary
     assert "29 tracks" in split.summary
 
 
 def test_the_split_finding_names_every_folder_it_speaks_for() -> None:
     """Why has to be able to list them; `detect` has to be able to skip them."""
-    split = only(audit_music.detect(view_for(real_compilation())), "split-album")
+    split = only(audit_music.detect(view_for(real_compilation())), "collection-custom")
 
     folders = {
         entry.detail
@@ -106,26 +106,33 @@ def test_the_split_finding_names_every_folder_it_speaks_for() -> None:
 
 def test_the_split_finding_cites_the_unbroken_track_run() -> None:
     """Twenty-seven albums that happen to share a name would not number 1-29."""
-    split = only(audit_music.detect(view_for(real_compilation())), "split-album")
+    split = only(audit_music.detect(view_for(real_compilation())), "collection-custom")
 
-    runs = [entry.detail for entry in split.evidence if entry.field == "track numbers"]
-    assert runs == ["1-29, complete"]
+    runs = [entry.detail for entry in split.evidence if entry.field == "agreement"]
+    assert "tracks 1-29 complete, none missing and none repeated" in runs
 
 
 def test_a_compilation_does_not_become_twenty_seven_artist_findings() -> None:
     """The trap the brief names: 27 identities are not 27 wrong folders."""
     findings = audit_music.detect(view_for(real_compilation()))
 
-    assert kinds(findings) == ["split-album"]
+    assert kinds(findings) == ["collection-custom"]
 
 
-def test_the_split_finding_suggests_nothing_when_the_library_has_no_convention(
-) -> None:
-    """Inventing `Various Artists/` for a library that has never used one is
-    imposing a convention, not reading it."""
-    split = only(audit_music.detect(view_for(real_compilation())), "split-album")
+def test_a_coherent_collection_is_offered_one_folder_to_live_in() -> None:
+    """This reverses an earlier decision, deliberately.
 
-    assert split.dest_relpath is None
+    The old rule refused to name a home for a compilation unless the library
+    already had a folder for compilations, on the grounds that inventing
+    `Various Artists/` imposes a convention. In practice that produced a
+    finding saying "this is one album in twenty-seven folders" and then
+    declining to say where it should go, which leaves the owner to work out an
+    answer the audit already has. A default the owner can decline beats no
+    answer at all.
+    """
+    split = only(audit_music.detect(view_for(real_compilation())), "collection-custom")
+
+    assert split.dest_relpath == f"Music/Pop/Various Artists/{COMPILATION}"
 
 
 def test_a_split_album_by_one_artist_does_suggest_where_it_belongs() -> None:

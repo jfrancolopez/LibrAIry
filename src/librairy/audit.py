@@ -59,6 +59,12 @@ KINDS = {
     # Music reconciliation. Each of these is about a folder or a set of them,
     # which is why none appear in EXECUTABLE_KINDS. See `audit_music`.
     "split-album": "One album in several folders",
+    # Three verdicts on a multi-artist folder, and they are separate kinds
+    # rather than one kind with a field because they ask for different
+    # decisions: keep it, choose, or take it apart. See `audit_compilation`.
+    "collection-recognized": "Recognized compilation",
+    "collection-custom": "Custom compilation",
+    "collection-loose": "Loose collection",
     "artist-split": "Artist filed in two places",
     "album-name-mismatch": "Folder name disagrees with the tags",
     "track-numbering": "Tracks missing from an album",
@@ -106,6 +112,9 @@ FOLDER_KINDS = frozenset(
         "missing-artwork",
         "naming-inconsistency",
         "split-album",
+        "collection-recognized",
+        "collection-custom",
+        "collection-loose",
         "artist-split",
         "album-name-mismatch",
         "track-numbering",
@@ -200,6 +209,11 @@ class LibraryView:
     fingerprints: dict[str, list[str]]
     tags: dict[str, dict[str, str]]
     junk: list[str]
+    # Whether each audio file carries a picture frame. Free: the probe that
+    # read the tags already reported the streams, and asking ffprobe a second
+    # time later — once per album, from the artwork stage — was paying twice
+    # for an answer already in hand.
+    artwork: dict[str, bool] = field(default_factory=dict)
 
     def top(self, relpath: str) -> str:
         return relpath.split("/", 1)[0].lower()
@@ -273,12 +287,13 @@ def gather(
             fingerprints[row["fingerprint"]].append(relpath)
 
     tags: dict[str, dict[str, str]] = {}
+    artwork: dict[str, bool] = {}
     if read_tags:
-        from librairy.classify import _audio_tags
-
         for relpath in files:
             if PurePosixPath(relpath).suffix.lower() in AUDIO:
-                tags[relpath] = _audio_tags(settings.library_dir / relpath, settings)
+                tags[relpath], artwork[relpath] = _audio_facts(
+                    settings.library_dir / relpath, settings
+                )
 
     return LibraryView(
         files=files,
@@ -286,7 +301,36 @@ def gather(
         fingerprints=dict(fingerprints),
         tags=tags,
         junk=_junk_files(base, prefix),
+        artwork=artwork,
     )
+
+
+def _audio_facts(path: Path, settings: Settings) -> tuple[dict[str, str], bool]:
+    """The tags and whether there is a cover inside, from one ffprobe call.
+
+    A cover inside a FLAC is a video stream with the `attached_pic`
+    disposition, which is the same shape ffprobe reports for an mp3's APIC
+    frame. Both come back from the probe that was being run for the tags
+    anyway, so reading them together costs nothing and saves the artwork stage
+    a second pass over the same files.
+    """
+    try:
+        from librairy.tools.ffprobe import probe
+
+        result = probe(path, settings)
+    except Exception:  # noqa: BLE001 - metadata is best-effort
+        return {}, False
+    if not result.ok or not isinstance(result.data, dict):
+        return {}, False
+    raw = result.data.get("tags")
+    tags = {str(k).lower(): str(v) for k, v in raw.items()} if isinstance(raw, dict) else {}
+    has_art = any(
+        stream.get("disposition", {}).get("attached_pic")
+        or stream.get("codec_type") == "video"
+        for stream in result.data.get("streams") or ()
+        if isinstance(stream, dict)
+    )
+    return tags, has_art
 
 
 def detect(
