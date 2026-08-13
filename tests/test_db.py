@@ -75,6 +75,8 @@ def test_fresh_db_migrates_to_current_schema(tmp_path: Path) -> None:
         "idx_catalog_identity_scope",
         "idx_audit_runs_state",
         "idx_optimization_status",
+        "idx_optimization_jobs_state",
+        "idx_optimization_jobs_live",
     }
 
     columns = {row[1] for row in conn.execute("PRAGMA table_info(provider_status)")}
@@ -137,7 +139,10 @@ def test_migration_011_closes_proposals_for_files_already_filed(tmp_path: Path) 
         DROP TABLE IF EXISTS vision_results;
         DROP INDEX IF EXISTS idx_audit_runs_state;
         DROP INDEX IF EXISTS idx_optimization_status;
+        DROP INDEX IF EXISTS idx_optimization_jobs_state;
+        DROP INDEX IF EXISTS idx_optimization_jobs_live;
         DROP TABLE IF EXISTS audit_runs;
+        DROP TABLE IF EXISTS optimization_jobs;
         DROP TABLE IF EXISTS optimization_opportunities;
         DROP INDEX IF EXISTS idx_catalog_identity_scope;
         DROP TABLE IF EXISTS catalog_identity;

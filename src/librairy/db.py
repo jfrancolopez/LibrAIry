@@ -9,7 +9,7 @@ from pathlib import Path
 from librairy.config import Settings
 
 LOGGER = logging.getLogger(__name__)
-SCHEMA_VERSION = 20
+SCHEMA_VERSION = 21
 
 
 class DatabaseVersionError(RuntimeError):
@@ -489,6 +489,65 @@ CREATE INDEX idx_optimization_status ON optimization_opportunities(status);
 """
 
 
+MIGRATION_021 = """
+-- One approved optimization, frozen at the moment the user approved it.
+--
+-- A queued job means: *this* operation, against *this* file, as it was when
+-- somebody looked at it. So the source fingerprint, the preset and the
+-- estimates are copied in rather than looked up later. The worker never asks
+-- the advisor again — if it did, an application upgrade could quietly change
+-- what runs, and the user would have approved one thing and got another.
+--
+-- The same principle as an immutable commit plan, for the same reason.
+CREATE TABLE optimization_jobs (
+  id INTEGER PRIMARY KEY,
+  opportunity_id INTEGER REFERENCES optimization_opportunities(id),
+  item_id INTEGER REFERENCES items(id),
+  root TEXT NOT NULL DEFAULT 'library',
+  relpath TEXT NOT NULL,
+  -- What the file was when this was approved. Revalidated before the job may
+  -- start; a mismatch stops it rather than silently re-targeting new bytes.
+  fingerprint TEXT NOT NULL DEFAULT '',
+  kind TEXT NOT NULL,
+  quality TEXT NOT NULL,
+  from_label TEXT NOT NULL DEFAULT '',
+  to_label TEXT NOT NULL DEFAULT '',
+  -- The named operation, not an ffmpeg command line. A job describes intent;
+  -- the argv is built later by trusted code from that intent, so nothing a
+  -- form can post ever reaches a subprocess.
+  preset TEXT NOT NULL,
+  preset_version INTEGER NOT NULL DEFAULT 1,
+  rule_version INTEGER NOT NULL DEFAULT 1,
+  source_bytes INTEGER NOT NULL DEFAULT 0,
+  estimated_bytes INTEGER NOT NULL DEFAULT 0,
+  -- Kept apart from the estimate above, always. Overwriting one with the
+  -- other would destroy the only way to find out whether the advisor is any
+  -- good.
+  actual_bytes INTEGER,
+  runtime_seconds REAL,
+  -- manual | window. Which gate this job asked to wait behind.
+  run_policy TEXT NOT NULL DEFAULT 'window',
+  -- queued | waiting | running | verifying | ready | failed | cancelled |
+  -- stale. Small on purpose: the *reason* for waiting is a separate column,
+  -- so a new reason never needs a new state.
+  state TEXT NOT NULL DEFAULT 'queued',
+  wait_reason TEXT NOT NULL DEFAULT '',
+  message TEXT NOT NULL DEFAULT '',
+  staging_dir TEXT NOT NULL DEFAULT '',
+  queued_at TEXT NOT NULL,
+  started_at TEXT,
+  finished_at TEXT,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX idx_optimization_jobs_state ON optimization_jobs(state);
+-- One live job per file per operation. Enforced here rather than in the
+-- handler, because "the UI disables the button" is not a constraint.
+CREATE UNIQUE INDEX idx_optimization_jobs_live
+  ON optimization_jobs(root, relpath, kind, preset)
+  WHERE state IN ('queued', 'waiting', 'running', 'verifying', 'ready');
+"""
+
+
 MIGRATIONS = {
     1: MIGRATION_001,
     2: MIGRATION_002,
@@ -510,6 +569,7 @@ MIGRATIONS = {
     18: MIGRATION_018,
     19: MIGRATION_019,
     20: MIGRATION_020,
+    21: MIGRATION_021,
 }
 
 
