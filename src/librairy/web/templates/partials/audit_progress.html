@@ -12,18 +12,34 @@
   {% if progress.live %}
     <div class="audit-progress-head">
       <strong>Library audit</strong>
+      {% if progress.state == 'queued' %}
+      <span class="muted">Queued</span>
+      {% else %}
       <span class="muted">{{ progress.stage_label }}</span>
+      {% endif %}
+      {# A percentage only where one was actually measured. The bar used to
+         show stage position — three of eight, so 38% — which has no
+         relationship to how much is left, because the stages cost wildly
+         different amounts. It would sit at "38%" through the entire slow
+         half. Where nothing is being counted, the stage name is the honest
+         answer and there is no bar at all. #}
+      {% if progress.percent is not none %}
       <span class="audit-percent">{{ progress.percent }}%</span>
+      {% else %}
+      <span class="audit-percent muted">step {{ progress.stage_number }} of {{ progress.stage_count }}</span>
+      {% endif %}
     </div>
+    {% if progress.percent is not none %}
     {# aria-valuenow so the number is available to a screen reader, not only
        to the eye reading the fill width. #}
     <div class="audit-bar" role="progressbar"
          aria-valuenow="{{ progress.percent }}" aria-valuemin="0" aria-valuemax="100">
       <span style="width: {{ progress.percent }}%"></span>
     </div>
-    <p class="audit-progress-count">
-      {{ progress.counters.files_checked }} / {{ progress.counters.files_seen }} files checked
-    </p>
+    {% endif %}
+    {% if progress.stage_detail %}
+    <p class="audit-progress-count">{{ progress.stage_detail }}</p>
+    {% endif %}
     {% if progress.rows %}
     <dl class="audit-counters">
       {% for label, value in progress.rows %}
@@ -31,9 +47,18 @@
       {% endfor %}
     </dl>
     {% endif %}
+    {# Said as a fact the worker recorded, never guessed from a clock. A panel
+       that appears frozen and a panel that says why are different experiences
+       of the same correct behaviour. #}
+    {% if progress.yielding %}
     <p class="muted audit-priority">
-      Inbox processing has priority, so this runs in the gaps between it.
+      Waiting while the inbox is processed. It will pick up again on its own.
     </p>
+    {% else %}
+    <p class="muted audit-priority">
+      Runs in the background. New inbox work takes priority.
+    </p>
+    {% endif %}
     <form method="post" action="/review/audit/cancel">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <button type="submit" class="btn-ghost">Stop the audit</button>

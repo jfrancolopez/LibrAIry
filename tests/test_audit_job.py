@@ -377,3 +377,166 @@ def test_counters_are_broken_down_by_top_level_folder() -> None:
     assert counters_by_root(files, 3) == {"Music": [2, 2], "Photos": [1, 1]}
     assert counters_by_root(files, 2) == {"Music": [2, 2], "Photos": [0, 1]}
     assert counters_by_root(files, 0) == {"Music": [0, 2], "Photos": [0, 1]}
+
+
+# --- three tiers ---------------------------------------------------------------
+
+
+def test_a_targeted_audit_is_worked_before_the_whole_library(tmp_path: Path) -> None:
+    """Somebody who pressed Audit on a folder is probably watching the page.
+    The sweep is maintenance and can wait for them."""
+    conn, settings = library(tmp_path)
+    whole = enqueue(conn)
+    targeted = enqueue(conn, "Music")
+
+    assert whole < targeted, "the sweep was asked for first"
+    assert advance(conn, settings, seconds=0).ran
+    assert current(conn)["id"] == targeted
+
+
+def test_the_whole_library_run_resumes_once_the_targeted_one_is_done(
+    tmp_path: Path,
+) -> None:
+    conn, settings = library(tmp_path)
+    whole = enqueue(conn)
+    targeted = enqueue(conn, "Music")
+
+    def state_of(run_id: int) -> str:
+        return conn.execute(
+            "SELECT state FROM audit_runs WHERE id=?", (run_id,)
+        ).fetchone()["state"]
+
+    finished_first = None
+    for _ in range(80):
+        advance(conn, settings)
+        if finished_first is None and state_of(targeted) == COMPLETE:
+            finished_first = state_of(whole)
+        if state_of(whole) == COMPLETE:
+            break
+
+    # The sweep had not started when the targeted run finished, and it did
+    # finish afterwards. Waiting its turn, not skipped.
+    assert finished_first == QUEUED
+    assert state_of(whole) == COMPLETE
+
+
+def test_neither_tier_runs_on_a_cycle_that_did_inbox_work(tmp_path: Path) -> None:
+    """Priority 1 is not in the table at all. It is the ordering in the
+    worker, and it applies to targeted audits exactly as it does to sweeps."""
+    from librairy.worker import Worker
+
+    conn, settings = library(tmp_path)
+    (settings.inbox_dir / "arrived.txt").write_text("new", encoding="utf-8")
+    enqueue(conn, "Music")
+
+    Worker(conn, settings).run_once()
+
+    assert state(conn) == QUEUED
+
+
+def test_arriving_inbox_work_gets_the_next_cycle(tmp_path: Path) -> None:
+    """The other direction: a running audit must not hold up a new file."""
+    from librairy.worker import Worker
+
+    conn, settings = library(tmp_path)
+    worker = Worker(conn, settings)
+    worker.run_once()
+    enqueue(conn)
+    advance(conn, settings, seconds=0)
+    assert state(conn) == RUNNING
+
+    (settings.inbox_dir / "arrived.txt").write_text("new", encoding="utf-8")
+    summary = worker.run_once()
+
+    assert summary.did_work, "the new file was picked up on the very next cycle"
+    assert state(conn) == RUNNING, "and the audit was left exactly where it was"
+
+
+def test_yielding_is_recorded_by_the_worker_not_guessed_from_a_clock(
+    tmp_path: Path,
+) -> None:
+    """`Paused` because no slice ran for half a second would be inventing a
+    state. Only the worker knows whether it chose the inbox instead."""
+    from librairy.worker import Worker
+
+    conn, settings = library(tmp_path)
+    enqueue(conn)
+    worker = Worker(conn, settings)
+    (settings.inbox_dir / "arrived.txt").write_text("new", encoding="utf-8")
+
+    worker.run_once()
+    assert progress(conn)["yielding"] is True
+
+    for _ in range(10):
+        worker.run_once()
+        if not progress(conn)["yielding"]:
+            break
+    assert progress(conn)["yielding"] is False
+
+
+# --- progress that means something ---------------------------------------------
+
+
+def test_no_fake_percentage_where_nothing_is_being_counted(tmp_path: Path) -> None:
+    """Scanning is one directory walk. A bar on it is an animation."""
+    conn, settings = library(tmp_path)
+    enqueue(conn)
+
+    shown = progress(conn)
+
+    assert shown["percent"] is None
+    assert shown["stage_number"] == 1
+    assert shown["stage_count"] == len(STAGE_ORDER)
+
+
+def test_the_metadata_stage_counts_real_files(tmp_path: Path) -> None:
+    conn, settings = library(tmp_path, files=8)
+    enqueue(conn)
+    for _ in range(40):
+        advance(conn, settings, seconds=0)
+        shown = progress(conn)
+        if shown["stage"] == "metadata" and shown["counters"].files_checked:
+            break
+
+    assert shown["percent"] is not None
+    assert 0 <= shown["percent"] <= 100
+    assert "files read" in shown["stage_detail"]
+    assert str(shown["counters"].files_seen) in shown["stage_detail"]
+
+
+def test_stage_counters_do_not_reset_across_slices(tmp_path: Path) -> None:
+    conn, settings = library(tmp_path, files=8)
+    enqueue(conn)
+    seen = []
+    for _ in range(40):
+        result = advance(conn, settings, seconds=0)
+        seen.append(progress(conn)["counters"].files_checked)
+        if result.finished:
+            break
+
+    assert seen == sorted(seen)
+    assert max(seen) == progress(conn)["counters"].files_seen
+
+
+def test_a_finished_run_stops_asking_to_be_polled(tmp_path: Path) -> None:
+    conn, settings = library(tmp_path)
+    enqueue(conn)
+    drain(conn, settings)
+
+    shown = progress(conn)
+
+    assert shown["live"] is False
+    assert shown["percent"] == 100
+    assert shown["yielding"] is False
+
+
+def test_the_stage_label_is_words_not_a_function_name(tmp_path: Path) -> None:
+    conn, settings = library(tmp_path)
+    enqueue(conn)
+    for _ in range(40):
+        result = advance(conn, settings, seconds=0)
+        label = progress(conn)["stage_label"]
+        assert not label.startswith("_"), label
+        assert label[0].isupper(), label
+        if result.finished:
+            break

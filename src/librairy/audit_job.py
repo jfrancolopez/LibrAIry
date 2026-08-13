@@ -97,6 +97,7 @@ class Counters:
     catalog_requests: int = 0
     catalog_matches: int = 0
     artwork_checked: int = 0
+    artwork_total: int = 0
     artwork_found: int = 0
     duplicate_clusters: int = 0
     ai_candidates: int = 0
@@ -143,10 +144,25 @@ def enqueue(conn: sqlite3.Connection, scope: str = "") -> int:
     return int(cursor.lastrowid)
 
 
+# Three tiers, and the first one is not in this table at all.
+#
+#   1. The inbox and anything the user is actively doing. Never represented
+#      here, because the worker does not reach this module on a cycle that
+#      changed anything — the ordering in `Worker.run_once` is the guarantee.
+#   2. A targeted audit. Somebody pressed Audit on a folder and is probably
+#      looking at the page, so it goes before the sweep.
+#   3. The whole library. Maintenance, and it can wait for both of the above.
+#
+# Expressed as SQL rather than a column so there is nothing to migrate and
+# nothing that can disagree with itself: every query that picks "the run to
+# work on" or "the run to show" orders by this same clause.
+PRIORITY_ORDER = "CASE WHEN scope='' THEN 3 ELSE 2 END, id"
+
+
 def current(conn: sqlite3.Connection) -> sqlite3.Row | None:
     """The run worth showing: the live one, else the most recent finished."""
     row = conn.execute(
-        "SELECT * FROM audit_runs WHERE state IN (?, ?) ORDER BY id LIMIT 1",
+        f"SELECT * FROM audit_runs WHERE state IN (?, ?) ORDER BY {PRIORITY_ORDER} LIMIT 1",  # noqa: S608
         LIVE_STATES,
     ).fetchone()
     if row is not None:
@@ -161,7 +177,8 @@ def cancel(conn: sqlite3.Connection, run_id: int | None = None) -> bool:
         conn.execute("SELECT * FROM audit_runs WHERE id=?", (run_id,)).fetchone()
         if run_id is not None
         else conn.execute(
-            "SELECT * FROM audit_runs WHERE state IN (?, ?) ORDER BY id LIMIT 1", LIVE_STATES
+            f"SELECT * FROM audit_runs WHERE state IN (?, ?) ORDER BY {PRIORITY_ORDER} LIMIT 1",  # noqa: S608
+            LIVE_STATES,
         ).fetchone()
     )
     if row is None or row["state"] not in LIVE_STATES:
@@ -229,7 +246,8 @@ def advance(
     makes it cheap enough for the worker to ask on every cycle.
     """
     row = conn.execute(
-        "SELECT * FROM audit_runs WHERE state IN (?, ?) ORDER BY id LIMIT 1", LIVE_STATES
+        f"SELECT * FROM audit_runs WHERE state IN (?, ?) ORDER BY {PRIORITY_ORDER} LIMIT 1",  # noqa: S608
+        LIVE_STATES,
     ).fetchone()
     if row is None:
         return SliceResult()
@@ -317,27 +335,91 @@ def progress(conn: sqlite3.Connection) -> dict[str, object] | None:
         return None
     counters = Counters.from_json(row["counters"])
     stage = row["stage"] if row["stage"] in STAGE_ORDER else STAGE_ORDER[0]
-    index = STAGE_ORDER.index(stage)
     live = row["state"] in LIVE_STATES
-    # Stage position, not file position: the stages cost wildly different
-    # amounts and a bar that pretended otherwise would sit at 90% through the
-    # slowest half. Files checked is reported as a number beside it, which is
-    # the honest form of the same information.
-    percent = 100 if row["state"] == COMPLETE else round(index / len(STAGE_ORDER) * 100)
+    done, total = _stage_fraction(stage, counters)
+    percent = 100 if row["state"] == COMPLETE else _percent(done, total)
     return {
         "id": row["id"],
         "state": row["state"],
         "live": live,
+        "yielding": live and _yielding(conn),
+        "targeted": bool(row["scope"]),
         "scope": row["scope"] or "the whole library",
         "stage": stage,
         "stage_label": STAGE_LABEL.get(stage, stage),
+        "stage_number": STAGE_ORDER.index(stage) + 1,
+        "stage_count": len(STAGE_ORDER),
+        # None where no honest fraction exists. The template draws no bar
+        # then, and says which stage is running instead.
         "percent": percent,
+        "stage_detail": _stage_detail(stage, done, total),
         "error": row["error"],
         "counters": counters,
         "rows": _counter_rows(counters),
         "requested_at": row["requested_at"],
         "finished_at": row["finished_at"],
     }
+
+
+# What each stage is counting through, when it is counting through anything.
+# Three of them are not: scanning is one directory walk, structure is one pass
+# over data already in memory, and finishing is a single write. A bar on those
+# would be an animation, not a measurement.
+STAGE_FRACTIONS: dict[str, tuple[str, str, str]] = {
+    "metadata": ("files_checked", "files_seen", "{done} of {total} files read"),
+    "catalogs": ("collections_judged", "collections", "{done} of {total} collections checked"),
+    "artwork": ("artwork_checked", "artwork_total", "{done} of {total} albums checked for artwork"),
+    "ai": ("ai_calls", "ai_candidates", "{done} of {total} unresolved items reviewed"),
+}
+
+
+def _stage_fraction(stage: str, counters: Counters) -> tuple[int, int]:
+    names = STAGE_FRACTIONS.get(stage)
+    if names is None:
+        return 0, 0
+    done, total, _ = names
+    return getattr(counters, done, 0) or 0, getattr(counters, total, 0) or 0
+
+
+def _percent(done: int, total: int) -> int | None:
+    """A real fraction or nothing at all.
+
+    The bar used to show stage position — three stages in of eight, so 38% —
+    which is a number with no relationship to how much is left, because the
+    stages cost wildly different amounts. A run could sit at "38%" for the
+    entire slow half. Better to show what is actually being counted, and
+    nothing where nothing is.
+    """
+    if total <= 0:
+        return None
+    return max(0, min(100, round(done / total * 100)))
+
+
+def _stage_detail(stage: str, done: int, total: int) -> str:
+    names = STAGE_FRACTIONS.get(stage)
+    if names is None or total <= 0:
+        return ""
+    return names[2].format(done=done, total=total)
+
+
+def _yielding(conn: sqlite3.Connection) -> bool:
+    """Whether the last worker cycle skipped the audit to do inbox work.
+
+    Reported because the alternative is a progress panel that appears frozen,
+    and "stalled" and "waiting its turn" are different things a person would
+    want to tell apart. This is a fact the worker records when it happens, not
+    a guess from how long it has been — a bar that says `Paused` because no
+    slice ran for half a second would be inventing a state.
+    """
+    row = conn.execute(
+        "SELECT value FROM worker_state WHERE key='audit_yielding'"
+    ).fetchone()
+    if row is None:
+        return False
+    try:
+        return bool(json.loads(row["value"]))
+    except (TypeError, ValueError):
+        return False
 
 
 def _counter_rows(counters: Counters) -> list[tuple[str, str]]:

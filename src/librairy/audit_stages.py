@@ -284,6 +284,10 @@ def _artwork(context: Context) -> bool:
     remaining = context.artwork_pending
     if remaining is None:
         remaining = _albums_missing_cover(context)
+        # The denominator is albums *with no cover file*, not albums. Dividing
+        # by every album would report "2 of 28" for a library where twenty-six
+        # of them were already answered for free.
+        context.counters.artwork_total = len(remaining)
     while remaining:
         album_folder, tracks, folders = remaining.pop(0)
         context.counters.artwork_checked += 1

@@ -179,6 +179,12 @@ class Worker:
             if not summary.did_work:
                 _set_worker_state(self.conn, "current_phase", "audit")
                 audit_stage = self._audit_slice(settings)
+                _set_worker_state(self.conn, "audit_yielding", False)
+            else:
+                # Recorded as a fact rather than inferred from a clock. The
+                # progress panel needs to distinguish "waiting its turn" from
+                # "stuck", and only this line knows which happened.
+                _set_worker_state(self.conn, "audit_yielding", True)
             _set_worker_state(self.conn, "last_cycle_at", utc_now())
             _set_worker_state(self.conn, "current_phase", "idle")
             _set_worker_state(self.conn, "last_summary", asdict(summary))
