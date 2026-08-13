@@ -881,7 +881,17 @@ def record_findings(
     """
     now = utc_now()
     seen = {(finding.root, finding.relpath, finding.kind) for finding in findings}
+    live = _live_item_ids(conn, findings)
     for finding in findings:
+        # The staged audit reads the index at its first slice and writes at its
+        # last, minutes and several worker cycles later. In between, the
+        # scanner is free to re-index a file — and an `item_id` captured
+        # before that no longer resolves, which the foreign key rejects and
+        # which failed a whole run on the live installation. The finding is
+        # still true; only the link to a row is stale, and a finding whose
+        # file is not indexed is a case this table already models.
+        if finding.item_id is not None and finding.item_id not in live:
+            finding.item_id = None
         existing = conn.execute(
             "SELECT id, status, fingerprint FROM audit_findings "
             "WHERE root=? AND relpath=? AND kind=?",
@@ -927,6 +937,23 @@ def record_findings(
             ),
         )
     _retire_resolved(conn, seen, scope)
+
+
+def _live_item_ids(conn: sqlite3.Connection, findings: list[Finding]) -> set[int]:
+    """Which of the item ids these findings carry still exist.
+
+    One query for the whole batch rather than one per finding: a whole-library
+    audit records hundreds of rows, and this runs inside the write that the web
+    request is waiting behind.
+    """
+    wanted = sorted({finding.item_id for finding in findings if finding.item_id is not None})
+    if not wanted:
+        return set()
+    placeholders = ",".join("?" * len(wanted))
+    rows = conn.execute(
+        f"SELECT id FROM items WHERE id IN ({placeholders})", wanted  # noqa: S608
+    )
+    return {int(row["id"]) for row in rows}
 
 
 def _retire_resolved(

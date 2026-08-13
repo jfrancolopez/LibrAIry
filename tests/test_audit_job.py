@@ -579,3 +579,49 @@ def test_a_tool_that_did_nothing_is_not_listed(tmp_path: Path) -> None:
     assert "Catalogs" not in tools
     assert "Artwork" not in tools
     assert "AI" not in tools
+
+
+def test_a_file_reindexed_mid_audit_does_not_fail_the_run(tmp_path: Path) -> None:
+    """The live failure: `IntegrityError: FOREIGN KEY constraint failed`.
+
+    A staged audit reads the index in its first slice and writes in its last,
+    minutes and several worker cycles later. The scanner is free to re-index a
+    file in between, and an item id captured before that no longer resolves.
+    The finding is still true — only the link to a row is stale — so it is
+    written without one, which is a state this table already models.
+    """
+    from librairy.audit import Finding, record_findings
+
+    conn, settings = library(tmp_path)
+    item_id = conn.execute("SELECT id FROM items LIMIT 1").fetchone()["id"]
+    finding = Finding(
+        relpath="Music/Pop/Abba/00 - Song.flac",
+        kind="naming-cleanup",
+        severity="review",
+        summary="trailing space",
+        item_id=item_id,
+    )
+    # The scanner replaces the row while the audit is still thinking.
+    conn.execute("DELETE FROM items WHERE id=?", (item_id,))
+
+    record_findings(conn, [finding])
+
+    row = conn.execute("SELECT item_id FROM audit_findings").fetchone()
+    assert row is not None, "the finding was recorded"
+    assert row["item_id"] is None
+
+
+def test_a_live_item_id_is_kept(tmp_path: Path) -> None:
+    """The other half: nothing is nulled that did not have to be."""
+    from librairy.audit import Finding, record_findings
+
+    conn, settings = library(tmp_path)
+    item_id = conn.execute("SELECT id FROM items LIMIT 1").fetchone()["id"]
+
+    record_findings(
+        conn,
+        [Finding("Music/Pop/Abba/00 - Song.flac", "naming-cleanup", "review", "x",
+                 item_id=item_id)],
+    )
+
+    assert conn.execute("SELECT item_id FROM audit_findings").fetchone()["item_id"] == item_id

@@ -120,8 +120,7 @@ def _metadata(context: Context) -> bool:
     Bounded by the deadline: this is ~30 ms a file, so a large library takes
     several slices, and the inbox gets a look in between each of them.
     """
-    from librairy.audit import AUDIO, gather
-    from librairy.classify import _audio_tags
+    from librairy.audit import AUDIO, _audio_facts, gather
 
     if context.view is None:
         context.view = gather(context.conn, context.settings, scope=context.scope, read_tags=False)
@@ -132,7 +131,14 @@ def _metadata(context: Context) -> bool:
             continue
         if PurePosixPath(relpath).suffix.lower() in AUDIO:
             path = context.settings.library_dir / relpath
-            view.tags[relpath] = _audio_tags(path, context.settings)
+            # `_audio_facts` and not `_audio_tags`: the same single probe also
+            # reports whether there is a picture inside, which the artwork
+            # stage would otherwise rediscover with a second ffprobe per album
+            # — and which the compilation policy counts as evidence. Using the
+            # tags-only helper here left `view.artwork` empty on every staged
+            # run, so a live audit lost the "the same cover is in all 45
+            # tracks" fact that the same code found when called directly.
+            view.tags[relpath], view.artwork[relpath] = _audio_facts(path, context.settings)
         else:
             # Recorded as looked-at so `files_checked` counts the library and
             # not only its music.

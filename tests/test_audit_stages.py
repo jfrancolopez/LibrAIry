@@ -244,3 +244,22 @@ def test_the_ai_counter_is_reported_even_when_it_is_zero(tmp_path: Path) -> None
             break
 
     assert progress(conn)["counters"].ai_calls == 0
+
+
+def test_the_staged_run_records_embedded_artwork_as_it_reads_the_tags(
+    tmp_path: Path,
+) -> None:
+    """A live run lost the "the same cover is in all 45 tracks" fact.
+
+    The metadata stage filled `view.tags` with a tags-only helper, so
+    `view.artwork` stayed empty on every staged run — the artwork stage
+    re-probed each album to find out, and the compilation policy never saw
+    the evidence at all. One probe answers both questions.
+    """
+    conn, settings = build(tmp_path, COMPILATION)
+    context = context_for(conn, settings)
+    run_stage("scan", context)
+    run_stage("metadata", context)
+
+    assert context.view.artwork, "no artwork was recorded while reading tags"
+    assert set(context.view.artwork) == set(context.view.tags)
