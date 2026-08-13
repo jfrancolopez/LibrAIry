@@ -582,7 +582,8 @@ def test_two_findings_in_one_folder_do_get_a_heading(tmp_path: Path) -> None:
     body = client.get("/review").text
 
     assert "audit-group" in body
-    assert "2 items" in body
+    # "items" is the code's word for them, not the reader's.
+    assert "2 findings" in body
 
 
 def test_the_affected_list_names_the_companions(tmp_path: Path) -> None:

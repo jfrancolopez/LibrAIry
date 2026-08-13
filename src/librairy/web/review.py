@@ -542,16 +542,22 @@ def _order_by(filters: ReviewFilters) -> str:
 
 
 def human_size(size: object) -> str:
-    """"1.4 GB", not "1503238553 bytes". Sizes are for comparing at a glance."""
+    """"1.4 GB", not "1503238553 bytes". Sizes are for comparing at a glance.
+
+    One implementation, two conventions. `humanize.human_bytes` says "unknown"
+    for a size nobody recorded, which is right beside a fact sheet and wrong
+    inline after a filename — `report.pdf · unknown` reads as a warning. This
+    renders nothing there instead, and does not carry a second copy of the
+    arithmetic to do it.
+    """
+    from librairy.humanize import human_bytes
+
     try:
-        value = float(size)  # type: ignore[arg-type]
+        value = int(float(size))  # type: ignore[arg-type]
     except (TypeError, ValueError):
         return ""
-    for unit in ("B", "KB", "MB", "GB"):
-        if value < 1024 or unit == "GB":
-            return f"{value:.0f} {unit}" if unit == "B" else f"{value:.1f} {unit}"
-        value /= 1024
-    return ""
+    rendered = human_bytes(value)
+    return "" if rendered == "unknown" else rendered
 
 
 def _proposal_count(conn: sqlite3.Connection, filters: ReviewFilters) -> int:
@@ -1047,16 +1053,39 @@ def _audit_row(
         # folders still has to be anchored at one of them, and showing that one
         # path alone reads as an accusation against Abba specifically.
         "spans": _spans(row),
+        # What this finding is *about*, in facts rather than adjectives: how
+        # many tracks, how much disk, how many artists. A grouped row used to
+        # show no size at all, which made "one album in twenty-seven folders"
+        # sound like a filing quirk rather than 1.3 GB of it.
+        "facts": _group_facts(row),
+        "size_label": human_size(_column(row, "item_size")),
     }
 
 
-# The evidence fields that name another place this finding is also about, and
-# what to call the list. Two detectors have the same problem — one row anchored
-# at one path, speaking for several — and it is the same tray in both.
-GROUPED_FIELDS = {
-    "folder": "Spans {count} folders",
-    "also at": "{count} identical copies",
+# The evidence field that names another place a finding is also about, and how
+# to describe the set once you know what kind of thing it is.
+#
+# `Spans 27 items` was the old wording for all of them, and it is the kind of
+# phrase that survives review because it is not wrong. It is just useless: it
+# names no noun a person recognises, so the reader learns the number 27 and
+# nothing else. What they need to know is that forty-five *tracks* are in
+# twenty-seven *artist folders* — at which point the problem explains itself
+# and the row needs no further reading.
+GROUPED_FIELDS = ("folder", "also at")
+
+GROUP_WORDING: dict[str, str] = {
+    "collection-recognized": "{tracks} tracks across {count} artist folders",
+    "collection-custom": "{tracks} tracks across {count} artist folders",
+    "collection-loose": "{tracks} tracks across {count} folders",
+    "split-album": "{tracks} tracks across {count} folders",
+    "artist-split": "This artist is filed in {count} places",
+    "duplicate": "{count} identical copies",
+    "missing-artwork": "One album across {count} folders",
+    "artwork-not-on-disk": "One album across {count} folders",
 }
+# When the kind is not listed above. Still a noun, still countable — never
+# "items", which is what the code called them and no user ever would.
+DEFAULT_WORDING = "This finding covers {count} folders"
 
 
 def _spans(row: sqlite3.Row) -> dict[str, object]:
@@ -1067,15 +1096,15 @@ def _spans(row: sqlite3.Row) -> dict[str, object]:
     needed rather than the humanised views, because the view keeps the label
     and drops the field name.
     """
-    from librairy.proposals import decode_evidence
-
-    if not row["evidence"]:
+    entries = _entries(row)
+    if not entries:
         return {}
-    try:
-        entries = decode_evidence(row["evidence"])
-    except Exception:  # noqa: BLE001 - a bad row renders plainly, never 500s
-        return {}
-    for field, template in GROUPED_FIELDS.items():
+    facts = {
+        entry.field: entry.detail
+        for entry in entries
+        if entry.source == "filesystem" and entry.field in {"tracks", "artists"}
+    }
+    for field in GROUPED_FIELDS:
         paths = [
             entry.detail
             for entry in entries
@@ -1083,9 +1112,65 @@ def _spans(row: sqlite3.Row) -> dict[str, object]:
         ]
         anchor = row["relpath"]
         paths = [anchor, *[path for path in paths if path != anchor]]
-        if len(paths) > 1:
-            return {"label": template.format(count=len(paths)), "paths": paths}
+        if len(paths) < 2:
+            continue
+        template = GROUP_WORDING.get(row["kind"], DEFAULT_WORDING)
+        # A template asking for a count the detector did not record would be a
+        # KeyError on a page; falling back says less and always renders.
+        try:
+            label = template.format(count=len(paths), **facts)
+        except (KeyError, IndexError):
+            label = DEFAULT_WORDING.format(count=len(paths))
+        return {"label": label, "paths": paths}
     return {}
+
+
+def _column(row: sqlite3.Row, name: str) -> object:
+    """A column that may not be in this particular query's result.
+
+    Findings are read by more than one caller, and only the Review listing
+    joins `items` for the size. Asking for it elsewhere should render nothing,
+    not raise on a page.
+    """
+    try:
+        return row[name]
+    except (IndexError, KeyError):
+        return None
+
+
+def _entries(row: sqlite3.Row) -> list:
+    from librairy.proposals import decode_evidence
+
+    if not row["evidence"]:
+        return []
+    try:
+        return list(decode_evidence(row["evidence"]))
+    except Exception:  # noqa: BLE001 - a bad row renders plainly, never 500s
+        return []
+
+
+def _group_facts(row: sqlite3.Row) -> list[str]:
+    """`45 tracks · 1.3 GB · 27 artists` — the shape of the thing, in one line.
+
+    Every number here was measured during the audit and written into the
+    finding's evidence. Nothing is recounted at render time: a folder finding
+    that walked the tree on every page view would make Review slower the
+    larger the library got, which is backwards.
+    """
+    facts: dict[str, str] = {}
+    for entry in _entries(row):
+        if entry.source == "filesystem":
+            facts[entry.field] = entry.detail
+    parts = []
+    if tracks := facts.get("tracks"):
+        parts.append(f"{tracks} tracks")
+    if size := human_size(facts.get("total bytes")):
+        parts.append(size)
+    if artists := facts.get("artists"):
+        parts.append(f"{artists} artists")
+    if each := human_size(facts.get("each")):
+        parts.append(f"{each} each")
+    return parts
 
 
 def path_change(current: str, suggested: str) -> dict[str, str] | None:

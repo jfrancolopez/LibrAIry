@@ -396,6 +396,13 @@ def evidence_for(verdict: Verdict) -> list[EvidenceEntry]:
         EvidenceEntry("filesystem", "tracks", str(verdict.tracks), 0.9),
         EvidenceEntry("filesystem", "artists", str(verdict.artists), 0.9),
     ]
+    if verdict.total_bytes:
+        # Measured here, once, rather than recounted on every page view. A
+        # Review row that walked twenty-seven directories to render would get
+        # slower the larger the library grew, which is backwards.
+        entries.append(
+            EvidenceEntry("filesystem", "total bytes", str(verdict.total_bytes), 0.9)
+        )
     for identity in verdict.catalogs:
         entries.append(
             EvidenceEntry(

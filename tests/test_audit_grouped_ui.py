@@ -63,6 +63,9 @@ SPLIT = Finding(
     summary="'Road Trip Classics' is one compilation filed as 3 artist folders.",
     evidence=[
         EvidenceEntry("tags", "album", "Road Trip Classics", 0.95),
+        EvidenceEntry("filesystem", "tracks", "45", 0.9),
+        EvidenceEntry("filesystem", "artists", "3", 0.9),
+        EvidenceEntry("filesystem", "total bytes", "1449985635", 0.9),
         EvidenceEntry("filesystem", "folder", "Music/Disco/Abba/Road Trip Classics", 0.9),
         EvidenceEntry("filesystem", "folder", "Music/Disco/Bee Gees/Road Trip Classics", 0.9),
         EvidenceEntry("filesystem", "folder", "Music/Disco/Chic/Road Trip Classics", 0.9),
@@ -77,6 +80,7 @@ DUPLICATE = Finding(
     evidence=[
         EvidenceEntry("fingerprint", "blake2b", "9f2c41ab", 1.0),
         EvidenceEntry("filesystem", "also at", "Photos/2022/Vacation/foo-copy.jpg", 1.0),
+        EvidenceEntry("filesystem", "each", "5033164", 1.0),
     ],
 )
 
@@ -90,11 +94,14 @@ FILES = {
 
 
 def test_a_split_album_says_how_many_folders_it_speaks_for(tmp_path: Path) -> None:
+    """"Spans 3 folders" named no noun a person recognises. The reader learned
+    the number 3 and nothing else."""
     client, _, _ = scene(tmp_path, [SPLIT], FILES)
 
     row = row_with(client.get("/review").text, "Road Trip Classics")
 
-    assert "Spans 3 folders" in row
+    assert "45 tracks across 3 folders" in row
+    assert "Spans" not in row
 
 
 def test_a_split_album_lists_every_folder(tmp_path: Path) -> None:
@@ -179,3 +186,117 @@ def test_the_music_folder_kinds_are_all_declared() -> None:
 
     assert music_folder_kinds <= FOLDER_KINDS
     assert "naming-outlier" not in FOLDER_KINDS, "that one really is about a file"
+
+
+# --- saying what the group actually is -----------------------------------------
+
+
+COLLECTION = Finding(
+    relpath="Music/Disco/Abba/Road Trip Classics",
+    kind="collection-custom",
+    severity="review",
+    summary="looks like one compilation",
+    evidence=[
+        EvidenceEntry("tags", "album", "Road Trip Classics", 0.95),
+        EvidenceEntry("filesystem", "tracks", "45", 0.9),
+        EvidenceEntry("filesystem", "artists", "27", 0.9),
+        EvidenceEntry("filesystem", "total bytes", "1449985635", 0.9),
+        EvidenceEntry("filesystem", "folder", "Music/Disco/Abba/Road Trip Classics", 0.9),
+        EvidenceEntry("filesystem", "folder", "Music/Disco/Bee Gees/Road Trip Classics", 0.9),
+        EvidenceEntry("filesystem", "folder", "Music/Disco/Chic/Road Trip Classics", 0.9),
+    ],
+)
+
+
+def test_a_compilation_counts_tracks_and_artist_folders(tmp_path: Path) -> None:
+    client, _, _ = scene(tmp_path, [COLLECTION], FILES)
+
+    row = row_with(client.get("/review").text, "Road Trip Classics")
+
+    assert "45 tracks across 3 artist folders" in row
+
+
+def test_a_duplicate_says_how_many_copies_not_how_many_items(tmp_path: Path) -> None:
+    client, _, _ = scene(tmp_path, [DUPLICATE], FILES)
+
+    row = row_with(client.get("/review").text, "foo.jpg")
+
+    assert "2 identical copies" in row
+
+
+def test_no_finding_anywhere_in_review_says_spans(tmp_path: Path) -> None:
+    """A blanket check, because the phrase came back once already."""
+    client, _, _ = scene(tmp_path, [COLLECTION, SPLIT, DUPLICATE], FILES)
+
+    page = client.get("/review").text
+
+    assert "Spans" not in page
+    assert " items</" not in page
+
+
+def test_a_grouped_finding_shows_its_total_size(tmp_path: Path) -> None:
+    """"One album in twenty-seven folders" sounds like a filing quirk until
+    you are told it is 1.4 GB of it."""
+    client, _, _ = scene(tmp_path, [COLLECTION], FILES)
+
+    row = row_with(client.get("/review").text, "Road Trip Classics")
+
+    assert "45 tracks" in row
+    assert "1.4 GB" in row
+    assert "27 artists" in row
+
+
+def test_a_duplicate_shows_the_size_of_one_copy(tmp_path: Path) -> None:
+    client, _, _ = scene(tmp_path, [DUPLICATE], FILES)
+
+    row = row_with(client.get("/review").text, "foo.jpg")
+
+    assert "4.8 MB each" in row
+
+
+def test_a_file_finding_shows_its_own_size(tmp_path: Path) -> None:
+    naming = Finding(
+        relpath="Photos/2022/foo.jpg",
+        kind="naming-cleanup",
+        severity="review",
+        summary="trailing space",
+        dest_relpath="Photos/2022/foo.jpg",
+    )
+    client, conn, _ = scene(tmp_path, [naming], FILES)
+    conn.execute(
+        "UPDATE audit_findings SET item_id=(SELECT id FROM items WHERE relpath=?)",
+        ("Photos/2022/foo.jpg",),
+    )
+
+    row = row_with(client.get("/review").text, "foo.jpg")
+
+    assert "4 B" in row
+
+
+def test_the_size_formatter_is_the_one_review_already_uses() -> None:
+    """One implementation. Two conventions for a missing value, because
+    `report.pdf · unknown` reads as a warning and a fact sheet needs a word."""
+    from librairy.humanize import human_bytes
+    from librairy.web.review import human_size
+
+    for size in (0, 1, 1023, 1024, 5033164, 1449985635, 1024**4):
+        assert human_size(size) == human_bytes(size) or human_bytes(size) == "unknown"
+    assert human_size(1449985635) == "1.4 GB"
+    assert human_size(None) == ""
+    assert human_bytes(None) == "unknown"
+
+
+def test_a_missing_file_does_not_claim_a_current_size(tmp_path: Path) -> None:
+    """Last-known-size semantics: nothing is invented for a file that is gone."""
+    gone = Finding(
+        relpath="Photos/2022/vanished.jpg",
+        kind="naming-cleanup",
+        severity="review",
+        summary="trailing space",
+        dest_relpath="Photos/2022/vanished.jpg",
+    )
+    client, _, _ = scene(tmp_path, [gone], FILES)
+
+    row = row_with(client.get("/review").text, "vanished.jpg")
+
+    assert "name-size" not in row

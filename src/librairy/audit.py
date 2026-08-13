@@ -731,16 +731,25 @@ def _duplicates(view: LibraryView) -> list[Finding]:
         keep, *rest = sorted(paths)
         if keep not in view.files and not any(path in view.files for path in rest):
             continue
+        evidence = [
+            EvidenceEntry("fingerprint", "blake2b", fingerprint[:16], 1.0),
+            *[EvidenceEntry("filesystem", "also at", path, 1.0) for path in rest[:3]],
+        ]
+        # Identical bytes are identical sizes, so one number describes the
+        # whole set — and "4.8 MB each" is what makes a duplicate row worth
+        # acting on rather than merely true.
+        row = view.indexed.get(keep) or next(
+            (view.indexed[path] for path in rest if path in view.indexed), None
+        )
+        if row is not None and row["size"]:
+            evidence.append(EvidenceEntry("filesystem", "each", str(row["size"]), 1.0))
         findings.append(
             Finding(
                 relpath=keep,
                 kind="duplicate",
                 severity="review",
                 summary=f"Identical bytes to {len(rest)} other file(s) in your library.",
-                evidence=[
-                    EvidenceEntry("fingerprint", "blake2b", fingerprint[:16], 1.0),
-                    *[EvidenceEntry("filesystem", "also at", path, 1.0) for path in rest[:3]],
-                ],
+                evidence=evidence,
             )
         )
     return findings
@@ -944,12 +953,19 @@ def open_findings(
     what it is waiting for — while the CLI's "what is open" count does not.
     """
     statuses = "('open','accepted')" if include_accepted else "('open')"
-    sql = f"SELECT * FROM audit_findings WHERE status IN {statuses}"  # noqa: S608
+    # `i.size` comes along so a finding about a file can show how big it is.
+    # A left join, because a finding can name a file nothing has indexed —
+    # "not indexed" is one of the things the audit reports — and an inner join
+    # would silently drop exactly those rows.
+    sql = (
+        "SELECT f.*, i.size AS item_size FROM audit_findings f "  # noqa: S608
+        f"LEFT JOIN items i ON i.id = f.item_id WHERE f.status IN {statuses}"
+    )
     params: list[object] = []
     if scope:
-        sql += " AND relpath LIKE ?"
+        sql += " AND f.relpath LIKE ?"
         params.append(f"{scope.strip('/')}/%")
-    return list(conn.execute(f"{sql} ORDER BY severity DESC, relpath", params))
+    return list(conn.execute(f"{sql} ORDER BY f.severity DESC, f.relpath", params))
 
 
 def finding_counts(conn: sqlite3.Connection) -> dict[str, int]:

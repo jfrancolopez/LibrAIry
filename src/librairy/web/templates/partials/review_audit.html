@@ -29,6 +29,14 @@
   <div class="row-body">
     <header class="row-head">
       <h3 class="row-name" title="{{ finding.current }}">{{ finding.title }}{% if finding.is_file %}{{ ext_info(finding.current) }}{% endif %}</h3>
+      {# The same slot the inbox row puts a file's size in, so the eye lands
+         in one place on both. A folder finding shows the shape of the group
+         instead: how many tracks, how much disk, how many artists. #}
+      {% if finding.facts %}
+      <span class="name-size name-facts">{{ finding.facts | join(' · ') }}</span>
+      {% elif finding.size_label %}
+      <span class="name-size">{{ finding.size_label }}</span>
+      {% endif %}
       <span class="row-meta">
         <span class="badge badge-audit">EXISTING LIBRARY</span>
         <span class="badge badge-status-{{ finding.status_kind }}">{{ finding.status_label }}</span>
@@ -246,7 +254,9 @@
     <details class="review-group audit-group" open>
       <summary>
         <span class="audit-folder">{{ group.folder }}</span>
-        <span class="muted">{{ group.count }} items</span>
+        {# "items" is what the code calls them. Nobody looking at this page
+           thinks of them as items — they are things the audit noticed. #}
+        <span class="muted">{{ group.count }} finding{{ '' if group.count == 1 else 's' }}</span>
       </summary>
       <div class="audit-list">
         {% for finding in group.findings %}{{ audit_row(finding, csrf_token) }}{% endfor %}
