@@ -199,6 +199,81 @@
       </dl>
     </div>
 
+    {# The forensic view, and the reason the row above can stay short. It is a
+       native <details>, so it costs no JavaScript and it survives with none.
+       One expander with sections inside it, rather than six side by side:
+       Why, Catalogs, Artwork, Recommendation and Files as separate controls
+       is five things to try before you find the one you wanted. #}
+    {% if finding.details %}
+    <details class="audit-details">
+      <summary>Review details</summary>
+
+      {% if finding.details.summary %}
+      {# Four numbers a person can check by hand, and deliberately not one
+         percentage: the audit has no model that says what a barcode is worth
+         against a track sequence, so any single score would be invented. #}
+      <ul class="detail-summary">
+        {% for text, kind in finding.details.summary %}
+        <li class="is-{{ kind }}">{{ text }}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+
+      {% if finding.current_shape %}
+      <section class="detail-block">
+        <h4>Current organization</h4>
+        {% if finding.current_shape_note %}
+        <p class="muted detail-note">{{ finding.current_shape_note }}</p>
+        {% endif %}
+        <ul class="detail-shape">
+          {% for line in finding.current_shape %}<li class="mono">{{ line }}</li>{% endfor %}
+        </ul>
+      </section>
+      {% endif %}
+
+      {% for section in finding.details.sections %}
+      <section class="detail-block detail-is-{{ section.kind }}">
+        <h4>{{ section.title }}</h4>
+        {% if section.note %}<p class="muted detail-note">{{ section.note }}</p>{% endif %}
+        <dl class="detail-list">
+          {% for item in section.rows %}
+          <div{% if item.is_conflict %} class="is-conflict"{% endif %}>
+            <dt>{{ item.label }}</dt>
+            <dd>
+              {{ item.value }}
+              {% if item.status_label %}<span class="badge badge-info">{{ item.status_label }}</span>{% endif %}
+              {% if item.note %}<span class="muted detail-agree">{{ item.note }}</span>{% endif %}
+            </dd>
+          </div>
+          {% endfor %}
+        </dl>
+      </section>
+      {% endfor %}
+
+      {% if finding.recommendation %}
+      {# Kept visually apart from the facts above it. A conclusion that looks
+         like an observation is a conclusion nobody questions, and this is the
+         only part of the panel that could be wrong. #}
+      <section class="detail-block detail-is-recommendation">
+        <h4>Recommendation</h4>
+        <p class="detail-choice"><strong>{{ finding.recommendation.label }}</strong></p>
+        {% if finding.recommendation.destination %}
+        <p class="mono detail-dest">{{ finding.recommendation.destination }}</p>
+        {% endif %}
+        <p class="muted">{{ finding.recommendation.why }}</p>
+        {% if finding.recommendation.alternatives %}
+        <h4>Instead you could</h4>
+        <dl class="detail-list">
+          {% for choice in finding.recommendation.alternatives %}
+          <div><dt>{{ choice.label }}</dt><dd class="muted">{{ choice.meaning }}</dd></div>
+          {% endfor %}
+        </dl>
+        {% endif %}
+      </section>
+      {% endif %}
+    </details>
+    {% endif %}
+
     <div id="audit-preview-{{ finding.id }}" class="proposal-preview"></div>
   </div>
 </article>

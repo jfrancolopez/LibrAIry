@@ -40,24 +40,39 @@
     {% if progress.stage_detail %}
     <p class="audit-progress-count">{{ progress.stage_detail }}</p>
     {% endif %}
-    {% if progress.rows %}
-    <dl class="audit-counters">
-      {% for label, value in progress.rows %}
-      <div><dt>{{ label }}</dt><dd>{{ value }}</dd></div>
-      {% endfor %}
-    </dl>
-    {% endif %}
-    {# Said as a fact the worker recorded, never guessed from a clock. A panel
-       that appears frozen and a panel that says why are different experiences
-       of the same correct behaviour. #}
-    {% if progress.yielding %}
-    <p class="muted audit-priority">
-      Waiting while the inbox is processed. It will pick up again on its own.
-    </p>
-    {% else %}
-    <p class="muted audit-priority">
-      Runs in the background. New inbox work takes priority.
-    </p>
+    {# Compact by default: a running audit should be a line and a bar, not a
+       dashboard. The counts are one click away for anyone who wants to check
+       that the tools really ran. #}
+    {% if progress.rows or progress.tools %}
+    <details class="audit-progress-more">
+      <summary>What it has checked</summary>
+      {% if progress.tools %}
+      <dl class="audit-counters audit-tools">
+        {% for label, value in progress.tools %}
+        <div><dt>{{ label }}</dt><dd>{{ value }}</dd></div>
+        {% endfor %}
+      </dl>
+      {% endif %}
+      {% if progress.rows %}
+      <dl class="audit-counters">
+        {% for label, value in progress.rows %}
+        <div><dt>{{ label }}</dt><dd>{{ value }}</dd></div>
+        {% endfor %}
+      </dl>
+      {% endif %}
+      {# Said as a fact the worker recorded, never guessed from a clock. A
+         panel that appears frozen and a panel that says why are different
+         experiences of the same correct behaviour. #}
+      {% if progress.yielding %}
+      <p class="muted audit-priority">
+        Waiting while the inbox is processed. It will pick up again on its own.
+      </p>
+      {% else %}
+      <p class="muted audit-priority">
+        Runs in the background. New inbox work takes priority.
+      </p>
+      {% endif %}
+    </details>
     {% endif %}
     <form method="post" action="/review/audit/cancel">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -71,12 +86,22 @@
         {{ progress.counters.findings }} suggestion{{ '' if progress.counters.findings == 1 else 's' }}
       </span>
     </div>
-    {% if progress.rows %}
-    <dl class="audit-counters">
-      {% for label, value in progress.rows %}
-      <div><dt>{{ label }}</dt><dd>{{ value }}</dd></div>
-      {% endfor %}
-    </dl>
+    {% if progress.tools or progress.rows %}
+    <details class="audit-progress-more">
+      <summary>What it checked</summary>
+      {% if progress.tools %}
+      <dl class="audit-counters audit-tools">
+        {% for label, value in progress.tools %}
+        <div><dt>{{ label }}</dt><dd>{{ value }}</dd></div>
+        {% endfor %}
+      </dl>
+      {% endif %}
+      <dl class="audit-counters">
+        {% for label, value in progress.rows %}
+        <div><dt>{{ label }}</dt><dd>{{ value }}</dd></div>
+        {% endfor %}
+      </dl>
+    </details>
     {% endif %}
   {% elif progress.state == 'failed' %}
     <div class="audit-progress-head">

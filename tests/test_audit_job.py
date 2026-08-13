@@ -540,3 +540,42 @@ def test_the_stage_label_is_words_not_a_function_name(tmp_path: Path) -> None:
         assert label[0].isupper(), label
         if result.finished:
             break
+
+
+def test_the_progress_panel_can_prove_which_tools_ran(tmp_path: Path) -> None:
+    """A stage name is not evidence. An `AI` stage that called nothing looked
+    exactly like one that called something, which is how a stub survived."""
+    from librairy.audit_job import Counters, _tool_rows
+
+    tools = dict(
+        _tool_rows(
+            Counters(
+                files_checked=140,
+                catalog_requests=2,
+                catalog_matches=1,
+                artwork_checked=1,
+                artwork_total=2,
+                duplicate_clusters=0,
+                ai_candidates=1,
+                ai_calls=1,
+                ai_answers=0,
+                ai_unavailable=1,
+            )
+        )
+    )
+
+    assert tools["Catalogs"] == "2 requests · 1 match"
+    assert tools["Artwork"] == "1 of 2 albums checked"
+    assert tools["Duplicates"] == "0 exact sets"
+    assert tools["AI"] == "0 of 1 answered · 1 not reviewed"
+
+
+def test_a_tool_that_did_nothing_is_not_listed(tmp_path: Path) -> None:
+    """Except AI, which reports at zero on purpose — see `_counter_rows`."""
+    from librairy.audit_job import Counters, _tool_rows
+
+    tools = dict(_tool_rows(Counters(files_checked=10)))
+
+    assert "Catalogs" not in tools
+    assert "Artwork" not in tools
+    assert "AI" not in tools

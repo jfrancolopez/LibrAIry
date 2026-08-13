@@ -203,7 +203,7 @@ def chrome(binary: str | None = None) -> Iterator[Chrome]:
 # --- the page under the microscope --------------------------------------------
 
 
-def render(page: str, root: Path) -> Path:
+def render(page: str, root: Path, *, expand: tuple[str, ...] = ()) -> Path:
     """Build a fixture library, render one page, inline its CSS.
 
     Inlining matters: the file is opened over `file://`, where `/static/...`
@@ -221,6 +221,8 @@ def render(page: str, root: Path) -> Path:
         html = re.sub(rf'<link[^>]+href="{re.escape(href)}"[^>]*>', f"<style>{css}</style>", html)
     # Scripts would 404 as a file, and layout is what is being looked at.
     html = re.sub(r'<script[^>]+src="/static/[^"]+"[^>]*></script>', "", html)
+    for css_class in expand:
+        html = html.replace(f'<details class="{css_class}"', f'<details open class="{css_class}"')
     OUT.mkdir(parents=True, exist_ok=True)
     target = OUT / f"{_slug(page)}.html"
     target.write_text(html, encoding="utf-8")
@@ -311,7 +313,15 @@ PAGES = {
     # overflow in it survived several passes of this harness. Filtering forces
     # `<details open>`, so the thing being measured is on screen.
     "review-filters": "/review?state=confident",
+    # Same reasoning one level down: the evidence panel is the widest thing
+    # Review can draw and it is closed by default, so it is invisible to a
+    # measurement of the page as served.
+    "review-details": "/review",
 }
+
+# Scenes that need something opened before it can be looked at. A closed
+# `<details>` is not a layout — see `PROBE` for what believing otherwise cost.
+EXPANDED = {"review-details": ("audit-details",)}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -331,7 +341,9 @@ def main(argv: list[str] | None = None) -> int:
         parser.error(f"unknown page {args.page!r}; try --list")
 
     with tempfile.TemporaryDirectory(prefix="librairy-ui-fixture-") as fixture_root:
-        page = render(PAGES[args.page], Path(fixture_root))
+        page = render(
+            PAGES[args.page], Path(fixture_root), expand=EXPANDED.get(args.page, ())
+        )
         print(f"rendered  {page}")
         try:
             with chrome(args.chrome) as browser:

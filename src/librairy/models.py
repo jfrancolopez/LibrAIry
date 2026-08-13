@@ -94,6 +94,16 @@ class EvidenceEntry:
     field: str
     detail: str
     weight: float
+    # How many of the things this speaks for agreed, and any status word.
+    # "45 of 45 tracks agree" is why a fact is trustworthy, and a fact without
+    # it reads as an assertion. Optional and defaulted, so evidence written
+    # before this existed still decodes.
+    note: str = ""
+    # One of: matched, no-match, not-checked, unavailable, not-applicable.
+    # Only meaningful on a catalog source, where a blank is genuinely
+    # ambiguous — "we asked and there was nothing" and "we never asked" are
+    # different claims and the UI has to be able to tell them apart.
+    status: str = ""
 
 
 @dataclass(frozen=True)

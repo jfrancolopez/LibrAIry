@@ -2522,9 +2522,82 @@ summary.timeline-head::-webkit-details-marker { display: none; }
 .audit-counters dt { color: var(--text-muted); }
 .audit-counters dd { margin: 0; font-family: var(--font-mono); }
 .audit-priority { margin: var(--space-2) 0; font-size: var(--text-sm); }
+/* A running audit is a line and a bar. The counts prove the tools ran, which
+   matters, but not enough to make a dashboard of the top of Review. */
+.audit-progress-more > summary {
+  cursor: pointer;
+  color: var(--accent);
+  font-size: var(--text-sm);
+  padding: var(--space-1) 0;
+}
+.audit-tools dd { font-family: inherit; }
+
+/* ---- Review details --------------------------------------------------- */
+/* The forensic view, folded away. The collapsed row has to stay scannable —
+   a page of rows that each open to twenty facts is a page nobody reads — so
+   everything here lives inside one <details> and costs nothing until asked
+   for. Native, so it works with JavaScript switched off. */
+.audit-details { margin-top: var(--space-2); font-size: var(--text-sm); }
+.audit-details > summary {
+  cursor: pointer;
+  color: var(--accent);
+  padding: var(--space-1) 0;
+}
+.audit-details[open] > summary { margin-bottom: var(--space-2); }
+/* Four checkable numbers, not one invented percentage. */
+.detail-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  margin: 0 0 var(--space-3);
+  padding: 0;
+  list-style: none;
+}
+.detail-summary li { color: var(--text-dim); }
+.detail-summary li.is-conflict { color: var(--warn); }
+.detail-block {
+  margin: 0 0 var(--space-3);
+  padding-left: var(--space-3);
+  border-left: var(--border-thin) solid var(--border);
+}
+.detail-block h4 {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+.detail-note { margin: 0 0 var(--space-1); font-size: var(--text-sm); }
+/* Two columns on a desktop, one on a phone. Not a fixed-width table: a
+   terminal-style grid of label and value is exactly what overflows a 375px
+   screen, and the label column is the part that cannot shrink. */
+.detail-list { display: grid; gap: var(--space-1); margin: 0; }
+.detail-list > div {
+  display: grid;
+  grid-template-columns: minmax(7rem, 12rem) 1fr;
+  gap: var(--space-1) var(--space-3);
+}
+.detail-list dt { color: var(--text-muted); min-width: 0; overflow-wrap: anywhere; }
+.detail-list dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.detail-list > div.is-conflict dt,
+.detail-list > div.is-conflict dd { color: var(--warn); }
+.detail-agree { margin-left: var(--space-2); }
+.detail-shape { margin: 0; padding-left: var(--space-3); }
+.detail-shape li { list-style: none; overflow-wrap: anywhere; }
+/* The one part of the panel that could be wrong, marked as such. A conclusion
+   that looks like an observation is a conclusion nobody questions. */
+.detail-is-recommendation { border-left-color: var(--accent); }
+.detail-choice { margin: 0 0 var(--space-1); }
+.detail-dest { margin: 0 0 var(--space-1); overflow-wrap: anywhere; }
 
 @media (max-width: 40rem) {
   .why-paths { grid-template-columns: 1fr; gap: 0; }
+  /* Stacked key over value. A two-column grid whose first column has a 7rem
+     floor leaves 5rem for a barcode on a 375px screen, and the value wraps to
+     six lines or pushes past the edge. */
+  .detail-list > div { grid-template-columns: 1fr; gap: 0; }
+  .detail-list dt { font-size: var(--text-sm); }
+  .detail-agree { display: block; margin-left: 0; }
   /* Full-width targets rather than several buttons squeezed onto one line:
      the accept and the no-change must never be a mis-tap apart.
      `flex: 1 1 100%` as well as `stretch`: the buttons were already stretching

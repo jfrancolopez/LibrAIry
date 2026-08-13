@@ -1058,7 +1058,32 @@ def _audit_row(
         # show no size at all, which made "one album in twenty-seven folders"
         # sound like a filing quirk rather than 1.3 GB of it.
         "facts": _group_facts(row),
-        "size_label": human_size(_column(row, "item_size")),
+        "size_label": (size_label := human_size(_column(row, "item_size"))),
+        # The forensic view, behind one expander. The row above stays
+        # scannable; this is where the twenty checkable things LibrAIry
+        # already knew about this finding finally become reachable.
+        **_decision_support(row, size_label),
+    }
+
+
+def _decision_support(row: sqlite3.Row, size_label: str) -> dict[str, object]:
+    """The details panel, the choices, and what each of them would do."""
+    from librairy.web import review_details
+
+    entries = _entries(row)
+    folders = [
+        entry.detail
+        for entry in entries
+        if entry.source == "filesystem" and entry.field == "folder"
+    ]
+    return {
+        "details": review_details.build(row, entries, size_label=size_label),
+        "decisions": review_details.decisions(row["kind"], row["dest_relpath"] or ""),
+        "recommendation": review_details.recommendation(
+            row["kind"], row["dest_relpath"] or ""
+        ),
+        "current_shape": review_details.current_shape(row, folders),
+        "current_shape_note": review_details.current_shape_note(row["kind"], folders),
     }
 
 

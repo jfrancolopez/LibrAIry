@@ -90,6 +90,8 @@ class Verdict:
     folders: tuple[str, ...]
     signals: tuple[str, ...] = ()
     contradictions: tuple[str, ...] = ()
+    agreements: tuple[Fact, ...] = ()
+    conflicts: tuple[Fact, ...] = ()
     catalogs: tuple[Identity, ...] = ()
     home: str | None = None
     dissolve_to: tuple[tuple[str, str], ...] = ()
@@ -185,6 +187,116 @@ def _first_int(value: str | None) -> int | None:
     return int(digits) if digits else None
 
 
+@dataclass(frozen=True)
+class Fact:
+    """One thing the files say, and how many of them said it.
+
+    The count is the point. "Album: Best Road Trip Disco Fever Classics" is an
+    assertion; "45 of 45 tracks agree" is the reason to believe it, and it is
+    also how a reader spots the case where forty-four agree and one does not.
+    """
+
+    label: str
+    value: str
+    agree: int = 0
+    total: int = 0
+    conflict: bool = False
+
+    @property
+    def note(self) -> str:
+        if not self.total:
+            return ""
+        noun = "track" if self.total == 1 else "tracks"
+        if self.conflict:
+            return f"{self.agree} of {self.total} {noun} disagree"
+        return f"{self.agree} of {self.total} {noun} agree"
+
+
+def read_facts(facts: Facts) -> tuple[list[Fact], list[Fact]]:
+    """The same evidence as `read_signals`, as labelled rows for the UI.
+
+    Kept beside the sentence version rather than replacing it: Why reads
+    better as prose, and a details table reads better as rows. Both are
+    derived from one gather so they cannot disagree with each other.
+    """
+    count = len(facts.tracks)
+    agree: list[Fact] = []
+    conflict: list[Fact] = []
+
+    if len(facts.albums) == 1:
+        agree.append(Fact("Album", next(iter(facts.albums)), count, count))
+    elif facts.albums:
+        conflict.append(
+            Fact("Album", " / ".join(sorted(facts.albums)), len(facts.albums), count, True)
+        )
+
+    if len(facts.album_artists) == 1:
+        agree.append(Fact("Album artist", next(iter(facts.album_artists)), count, count))
+    elif facts.album_artists:
+        conflict.append(
+            Fact(
+                "Album artist",
+                " / ".join(sorted(facts.album_artists)),
+                len(facts.album_artists),
+                count,
+                True,
+            )
+        )
+
+    numbers = sorted(facts.numbers)
+    repeated = sorted({n for n in numbers if numbers.count(n) > 1})
+    if repeated:
+        conflict.append(
+            Fact(
+                "Track sequence",
+                f"{', '.join(str(n) for n in repeated[:4])} used more than once",
+                0,
+                count,
+                True,
+            )
+        )
+    elif numbers and numbers == list(range(1, len(numbers) + 1)) and len(numbers) == count:
+        agree.append(
+            Fact("Track sequence", f"1-{count}, complete with no gaps", count, count)
+        )
+    elif numbers:
+        agree.append(Fact("Track sequence", "incomplete", len(numbers), count))
+
+    if len(facts.totals) == 1:
+        total = next(iter(facts.totals))
+        if total == count:
+            agree.append(Fact("Track total", str(total), count, count))
+        else:
+            conflict.append(
+                Fact("Track total", f"tags say {total}, {count} are here", 0, count, True)
+            )
+    elif len(facts.totals) > 1:
+        conflict.append(
+            Fact(
+                "Track total",
+                " / ".join(str(total) for total in sorted(facts.totals)),
+                len(facts.totals),
+                count,
+                True,
+            )
+        )
+
+    if len(facts.barcodes) == 1:
+        agree.append(Fact("Barcode", next(iter(facts.barcodes)), count, count))
+    elif facts.barcodes:
+        conflict.append(Fact("Barcode", f"{len(facts.barcodes)} different", 0, count, True))
+
+    if len(facts.years) == 1:
+        agree.append(Fact("Year", next(iter(facts.years)), count, count))
+    if facts.compilation_marked == count and count:
+        agree.append(Fact("Media type", "Compilation", count, count))
+    if facts.with_art and count:
+        agree.append(
+            Fact("Embedded artwork", "Front cover in the tracks", facts.with_art, count)
+        )
+    return agree, conflict
+
+
 def read_signals(facts: Facts) -> tuple[list[str], list[str]]:
     """The corroborations and the contradictions, in words a person can check.
 
@@ -252,6 +364,7 @@ def classify_collection(
     """Recognized, custom, or loose — and the evidence for saying so."""
     facts = gather_facts(view, members)
     signals, contradictions = read_signals(facts)
+    agreements, conflicts = read_facts(facts)
     title = next(iter(facts.albums)) if len(facts.albums) == 1 else members[0].album_tag
     folders = tuple(sorted(album.folder for album in members))
     matched = tuple(identity for identity in catalogs if identity.matched)
@@ -276,6 +389,8 @@ def classify_collection(
         folders=folders,
         signals=tuple(signals),
         contradictions=tuple(contradictions),
+        agreements=tuple(agreements),
+        conflicts=tuple(conflicts),
         catalogs=tuple(catalogs),
         home=home,
         dissolve_to=dissolve,
@@ -408,10 +523,15 @@ def evidence_for(verdict: Verdict) -> list[EvidenceEntry]:
             EvidenceEntry(
                 identity.provider,
                 "release",
-                identity.canonical_title or "no match",
+                identity.canonical_title or "No matching release found",
                 0.95 if identity.matched else 0.4,
+                note="Searched by barcode and exact title",
+                status="matched" if identity.matched else "no-match",
             )
         )
+    # Every fact twice, on purpose: as a sentence for Why, which reads as
+    # prose, and as a labelled row for the details table, which reads as a
+    # table. Both come from one gather, so they cannot drift apart.
     entries.extend(
         EvidenceEntry("tags", "agreement", signal, 0.85) for signal in verdict.signals
     )
@@ -419,6 +539,17 @@ def evidence_for(verdict: Verdict) -> list[EvidenceEntry]:
         EvidenceEntry("tags", "disagreement", problem, 0.85)
         for problem in verdict.contradictions
     )
+    for fact in (*verdict.agreements, *verdict.conflicts):
+        entries.append(
+            EvidenceEntry(
+                "tags",
+                f"fact:{fact.label}",
+                fact.value,
+                0.5 if fact.conflict else 0.9,
+                note=fact.note,
+                status="conflict" if fact.conflict else "agree",
+            )
+        )
     if verdict.disagreement:
         entries.append(EvidenceEntry("catalog", "conflict", verdict.disagreement, 0.7))
     entries.extend(

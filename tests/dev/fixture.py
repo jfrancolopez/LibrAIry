@@ -214,18 +214,68 @@ def build_fixture(root: Path) -> TestClient:
         "artists that agree with each other — but no configured catalog "
         "recognises the release. It is currently spread across 27 artist folders.",
         "Music/Disco/Various Artists/Road Trip Classics",
+        # The real collection's evidence, verbatim from the live audit — 45
+        # tracks unanimous on seven facts, two catalogs asked and neither
+        # having heard of it. This is the reference case for the details
+        # panel, so it has to be the real numbers rather than plausible ones.
         [
             EvidenceEntry("library-pattern", "collection", "Custom compilation", 0.95),
-            EvidenceEntry("tags", "album", "Road Trip Classics", 0.95),
+            EvidenceEntry("tags", "album", "Best Road Trip Disco Fever Classics", 0.95),
             EvidenceEntry("filesystem", "tracks", "45", 0.9),
             EvidenceEntry("filesystem", "artists", "27", 0.9),
             EvidenceEntry("filesystem", "total bytes", "1449985635", 0.9),
-            EvidenceEntry("musicbrainz", "release", "no match", 0.4),
-            EvidenceEntry("discogs", "release", "no match", 0.4),
             EvidenceEntry(
-                "tags", "agreement", "tracks 1-45 complete, none missing and none repeated", 0.85
+                "musicbrainz", "release", "No matching release found", 0.4,
+                note="Searched by barcode and exact title", status="no-match",
             ),
-            EvidenceEntry("tags", "agreement", "one barcode on every track: 0602455907691", 0.85),
+            EvidenceEntry(
+                "discogs", "release", "No matching release found", 0.4,
+                note="Searched by barcode and exact title", status="no-match",
+            ),
+            EvidenceEntry(
+                "tags", "agreement",
+                "tracks 1-45 complete, none missing and none repeated", 0.85,
+            ),
+            EvidenceEntry(
+                "tags", "agreement", "one barcode on every track: 0602455907691", 0.85,
+            ),
+            EvidenceEntry("tags", "agreement", "one album artist: V.A.", 0.85),
+            EvidenceEntry("tags", "agreement", "every track is tagged as a compilation", 0.85),
+            EvidenceEntry("tags", "agreement", "the same cover is embedded in every track", 0.85),
+            EvidenceEntry("tags", "agreement", "one release year: 2023", 0.85),
+            EvidenceEntry("tags", "agreement", "every track says the release has 45", 0.85),
+            EvidenceEntry(
+                "tags", "fact:Album", "Best Road Trip Disco Fever Classics", 0.9,
+                note="45 of 45 tracks agree", status="agree",
+            ),
+            EvidenceEntry(
+                "tags", "fact:Album artist", "V.A.", 0.9,
+                note="45 of 45 tracks agree", status="agree",
+            ),
+            EvidenceEntry(
+                "tags", "fact:Track sequence", "1-45, complete with no gaps", 0.9,
+                note="45 of 45 tracks agree", status="agree",
+            ),
+            EvidenceEntry(
+                "tags", "fact:Track total", "45", 0.9,
+                note="45 of 45 tracks agree", status="agree",
+            ),
+            EvidenceEntry(
+                "tags", "fact:Barcode", "0602455907691", 0.9,
+                note="45 of 45 tracks agree", status="agree",
+            ),
+            EvidenceEntry(
+                "tags", "fact:Year", "2023", 0.9,
+                note="45 of 45 tracks agree", status="agree",
+            ),
+            EvidenceEntry(
+                "tags", "fact:Media type", "Compilation", 0.9,
+                note="45 of 45 tracks agree", status="agree",
+            ),
+            EvidenceEntry(
+                "tags", "fact:Embedded artwork", "Front cover in the tracks", 0.9,
+                note="45 of 45 tracks agree", status="agree",
+            ),
             # The folders it speaks for, exactly as the real detector records
             # them — this is what the grouped tray reads back.
             EvidenceEntry("filesystem", "folder", "Music/Disco/Abba/Road Trip Classics", 0.9),

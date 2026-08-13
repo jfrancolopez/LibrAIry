@@ -342,6 +342,8 @@ def reconcile_collections(
         verdict = classify_collection(
             view, members, catalogs=identities, convention=convention
         )
+        evidence = evidence_for(verdict)
+        evidence.extend(_unchecked(lookups))
         findings.append(
             Finding(
                 relpath=sorted(album.folder for album in members)[0],
@@ -349,10 +351,32 @@ def reconcile_collections(
                 severity="review",
                 summary=summarize(verdict),
                 dest_relpath=verdict.home,
-                evidence=evidence_for(verdict),
+                evidence=evidence,
             )
         )
     return findings
+
+
+# The catalogs that can answer a question about a music release. Named so a
+# finding can say a provider was *not* asked, which is a different claim from
+# asking and getting nothing — and the one the old UI could not make, because
+# both looked like a missing row.
+RELEASE_CATALOGS = ("musicbrainz", "discogs")
+
+
+def _unchecked(lookups: dict[str, ReleaseLookup]) -> list[EvidenceEntry]:
+    """One row per catalog nobody asked, so silence is explained.
+
+    "MusicBrainz found nothing" is evidence about the release. "MusicBrainz is
+    switched off" is evidence about the installation. Rendering both as an
+    absent line would let a disabled catalog read as a confident negative.
+    """
+    return [
+        EvidenceEntry(provider, "release", "Not checked — the catalog is off", 0.0,
+                      note="No request was made", status="not-checked")
+        for provider in RELEASE_CATALOGS
+        if provider not in lookups
+    ]
 
 
 def _release_identities(

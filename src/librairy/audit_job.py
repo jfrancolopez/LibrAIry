@@ -356,6 +356,10 @@ def progress(conn: sqlite3.Connection) -> dict[str, object] | None:
         "error": row["error"],
         "counters": counters,
         "rows": _counter_rows(counters),
+        # Per-tool, so "the catalog tier ran" is a claim you can check rather
+        # than one you have to take. A stage name proves nothing; `MusicBrainz
+        # 1 request · 0 matches` proves a request left the machine.
+        "tools": _tool_rows(counters),
         "requested_at": row["requested_at"],
         "finished_at": row["finished_at"],
     }
@@ -420,6 +424,39 @@ def _yielding(conn: sqlite3.Connection) -> bool:
         return bool(json.loads(row["value"]))
     except (TypeError, ValueError):
         return False
+
+
+def _tool_rows(counters: Counters) -> list[tuple[str, str]]:
+    """What each tool did, in the words that prove it did something.
+
+    The progress panel names stages, and a stage name is not evidence — an
+    `AI` stage that called nothing looked exactly like one that called
+    something, which is how a stub survived several passes. These are request
+    and match counts, and a zero here is a claim rather than a silence.
+    """
+    rows: list[tuple[str, str]] = []
+    if counters.catalog_requests or counters.catalog_matches:
+        rows.append(
+            (
+                "Catalogs",
+                f"{counters.catalog_requests} request"
+                f"{'' if counters.catalog_requests == 1 else 's'} · "
+                f"{counters.catalog_matches} match"
+                f"{'' if counters.catalog_matches == 1 else 'es'}",
+            )
+        )
+    if counters.artwork_total:
+        rows.append(
+            ("Artwork", f"{counters.artwork_checked} of {counters.artwork_total} albums checked")
+        )
+    if counters.files_checked:
+        rows.append(("Duplicates", f"{counters.duplicate_clusters} exact sets"))
+    if counters.ai_candidates or counters.ai_calls:
+        detail = f"{counters.ai_answers} of {counters.ai_candidates} answered"
+        if counters.ai_unavailable:
+            detail += f" · {counters.ai_unavailable} not reviewed"
+        rows.append(("AI", detail))
+    return rows
 
 
 def _counter_rows(counters: Counters) -> list[tuple[str, str]]:
