@@ -11,18 +11,52 @@ from typing import Any
 from librairy.naming import slugify, tidy_relpath
 from librairy.paths import PathValidationError, sanitize_component, validate_dest
 
-CATEGORIES = ("music", "movies", "shows", "photos", "documents", "books", "projects", "misc")
+CATEGORIES = (
+    "music",
+    "music_videos",
+    "movies",
+    "shows",
+    "photos",
+    "documents",
+    "books",
+    "projects",
+    "misc",
+)
 DEFAULT_STYLE = "conventional"
 DEFAULT_STYLES = {
     "music": "genre-first",
+    "music_videos": "genre-first",
     "movies": "genre-first",
     "shows": "genre-first",
 }
 
+# The album layer is the difference between these two, and it is deliberate.
+#
+# For an album of FLACs, `Artist/Album/Track` is how the music was released and
+# how people look for it. For a DJ video collection it is a layer you fight:
+# remixes, intro edits, pool releases and mashups either belong to no album or
+# to one that has nothing to do with the file. Half the folders would be a real
+# release and half would be an invention, and you could not tell which by
+# looking.
+#
+# So music videos are **tracks, not albums**: `Music Videos/Genre/Artist/File`,
+# three levels, and the filename carries the identity that matters to a DJ —
+# featured artists, remix, edit, clean or dirty. Album, year, BPM, secondary
+# genres and the pool it came from are all worth knowing and all live in the
+# index, where they can be searched and filtered without becoming directories.
+#
+# `test_music_video_paths.py` asserts no music-video template contains
+# `{album}` and that the music templates still do, because the failure mode
+# here is quiet: a shared "music-like" helper grows an album component one
+# refactor at a time and nobody notices until the library has been restructured.
 TEMPLATES: dict[str, dict[str, str]] = {
     "music": {
         "conventional": "Music/{artist}/{album}/{clean_name}",
         "genre-first": "Music/{genre}/{artist}/{album}/{clean_name}",
+    },
+    "music_videos": {
+        "conventional": "Music Videos/{artist}/{clean_name}",
+        "genre-first": "Music Videos/{genre}/{artist}/{clean_name}",
     },
     "movies": {
         "conventional": "Movies/{title} ({year})/{clean_name}",

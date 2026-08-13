@@ -3,7 +3,21 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-Category = Literal["music", "movies", "shows", "photos", "documents", "books", "projects", "misc"]
+Category = Literal[
+    "music",
+    # A DJ video collection is neither Movies nor Music: it is not
+    # album-centric, and calling an `.mp4` a movie is the mistake that filed
+    # phone clips as feature films. See `taxonomy.TEMPLATES` for the hierarchy
+    # and why it has no album layer.
+    "music_videos",
+    "movies",
+    "shows",
+    "photos",
+    "documents",
+    "books",
+    "projects",
+    "misc",
+]
 EvidenceSource = Literal[
     "heuristic",
     "tags",

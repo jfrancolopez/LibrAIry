@@ -446,6 +446,115 @@ also hand you eleven unrelated photographs as one group; it is worth having, but
 only when you are going through the results yourself. Nothing acts on a
 similarity flag at any setting.
 
+## Music vs Music Videos
+
+These are two different things and they get two different shapes on disk.
+
+```text
+Music         Music/Genre/Artist/Album/Track
+Music Videos  Music Videos/Genre/Primary Artist/Video
+```
+
+**Album is the whole difference, and it is deliberate.** For an album of
+FLACs, `Artist/Album/Track` is how the music was released and how you look for
+it. For a DJ video collection it is a layer you fight: remixes, intro edits,
+pool releases, mashups and bootlegs either belong to no album at all or to one
+that has nothing to do with the file in front of you. Half the folders would
+be a real release and half would be an invention, and nothing on screen would
+tell you which.
+
+So a music video is a **track, not an album**. Three levels, and that is
+enough:
+
+```text
+Music Videos/
+  Disco/
+    Bee Gees/
+      Bee-Gees-Night-Fever.mp4
+  House/
+    David Guetta/
+      David-Guetta-feat.-Sia-Titanium-(Extended-Mix).mp4
+      David-Guetta-feat.-Sia-Titanium-(DJ-Intro-Edit).mp4
+```
+
+`Music Videos/House/David Guetta/` should make sense over SSH with nothing
+running. Everything richer than that lives in the index, where it can be
+searched and filtered without becoming a directory:
+
+```text
+album           secondary genres     remixer
+year            featured artists     version
+BPM             clean / dirty        DJ pool source
+catalog id      duration             original artist
+```
+
+**A music video is not a movie.** `.mp4` alone decides nothing — that is the
+mistake that files phone clips as feature films. It is evidence, alongside the
+source folder, a filename shaped like `Artist - Title`, a duration in the
+right range, embedded tags, and a catalog match.
+
+### Versions are identity, not noise
+
+These are eight different files, and LibrAIry must not call them duplicates:
+
+```text
+Artist - Song.mp4
+Artist - Song (Clean).mp4
+Artist - Song (Dirty).mp4
+Artist - Song (Extended Mix).mp4
+Artist - Song (DJ Intro Edit).mp4
+Artist - Song (Tiesto Remix).mp4
+Artist - Song (Acapella).mp4
+Artist - Song (Instrumental).mp4
+```
+
+Three distinct relationships:
+
+| | Means |
+|---|---|
+| **Duplicate** | The same bytes. One hash, two paths. |
+| **Possible duplicate** | Different bytes, near-identical content — a second download or a re-encode. |
+| **Related version** | The same song, deliberately different. Never quarantined. |
+
+Version markers survive the naming policy — the parentheses are kept — because
+`(Clean)` and `(Dirty)` are the two things a DJ most needs to tell apart at a
+glance.
+
+### One primary genre, one folder
+
+A track can be House *and* Dance *and* Electro House. It is filed **once**,
+under one primary genre, and the rest are kept as metadata. Copying it into
+three genre folders would be three files to keep in step forever.
+
+Genre comes from your existing layout first, then reliable tags, then a
+catalog, then the way the artist is already filed — and only then a model. A
+catalog's genre vocabulary never reorganises the collection on its own:
+catalogs disagree constantly about House, Dance, EDM, Electro House and Pop,
+and the filesystem needs to sit still.
+
+### Featured artists do not get folders
+
+```text
+David Guetta feat. Sia - Titanium.mp4
+  → Music Videos/House/David Guetta/…      the primary artist
+  ✗ Music Videos/House/David Guetta feat. Sia/
+```
+
+The second shape is how a collection grows a thousand one-off collaboration
+folders. The complete credit stays in the filename, where it is searchable and
+costs nothing.
+
+If no artist can be established, the folder says `Unknown Artist` rather than
+carrying a low-confidence guess that will outlive the guess. Library Review
+surfaces those for correction.
+
+### What Library Audit does not say about a music video
+
+**A missing album is not a finding here.** Nor is a genre folder full of
+videos by many artists a compilation — that is just the genre. The
+compilation policy from Music does not apply; the videos organise under their
+own artists.
+
 ## Ripped discs
 
 A DVD folder arrives as `VIDEO_TS.IFO`, `VIDEO_TS.BUP`, a row of `VTS_01_n.VOB`
@@ -652,7 +761,7 @@ a second audit of an unchanged library makes **no catalog requests at all**.
 | **System file** | `.DS_Store` and friends. Reported, never deleted. |
 | **One album in several folders** | One artist's release split across two folders — usually a half-finished copy or a second rip. |
 | **Recognized compilation** | Many artists, and a catalog names the release. Keep it together. |
-| **Custom compilation** | Many artists, the files describe one release, no catalog has heard of it. Your call. |
+| **Custom compilation** | Many artists, the files describe one release, no catalog has heard of it. Keep it together, or organise the tracks individually. |
 | **Loose collection** | Many artists and no reliable release identity. The tracks belong under their own artists. |
 | **Artist filed in two places** | The same artist has folders under two different sections. |
 | **Folder name disagrees with the tags** | Every track says one album name; the folder says another. |
