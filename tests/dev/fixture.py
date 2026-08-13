@@ -303,8 +303,64 @@ def build_fixture(root: Path) -> TestClient:
     bowie = conn.execute("SELECT id FROM audit_findings WHERE relpath LIKE '%Heroes%'").fetchone()
     accept_correction(conn, settings, bowie["id"])
     _running_audit(conn)
+    _storage_opportunities(conn)
 
     return TestClient(create_app(settings, conn))
+
+
+def _storage_opportunities(conn) -> None:  # noqa: ANN001
+    """One of every advisory class, so the section can be photographed.
+
+    Written straight into the table for the same reason the audit run is: the
+    fixture exists to be a deterministic page, and running the real advisor
+    over four fake bytes would find nothing.
+    """
+    import json as _json
+
+    from librairy.optimization import LOSSLESS, LOSSY, REMUX
+    from librairy.planner import utc_now
+
+    mb = 1024 * 1024
+    rows = [
+        # Lossless: the strongest case, and the one with no downside at all.
+        ("Music/Live/concert.wav", "audio-to-flac", LOSSLESS, 842 * mb, 510 * mb,
+         "WAV", "FLAC", "low", "",
+         "FLAC compresses audio without discarding any of it. This file stores "
+         "the same audio uncompressed.",
+         [["Codec", "PCM"], ["Sample rate", "48 kHz"], ["Bit depth", "16-bit"]]),
+        # Lossy: the one that must never look like a free win.
+        ("Movies/Blade Runner (1982)/Blade Runner.mkv", "video-transcode", LOSSY,
+         12800 * mb, 8100 * mb, "H264", "HEVC", "high", "",
+         "The source runs at about 28 Mbps, which is unusually high for 1080p "
+         "in this codec.",
+         [["Video", "H264"], ["Resolution", "1920x1080"],
+          ["Frame rate", "23.976 fps"], ["Video bitrate", "28.0 Mbps"]]),
+        # Remux: saves nothing, and says so.
+        ("Movies/Clip/clip.mkv", "video-remux", REMUX, 2200 * mb, 2200 * mb,
+         "MKV", "MP4", "low", "",
+         "The video and audio are already in formats MP4 can carry, so they "
+         "would be copied without re-encoding.",
+         [["Video", "H264"], ["Audio", "AAC"]]),
+        # Protected: describable, never convertible.
+        ("Photos/Memories/2024/clip.wav", "audio-to-flac", LOSSLESS,
+         600 * mb, 372 * mb, "WAV", "FLAC", "low", "Photos/Memories",
+         "FLAC compresses audio without discarding any of it.",
+         [["Codec", "PCM"]]),
+    ]
+    for (relpath, kind, quality, current, estimated, source, target, compute,
+         protected, reason, facts) in rows:
+        conn.execute(
+            """
+            INSERT INTO optimization_opportunities(
+              item_id, root, relpath, kind, quality, current_bytes, estimated_bytes,
+              summary, reason, compute, from_label, to_label, protected_by, facts,
+              fingerprint, rule_version, status, detected_at, updated_at
+            ) VALUES (NULL, 'library', ?, ?, ?, ?, ?, '', ?, ?, ?, ?, ?, ?,
+                      'fixture', 1, 'open', ?, ?)
+            """,
+            (relpath, kind, quality, current, estimated, reason, compute, source,
+             target, protected, _json.dumps(facts), utc_now(), utc_now()),
+        )
 
 
 def _running_audit(conn) -> None:  # noqa: ANN001

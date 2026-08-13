@@ -865,11 +865,19 @@ def test_the_zero_state_is_one_line(tmp_path: Path) -> None:
     assert len(section.split("</section>")[0]) < 700
 
 
-def test_both_sections_announce_themselves_the_same_way(tmp_path: Path) -> None:
+def test_every_section_announces_itself_the_same_way(tmp_path: Path) -> None:
+    """Three lists now, and the claim is parity rather than arithmetic.
+
+    Storage opportunities joined New files and Library Review. The point was
+    never that there are two sections — it is that each one says what it is,
+    in the same markup, so none of them looks like a continuation of the one
+    above it.
+    """
     client, *_ = scene(tmp_path, correction())
 
     body = client.get("/review").text
 
-    assert body.count('class="section-head"') == 2
-    assert "<h2>New files</h2>" in body
-    assert "<h2>Library Review</h2>" in body
+    headings = ["New files", "Library Review", "Storage opportunities"]
+    assert body.count('class="section-head"') == len(headings)
+    for heading in headings:
+        assert f"<h2>{heading}</h2>" in body

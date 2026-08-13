@@ -2708,3 +2708,42 @@ summary.timeline-head::-webkit-details-marker { display: none; }
     max-width: none;
   }
 }
+
+/* ---- Storage opportunities -------------------------------------------- */
+/* The quietest section on the page. No severity colours and no warning
+   styling: a badly organised album needs attention, a large film that could
+   be smaller is merely an opportunity, and giving them the same weight turns
+   a page of problems into a page of suggestions nobody finishes. */
+.storage { margin-top: var(--space-5); }
+.storage-empty { margin: 0; }
+.storage-summary { margin: 0 0 var(--space-1); }
+.storage-mix, .storage-note { margin: 0 0 var(--space-2); font-size: var(--text-sm); }
+.storage-list { display: grid; gap: var(--space-2); margin-bottom: var(--space-3); }
+.storage-row { border-left: var(--border-thick) solid var(--border); }
+.storage-change { margin: 0 0 var(--space-1); font-size: var(--text-sm); }
+.storage-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: var(--space-1) var(--space-4);
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-sm);
+}
+.storage-facts > div { display: flex; justify-content: space-between; gap: var(--space-2); }
+.storage-facts dt { color: var(--text-muted); }
+.storage-facts dd { margin: 0; font-family: var(--font-mono); }
+.storage-meaning, .storage-protected { margin: 0 0 var(--space-1); font-size: var(--text-sm); }
+.storage-why > summary { cursor: pointer; color: var(--accent); font-size: var(--text-sm); }
+.storage-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+}
+/* The word carries the meaning, never the colour alone: somebody has to know
+   whether information is being discarded before they act on a row. */
+.badge-quality { font-weight: 700; letter-spacing: 0.06em; }
+
+@media (max-width: 40rem) {
+  .storage-facts { grid-template-columns: 1fr; }
+}

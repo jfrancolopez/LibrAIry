@@ -114,6 +114,7 @@ from librairy.web.quarantine import (
 from librairy.web.review import (
     action_toast,
     apply_audit_bulk,
+    apply_opportunity_action,
     apply_review_action,
     duplicate_comparison,
     edit_proposal,
@@ -824,6 +825,34 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         # Rendered rather than redirected, so the sentence can name a file
         # without putting a library path into a URL.
+        return TEMPLATES.TemplateResponse(
+            request,
+            "review.html",
+            {
+                "title": "Review",
+                **review_data(conn, filters_from_query(), settings),
+                "notice": result,
+            },
+        )
+
+    @app.post("/review/storage/bulk", include_in_schema=False)
+    def review_storage_bulk(
+        request: Request,
+        action: Annotated[str, Form()] = "",
+        opportunity_id: Annotated[list[int], Form()] = [],  # noqa: B006 - starlette form list
+    ) -> HTMLResponse:
+        """Bulk actions over storage opportunities, and nothing else.
+
+        A third field name for a third workflow: `proposal_id` for the inbox,
+        `finding_id` for the audit, `opportunity_id` here. All three are small
+        integers and the only thing keeping one out of another's handler is
+        that no handler reads two of them. Enforced by three signatures rather
+        than by a filter inside a shared one.
+        """
+        try:
+            result = apply_opportunity_action(conn, action, opportunity_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
         return TEMPLATES.TemplateResponse(
             request,
             "review.html",

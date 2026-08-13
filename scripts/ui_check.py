@@ -317,11 +317,17 @@ PAGES = {
     # Review can draw and it is closed by default, so it is invisible to a
     # measurement of the page as served.
     "review-details": "/review",
+    # The advisory section, which is the widest thing on the page after the
+    # evidence panel: four classes, each with its own vocabulary.
+    "storage": "/review",
 }
 
 # Scenes that need something opened before it can be looked at. A closed
 # `<details>` is not a layout — see `PROBE` for what believing otherwise cost.
-EXPANDED = {"review-details": ("audit-details",)}
+EXPANDED = {
+    "review-details": ("audit-details",),
+    "storage": ("storage-why",),
+}
 
 
 def main(argv: list[str] | None = None) -> int:

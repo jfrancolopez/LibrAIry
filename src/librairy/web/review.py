@@ -159,6 +159,9 @@ def review_data(
         # None until an audit has ever been asked for, which is what lets the
         # empty state distinguish "nothing is wrong" from "nobody has looked".
         "progress": audit_progress(conn),
+        # The quietest list on the page. Advisory, optional, and separate from
+        # both the inbox and the audit — including in what may select it.
+        "storage": storage_view(conn),
     }
 
 
@@ -1284,3 +1287,135 @@ def _audit_browse_href(relpath: str, state: str) -> str | None:
     category = parts[0].lower()
     folder = "/".join(parts[1:-1])
     return f"/browse/{category}?folder={folder}" if folder else f"/browse/{category}"
+
+
+# --- storage opportunities ------------------------------------------------------
+#
+# A third list on the Review page, and deliberately the quietest one. A badly
+# organised album needs attention; a 10 GB film that could be 6 GB is merely an
+# opportunity, and giving the two the same visual weight would turn a page of
+# problems into a page of suggestions nobody finishes.
+#
+# Its selection scope is its own. `opportunity_id` is never accepted by the
+# inbox form or the audit toolbar, and separate tables plus separate endpoints
+# make that structural rather than a convention somebody remembers.
+
+
+def storage_view(conn: sqlite3.Connection) -> dict[str, object]:
+    """What could be smaller, and what that would cost.
+
+    Reads only. Rendering this page must not write, which is what keeps a page
+    load from competing with the worker for SQLite's one writer lock.
+    """
+    from librairy import optimization
+
+    rows = optimization.open_opportunities(conn)
+    totals = optimization.summary(rows)
+    return {
+        "count": totals["count"],
+        # Only lossless and lossy contribute. A remux saves nothing and is
+        # offered for compatibility; adding it here would be the same
+        # dishonesty as calling it an optimization.
+        "estimated_saving": human_size(totals["estimated_saving"]),
+        "has_saving": totals["estimated_saving"] > 0,
+        "compatibility_only": totals["compatibility_only"],
+        "protected": totals["protected"],
+        "by_quality": _quality_lines(totals["by_quality"]),
+        "rows": [_storage_row(row) for row in rows],
+    }
+
+
+def _quality_lines(by_quality: dict[str, int]) -> list[str]:
+    """`2 lossless · 1 lossy · 1 compatibility-only suggestion`, in a fixed order.
+
+    Singular and plural are written out rather than derived. `lossless` and
+    `lossy` are adjectives and do not take an `s`; deriving one produced
+    "2 losslesss", which is the kind of thing that survives review because
+    nobody reads a word they wrote.
+    """
+    from librairy.optimization import DERIVATIVE, LOSSLESS, LOSSY, REMUX
+
+    words = {
+        LOSSLESS: ("lossless", "lossless"),
+        LOSSY: ("lossy", "lossy"),
+        REMUX: ("compatibility-only suggestion", "compatibility-only suggestions"),
+        DERIVATIVE: ("derivative", "derivatives"),
+    }
+    lines = []
+    for quality in (LOSSLESS, LOSSY, REMUX, DERIVATIVE):
+        count = by_quality.get(quality, 0)
+        if not count:
+            continue
+        singular, plural = words[quality]
+        lines.append(f"{count} {singular if count == 1 else plural}")
+    return lines
+
+
+def _storage_row(row: sqlite3.Row) -> dict[str, object]:
+    import json
+
+    from librairy.optimization import CLASS_LABEL, CLASS_MEANING, COST_LABEL, REMUX
+
+    saving = row["current_bytes"] - row["estimated_bytes"]
+    percent = round(saving / row["current_bytes"] * 100) if row["current_bytes"] else 0
+    try:
+        facts = [tuple(pair) for pair in json.loads(row["facts"] or "[]")]
+    except (TypeError, ValueError):
+        facts = []
+    return {
+        "id": row["id"],
+        "name": PurePosixPath(row["relpath"]).name,
+        "relpath": row["relpath"],
+        "kind": row["kind"],
+        "quality": row["quality"],
+        "quality_label": CLASS_LABEL.get(row["quality"], row["quality"].upper()),
+        "quality_meaning": CLASS_MEANING.get(row["quality"], ""),
+        "size_label": human_size(row["current_bytes"]),
+        # `Estimated`, never `Actual`. Nothing has encoded anything yet, and a
+        # field that swaps meaning once a job runs is a field nobody can read.
+        "estimated_label": human_size(row["estimated_bytes"]),
+        "saving_label": human_size(saving),
+        "saving_percent": percent,
+        # A remux genuinely saves nothing, and the row says so rather than
+        # hiding the line — `0 B` is a fact, and `unknown` would not be.
+        "is_compatibility": row["quality"] == REMUX,
+        "change": f"{row['from_label']} → {row['to_label']}",
+        "compute": COST_LABEL.get(row["compute"], row["compute"].title()),
+        "reason": row["reason"],
+        "summary": row["summary"],
+        "facts": facts,
+        "protected_by": row["protected_by"],
+        "eligible": not row["protected_by"],
+    }
+
+
+OPPORTUNITY_BULK_ACTIONS = ("dismiss",)
+
+
+def apply_opportunity_action(
+    conn: sqlite3.Connection, action: str, opportunity_ids: list[int]
+) -> str:
+    """Bulk action over storage opportunities, and only over those.
+
+    Deliberately a separate function with a separate id list rather than a
+    branch inside `apply_review_action`. An `opportunity_id` and a
+    `proposal_id` are both small integers, and the only thing stopping one
+    reaching the other's handler is that they never share one.
+
+    Ineligible rows are counted and explained rather than skipped: "3 queued,
+    1 protected" is an answer, and a silently shorter result is not.
+    """
+    from librairy import optimization
+
+    if action not in OPPORTUNITY_BULK_ACTIONS:
+        raise ValueError(f"unknown opportunity action: {action}")
+    if not opportunity_ids:
+        return "Nothing was selected."
+    dismissed = sum(1 for row_id in opportunity_ids if optimization.dismiss(conn, row_id))
+    missing = len(opportunity_ids) - dismissed
+    if missing:
+        return (
+            f"{dismissed} will not be suggested again. "
+            f"{missing} had already been answered."
+        )
+    return f"{dismissed} will not be suggested again."

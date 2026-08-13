@@ -1,0 +1,122 @@
+{% from "partials/ext_info.html" import ext_info %}
+{# Things that could be smaller. The quietest section on the page, on purpose.
+
+   A badly organised album needs attention; a 10 GB film that could be 6 GB is
+   merely an opportunity. Giving them the same visual weight would turn a page
+   of problems into a page of suggestions nobody finishes reading — so no
+   severity colours, no warning styling, and a compact empty state rather than
+   a large panel announcing that everything is fine.
+
+   Its own form, and its own field name. `opportunity_id` is read by
+   /review/storage/bulk and by nothing else; the inbox posts `proposal_id` and
+   the audit posts `finding_id`. Three signatures, not one handler with a
+   filter somebody could forget. #}
+<section class="storage" id="storage-opportunities">
+  <header class="section-head">
+    <h2>Storage opportunities</h2>
+  </header>
+
+  {% if not storage.count %}
+  {# Compact on purpose. "Nothing worth doing" is a good result on an
+     efficient library, and it should read like one rather than like a
+     feature that failed to load. #}
+  <p class="muted storage-empty">No worthwhile optimizations found.</p>
+  {% else %}
+
+  <p class="storage-summary">
+    <strong>{{ storage.count }} file{{ '' if storage.count == 1 else 's' }}</strong>
+    {% if storage.has_saving %}
+    · Estimated potential savings <strong>{{ storage.estimated_saving }}</strong>
+    {% endif %}
+  </p>
+  {% if storage.by_quality %}
+  <p class="muted storage-mix">{{ storage.by_quality | join(' · ') }}</p>
+  {% endif %}
+  {% if storage.compatibility_only %}
+  {# Said out loud, because a remux saves nothing and must never be quietly
+     folded into the savings total above. #}
+  <p class="muted storage-note">
+    Compatibility-only suggestions are not counted in potential savings.
+  </p>
+  {% endif %}
+
+  <form method="post" action="/review/storage/bulk" id="storage-actions">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="storage-list">
+      {% for row in storage.rows %}
+      <article id="opportunity-{{ row.id }}" class="row-shell storage-row">
+        <label class="row-pick">
+          <input type="checkbox" name="opportunity_id" value="{{ row.id }}"
+                 {% if row.eligible %}data-storage-eligible="1"{% endif %}
+                 aria-label="Select storage opportunity for {{ row.name }}">
+        </label>
+
+        <div class="row-body">
+          <header class="row-head">
+            <h3 class="row-name" title="{{ row.relpath }}">{{ row.name }}{{ ext_info(row.relpath) }}</h3>
+            <span class="name-size">{{ row.size_label }}</span>
+            <span class="row-meta">
+              {# Never colour alone: the word is the label. Someone has to know
+                 whether information is being discarded before they act. #}
+              <span class="badge badge-quality badge-{{ row.quality }}">{{ row.quality_label }}</span>
+              {% if row.protected_by %}
+              <span class="badge badge-info">PROTECTED</span>
+              {% endif %}
+            </span>
+          </header>
+
+          <p class="storage-change mono">{{ row.change }}</p>
+
+          <dl class="storage-facts">
+            {% if row.is_compatibility %}
+            {# `0 B` and not a hidden line. Zero is a fact; the purpose is the
+               point, and pretending otherwise would be the same dishonesty as
+               calling this an optimization. #}
+            <div><dt>Storage savings</dt><dd>{{ row.saving_label }}</dd></div>
+            <div><dt>Purpose</dt><dd>Compatibility</dd></div>
+            {% else %}
+            <div><dt>Estimated result</dt><dd>~{{ row.estimated_label }}</dd></div>
+            <div>
+              <dt>Estimated savings</dt>
+              <dd>~{{ row.saving_label }} · {{ row.saving_percent }}%</dd>
+            </div>
+            {% endif %}
+            <div><dt>Compute cost</dt><dd>{{ row.compute }}</dd></div>
+          </dl>
+
+          <p class="muted storage-meaning">{{ row.quality_meaning }}</p>
+
+          {% if row.protected_by %}
+          <p class="muted storage-protected">
+            Inside the protected root <span class="mono">{{ row.protected_by }}</span>.
+            It can be described but never converted.
+          </p>
+          {% endif %}
+
+          <details class="storage-why">
+            <summary>Why this suggestion?</summary>
+            <p class="muted">{{ row.reason }}</p>
+            {% if row.facts %}
+            <dl class="detail-list">
+              {% for label, value in row.facts %}
+              <div><dt>{{ label }}</dt><dd>{{ value }}</dd></div>
+              {% endfor %}
+            </dl>
+            {% endif %}
+          </details>
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+
+    <div class="storage-toolbar">
+      <button type="submit" name="action" value="dismiss" class="btn-ghost">
+        No suggestion
+      </button>
+      <span class="muted">
+        Stops LibrAIry offering this again while the file and the rules are unchanged.
+      </span>
+    </div>
+  </form>
+  {% endif %}
+</section>
