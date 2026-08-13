@@ -139,6 +139,7 @@ class MediaFacts:
     frame_rate: str = ""
     video_bitrate: int = 0
     audio_codec: str = ""
+    audio_bitrate: int = 0
     audio_channels: int = 0
     sample_rate: int = 0
     bit_depth: int = 0
@@ -267,6 +268,14 @@ def probe_media(settings: Settings, path: Path) -> MediaFacts | None:
         frame_rate=str(video.get("avg_frame_rate") or ""),
         video_bitrate=_int(video.get("bit_rate")),
         audio_codec=str(audio.get("codec_name") or ""),
+        # Every audio stream, not the first: a film with a commentary track
+        # and a foreign dub is paying for all of them, and pretending the
+        # extras are video is how a well-encoded file looks wasteful.
+        audio_bitrate=sum(
+            _int(stream.get("bit_rate"))
+            for stream in streams
+            if stream.get("codec_type") == "audio"
+        ),
         audio_channels=int(audio.get("channels") or 0),
         sample_rate=_int(audio.get("sample_rate")),
         bit_depth=_int(audio.get("bits_per_raw_sample") or audio.get("bits_per_sample")),
@@ -400,7 +409,7 @@ def _transcode(relpath: str, facts: MediaFacts, protected_by: str) -> Opportunit
     codec = facts.video_codec.lower()
     if codec in EFFICIENT_VIDEO:
         return None
-    bitrate = facts.video_bitrate or _implied_bitrate(facts)
+    bitrate, source = video_bitrate(facts)
     if not bitrate:
         return None
     tier = facts.tier
@@ -438,15 +447,41 @@ def _transcode(relpath: str, facts: MediaFacts, protected_by: str) -> Opportunit
     )
 
 
-def _implied_bitrate(facts: MediaFacts) -> int:
-    """Bitrate from size and duration, when the stream did not declare one.
+def video_bitrate(facts: MediaFacts) -> tuple[int, str]:
+    """What the video alone costs, and how confident that number is.
 
-    Includes the audio, so it overstates the video slightly — which errs
-    toward *not* recommending a transcode, the right direction to be wrong in.
+    Three sources, best first, and the difference between them matters because
+    this number decides whether a file gets recommended for a lossy re-encode.
+
+    1. **The video stream's own `bit_rate`.** Exact, and what ffprobe reports
+       for most MP4s.
+    2. **File size minus the audio.** Matroska usually declares no per-stream
+       video bitrate but does declare the audio's, so subtracting it recovers
+       most of the accuracy. A 640 kbps AC3 track on a two-hour film is over
+       half a gigabyte; counting it as video is not a rounding error.
+    3. **Size over duration.** Everything included. Only when nothing better
+       exists.
+
+    Each fallback overstates the video, and overstating pushes a borderline
+    file *toward* a transcode — the wrong direction to be wrong in. Hence the
+    order, and hence the label, which the UI shows so an estimate built on
+    guesswork does not read like a measurement.
     """
+    if facts.video_bitrate > 0:
+        return facts.video_bitrate, "measured"
     if facts.duration <= 0 or facts.size <= 0:
-        return 0
-    return round(facts.size * 8 / facts.duration)
+        return 0, ""
+    total = round(facts.size * 8 / facts.duration)
+    if facts.audio_bitrate > 0 and facts.audio_bitrate < total:
+        # Container overhead stays counted as video, which keeps this an
+        # overstatement rather than turning it into an understatement.
+        return total - facts.audio_bitrate, "estimated from size, audio subtracted"
+    return total, "estimated from size"
+
+
+def _implied_bitrate(facts: MediaFacts) -> int:
+    """The number alone, for callers that do not need to say where it came from."""
+    return video_bitrate(facts)[0]
 
 
 def _worth_it(current: int, estimated: int, min_percent: int, min_bytes: int) -> bool:
@@ -476,8 +511,12 @@ def _video_facts(facts: MediaFacts) -> tuple[tuple[str, str], ...]:
         rows.append(("Resolution", f"{facts.width}x{facts.height}"))
     if rate := _frame_rate(facts.frame_rate):
         rows.append(("Frame rate", rate))
-    if bitrate := (facts.video_bitrate or _implied_bitrate(facts)):
-        rows.append(("Bitrate", f"{bitrate / 1_000_000:.1f} Mbps"))
+    bitrate, source = video_bitrate(facts)
+    if bitrate:
+        label = f"{bitrate / 1_000_000:.1f} Mbps"
+        rows.append(("Video bitrate", label if source == "measured" else f"{label} ({source})"))
+    if facts.audio_bitrate:
+        rows.append(("Audio bitrate", f"{facts.audio_bitrate / 1000:.0f} kbps"))
     if facts.audio_codec:
         rows.append(("Audio", facts.audio_codec.upper()))
     if facts.audio_streams > 1:

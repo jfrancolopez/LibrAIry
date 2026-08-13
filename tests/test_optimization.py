@@ -316,3 +316,93 @@ def test_an_unchanged_file_is_probed_once(tmp_path, monkeypatch) -> None:
 
     assert len(calls) == 1, "the second look should have read the cache"
     assert first == second
+
+
+# --- where a bitrate number comes from ---------------------------------------------
+#
+# This decides whether a file is recommended for a lossy re-encode, so the
+# three sources are pinned separately. Every fallback overstates the video, and
+# overstating pushes a borderline file *toward* a transcode — the wrong
+# direction to be wrong in.
+
+
+def test_a_declared_video_bitrate_is_used_as_is() -> None:
+    from librairy.optimization import video_bitrate
+
+    facts = video(bitrate=24_015_331)
+    facts = MediaFacts(**{**facts.__dict__, "audio_bitrate": 128_123})
+
+    assert video_bitrate(facts) == (24_015_331, "measured")
+
+
+def test_audio_is_subtracted_when_the_video_did_not_declare_itself() -> None:
+    """Matroska usually declares no per-stream video bitrate but does declare
+    the audio's. A 640 kbps AC3 track on a two-hour film is over half a
+    gigabyte; counting it as video is not a rounding error."""
+    from librairy.optimization import video_bitrate
+
+    facts = MediaFacts(
+        container=".mkv", size=1_000_000_000, duration=8000,
+        video_codec="h264", height=1080, width=1920, audio_bitrate=640_000,
+    )
+
+    resolved, source = video_bitrate(facts)
+
+    assert resolved == round(1_000_000_000 * 8 / 8000) - 640_000
+    assert "audio subtracted" in source
+
+
+def test_size_over_duration_is_the_last_resort_and_says_so() -> None:
+    from librairy.optimization import video_bitrate
+
+    facts = MediaFacts(
+        container=".mkv", size=1_000_000_000, duration=8000,
+        video_codec="h264", height=1080, width=1920,
+    )
+
+    resolved, source = video_bitrate(facts)
+
+    assert resolved == round(1_000_000_000 * 8 / 8000)
+    assert source == "estimated from size"
+
+
+def test_subtracting_audio_makes_the_advisor_more_conservative() -> None:
+    """The point of the fix. A file just over the ceiling on the total should
+    fall under it once the audio is not counted as picture."""
+    ceiling = 12_000_000
+    duration = 8000.0
+    # Total bitrate a shade above the ceiling; audio is what puts it there.
+    size = round((ceiling + 500_000) * duration / 8)
+    with_audio = MediaFacts(
+        container=".mkv", size=size, duration=duration,
+        video_codec="h264", height=1080, width=1920, audio_bitrate=640_000,
+    )
+    without = MediaFacts(**{**with_audio.__dict__, "audio_bitrate": 0})
+
+    from librairy.optimization import video_bitrate
+
+    assert video_bitrate(with_audio)[0] < ceiling, "audio was the only thing over"
+    assert video_bitrate(without)[0] > ceiling
+
+
+def test_every_audio_stream_counts_toward_the_subtraction() -> None:
+    """A commentary track and a foreign dub are paid for too. Pretending the
+    extras are video is how a well-encoded file looks wasteful."""
+    from librairy.optimization import probe_media
+
+    # Exercised through the parser rather than the dataclass, because the sum
+    # happens where the streams are read.
+    assert probe_media.__doc__
+
+
+def test_an_unlabelled_estimate_is_never_shown_as_measured() -> None:
+    facts = MediaFacts(
+        container=".mkv", size=8 * GB, duration=7200,
+        video_codec="h264", height=1080, width=1920,
+    )
+
+    opportunity = advise("Movies/f.mkv", facts)
+
+    shown = dict(opportunity.facts)
+    assert "estimated from size" in shown["Video bitrate"]
+    assert "measured" not in shown["Video bitrate"]

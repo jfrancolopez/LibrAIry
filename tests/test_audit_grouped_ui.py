@@ -280,10 +280,12 @@ def test_the_size_formatter_is_the_one_review_already_uses() -> None:
     from librairy.web.review import human_size
 
     for size in (0, 1, 1023, 1024, 5033164, 1449985635, 1024**4):
-        assert human_size(size) == human_bytes(size) or human_bytes(size) == "unknown"
+        assert human_size(size) == human_bytes(size)
     assert human_size(1449985635) == "1.4 GB"
     assert human_size(None) == ""
     assert human_bytes(None) == "unknown"
+    # Zero is known, and both agree on it now.
+    assert human_size(0) == human_bytes(0) == "0 B"
 
 
 def test_a_missing_file_does_not_claim_a_current_size(tmp_path: Path) -> None:

@@ -8,6 +8,7 @@ from typing import Any
 from librairy.config import Settings
 from librairy.db import connect
 from librairy.executor import execute_plan
+from librairy.humanize import human_bytes
 from librairy.lifecycle import vanished_count
 from librairy.locks import LockHeldError
 from librairy.planner import OperationSpec, approve_plan, create_plan
@@ -140,15 +141,6 @@ def _corrections(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     return found
 
 
-def human_bytes(size: int | None) -> str:
-    if not size or size < 0:
-        return "0 B"
-    value = float(size)
-    for unit in ("B", "KB", "MB", "GB", "TB"):
-        if value < 1024 or unit == "TB":
-            return f"{value:.0f} {unit}" if unit == "B" else f"{value:.1f} {unit}"
-        value /= 1024
-    return "0 B"
 
 
 def create_commit_plan(conn: sqlite3.Connection, settings: Settings) -> str:

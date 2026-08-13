@@ -203,7 +203,10 @@ def test_binary_file_still_reports_its_type_and_size(tmp_path: Path) -> None:
 def test_sizes_are_human_readable() -> None:
     from librairy.web.thumbs import human_bytes
 
-    assert human_bytes(0) == "unknown"
+    # Zero is a size. An empty file is 0 B, and reporting that as "unknown"
+    # was one of three implementations disagreeing — see `librairy.humanize`.
+    assert human_bytes(0) == "0 B"
+    assert human_bytes(None) == "unknown"
     assert human_bytes(512) == "512 B"
     assert human_bytes(2048) == "2.0 KB"
     assert human_bytes(25_904_964) == "24.7 MB"

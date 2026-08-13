@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from librairy.config import Settings
+from librairy.humanize import human_bytes
 from librairy.web.auth import has_admin_password
 
 
@@ -122,12 +123,3 @@ def _share_examples(library: str) -> list[dict[str, str]]:
     ]
 
 
-def human_bytes(size: int | None) -> str:
-    if not size or size < 0:
-        return "0 B"
-    value = float(size)
-    for unit in ("B", "KB", "MB", "GB", "TB"):
-        if value < 1024 or unit == "TB":
-            return f"{value:.0f} {unit}" if unit == "B" else f"{value:.1f} {unit}"
-        value /= 1024
-    return "0 B"
