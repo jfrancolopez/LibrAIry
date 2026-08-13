@@ -581,9 +581,43 @@ the tag reading and runs on filesystem and index evidence alone.
 ### What it will never do
 
 An audit **reads**. It writes findings and nothing else — it does not rename,
-move, delete, re-index, download artwork, or quarantine anything, and that
-holds for a finding it is completely certain about. Your library is read-only
-input while it runs, exactly as it is during Browse.
+move, delete, re-index, add artwork to your library, or quarantine anything,
+and that holds for a finding it is completely certain about. Your library is
+read-only input while it runs, exactly as it is during Browse.
+
+### It runs in the background, behind your inbox
+
+Pressing **Audit** queues the work and returns immediately; the worker that
+already files your inbox picks it up. The ordering is the guarantee: the
+worker does its own cycle first — scan, duplicates, analyse — and only spends
+time on the library if that cycle found nothing to do. **A file dropped in
+your inbox is never behind a library reconciliation.**
+
+The work happens in short slices, so the inbox gets a look in between each
+one, and Review shows how far it has got:
+
+```text
+Library audit
+
+Reading metadata                                       12%
+████░░░░░░░░░░░░░░░░░░░░
+89 / 140 files checked
+
+Music        48 / 48       Photos    31 / 89
+Albums       28            Catalog matches   3
+Issues found 5
+
+Inbox processing has priority, so this runs in the gaps between it.
+```
+
+**Stop the audit** ends it wherever it stands. That is safe by construction
+rather than by care: an audit only reads, so there is nothing half-done to
+unwind.
+
+Nothing is scheduled. There is no audit daemon, no timer and no second
+process — an audit exists because you asked for one. Re-running is cheap:
+what a catalog said is written down and read back rather than asked again, so
+a second audit of an unchanged library makes **no catalog requests at all**.
 
 ### What it looks for
 
@@ -594,7 +628,8 @@ input while it runs, exactly as it is during Browse.
 | **Naming inconsistency** | A folder capitalised unlike the ones beside it. |
 | **Tags disagree with the folder** | Embedded artist tags point at an artist folder you already have elsewhere. |
 | **Possible duplicate** | Identical bytes in two places. |
-| **Missing artwork** | An album with tracks and no cover — reported once per album, not once per folder. |
+| **Missing artwork** | An album with tracks, no cover file and no picture inside the files — reported once per album, not once per folder. |
+| **Artwork is embedded but not on disk** | The album does have a picture; it is inside the tracks rather than beside them. Some players show it, some do not. |
 | **Not indexed** | On disk but never scanned, so Search cannot see it. |
 | **System file** | `.DS_Store` and friends. Reported, never deleted. |
 | **One album in several folders** | The same release split across folders — most often a compilation filed one artist at a time. |
@@ -607,14 +642,20 @@ input while it runs, exactly as it is during Browse.
 
 ### How much it looks at
 
-Three tiers, split by what each one costs, and each can be absent without
-changing the answers of the ones below it:
+Stages, in the order they earn their cost, and each can be absent without
+changing the answers of the ones before it. Nothing waits on MusicBrainz to
+discover it has a `.DS_Store`, and nothing asks a language model a question a
+hash already answered:
 
-| Tier | Reads | Cost |
+| Stage | Reads | Cost |
 |---|---|---|
-| **Structure** | The filesystem and the index | Microseconds. Always. |
-| **Metadata** | Embedded tags | ~30 ms a file. Skip with `--no-tags`. |
+| **Scanning** | The filesystem and the index | Microseconds. Always. |
+| **Reading metadata** | Embedded tags | ~30 ms a file. Skip with `--no-tags`. |
+| **Structure and convention** | What the first two found | Free. |
 | **Catalogs** | MusicBrainz, and what it said last time | One request per album, once. |
+| **Artwork** | Covers on disk, then pictures in the tags, then Cover Art Archive | One probe per album. |
+| **Duplicates** | Hashes the index already holds | A group-by. Nothing is re-hashed. |
+| **AI** | Only what nothing above could resolve | Usually nothing at all. |
 
 The catalog tier runs **only when you press Audit**. Browsing never queries
 anything, nothing polls on a timer, and there is no background audit service.
