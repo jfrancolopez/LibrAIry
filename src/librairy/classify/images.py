@@ -135,6 +135,20 @@ def enrich_with_vision(
     if state is not None and state.failures.get(key, 0) >= CIRCUIT_BREAK_FAILURES:
         return result
     model = settings.vision_model.strip() or config.model
+    if model_not_offered(conn, config, model):
+        # Asking for a model the server does not have is a load attempt that
+        # can only fail, once per image, forever. The provider already told us
+        # what it has — the health check records it — so believe that instead
+        # of finding out the expensive way. Nothing is changed on the user's
+        # behalf: a wrong model name is a setting only they should correct.
+        LOGGER.warning(
+            "vision skipped: %s does not offer %r. Change it on the Settings page.",
+            config.name,
+            model,
+        )
+        if state is not None:
+            state.failures[key] = CIRCUIT_BREAK_FAILURES
+        return result
     path = settings.inbox_dir / item.relpath
     started = time.monotonic()
     try:
@@ -166,6 +180,26 @@ def enrich_with_vision(
     )
     save_vision(conn, item, answer, provider=config.name, model=model)
     return apply_vision(settings, item, result, answer, model)
+
+
+def model_not_offered(conn: sqlite3.Connection, config: ProviderConfig, model: str) -> bool:
+    """Whether the provider has said, in so many words, that it lacks this model.
+
+    Three states, and only one of them is a reason to skip. An empty list
+    means nobody has health-checked this provider yet — "we do not know" is
+    not "it is missing", and refusing to try on that basis would break vision
+    on a fresh install. A populated list that omits the model is the provider
+    telling us the answer, and it will not change by asking again per image.
+    """
+    from librairy.ai.status import provider_models
+
+    row = conn.execute(
+        "SELECT available_models FROM provider_status WHERE name=?", (config.name,)
+    ).fetchone()
+    if row is None:
+        return False
+    known = provider_models(row["available_models"])
+    return bool(known) and model not in known
 
 
 def local_vision_provider(

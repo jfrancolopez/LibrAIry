@@ -480,10 +480,37 @@ def _ai(context: Context) -> bool:
     sending it to a language model would be paying for an answer already in
     hand. What reaches here is the residue: files nothing else could place.
 
-    The counter is written whether or not a provider is configured, so a run
-    that says `AI calls 0` is making a claim rather than hiding a skip.
+    The counters are written whether or not a provider is configured, so a run
+    that says `0 / 0 sent to AI` is making a claim rather than hiding a skip —
+    and one that says `0 / 3` is saying plainly that three questions went
+    unanswered because nothing was reachable to answer them.
     """
-    context.counters.ai_calls += 0
+    from librairy import audit_ai
+
+    remaining = context.ai_pending
+    if remaining is None:
+        remaining = audit_ai.candidates(context)
+        context.counters.ai_candidates = len(remaining)
+    # Nothing was ambiguous. Skipping is the honest outcome, not a failure.
+    if not remaining:
+        context.ai_pending = []
+        return True
+    while remaining:
+        batch, remaining = remaining[:1], remaining[1:]
+        context.counters.ai_calls += 1
+        try:
+            answered = audit_ai.review(context, batch[0])
+        except Exception:  # noqa: BLE001 - a model outage is not an audit failure
+            LOGGER.warning("AI review skipped", exc_info=True)
+            answered = False
+        if answered:
+            context.counters.ai_answers += 1
+        else:
+            context.counters.ai_unavailable += 1
+        if remaining and context.stop():
+            context.ai_pending = remaining
+            return False
+    context.ai_pending = []
     return True
 
 

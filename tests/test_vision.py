@@ -771,3 +771,66 @@ def test_the_migration_leaves_existing_rows_alone(tmp_path: Path) -> None:
     assert reopened.execute("SELECT COUNT(*) FROM items").fetchone()[0] == 1
     columns = {row[1] for row in reopened.execute("PRAGMA table_info(vision_results)")}
     assert {"item_id", "fingerprint", "caption", "visible_text", "name_tokens"} <= columns
+
+
+# --- believing what the server already said ------------------------------------
+
+
+def test_a_model_the_server_does_not_offer_is_not_requested(tmp_path) -> None:
+    """The live installation asked LM Studio for a model on every image and
+    got a load failure on every image. The server had already published its
+    list; nothing had to be discovered the expensive way."""
+    import json as _json
+
+    from librairy.ai.base import ProviderConfig
+    from librairy.classify.images import model_not_offered
+    from librairy.config import Settings
+    from librairy.db import connect
+
+    settings = Settings(
+        APPDATA_DIR=tmp_path / "appdata", INBOX_DIR=tmp_path / "inbox",
+        LIBRARY_DIR=tmp_path / "library", QUARANTINE_DIR=tmp_path / "q",
+        AUTH_REQUIRED=False, _env_file=None,
+    )
+    conn = connect(settings)
+    config = ProviderConfig(
+        name="lmstudio", kind="lmstudio", endpoint="http://x:1234",
+        model="qwen", enabled=True, is_local=True,
+    )
+    conn.execute(
+        "INSERT INTO provider_status(name, kind, enabled, available_models) VALUES (?,?,?,?)",
+        ("lmstudio", "lmstudio", 1, _json.dumps(["qwen3-coder-30b", "google/gemma-4-e4b"])),
+    )
+
+    assert model_not_offered(conn, config, "a-model-that-left") is True
+    assert model_not_offered(conn, config, "google/gemma-4-e4b") is False
+
+
+def test_an_unprobed_provider_is_still_given_a_chance(tmp_path) -> None:
+    """"We have never asked" is not "it is missing". An empty list on a fresh
+    install must not switch vision off."""
+    import json as _json
+
+    from librairy.ai.base import ProviderConfig
+    from librairy.classify.images import model_not_offered
+    from librairy.config import Settings
+    from librairy.db import connect
+
+    settings = Settings(
+        APPDATA_DIR=tmp_path / "appdata", INBOX_DIR=tmp_path / "inbox",
+        LIBRARY_DIR=tmp_path / "library", QUARANTINE_DIR=tmp_path / "q",
+        AUTH_REQUIRED=False, _env_file=None,
+    )
+    conn = connect(settings)
+    config = ProviderConfig(
+        name="lmstudio", kind="lmstudio", endpoint=None,
+        model="m", enabled=True, is_local=True,
+    )
+
+    assert model_not_offered(conn, config, "anything") is False
+
+    conn.execute(
+        "INSERT INTO provider_status(name, kind, enabled, available_models) VALUES (?,?,?,?)",
+        ("lmstudio", "lmstudio", 1, _json.dumps([])),
+    )
+    assert model_not_offered(conn, config, "anything") is False
