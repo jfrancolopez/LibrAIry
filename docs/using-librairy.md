@@ -597,17 +597,35 @@ The work happens in short slices, so the inbox gets a look in between each
 one, and Review shows how far it has got:
 
 ```text
-Library audit
-
-Reading metadata                                       12%
-████░░░░░░░░░░░░░░░░░░░░
-89 / 140 files checked
+Library audit          Reading metadata                 64%
+████████████████░░░░░░░░
+89 of 140 files read
 
 Music        48 / 48       Photos    31 / 89
-Albums       28            Catalog matches   3
-Issues found 5
+Albums       28            Catalog requests  2
+Issues found 5            Sent to AI        0 / 1
 
-Inbox processing has priority, so this runs in the gaps between it.
+Runs in the background. New inbox work takes priority.
+```
+
+The percentage is whatever the current stage is actually counting through —
+files read, collections checked, albums checked for artwork — and where a
+stage counts nothing (scanning is one directory walk) there is no bar at all
+and the panel says which step it is on. It deliberately does not show a single
+overall number: the stages cost wildly different amounts, so "38%" derived
+from being three stages into eight would sit unchanged through the entire slow
+half.
+
+If the panel stops moving it says why — *Waiting while the inbox is
+processed* — and that is recorded by the worker when it chooses the inbox,
+never guessed from how long it has been.
+
+Two audits can be waiting, and the more specific one goes first:
+
+```text
+1.  Your inbox, and anything you are doing        always wins
+2.  Audit this folder                             you asked about something
+3.  Audit the whole library                       maintenance
 ```
 
 **Stop the audit** ends it wherever it stands. That is safe by construction
@@ -632,13 +650,73 @@ a second audit of an unchanged library makes **no catalog requests at all**.
 | **Artwork is embedded but not on disk** | The album does have a picture; it is inside the tracks rather than beside them. Some players show it, some do not. |
 | **Not indexed** | On disk but never scanned, so Search cannot see it. |
 | **System file** | `.DS_Store` and friends. Reported, never deleted. |
-| **One album in several folders** | The same release split across folders — most often a compilation filed one artist at a time. |
+| **One album in several folders** | One artist's release split across two folders — usually a half-finished copy or a second rip. |
+| **Recognized compilation** | Many artists, and a catalog names the release. Keep it together. |
+| **Custom compilation** | Many artists, the files describe one release, no catalog has heard of it. Your call. |
+| **Loose collection** | Many artists and no reliable release identity. The tracks belong under their own artists. |
 | **Artist filed in two places** | The same artist has folders under two different sections. |
 | **Folder name disagrees with the tags** | Every track says one album name; the folder says another. |
 | **Tracks missing from an album** | A numbered album with a hole in the middle. |
 | **Named unlike its neighbours** | One file in a folder where every other file follows a pattern. |
 | **Loose tracks beside album folders** | Tracks directly in an artist folder that otherwise uses albums. |
 | **A catalog spells this differently** | The tags *and* an outside catalog agree on a spelling the folder does not use. |
+
+### Folders with many artists in them
+
+This is the one case where "tidy this up" has two opposite right answers.
+*Now That's What I Call Music 42* is a release: it has a catalogue number, a
+cover and a running order, and splitting it into forty artist folders is
+vandalism. `Stuff for the car` is not a release: it is a folder somebody
+filled once, and keeping it whole hides forty artists from where they belong.
+
+Nothing about the folder tells you which one you have — both are a directory
+with tracks by many people in it. So LibrAIry asks three questions, in order
+of what each one proves:
+
+1. **Does a catalog know this release?** MusicBrainz and Discogs are both
+   asked, by barcode first and then by exact title. A release id is external
+   and checkable, and it beats everything below.
+2. **Do the files agree with each other?** Forty-five tracks that all name the
+   same album, number themselves 1 to 45 with no gaps and no repeats, and
+   carry one barcode and one cover between them are describing a release, even
+   if no catalog has heard of it. This is weaker, because the files wrote it
+   about themselves — so a contradiction cancels it outright. Ten tracks all
+   numbered 1 look coherent until you count them.
+3. **Have you already decided?** **No change** on this folder is remembered,
+   and it is the strongest evidence there is, because it is the only kind that
+   knows what the folder is *for*.
+
+Three answers, and only the last one takes anything apart:
+
+```text
+Recognized compilation   45 tracks · 1.4 GB · 27 artists
+                         MusicBrainz and Discogs identify this as one release.
+                         Suggested: Music/Pop/Various Artists/<the release>/
+
+Custom compilation       45 tracks · 1.4 GB · 27 artists
+                         The files consistently describe one collection, but no
+                         configured catalog recognises the release.
+                         Keep it together, or organise the tracks individually.
+
+Loose collection         45 tracks · 1.4 GB · 27 artists
+                         No reliable album identity was found. The tracks belong
+                         under their own artist and album.
+```
+
+**A collection folder is never inherited into every artist's hierarchy.** That
+shape — `Abba/Best Road Trip Disco Fever Classics/`, `Bee Gees/Best Road Trip
+Disco Fever Classics/`, twenty-seven times — is the worst of both structures:
+the album is not together, *and* every artist folder now claims a release that
+does not exist. Either the collection is real and lives in one folder, or it is
+not and the tracks go to their own albums. There is no third shape.
+
+If your library already keeps compilations somewhere — a `Compilations/` or a
+`Various Artists/` folder — that name is used. If it does not, `Various
+Artists` is suggested as a starting point you can decline.
+
+Nothing here is executed for you. Gathering forty-five files out of
+twenty-seven directories is a subtree restructure, and Review shows the answer
+rather than offering a button that would perform it.
 
 ### How much it looks at
 
@@ -652,10 +730,27 @@ hash already answered:
 | **Scanning** | The filesystem and the index | Microseconds. Always. |
 | **Reading metadata** | Embedded tags | ~30 ms a file. Skip with `--no-tags`. |
 | **Structure and convention** | What the first two found | Free. |
-| **Catalogs** | MusicBrainz, and what it said last time | One request per album, once. |
-| **Artwork** | Covers on disk, then pictures in the tags, then Cover Art Archive | One probe per album. |
+| **Catalogs** | MusicBrainz and Discogs, and what they said last time | One request per album, once. |
+| **Artwork** | Covers on disk, then pictures in the tags, then Cover Art Archive | Free — the tag read already saw them. |
 | **Duplicates** | Hashes the index already holds | A group-by. Nothing is re-hashed. |
 | **AI** | Only what nothing above could resolve | Usually nothing at all. |
+
+A compilation has no artist to search by, and asking a catalog about an artist
+called `V.A.` returns whatever happens to be named that — so those releases
+are looked up by **barcode** and by **exact title with a matching track
+count** instead. The verification is not optional: asked for *Best Road Trip
+Disco Fever Classics*, MusicBrainz returns *Road Trip Classics* at full
+relevance score, and taking that would invent an official identity for a
+collection that has none.
+
+The AI stage runs only when something is genuinely unresolved, and if nothing
+is it does not run at all. What reaches it today is the custom compilation —
+the case where the catalogs had no answer and the files are only speaking for
+themselves. What comes back is **evidence, not a verdict**: a line in Why
+beside the tags and the catalogs. A model cannot promote a collection to
+*recognized*; only a release id does that. If the model is unreachable the
+audit finishes and says so — `Sent to AI  0 / 3` is a successful audit telling
+you which part of itself was missing.
 
 The catalog tier runs **only when you press Audit**. Browsing never queries
 anything, nothing polls on a timer, and there is no background audit service.
