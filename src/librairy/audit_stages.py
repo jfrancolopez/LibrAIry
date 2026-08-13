@@ -73,8 +73,12 @@ class Context:
     view: LibraryView | None = None
     findings: list[Finding] = field(default_factory=list)
     albums: list = field(default_factory=list)
-    # Albums the artwork stage has still to look at. None means "not started".
+    # What each resumable stage has still to look at. None means "not started".
+    # These exist because rebuilding a worklist on resume is not a slower way
+    # to do the same thing — it is a loop that never ends, since the first
+    # item is re-examined every slice and the stage never reports finished.
     artwork_pending: list | None = None
+    catalog_pending: list | None = None
 
     @property
     def out_of_time(self) -> bool:
@@ -160,7 +164,9 @@ def _structure(context: Context) -> bool:
 
     if context.view is None:
         return _scan(context)
-    context.findings = list(detect(context.view))
+    # The artwork stage answers this one, with embedded pictures and a catalog
+    # to go on. Letting both answer produced nine rows for one missing cover.
+    context.findings = list(detect(context.view, skip=frozenset({"missing-artwork"})))
     context.albums = albums_in(context.view)
     context.counters.albums = len(context.albums)
     context.counters.findings = len(context.findings)
@@ -184,22 +190,30 @@ def _catalogs(context: Context) -> bool:
     lookup = musicbrainz_lookup(context.conn)
     if lookup is None:
         return True
-    run = CatalogRun()
-    remaining = list(context.albums)
+    # Resumed, not recomputed. Rebuilding the list each slice would mean
+    # asking about album one forever, which is exactly what a whole-library
+    # run with a zero-length slice did until this was written down.
+    remaining = context.catalog_pending
+    if remaining is None:
+        remaining = list(context.albums)
     while remaining:
         batch, remaining = remaining[:1], remaining[1:]
+        run = CatalogRun()
         context.findings.extend(
             reconcile_music(context.conn, context.view, batch, lookup, run=run)
         )
         context.counters.catalog_requests += run.asked
         context.counters.catalog_matches += run.matched
-        run = CatalogRun()
-        if context.stop():
+        # Out of time on the last album is a finished stage, not a reason to
+        # look at it again.
+        if remaining and context.stop():
             # Everything answered so far is persisted, so the albums already
             # done cost one cache read next time.
             context.counters.findings = len(context.findings)
-            return not remaining
+            context.catalog_pending = remaining
+            return False
     context.counters.findings = len(context.findings)
+    context.catalog_pending = []
     return True
 
 
@@ -228,11 +242,11 @@ def _artwork(context: Context) -> bool:
     if remaining is None:
         remaining = _albums_missing_cover(context)
     while remaining:
-        album_folder, tracks = remaining.pop(0)
+        album_folder, tracks, folders = remaining.pop(0)
         context.counters.artwork_checked += 1
         embedded = _has_embedded_art(context, tracks)
         identity = recall(context.conn, "album", album_folder, "musicbrainz")
-        finding = _artwork_finding(context, album_folder, tracks, embedded, identity)
+        finding = _artwork_finding(context, album_folder, tracks, embedded, identity, folders)
         if finding is not None:
             context.findings.append(finding)
         # `remaining` and not `stop()` alone: running out of time on the *last*
@@ -247,31 +261,44 @@ def _artwork(context: Context) -> bool:
     return True
 
 
-def _albums_missing_cover(context: Context) -> list[tuple[str, list[str]]]:
-    """Album folders with audio and no cover image beside it."""
+def _albums_missing_cover(context: Context) -> list[tuple[str, list[str], list[str]]]:
+    """Albums with no cover image, grouped by album and not by folder.
+
+    The grouping is the whole lesson, and it was learned once already by the
+    detector this stage replaces: a compilation filed one-artist-per-folder is
+    *one* album missing *one* cover. Grouping by folder gets it wrong twice
+    over — it reports the same missing cover many times, and it misses the
+    folders holding a single track, which is most of them.
+
+    Returns the anchor folder, every track, and every folder involved.
+    """
     from librairy.audit import AUDIO
 
     view = context.view
     assert view is not None
-    folders: dict[str, list[str]] = {}
-    images: dict[str, list[str]] = {}
+    tracks_by_album: dict[str, list[str]] = {}
+    covered: set[str] = set()
     for relpath in view.files:
         if view.top(relpath) != "music":
             continue
         parent = view.parent(relpath)
+        if not parent:
+            continue
+        album = PurePosixPath(parent).name
         suffix = PurePosixPath(relpath).suffix.lower()
         if suffix in AUDIO:
-            folders.setdefault(parent, []).append(relpath)
-        elif suffix in IMAGE_SUFFIXES:
-            images.setdefault(parent, []).append(relpath)
+            tracks_by_album.setdefault(album, []).append(relpath)
+        elif suffix in IMAGE_SUFFIXES and (
+            PurePosixPath(relpath).stem.lower().replace(" ", "") in COVER_STEMS
+        ):
+            covered.add(album)
     missing = []
-    for folder, tracks in sorted(folders.items()):
-        if len(tracks) < 2:
+    for album, tracks in sorted(tracks_by_album.items()):
+        # One loose track is not an album missing its cover.
+        if album in covered or len(tracks) < 2:
             continue
-        beside = images.get(folder, [])
-        if any(PurePosixPath(path).stem.lower().replace(" ", "") in COVER_STEMS for path in beside):
-            continue
-        missing.append((folder, sorted(tracks)))
+        folders = sorted({view.parent(path) for path in tracks})
+        missing.append((folders[0], sorted(tracks), folders))
     return missing
 
 
@@ -303,7 +330,7 @@ def _has_embedded_art(context: Context, tracks: list[str]) -> bool:
     return False
 
 
-def _artwork_finding(context: Context, folder, tracks, embedded, identity):  # noqa: ANN001, ANN201
+def _artwork_finding(context: Context, folder, tracks, embedded, identity, folders):  # noqa: ANN001, ANN201
     from librairy.audit import Finding
 
     album = PurePosixPath(folder).name
@@ -311,6 +338,10 @@ def _artwork_finding(context: Context, folder, tracks, embedded, identity):  # n
         EvidenceEntry("filesystem", "album", album, 0.8),
         EvidenceEntry("filesystem", "tracks", str(len(tracks)), 0.8),
     ]
+    if len(folders) > 1:
+        # So the row can say "Spans 27 folders" rather than naming whichever
+        # artist folder happened to sort first.
+        evidence.extend(EvidenceEntry("filesystem", "folder", path, 0.8) for path in folders)
     if embedded:
         # Not "missing artwork". The album has a picture; it just has no file
         # beside it, which matters for some players and not others. Saying

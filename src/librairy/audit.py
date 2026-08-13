@@ -67,6 +67,10 @@ KINDS = {
     # Tier 2. A catalog only ever gets a say when the embedded tags already
     # agree with it against the folder — see `audit_catalog`.
     "catalog-name-mismatch": "A catalog spells this differently",
+    # Not the same claim as "missing artwork": the album has a picture, it is
+    # just inside the files rather than beside them, which matters to some
+    # players and not others.
+    "artwork-not-on-disk": "Artwork is embedded but not on disk",
 }
 
 # Kinds whose correction is a concrete, deterministic filesystem move that
@@ -107,6 +111,7 @@ FOLDER_KINDS = frozenset(
         "track-numbering",
         "loose-tracks",
         "catalog-name-mismatch",
+        "artwork-not-on-disk",
     }
 )
 
@@ -289,6 +294,7 @@ def detect(
     *,
     conn: sqlite3.Connection | None = None,
     run: object | None = None,
+    skip: frozenset[str] = frozenset(),
 ) -> list[Finding]:
     """Every detector, over one gathered view.
 
@@ -304,21 +310,28 @@ def detect(
       skipped entirely when the caller passes none.
 
     Each tier can be absent without the ones below it changing their answers.
+
+    `skip` names detectors a caller is doing better itself. The staged runner
+    passes `missing-artwork`, because its own artwork stage asks the same
+    question with more to go on — embedded pictures and a catalog — and two
+    answers to one question is how a single missing cover became nine rows.
     """
     from librairy import audit_music
 
     findings: list[Finding] = []
-    for detector in (
-        _unexpected_file_types,
-        _loose_files,
-        _naming_hygiene,
-        _naming_inconsistencies,
-        _tag_path_mismatches,
-        _duplicates,
-        _missing_artwork,
-        _unindexed,
-        _system_junk,
+    for kind, detector in (
+        ("unexpected-file-type", _unexpected_file_types),
+        ("loose-file", _loose_files),
+        ("naming-cleanup", _naming_hygiene),
+        ("naming-inconsistency", _naming_inconsistencies),
+        ("tag-path-mismatch", _tag_path_mismatches),
+        ("duplicate", _duplicates),
+        ("missing-artwork", _missing_artwork),
+        ("unindexed", _unindexed),
+        ("system-junk", _system_junk),
     ):
+        if kind in skip:
+            continue
         findings.extend(detector(view))
     if view.tags:
         findings.extend(audit_music.detect(view))
