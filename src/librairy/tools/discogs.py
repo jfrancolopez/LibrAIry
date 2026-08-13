@@ -69,6 +69,88 @@ def search_release(
     return match
 
 
+def search_compilation(
+    title: str,
+    *,
+    token: str,
+    barcode: str = "",
+    opener=urlopen,
+    sleeper=time.sleep,
+) -> dict[str, Any] | None:
+    """A release identified by barcode or exact title, with no artist to help.
+
+    The same problem `musicbrainz.search_compilation` solves, and the same two
+    questions, because a compilation has no performer to search by. Discogs is
+    worth asking separately rather than only as a fallback: its coverage of
+    reissues, regional pressings and label compilations is better than
+    MusicBrainz's, which is exactly the population a "V.A." folder is drawn
+    from.
+
+    `_first_verified` cannot be reused here. It requires the artist to appear
+    in the searched text, which is the right check for an untagged filename
+    and the wrong one for a release whose artist is thirty people. The title
+    has to carry the verification instead, so it is compared exactly, case
+    aside, against what was asked for.
+    """
+    title = title.strip()
+    if not token or (not title and not barcode):
+        return None
+    cache_key = f"compilation|{barcode}|{title}".casefold()
+    if cache_key in _CACHE:
+        return _CACHE[cache_key]
+
+    found = None
+    if barcode.strip():
+        found = _release_query(
+            {"barcode": barcode.strip(), "type": "release"}, token, opener, sleeper
+        )
+    if found is None and title:
+        found = _release_query(
+            {"release_title": title, "type": "release", "per_page": "5"},
+            token,
+            opener,
+            sleeper,
+            wanted=title,
+        )
+    _CACHE[cache_key] = found
+    return found
+
+
+def _release_query(
+    params: dict[str, str], token: str, opener, sleeper, *, wanted: str = ""
+) -> dict[str, Any] | None:
+    request = Request(  # noqa: S310 - fixed https host, params are url-encoded
+        f"{SEARCH_URL}?{urlencode(params)}",
+        headers={"User-Agent": USER_AGENT, "Authorization": f"Discogs token={token}"},
+    )
+    _throttle(sleeper)
+    try:
+        with opener(request, timeout=TIMEOUT_SECONDS) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except Exception:  # noqa: BLE001 - a catalog outage is not an audit failure
+        return None
+    results = payload.get("results") if isinstance(payload, dict) else None
+    if not isinstance(results, list):
+        return None
+    for result in results:
+        if not isinstance(result, dict) or not result.get("id"):
+            continue
+        artist, album = _split_title(str(result.get("title") or ""))
+        # A compilation's Discogs title is often just the release name, with
+        # no "Artist - " prefix to split off. Both shapes are accepted.
+        album = album or str(result.get("title") or "").strip()
+        if wanted and album.casefold() != wanted.casefold():
+            continue
+        return {
+            "id": str(result["id"]),
+            "title": album,
+            "artist": artist or "Various",
+            "year": _year(result.get("year")),
+            "genre": _genre(result),
+        }
+    return None
+
+
 def lookup_for_settings(settings) -> Any:
     """Adapter matching classify/music.py's release-lookup contract."""
     token = settings.discogs_token.get_secret_value()

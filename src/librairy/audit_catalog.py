@@ -296,6 +296,164 @@ def _canonical_naming(album: Album, identity: Identity) -> list[Finding]:
     return findings
 
 
+# --- releases with no artist to search by --------------------------------------
+
+ReleaseLookup = Callable[[str, str, int], "Identity | None"]
+
+
+def reconcile_collections(
+    conn: sqlite3.Connection,
+    view: LibraryView,
+    groups: dict[str, list[Album]],
+    lookups: dict[str, ReleaseLookup],
+    *,
+    run: CatalogRun | None = None,
+) -> list[Finding]:
+    """Decide what every multi-artist folder actually is, asking outside first.
+
+    This owns the collection verdict rather than the structure stage, for the
+    same reason the artwork stage owns "is there a cover": the answer depends
+    on what a catalog says, and the structure stage runs before anything has
+    been asked. Two stages both answering would give Review two rows for one
+    question.
+
+    Every configured catalog is asked, not the first one that answers. A
+    second witness is the difference between "MusicBrainz calls this X" and
+    "MusicBrainz and Discogs both call this X", and a disagreement between
+    them is something Review has to be able to show rather than something to
+    resolve by preferring a provider.
+    """
+    from librairy.audit import Finding
+    from librairy.audit_compilation import (
+        classify_collection,
+        evidence_for,
+        library_convention,
+        summarize,
+    )
+    from librairy.audit_music import is_multi_artist
+
+    run = run or CatalogRun()
+    convention = library_convention(view)
+    findings: list[Finding] = []
+    for album_key, members in groups.items():
+        if not is_multi_artist(view, members):
+            continue
+        identities = _release_identities(conn, view, album_key, members, lookups, run)
+        verdict = classify_collection(
+            view, members, catalogs=identities, convention=convention
+        )
+        findings.append(
+            Finding(
+                relpath=sorted(album.folder for album in members)[0],
+                kind=f"collection-{verdict.kind}",
+                severity="review",
+                summary=summarize(verdict),
+                dest_relpath=verdict.home,
+                evidence=evidence_for(verdict),
+            )
+        )
+    return findings
+
+
+def _release_identities(
+    conn: sqlite3.Connection,
+    view: LibraryView,
+    album_key: str,
+    members: list[Album],
+    lookups: dict[str, ReleaseLookup],
+    run: CatalogRun,
+) -> tuple[Identity, ...]:
+    """Every configured catalog's answer about one release, remembered.
+
+    Keyed by the album title rather than a folder, because the folder is the
+    thing in question — a collection spread over twenty-seven directories has
+    no one folder to key on, and keying on the first would re-ask the moment
+    it moved.
+    """
+    from librairy.audit_compilation import gather_facts
+
+    facts = gather_facts(view, members)
+    title = next(iter(facts.albums)) if len(facts.albums) == 1 else members[0].album_tag
+    barcode = next(iter(facts.barcodes)) if len(facts.barcodes) == 1 else ""
+    found: list[Identity] = []
+    for provider, lookup in sorted(lookups.items()):
+        identity = recall(conn, "release", album_key, provider)
+        if identity is not None:
+            run.cached += 1
+        else:
+            if run.asked >= MAX_LOOKUPS:
+                run.skipped += 1
+                continue
+            run.asked += 1
+            try:
+                identity = lookup(title, barcode, len(facts.tracks))
+            except Exception:  # noqa: BLE001 - an outage is not an audit failure
+                run.failed += 1
+                run.unavailable = "did not answer"
+                continue
+            identity = identity or Identity(provider, "release", "")
+            remember(conn, "release", album_key, identity)
+        if identity.matched:
+            run.matched += 1
+        found.append(identity)
+    return tuple(found)
+
+
+def release_lookups(conn: sqlite3.Connection, settings) -> dict[str, ReleaseLookup]:
+    """The catalogs that are switched on and have what they need to answer."""
+    from librairy.catalogs import catalog_enabled
+
+    lookups: dict[str, ReleaseLookup] = {}
+    if catalog_enabled(conn, "musicbrainz"):
+
+        def musicbrainz(title: str, barcode: str, tracks: int) -> Identity | None:
+            from librairy.tools.musicbrainz import search_compilation
+
+            found = search_compilation(title, barcode=barcode, track_count=tracks)
+            if not found:
+                return None
+            return Identity(
+                provider="musicbrainz",
+                entity="release",
+                catalog_id=found["id"],
+                canonical_title=found.get("title", ""),
+                canonical_artist=found.get("artist", ""),
+                artist_id=found.get("artist_id", ""),
+            )
+
+        lookups["musicbrainz"] = musicbrainz
+
+    token = _discogs_token(conn, settings)
+    if token and catalog_enabled(conn, "discogs"):
+
+        def discogs(title: str, barcode: str, _tracks: int) -> Identity | None:
+            from librairy.tools.discogs import search_compilation
+
+            found = search_compilation(title, token=token, barcode=barcode)
+            if not found:
+                return None
+            return Identity(
+                provider="discogs",
+                entity="release",
+                catalog_id=str(found["id"]),
+                canonical_title=found.get("title", ""),
+                canonical_artist=found.get("artist", ""),
+            )
+
+        lookups["discogs"] = discogs
+
+    return lookups
+
+
+def _discogs_token(conn: sqlite3.Connection, settings) -> str:
+    from librairy.secrets_store import resolve_key
+
+    try:
+        return resolve_key(conn, settings, "discogs")
+    except Exception:  # noqa: BLE001 - an unreadable key is a disabled catalog
+        return ""
+
+
 # --- the real lookup ----------------------------------------------------------
 
 

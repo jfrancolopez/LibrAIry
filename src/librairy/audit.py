@@ -339,6 +339,7 @@ def detect(
     conn: sqlite3.Connection | None = None,
     run: object | None = None,
     skip: frozenset[str] = frozenset(),
+    collections: bool = True,
 ) -> list[Finding]:
     """Every detector, over one gathered view.
 
@@ -359,6 +360,11 @@ def detect(
     passes `missing-artwork`, because its own artwork stage asks the same
     question with more to go on — embedded pictures and a catalog — and two
     answers to one question is how a single missing cover became nine rows.
+
+    `collections=False` is the same idea one level up: the staged runner
+    judges multi-artist folders in its catalog stage, where it knows what the
+    catalogs said. The groups are still claimed so the later detectors stay
+    quiet about them.
     """
     from librairy import audit_music
 
@@ -378,7 +384,7 @@ def detect(
             continue
         findings.extend(detector(view))
     if view.tags:
-        findings.extend(audit_music.detect(view))
+        findings.extend(audit_music.detect(view, collections=collections))
         if conn is not None:
             findings.extend(_catalog_tier(conn, view, run))
     for finding in findings:

@@ -38,6 +38,7 @@ from dataclasses import dataclass, field
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING
 
+from librairy.audit_music import is_multi_artist
 from librairy.models import EvidenceEntry
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -73,12 +74,17 @@ class Context:
     view: LibraryView | None = None
     findings: list[Finding] = field(default_factory=list)
     albums: list = field(default_factory=list)
+    # Album titles that live in more than one folder. Found by structure,
+    # judged by catalogs.
+    groups: dict = field(default_factory=dict)
     # What each resumable stage has still to look at. None means "not started".
     # These exist because rebuilding a worklist on resume is not a slower way
     # to do the same thing — it is a loop that never ends, since the first
     # item is re-examined every slice and the stage never reports finished.
     artwork_pending: list | None = None
     catalog_pending: list | None = None
+    collections_pending: list | None = None
+    ai_pending: list | None = None
 
     @property
     def out_of_time(self) -> bool:
@@ -160,15 +166,24 @@ def _structure(context: Context) -> bool:
     belongs.
     """
     from librairy.audit import detect
-    from librairy.audit_music import albums_in
+    from librairy.audit_music import album_groups, albums_in
 
     if context.view is None:
         return _scan(context)
     # The artwork stage answers this one, with embedded pictures and a catalog
     # to go on. Letting both answer produced nine rows for one missing cover.
-    context.findings = list(detect(context.view, skip=frozenset({"missing-artwork"})))
+    # The catalog stage answers the collection question for the same reason:
+    # whether a multi-artist folder is a real release depends on what a
+    # catalog says, and nothing has been asked yet.
+    context.findings = list(
+        detect(context.view, skip=frozenset({"missing-artwork"}), collections=False)
+    )
     context.albums = albums_in(context.view)
+    context.groups = album_groups(context.view, context.albums)
     context.counters.albums = len(context.albums)
+    context.counters.collections = sum(
+        1 for members in context.groups.values() if is_multi_artist(context.view, members)
+    )
     context.counters.findings = len(context.findings)
     return True
 
@@ -183,12 +198,40 @@ def _catalogs(context: Context) -> bool:
     `catalog_identity` rather than asked about again, so a stage that runs out
     of time costs nothing to restart.
     """
-    from librairy.audit_catalog import CatalogRun, musicbrainz_lookup, reconcile_music
+    from librairy.audit_catalog import (
+        CatalogRun,
+        musicbrainz_lookup,
+        reconcile_collections,
+        reconcile_music,
+        release_lookups,
+    )
 
     if not context.albums or context.view is None:
         return True
+    # Collections first, and unconditionally: even with every catalog off, a
+    # multi-artist folder still needs a verdict — it is just a verdict reached
+    # on the tags alone, which is what `custom` versus `loose` distinguishes.
+    if context.collections_pending is None:
+        run = CatalogRun()
+        context.findings.extend(
+            reconcile_collections(
+                context.conn,
+                context.view,
+                context.groups,
+                release_lookups(context.conn, context.settings),
+                run=run,
+            )
+        )
+        context.counters.catalog_requests += run.asked
+        context.counters.catalog_matches += run.matched
+        context.counters.collections_judged = context.counters.collections
+        context.collections_pending = []
+        context.counters.findings = len(context.findings)
+        if context.stop():
+            return False
     lookup = musicbrainz_lookup(context.conn)
     if lookup is None:
+        context.catalog_pending = []
         return True
     # Resumed, not recomputed. Rebuilding the list each slice would mean
     # asking about album one forever, which is exactly what a whole-library

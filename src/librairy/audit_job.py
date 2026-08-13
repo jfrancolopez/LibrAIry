@@ -91,12 +91,18 @@ class Counters:
     files_seen: int = 0
     files_checked: int = 0
     albums: int = 0
+    albums_identified: int = 0
+    collections: int = 0
+    collections_judged: int = 0
     catalog_requests: int = 0
     catalog_matches: int = 0
     artwork_checked: int = 0
     artwork_found: int = 0
     duplicate_clusters: int = 0
+    ai_candidates: int = 0
     ai_calls: int = 0
+    ai_answers: int = 0
+    ai_unavailable: int = 0
     findings: int = 0
     per_root: dict[str, list[int]] = field(default_factory=dict)
 
@@ -343,15 +349,21 @@ def _counter_rows(counters: Counters) -> list[tuple[str, str]]:
         rows.append((label, f"{checked} / {total}"))
     for label, value in (
         ("Albums", counters.albums),
+        ("Collections", counters.collections),
         ("Catalog requests", counters.catalog_requests),
         ("Catalog matches", counters.catalog_matches),
         ("Artwork checked", counters.artwork_checked),
         ("Duplicate sets", counters.duplicate_clusters),
-        ("AI calls", counters.ai_calls),
         ("Issues found", counters.findings),
     ):
         if value:
             rows.append((label, str(value)))
+    # The AI line is the exception to "only what happened". `AI candidates 0`
+    # is the claim that nothing was ambiguous enough to need a model, and a
+    # run that silently omits the line is indistinguishable from one whose AI
+    # stage is a stub — which this one was, and said nothing about it.
+    if counters.ai_candidates or counters.ai_calls:
+        rows.append(("Sent to AI", f"{counters.ai_answers} / {counters.ai_candidates}"))
     return rows
 
 

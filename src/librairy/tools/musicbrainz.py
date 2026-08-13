@@ -136,6 +136,105 @@ def search_release_detail(
     return dict(found)
 
 
+def search_compilation(
+    title: str,
+    *,
+    barcode: str = "",
+    track_count: int = 0,
+    opener=urlopen,
+    sleeper=time.sleep,
+) -> dict[str, str] | None:
+    """A release identified without an artist to search by.
+
+    The artist search cannot be used here, and the reason is the whole point:
+    a compilation's `album_artist` is `V.A.`, and asking MusicBrainz for
+    releases by an artist called "V.A." returns whatever happens to be named
+    that. The audit used to skip every one of these — twenty-seven folders of
+    the real library went unchecked because nobody has a folder called V.A.
+
+    So it asks the questions that actually identify a release:
+
+    * **the barcode**, when the tags carry one. A UPC is the closest thing to
+      a primary key a physical or digital release has, and a barcode hit needs
+      no verification at all.
+    * **the title**, verified against the track count. A title search alone is
+      weak — MusicBrainz scores loosely and will happily return `Road Trip
+      Classics` when asked for `Best Road Trip Disco Fever Classics` — so a
+      hit is only accepted when the title matches exactly, case aside, and the
+      release holds the number of tracks that are actually on disk.
+    """
+    title = title.strip()
+    if not title and not barcode:
+        return None
+    cache_key = f"compilation|{barcode}|{title}|{track_count}".casefold()
+    if cache_key in _CACHE:
+        cached = _CACHE[cache_key]
+        return dict(cached) if cached else None
+
+    found = None
+    if barcode.strip():
+        found = _release_query(f"barcode:{_escape(barcode.strip())}", opener, sleeper)
+    if found is None and title:
+        candidate = _release_query(
+            f'release:"{_escape(title)}"', opener, sleeper, limit=5, wanted=title
+        )
+        if candidate and _tracks_agree(candidate, track_count):
+            found = candidate
+    _CACHE[cache_key] = found
+    return dict(found) if found else None
+
+
+def _tracks_agree(candidate: dict[str, str], track_count: int) -> bool:
+    """No count on either side is not a disagreement; two counts that differ is."""
+    if not track_count or not candidate.get("track_count"):
+        return True
+    return int(candidate["track_count"]) == track_count
+
+
+def _release_query(
+    query: str, opener, sleeper, *, limit: int = 1, wanted: str = ""
+) -> dict[str, str] | None:
+    """One search, one parsed release. `wanted` requires an exact title, case
+    aside — MusicBrainz's relevance score is not a match threshold."""
+    params = {"query": query, "fmt": "json", "limit": str(limit)}
+    request = Request(  # noqa: S310 - fixed https host, params are url-encoded
+        f"{RELEASE_URL}?{urlencode(params)}",
+        headers={"User-Agent": USER_AGENT},
+    )
+    _throttle(sleeper)
+    try:
+        with opener(request, timeout=TIMEOUT_SECONDS) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except Exception:  # noqa: BLE001 - a catalog outage is not an audit failure
+        return None
+    releases = payload.get("releases") if isinstance(payload, dict) else None
+    if not isinstance(releases, list):
+        return None
+    for release in releases:
+        if not isinstance(release, dict) or not release.get("id"):
+            continue
+        found = _release_fields(release)
+        if wanted and found["title"].casefold() != wanted.casefold():
+            continue
+        return found
+    return None
+
+
+def _release_fields(release: dict[str, Any]) -> dict[str, str]:
+    credit = release.get("artist-credit") or []
+    named = credit[0] if isinstance(credit, list) and credit else {}
+    named = named if isinstance(named, dict) else {}
+    inner = named.get("artist") if isinstance(named.get("artist"), dict) else {}
+    count = release.get("track-count")
+    return {
+        "id": str(release["id"]),
+        "title": str(release.get("title") or "").strip(),
+        "artist": str(named.get("name") or inner.get("name") or "").strip(),
+        "artist_id": str(inner.get("id") or ""),
+        "track_count": str(count) if isinstance(count, int) else "",
+    }
+
+
 def _escape(value: str) -> str:
     """Lucene syntax: quotes and backslashes would break out of the term."""
     return value.replace("\\", "\\\\").replace('"', '\\"')
