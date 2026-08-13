@@ -175,6 +175,10 @@ class Opportunity:
     to_label: str = ""
     protected_by: str = ""
     facts: tuple[tuple[str, str], ...] = field(default_factory=tuple)
+    # Set by the caller that knows the index. The advisor is a pure function of
+    # a path and a probe, so it does not look these up itself.
+    item_id: int | None = None
+    fingerprint: str = ""
 
     @property
     def estimated_saving(self) -> int:
@@ -222,6 +226,7 @@ def facts_for(
         cached = get_cached_metadata(conn, item_id, fingerprint, TOOL)
         if cached is not None:
             return MediaFacts(**cached)
+    _PROBES["count"] += 1
     probed = probe_media(settings, path)
     if probed is None:
         return None
@@ -230,6 +235,25 @@ def facts_for(
 
         set_cached_metadata(conn, item_id, fingerprint, TOOL, probed.__dict__, utc_now())
     return probed
+
+
+# How many times the cache could not answer and ffprobe had to be run.
+# Counted at the cache boundary rather than inside `probe_media`, because the
+# claim worth checking is "an unchanged library needs no probes" — and a
+# counter that lives inside the subprocess wrapper reads zero the moment a
+# test substitutes it, which makes the proof prove nothing.
+#
+# This is emphatically not a count of items inspected. Eight files inspected
+# with eight cache hits is eight and zero.
+_PROBES = {"count": 0}
+
+
+def probe_calls() -> int:
+    return _PROBES["count"]
+
+
+def reset_probe_calls() -> None:
+    _PROBES["count"] = 0
 
 
 def probe_media(settings: Settings, path: Path) -> MediaFacts | None:
@@ -544,3 +568,200 @@ def _duration(seconds: float) -> str:
     minutes, secs = divmod(int(seconds), 60)
     hours, minutes = divmod(minutes, 60)
     return f"{hours}:{minutes:02d}:{secs:02d}" if hours else f"{minutes}:{secs:02d}"
+
+
+# --- recording what was found ---------------------------------------------------
+#
+# Nothing below runs ffmpeg either. These write rows and read rows; the row is
+# the end of the advisor's job.
+
+# Bumped when the rules change meaningfully. A `No suggestion` recorded against
+# an early rule must not silence a later, better one for the life of the file.
+RULE_VERSION = 1
+
+
+def record_opportunities(
+    conn: sqlite3.Connection, found: list[Opportunity], *, scope: str = ""
+) -> None:
+    """Store this run's opportunities and retire the ones that no longer apply.
+
+    A dismissal survives, exactly as `keep_as_is` does for findings — but only
+    while the file and the rules are the same. The moment either changes the
+    row is reopened, because "no thank you" was an answer about a particular
+    suggestion and not a permanent vow of silence.
+    """
+    import json
+
+    from librairy.planner import utc_now
+
+    now = utc_now()
+    seen = {(item.relpath, item.kind) for item in found}
+    for item in found:
+        existing = conn.execute(
+            "SELECT status, fingerprint, rule_version FROM optimization_opportunities "
+            "WHERE root='library' AND relpath=? AND kind=?",
+            (item.relpath, item.kind),
+        ).fetchone()
+        if (
+            existing
+            and existing["status"] == "dismissed"
+            and existing["fingerprint"] == item.fingerprint
+            and existing["rule_version"] == RULE_VERSION
+        ):
+            continue
+        conn.execute(
+            """
+            INSERT INTO optimization_opportunities(
+              item_id, root, relpath, kind, quality, current_bytes, estimated_bytes,
+              summary, reason, compute, from_label, to_label, protected_by, facts,
+              fingerprint, rule_version, status, detected_at, updated_at
+            ) VALUES (?, 'library', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?)
+            ON CONFLICT(root, relpath, kind) DO UPDATE SET
+              item_id=excluded.item_id,
+              quality=excluded.quality,
+              current_bytes=excluded.current_bytes,
+              estimated_bytes=excluded.estimated_bytes,
+              summary=excluded.summary,
+              reason=excluded.reason,
+              compute=excluded.compute,
+              from_label=excluded.from_label,
+              to_label=excluded.to_label,
+              protected_by=excluded.protected_by,
+              facts=excluded.facts,
+              fingerprint=excluded.fingerprint,
+              rule_version=excluded.rule_version,
+              status='open',
+              updated_at=excluded.updated_at
+            """,
+            (
+                item.item_id,
+                item.relpath,
+                item.kind,
+                item.quality,
+                item.current_bytes,
+                item.estimated_bytes,
+                item.summary,
+                item.reason,
+                item.compute,
+                item.from_label,
+                item.to_label,
+                item.protected_by,
+                json.dumps([list(pair) for pair in item.facts]),
+                item.fingerprint,
+                RULE_VERSION,
+                now,
+                now,
+            ),
+        )
+    _retire(conn, seen, scope)
+
+
+def _retire(conn: sqlite3.Connection, seen: set[tuple[str, str]], scope: str) -> None:
+    """Drop open rows this run did not find again.
+
+    A list that only grows stops being read, and a suggestion about a file
+    that has since been re-encoded is worse than no suggestion.
+    """
+    sql = "SELECT id, relpath, kind FROM optimization_opportunities WHERE status='open'"
+    params: list[object] = []
+    if scope:
+        sql += " AND relpath LIKE ?"
+        params.append(f"{scope.strip('/')}/%")
+    stale = [
+        row["id"]
+        for row in conn.execute(sql, params)
+        if (row["relpath"], row["kind"]) not in seen
+    ]
+    for row_id in stale:
+        conn.execute("DELETE FROM optimization_opportunities WHERE id=?", (row_id,))
+
+
+def dismiss(conn: sqlite3.Connection, opportunity_id: int) -> bool:
+    """"No suggestion." Remembered against this file and these rules."""
+    from librairy.planner import utc_now
+
+    cursor = conn.execute(
+        "UPDATE optimization_opportunities SET status='dismissed', updated_at=? "
+        "WHERE id=? AND status='open'",
+        (utc_now(), opportunity_id),
+    )
+    return cursor.rowcount > 0
+
+
+def open_opportunities(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return list(
+        conn.execute(
+            "SELECT * FROM optimization_opportunities WHERE status='open' "
+            "ORDER BY (current_bytes - estimated_bytes) DESC, relpath"
+        )
+    )
+
+
+def summary(rows: list[sqlite3.Row]) -> dict[str, object]:
+    """Totals for the panel, with the classes kept apart.
+
+    A remux saves nothing and is offered for compatibility. Adding it to a
+    storage total would be the same dishonesty as calling it an optimization:
+    the number would be right and the claim would be wrong.
+    """
+    saving = sum(
+        row["current_bytes"] - row["estimated_bytes"]
+        for row in rows
+        if row["quality"] in {LOSSLESS, LOSSY}
+    )
+    counts: dict[str, int] = {}
+    for row in rows:
+        counts[row["quality"]] = counts.get(row["quality"], 0) + 1
+    return {
+        "count": len(rows),
+        "estimated_saving": saving,
+        "by_quality": counts,
+        "compatibility_only": counts.get(REMUX, 0),
+        "protected": sum(1 for row in rows if row["protected_by"]),
+    }
+
+
+def scan_one(
+    conn: sqlite3.Connection,
+    settings: Settings,
+    relpath: str,
+    row: sqlite3.Row | None,
+) -> tuple[Opportunity | None, int]:
+    """Evaluate one file. Returns the opportunity, if any, and probes spent.
+
+    One file at a time rather than a whole library, because the audit runs in
+    time-bounded slices and a helper that walks everything cannot be stopped
+    half way. The probe count comes back so the caller can report it: a second
+    audit of an unchanged library should spend zero, and "the cache works" is
+    otherwise an unfalsifiable claim.
+    """
+    from librairy.protected import protected_roots, protecting_root
+
+    item_id = int(row["id"]) if row is not None else None
+    fingerprint = (row["fingerprint"] or "") if row is not None else ""
+    before = probe_calls()
+    facts = facts_for(
+        conn, settings, item_id or 0, fingerprint, settings.library_dir / relpath
+    )
+    probes = probe_calls() - before
+    if facts is None:
+        return None, probes
+    found = advise(
+        relpath, facts, protected_by=protecting_root(relpath, protected_roots(conn))
+    )
+    if found is None:
+        return None, probes
+    return (
+        Opportunity(
+            **{**found.__dict__, "item_id": item_id, "fingerprint": fingerprint}
+        ),
+        probes,
+    )
+
+
+# Everything ffprobe can usefully say something about. Documents and archives
+# are deliberately absent — see the module docstring.
+MEDIA_SUFFIXES = {
+    ".wav", ".aiff", ".aif", ".aifc", ".flac", ".mp3", ".m4a", ".aac", ".ogg", ".opus",
+    ".mkv", ".mp4", ".m4v", ".avi", ".mov", ".wmv", ".mpg", ".mpeg", ".ts", ".webm",
+}

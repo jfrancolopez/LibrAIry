@@ -9,7 +9,7 @@ from pathlib import Path
 from librairy.config import Settings
 
 LOGGER = logging.getLogger(__name__)
-SCHEMA_VERSION = 19
+SCHEMA_VERSION = 20
 
 
 class DatabaseVersionError(RuntimeError):
@@ -436,6 +436,59 @@ CREATE TABLE audit_runs (
 CREATE INDEX idx_audit_runs_state ON audit_runs(state);
 """
 
+MIGRATION_020 = """
+-- Storage opportunities: things that *could* be smaller, and never are.
+--
+-- A separate table from `audit_findings`, deliberately. A badly organised
+-- album needs attention; a 10 GB film that could be 6 GB is merely an
+-- opportunity, and mixing the two turns a list of problems into a list of
+-- suggestions nobody finishes reading. It also keeps the selection scopes
+-- apart: an `opportunity_id` must never be accepted by an endpoint that
+-- expects a `finding_id`, and separate tables make that structural rather
+-- than a convention.
+--
+-- Nothing in this table has been done. Discovery is `ffprobe` and arithmetic;
+-- conversion is a queued job that a person asks for.
+CREATE TABLE optimization_opportunities (
+  id INTEGER PRIMARY KEY,
+  item_id INTEGER REFERENCES items(id),
+  root TEXT NOT NULL DEFAULT 'library',
+  relpath TEXT NOT NULL,
+  -- audio-to-flac | video-remux | video-transcode
+  kind TEXT NOT NULL,
+  -- lossless | remux | lossy | derivative. What it costs you, not how big the
+  -- number is: "save 4 GB" means nothing without this.
+  quality TEXT NOT NULL,
+  current_bytes INTEGER NOT NULL DEFAULT 0,
+  -- Arithmetic on a bitrate, never a measurement. A job that runs records its
+  -- result separately so estimate and actual can be compared later.
+  estimated_bytes INTEGER NOT NULL DEFAULT 0,
+  summary TEXT NOT NULL DEFAULT '',
+  reason TEXT NOT NULL DEFAULT '',
+  compute TEXT NOT NULL DEFAULT 'medium',
+  from_label TEXT NOT NULL DEFAULT '',
+  to_label TEXT NOT NULL DEFAULT '',
+  -- Non-empty when the file sits inside a protected root. Such a row is still
+  -- recorded and still shown; it simply cannot be queued.
+  protected_by TEXT NOT NULL DEFAULT '',
+  facts TEXT NOT NULL DEFAULT '[]',
+  -- What the file was when this was decided. A dismissal is tied to it, so a
+  -- changed file is reconsidered rather than staying silent forever.
+  fingerprint TEXT,
+  -- Which version of the rules produced this. Without it, a `No suggestion`
+  -- recorded against a weak early rule would suppress a much better later one
+  -- for the life of the file.
+  rule_version INTEGER NOT NULL DEFAULT 1,
+  -- open | dismissed
+  status TEXT NOT NULL DEFAULT 'open',
+  detected_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (root, relpath, kind)
+);
+CREATE INDEX idx_optimization_status ON optimization_opportunities(status);
+"""
+
+
 MIGRATIONS = {
     1: MIGRATION_001,
     2: MIGRATION_002,
@@ -456,6 +509,7 @@ MIGRATIONS = {
     17: MIGRATION_017,
     18: MIGRATION_018,
     19: MIGRATION_019,
+    20: MIGRATION_020,
 }
 
 
