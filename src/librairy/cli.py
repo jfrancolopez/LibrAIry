@@ -126,6 +126,21 @@ def build_parser() -> argparse.ArgumentParser:
     db_subparsers = db.add_subparsers(dest="db_command", required=True)
     db_subparsers.add_parser("path", help="Print database path")
     db_subparsers.add_parser("migrate", help="Apply migrations")
+    db_subparsers.add_parser(
+        "check", help="Report finding/plan inconsistencies (read-only)"
+    )
+    db_repair = db_subparsers.add_parser(
+        "repair", help="Fix unambiguous finding/plan inconsistencies"
+    )
+    # Two flags, both required, and neither with a default. Repair writes to
+    # rows that decide whether files move, so it does not happen because
+    # somebody typed a command one word short of the one they meant.
+    db_repair.add_argument(
+        "--finding-plan-state",
+        action="store_true",
+        help="Repair the finding/plan relationship",
+    )
+    db_repair.add_argument("--yes", action="store_true", help="Confirm the repair")
 
     index = subparsers.add_parser("index", help="Search index utilities")
     index_subparsers = index.add_subparsers(dest="index_command", required=True)
@@ -308,6 +323,8 @@ def _dispatch(args: argparse.Namespace, conn: sqlite3.Connection, settings: Sett
             return {"path": str(database_path(settings))}
         if args.db_command == "migrate":
             return {"schema_version": conn.execute("PRAGMA user_version").fetchone()[0]}
+        if args.db_command in {"check", "repair"}:
+            return _db_integrity_command(args, conn, settings)
     if args.command == "ai":
         return _ai_command(args, conn, settings)
     if args.command == "worker":
@@ -427,6 +444,40 @@ def _audit_command(args: argparse.Namespace, conn: sqlite3.Connection, settings:
             ],
         }
     return None
+
+
+def _db_integrity_command(
+    args: argparse.Namespace, conn: sqlite3.Connection, settings: Settings
+):
+    """`db check` reports; `db repair` writes, and only when told twice.
+
+    Check passes `settings` so it can also say whether a pending approval still
+    matches the file on disk. Repair does not: nothing it fixes depends on the
+    filesystem, and a repair that reads files could be slow enough to look
+    hung on a library the size of the one this was written for.
+    """
+    from librairy.integrity import RepairRefused, check, repair, summary
+
+    issues = check(conn, settings if args.db_command == "check" else None)
+    if args.db_command == "check":
+        return {
+            "summary": summary(issues),
+            "issues": [str(issue) for issue in issues],
+            "repairable": sum(1 for issue in issues if issue.repairable),
+        }
+    if not args.finding_plan_state or not args.yes:
+        return {
+            "error": "repair needs both --finding-plan-state and --yes",
+            "issues": [str(issue) for issue in issues],
+        }
+    try:
+        repaired = repair(conn, issues)
+    except RepairRefused as exc:
+        # Not an exception the user has to interpret. It is the checker saying
+        # the remaining cases have no correct answer it may pick.
+        return {"error": str(exc), "repaired": []}
+    conn.commit()
+    return {"repaired": repaired}
 
 
 def _quarantine_command(args: argparse.Namespace, conn: sqlite3.Connection, settings: Settings):
