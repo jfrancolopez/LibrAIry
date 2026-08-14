@@ -352,3 +352,37 @@ def test_a_plain_read_still_returns_whatever_was_recorded(tmp_path: Path) -> Non
                 strategy="contact-sheet-v1")
 
     assert stored_vision(conn, item.id) is not None
+
+
+# --- the image cache, which had the same gap ----------------------------------
+
+
+def test_a_photo_caption_is_not_reattributed_to_a_new_model(tmp_path: Path) -> None:
+    """Changing the model must not make old captions claim the new model wrote
+    them. Provider and model were always stored and never checked, so the
+    record said one thing and the page said another."""
+    from librairy.classify.images import stored_vision
+
+    conn, settings = scene(tmp_path, photo=True)
+    item = item_for(conn, JPEG)
+    save_vision(conn, item, Answer("a child sleeping"), provider="ollama",
+                model="qwen2.5vl")
+
+    assert stored_vision(conn, item.id, model="qwen2.5vl") is not None
+    assert stored_vision(conn, item.id, model="llava:13b") is None
+
+
+def test_an_old_caption_still_renders_with_no_provider(tmp_path: Path) -> None:
+    """Reading costs nothing; only inference needs a provider. An AI server
+    that is switched off must not make LibrAIry forget what it learned."""
+    from librairy.classify.images import enrich_with_vision
+
+    conn, settings = scene(tmp_path, photo=True)
+    item = item_for(conn, JPEG)
+    save_vision(conn, item, Answer("a child sleeping"), provider="ollama",
+                model="qwen2.5vl")
+
+    # No provider configured at all.
+    result = enrich_with_vision(conn, settings, item, Result(), provider=None)
+
+    assert result.evidence or result.clean_name

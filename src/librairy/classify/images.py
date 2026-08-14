@@ -125,16 +125,34 @@ def enrich_with_vision(
     if not vision_wanted(settings, item.relpath, result.confidence):
         return result
     stored = stored_vision(conn, item.id, fingerprint=item.fingerprint)
-    if stored is not None:
-        return apply_vision(settings, item, result, _as_answer(stored), stored.model)
     config = provider or local_vision_provider(conn, settings)
     if config is None:
         LOGGER.debug("vision skipped: no local AI provider is switched on")
-        return result
+        # A stored answer is still what LibrAIry knows about this picture, and
+        # reading it costs nothing — only the *inference* needs a provider. An
+        # unplugged AI server must not make LibrAIry forget what it already
+        # learned, so an old caption is used, attributed to the model that
+        # actually produced it.
+        return result if stored is None else apply_vision(
+            settings, item, result, _as_answer(stored), stored.model
+        )
     key = f"vision:{config.name}"
     if state is not None and state.failures.get(key, 0) >= CIRCUIT_BREAK_FAILURES:
-        return result
+        return result if stored is None else apply_vision(
+            settings, item, result, _as_answer(stored), stored.model
+        )
     model = settings.vision_model.strip() or config.model
+    # The cache is keyed on the model as well as the bytes. Provider and model
+    # were always stored and never checked, so changing the model on the
+    # Settings page kept serving the previous model's captions under the new
+    # one's name — the record said `qwen2.5vl` because that is what wrote it,
+    # and the page said the current model because that is what was configured.
+    #
+    # A mismatch means "look again", not "forget": the old row is still the
+    # honest answer until a new one replaces it, which is what keeps a model
+    # change from blanking every caption in the library at once.
+    if stored is not None and stored.model == model:
+        return apply_vision(settings, item, result, _as_answer(stored), stored.model)
     if model_not_offered(conn, config, model):
         # Asking for a model the server does not have is a load attempt that
         # can only fail, once per image, forever. The provider already told us

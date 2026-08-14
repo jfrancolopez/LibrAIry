@@ -460,10 +460,20 @@ def _db_integrity_command(
 
     issues = check(conn, settings if args.db_command == "check" else None)
     if args.db_command == "check":
+        from librairy.search_health import REMEDY, check_search_index
+
+        # Reported here as well as on Health, because this is the command
+        # somebody runs when something looks wrong and they want one answer.
+        # Not repaired here: `db repair` fixes the finding/plan relationship,
+        # and rebuilding a search index is a different, larger write with its
+        # own command.
+        index = check_search_index(conn)
         return {
             "summary": summary(issues),
             "issues": [str(issue) for issue in issues],
             "repairable": sum(1 for issue in issues if issue.repairable),
+            "search_index": "ok" if index.ok else "needs rebuild",
+            **({} if index.ok else {"search_index_remedy": REMEDY}),
         }
     if not args.finding_plan_state or not args.yes:
         return {

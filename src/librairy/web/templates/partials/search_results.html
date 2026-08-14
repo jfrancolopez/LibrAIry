@@ -1,5 +1,13 @@
 {% from "partials/ext_info.html" import ext_info %}
 <div id="search-results">
+  {# Said where the incomplete results are, not only on Health. Browse is
+     unaffected and stays available: it walks the filesystem and needs no
+     index at all, which is exactly why it is the answer offered here. #}
+  {% if index_warning %}
+    <p class="notice-warn" role="status">{{ index_warning }}
+      <a href="/health">View details</a> — or browse the folders, which read
+      the disk directly and are always complete.</p>
+  {% endif %}
   {% if not query and not filters.category and not filters.root and not filters.year and not filters.genre and not filters.content %}
     <p>Search is ready. Try: <code>queen night opera</code>, <code>photos 2026</code>, or filter by root/category after files are indexed.</p>
   {% endif %}

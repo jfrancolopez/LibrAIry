@@ -112,8 +112,51 @@ def sync_search_item(conn: sqlite3.Connection, item_id: int) -> None:
     )
 
 
+# The index's own definition, in one place, so a rebuild recreates exactly
+# what migration 008 created. Kept byte-identical to it on purpose: a rebuild
+# that produced a subtly different tokenizer would change what Search matches.
+SEARCH_FTS_DDL = """
+CREATE VIRTUAL TABLE search_fts USING fts5(
+  name,
+  clean_name,
+  tags,
+  artist,
+  album,
+  title,
+  show,
+  genre,
+  event,
+  category UNINDEXED,
+  root UNINDEXED,
+  item_id UNINDEXED,
+  tokenize='unicode61 remove_diacritics 2'
+);
+"""
+
+
 def rebuild_search_index(conn: sqlite3.Connection) -> int:
-    conn.execute("DELETE FROM search_fts")
+    """Throw the index away and build it again from the item rows.
+
+    It drops the table rather than emptying it, and that is the whole point.
+    `DELETE FROM search_fts` has to *read* the inverted index in order to
+    remove its rows — so on a damaged index the repair raised "database disk
+    image is malformed" and stopped, which meant the one documented remedy did
+    not work in exactly the situation it existed for. Measured on a copy of the
+    live database, which is in that state.
+
+    Dropping loses nothing: every column here is derived from `items` and
+    `proposals`, which is what makes the index rebuildable at all.
+    """
+    try:
+        conn.execute("DROP TABLE IF EXISTS search_fts")
+    except sqlite3.DatabaseError:
+        # Even the drop can fail on a badly damaged index. FTS5 keeps its
+        # storage in ordinary shadow tables, and removing those by hand leaves
+        # a plain table nobody reads, which the CREATE below replaces.
+        for suffix in ("data", "idx", "content", "docsize", "config"):
+            conn.execute(f"DROP TABLE IF EXISTS search_fts_{suffix}")
+        conn.execute("DELETE FROM sqlite_master WHERE name='search_fts'")
+    conn.executescript(SEARCH_FTS_DDL)
     item_ids = [row["id"] for row in conn.execute("SELECT id FROM items ORDER BY id")]
     for item_id in item_ids:
         sync_search_item(conn, item_id)
@@ -273,6 +316,13 @@ def search_data(
             (row["root"], row["relpath"]),
         ).fetchone()[0]
         row.update(_result_details(conn, row))
+    from librairy.search_health import check_search_index
+
+    # Asked here because this is where incomplete results would appear. A
+    # damaged FTS index does not raise on a query — it silently returns fewer
+    # rows — so a search that comes back short looks like a search that found
+    # nothing, and there is no way to tell the two apart from the outside.
+    health = check_search_index(conn)
     return {
         "query": query,
         "filters": filters,
@@ -280,6 +330,8 @@ def search_data(
         "page_size": PAGE_SIZE,
         "has_prev": filters.page > 1,
         "has_next": len(rows) == PAGE_SIZE,
+        "index_ok": health.ok,
+        "index_warning": health.warning,
     }
 
 
