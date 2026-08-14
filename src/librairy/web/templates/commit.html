@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "partials/ext_info.html" import ext_info %}
 {% block content %}
   <header class="page-head">
     <div>
@@ -175,7 +176,11 @@
                     <span class="badge">{{ file.role }}</span>
                     <span class="mono muted">{{ file.src }}</span>
                     <span aria-hidden="true">→</span>
-                    <span class="mono">{{ file.dest }}</span>
+                    {# The same shared control as everywhere else. This is the
+                       one screen that moves files somebody already owns, so
+                       "what is a .lrc, and why is it coming along?" is a
+                       question worth answering here of all places. #}
+                    <span class="mono">{{ file.dest }}</span>{{ ext_info(file.dest) }}
                   </li>
                 {% endfor %}
               </ul>

@@ -15,7 +15,7 @@ Development only. `scripts/ui_check.py` is the only caller.
 
 from __future__ import annotations
 
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from fastapi.testclient import TestClient
 
@@ -26,6 +26,7 @@ from librairy.db import connect
 from librairy.models import EvidenceEntry
 from librairy.scanner import scan_root
 from librairy.web.app import create_app
+from tests.dev.media import TINY_MP4
 
 JPEG = (Path(__file__).parent / "cover.jpg").read_bytes()
 
@@ -62,6 +63,16 @@ FILES: dict[str, bytes | None] = {
     # 10. an artist filed under two sections
     "Music/Rock/Queen/A Night at the Opera/01 - Death on Two Legs.flac": b"q1",
     "Music/Pop/Queen/Hot Space/01 - Staying Power.flac": b"q2",
+    # 11. one file per extension the shared `?` control explains, so every
+    #     surface that lists files has a control to press. These were the gap:
+    #     Search, History and Quarantine had no rows at all, so the repaired
+    #     popover was proven on Review and Browse and merely assumed elsewhere.
+    "Movies/The Matrix (1998)/The Matrix (1998).srt": b"1\n00:00:01,000 --> ",
+    "Movies/Casino (1995)/VIDEO_TS/VIDEO_TS.IFO": b"DVDVIDEO-VMG",
+    # Real, decodable bytes: this is the file the video Preview test plays and
+    # then collapses, and a placeholder cannot prove a player was released.
+    "Photos/2022/Vacation/IMG_4021.MOV": TINY_MP4,
+    "Projects/Budget/household-budget.xlsx": b"PK\x03\x04xlsx",
 }
 
 TAG_EVIDENCE = [
@@ -349,8 +360,70 @@ def build_app(root: Path):  # noqa: ANN201
     _running_audit(conn)
     _storage_opportunities(conn)
     _optimization_jobs(conn)
+    _history_entries(conn)
+    _quarantine_entries(conn, settings)
 
     return create_app(settings, conn)
+
+
+def _history_entries(conn) -> None:  # noqa: ANN001
+    """A journal with something in it, including one entry that failed.
+
+    History was empty in this fixture, so every page built on it — the History
+    list, a plan's own page, the Commit page's "last completed" card — was only
+    ever photographed in its empty state. An empty page is a state worth
+    checking and a poor place to prove that a control works.
+    """
+    moved = [
+        ("Music/Pop/Bowie/09 - Heroes.flac", "Music/Rock/David Bowie/09 - Heroes.flac", "ok"),
+        ("Movies/The Matrix (1998)/The Matrix (1998).srt",
+         "Movies/The Matrix (1999)/The Matrix (1999).srt", "ok"),
+        ("Photos/2022/Vacation/IMG_4021.MOV",
+         "Photos/2022/Summer/IMG_4021.MOV", "ok"),
+        # Not every entry is a success, and a journal that only records the
+        # successes is the one you cannot use when something went wrong.
+        ("Projects/Budget/household-budget.xlsx",
+         "Documents/2022/household-budget.xlsx", "skipped_changed"),
+    ]
+    for seq, (src, dest, outcome) in enumerate(moved, start=1):
+        conn.execute(
+            "INSERT INTO history(ts, plan_id, op_id, action, src_root, src_relpath,"
+            " dest_root, dest_relpath, fingerprint, outcome)"
+            " VALUES (?, 'fixture-history', ?, 'move', 'library', ?, 'library', ?, ?, ?)",
+            (f"2026-08-{10 + seq:02d}T09:0{seq}:00+00:00", seq, src, dest,
+             f"fixturehash{seq}", outcome),
+        )
+
+
+def _quarantine_entries(conn, settings: Settings) -> None:  # noqa: ANN001
+    """Two quarantined files, with the file actually present in quarantine.
+
+    Present on disk deliberately: Quarantine offers Preview and Restore, and a
+    row whose file does not exist exercises neither of them honestly.
+    """
+    entries = [
+        ("Photos/2022/Vacation/foo-copy.jpg", "exact_duplicate", JPEG),
+        ("Music/Pop/.DS_Store", "user", b"\x00\x01macos"),
+    ]
+    for relpath, reason, body in entries:
+        row = conn.execute(
+            "SELECT id FROM items WHERE relpath=?", (relpath,)
+        ).fetchone()
+        if row is None:
+            continue
+        landing = settings.quarantine_dir / "2026-08-14" / PurePosixPath(relpath).name
+        landing.parent.mkdir(parents=True, exist_ok=True)
+        landing.write_bytes(body)
+        conn.execute(
+            "INSERT INTO quarantine_entries(item_id, reason, original_root,"
+            " original_relpath, quarantined_at)"
+            " VALUES (?, ?, 'library', ?, '2026-08-14T09:30:00+00:00')",
+            (row["id"], reason, relpath),
+        )
+        conn.execute(
+            "UPDATE items SET root='quarantine', relpath=? WHERE id=?",
+            (f"2026-08-14/{PurePosixPath(relpath).name}", row["id"]),
+        )
 
 
 def _optimization_jobs(conn) -> None:  # noqa: ANN001

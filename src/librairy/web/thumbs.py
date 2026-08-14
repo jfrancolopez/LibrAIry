@@ -45,7 +45,21 @@ PLAYABLE_VIDEO = {
     ".mp4": "video/mp4",
     ".m4v": "video/mp4",
     ".webm": "video/webm",
-    ".mov": "video/quicktime",
+    # `.mov` is announced as MP4, not as QuickTime, and this is not a lie about
+    # the file — it is the difference between a player and a black rectangle.
+    #
+    # Measured in Chrome: `canPlayType('video/quicktime')` returns the empty
+    # string, meaning *cannot play*. A `<source type="video/quicktime">` is
+    # therefore rejected before a single byte is fetched — `networkState` goes
+    # straight to NO_SOURCE — so every phone video in the library previewed as
+    # a poster frame over a dead player, silently, with nothing saying why.
+    #
+    # A modern `.mov` is an ISO base-media file: the same boxes as an `.mp4`,
+    # holding H.264 or HEVC. This fixture's clip literally begins `ftypisom`.
+    # Declaring `video/mp4` lets the browser demux what is actually there, and
+    # if a particular file turns out to be something Chrome cannot decode, it
+    # fails the same way any other unsupported video does — visibly.
+    ".mov": "video/mp4",
 }
 PLAYABLE_AUDIO = {
     ".mp3": "audio/mpeg",
