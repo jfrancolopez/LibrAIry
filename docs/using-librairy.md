@@ -1036,6 +1036,20 @@ keep their own names. Those are three different libraries.
 
 **Analyse again** appears when a finding has gone stale. See below.
 
+Once a correction is approved, the approval is what LibrAIry believes — not the
+row's own bookkeeping. A finding whose stored status says one thing while an
+approved plan says another always reads as **Waiting for Commit**, and never
+offers a second approval: approving twice would write a second plan over the
+same files and leave the first one orphaned. If the two ever disagree,
+`librairy db check` says so; see [Troubleshooting](troubleshooting.md).
+
+An approval can also go **out of date**. The plan records exactly which bytes
+were to move, so if one of those files is edited or moved by hand between
+approval and Commit, the row says *Approval is outdated* and the Commit button
+is withdrawn — the executor would refuse the whole correction anyway, rather
+than apply half an album. **Remove old approval** puts it back in Review, where
+a fresh audit can look at whatever the files are now.
+
 Behind **⋯**: *Open in Browse*, which opens the folder the file is in **now**
 rather than any suggested destination, and *View details* when the file is
 indexed. Neither appears when it would not work.
@@ -1206,10 +1220,15 @@ one tidy one.
 
 Corrections appear on the Commit page under **Library corrections**, counted and
 listed separately from new files, with every move spelled out. Each commits on
-its own. Each shows where the file is now, where it will be after Commit, and
-how many files it affects — before the button, not one click behind it. **Send
-back to Review** returns the decision if you change your mind; nothing has moved
-yet, so that is not called Undo.
+its own. Each is headed by what it is about — the album, not a plan id — and
+says where the file is now, where it will be after Commit, how many files and
+how much data it affects, and how long ago you approved it, before the button
+rather than one click behind it. **Send back to Review** returns the decision if
+you change your mind; nothing has moved yet, so that is not called Undo. If you
+have approved and withdrawn this same correction before, the card says so.
+
+A correction whose files changed after you approved it shows *Approval is
+outdated* and offers **Remove old approval** in place of Commit.
 
 While it runs the page says what is happening in words — *1 file moved. Nothing
 failed.* — and lists only the outcomes that actually occurred. There is no
