@@ -121,10 +121,24 @@
         {% for correction in corrections %}
           <li class="correction">
             <div class="audit-row-head">
-              <span class="badge badge-audit">LIBRARY AUDIT</span>
+              {# What state this correction is actually in, before its name.
+                 A card headed only "LIBRARY AUDIT" reads the same whether it
+                 is waiting for you, running, or unable to run at all. #}
+              {% if correction.applying %}
+                <span class="badge badge-status-applying">Applying</span>
+              {% elif correction.stale %}
+                <span class="badge badge-status-approval-outdated">Approval is outdated</span>
+              {% else %}
+                <span class="badge badge-status-waiting">Waiting for Commit</span>
+              {% endif %}
               <span class="muted">{{ correction.op_count }} file{{ '' if correction.op_count == 1 else 's' }}</span>
             </div>
+            <h3 class="commit-subject">{{ correction.subject }}</h3>
             <p class="audit-summary">{{ correction.summary }}</p>
+            {% if correction.stale %}
+              <p class="notice-warn">{{ correction.stale_reason }}
+                This correction can no longer be applied as approved.</p>
+            {% endif %}
             {# Where it is now and where it is going, both, before the button.
                "Commit this correction" over a summary alone asks somebody to
                approve a move whose destination is one click away. #}
@@ -133,8 +147,26 @@
               {% if correction.suggested %}
               <div><dt>After Commit</dt><dd class="mono">{{ correction.suggested }}</dd></div>
               {% endif %}
-              <div><dt>Affects</dt><dd>{{ correction.op_count }} file{{ '' if correction.op_count == 1 else 's' }}</dd></div>
+              <div><dt>Affects</dt><dd>{{ correction.op_count }} file{{ '' if correction.op_count == 1 else 's' }} · {{ correction.size }}</dd></div>
+              {% if correction.approved_ago %}
+              <div><dt>Approved</dt><dd>{{ correction.approved_ago }}</dd></div>
+              {% endif %}
+              {% if correction.withdrawals %}
+              {# Approved before and taken back. Worth saying next to the thing
+                 it is about; never in History, where nothing moved. #}
+              <div><dt>Earlier</dt><dd class="muted">approved and withdrawn {{ correction.withdrawals }} time{{ '' if correction.withdrawals == 1 else 's' }} before this</dd></div>
+              {% endif %}
             </dl>
+            {% if correction.evidence %}
+              <details>
+                <summary>Evidence</summary>
+                <ul class="evidence-list">
+                  {% for item in correction.evidence %}
+                    <li>{{ item.text if item.text is defined else item }}</li>
+                  {% endfor %}
+                </ul>
+              </details>
+            {% endif %}
             <details>
               <summary>Every move in this correction</summary>
               <ul class="sample-moves">
@@ -149,16 +181,24 @@
               </ul>
             </details>
             <div class="button-row">
-              <form method="post" action="/commit/execute/{{ correction.plan_id }}">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                <button type="submit" class="btn-primary">Commit this correction</button>
-              </form>
+              {# No Commit button on a plan that cannot run. The executor stops
+                 a correction whose sources moved on, so offering it here would
+                 be offering a button whose only outcome is a refusal. #}
+              {% if not correction.stale and not correction.applying %}
+                <form method="post" action="/commit/execute/{{ correction.plan_id }}">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                  <button type="submit" class="btn-primary">Commit this correction</button>
+                </form>
+              {% endif %}
               {# Before execution, not after, and so not called Undo. Nothing
                  has happened yet; this puts the decision back in Review. #}
-              <form method="post" action="/review/audit/{{ correction.finding_id }}/unapprove">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                <button type="submit">Send back to Review</button>
-              </form>
+              {% if not correction.applying %}
+                <form method="post" action="/review/audit/{{ correction.finding_id }}/unapprove">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                  <button type="submit"{% if correction.stale %} class="btn-primary"{% endif %}>{{ 'Remove old approval' if correction.stale else 'Send back to Review' }}</button>
+                </form>
+              {% endif %}
+              <a class="btn-link" href="/review#audit">Review details</a>
             </div>
           </li>
         {% endfor %}

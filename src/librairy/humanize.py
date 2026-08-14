@@ -10,6 +10,46 @@ same function name and both passed.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
+
+def human_ago(stamp: str | None, now: datetime | None = None) -> str:
+    """"3 days ago", not "2026-08-11T02:16:11+00:00".
+
+    Written for one question the Commit page has to answer: how long has this
+    approval been sitting here? A timestamp answers it only after the reader
+    does the arithmetic, and the whole point of showing it is that an approval
+    made weeks ago deserves a second look before it moves files.
+
+    Coarse on purpose. Nothing here needs "3 days, 4 hours", and a unit that
+    keeps changing while you read the page is worse than one that does not.
+    """
+    if not stamp:
+        return ""
+    try:
+        when = datetime.fromisoformat(stamp)
+    except ValueError:
+        return ""
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=UTC)
+    seconds = ((now or datetime.now(UTC)) - when).total_seconds()
+    # A clock that disagrees with the database — a container restarted with a
+    # bad time, a row written by another machine — should not produce "in -2
+    # days". "Just now" is wrong by less and reads as an answer.
+    if seconds < 60:
+        return "just now"
+    for limit, size, unit in (
+        (3600, 60, "minute"),
+        (86400, 3600, "hour"),
+        (2592000, 86400, "day"),
+        (31536000, 2592000, "month"),
+    ):
+        if seconds < limit:
+            count = int(seconds // size)
+            return f"{count} {unit}{'' if count == 1 else 's'} ago"
+    count = int(seconds // 31536000)
+    return f"{count} year{'' if count == 1 else 's'} ago"
+
 
 def human_bytes(size: int | None) -> str:
     """"1.4 GB", not "1503238553". Sizes exist to be compared at a glance.

@@ -3,12 +3,13 @@ from __future__ import annotations
 import sqlite3
 import threading
 from dataclasses import asdict, dataclass, field
+from pathlib import PurePosixPath
 from typing import Any
 
 from librairy.config import Settings
 from librairy.db import connect
 from librairy.executor import execute_plan
-from librairy.humanize import human_bytes
+from librairy.humanize import human_ago, human_bytes
 from librairy.lifecycle import vanished_count
 from librairy.locks import LockHeldError
 from librairy.planner import OperationSpec, approve_plan, create_plan
@@ -22,7 +23,9 @@ class CommitState:
     lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
 
-def commit_overview(conn: sqlite3.Connection) -> dict[str, Any]:
+def commit_overview(
+    conn: sqlite3.Connection, settings: Settings | None = None
+) -> dict[str, Any]:
     """What a commit would actually do, before anyone presses the button.
 
     The page used to say "N approved proposal(s) ready" and nothing else, which
@@ -71,7 +74,7 @@ def commit_overview(conn: sqlite3.Connection) -> dict[str, Any]:
         # Corrections to files already in the library are counted and listed
         # apart from new files, all the way through. They are a different
         # promise: one of these moves something the owner already had.
-        "corrections": _corrections(conn),
+        "corrections": _corrections(conn, settings),
         "unfinished": _unfinished_plans(conn),
         "waiting_review": conn.execute(
             """
@@ -155,7 +158,9 @@ def _unfinished_plans(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     )
 
 
-def _corrections(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+def _corrections(
+    conn: sqlite3.Connection, settings: Settings | None = None
+) -> list[dict[str, Any]]:
     """Accepted library corrections waiting to be executed, with their files.
 
     Each is its own plan, which is what makes a correction one logical action:
@@ -164,19 +169,38 @@ def _corrections(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     if it tried — it is built from `proposals`, and a correction has no
     proposal row.
     """
-    from librairy.corrections import pending_corrections, plan_files
+    from librairy.correction_state import plan_drift
+    from librairy.corrections import pending_corrections, plan_files, withdrawals_for
 
     found = []
     for row in pending_corrections(conn):
         ops = plan_files(conn, row["plan_id"])
+        # Asked here rather than at execution time only. The executor already
+        # refuses a correction whose sources moved on — it stops the whole
+        # group rather than half-applying it — so a Commit button on a plan
+        # that is certain to be refused is a button that exists to fail.
+        drift = "" if settings is None else plan_drift(conn, settings, row["plan_id"])
         found.append(
             {
                 "finding_id": row["id"],
                 "plan_id": row["plan_id"],
+                # What this correction is about, so the card is headed by the
+                # album rather than by a plan id.
+                "subject": PurePosixPath(row["relpath"]).name or row["relpath"],
                 "current": row["relpath"],
                 "suggested": row["dest_relpath"],
                 "summary": row["summary"],
+                "evidence": humanize_evidence(row["evidence"]) if row["evidence"] else [],
                 "op_count": len(ops),
+                "size": human_bytes(_correction_bytes(conn, ops)),
+                "approved_ago": human_ago(row["approved_at"]),
+                "applying": row["plan_status"] == "executing",
+                "stale": bool(drift),
+                "stale_reason": _DRIFT_TEXT.get(drift, ""),
+                # A change of mind before Commit is history worth keeping, and
+                # the only place it can be seen is next to the thing it is
+                # about. Never in the History page: nothing moved.
+                "withdrawals": len(withdrawals_for(conn, row["id"])),
                 "files": [
                     {
                         "role": op["role"],
@@ -188,6 +212,32 @@ def _corrections(conn: sqlite3.Connection) -> list[dict[str, Any]]:
             }
         )
     return found
+
+
+# Said in terms of the file, not of the check that noticed. "changed" is what a
+# person did to it; `skipped_changed` is what the executor will call the result.
+_DRIFT_TEXT = {
+    "changed": "A file changed after you approved this correction.",
+    "missing": "A file is no longer where it was when you approved this correction.",
+}
+
+
+def _correction_bytes(conn: sqlite3.Connection, ops: list[sqlite3.Row]) -> int:
+    """How much this correction actually moves.
+
+    From the indexed sizes, and silently zero for anything unindexed rather
+    than stat-ing the library from a render path.
+    """
+    paths = [op["src_relpath"] for op in ops]
+    if not paths:
+        return 0
+    placeholders = ",".join("?" * len(paths))
+    row = conn.execute(
+        f"SELECT COALESCE(SUM(size), 0) AS bytes FROM items"  # noqa: S608
+        f" WHERE root='library' AND relpath IN ({placeholders})",
+        paths,
+    ).fetchone()
+    return int(row["bytes"])
 
 
 
@@ -278,7 +328,26 @@ def progress_data(conn: sqlite3.Connection, plan_id: str) -> dict[str, object]:
         """,
         (plan_id,),
     ).fetchall()
-    return {"plan": plan, "counts": counts, "recent_ops": recent}
+    return {
+        "plan": plan,
+        "counts": counts,
+        "recent_ops": recent,
+        # What is being corrected, so the page can be headed by the album
+        # rather than by "1 of 1". Empty for an ordinary inbox commit, which
+        # genuinely is a count of unrelated files.
+        "subject": _plan_subject(conn, plan),
+    }
+
+
+def _plan_subject(conn: sqlite3.Connection, plan: sqlite3.Row | None) -> str:
+    if plan is None or plan["audit_finding_id"] is None:
+        return ""
+    row = conn.execute(
+        "SELECT relpath FROM audit_findings WHERE id=?", (plan["audit_finding_id"],)
+    ).fetchone()
+    if row is None:
+        return ""
+    return PurePosixPath(row["relpath"]).name or row["relpath"]
 
 
 def _execute_background(

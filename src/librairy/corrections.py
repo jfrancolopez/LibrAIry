@@ -31,7 +31,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 from librairy.config import Settings
-from librairy.correction_state import active_plan
+from librairy.correction_state import ACTIVE_PLAN_STATUSES, active_plan
 from librairy.fingerprint import blake2b_file
 from librairy.paths import PathValidationError, validate_relpath
 from librairy.planner import OperationSpec, approve_plan, create_plan, utc_now
@@ -521,17 +521,31 @@ def settle_plan(conn: sqlite3.Connection, plan_id: str) -> None:
 
 
 def pending_corrections(conn: sqlite3.Connection) -> list[sqlite3.Row]:
-    """Accepted corrections whose plan is approved and not yet executed."""
+    """Corrections whose plan is approved and has not finished.
+
+    Driven from the plans, not from the findings. The old query started at
+    `audit_findings.status='accepted'`, which meant a finding whose status had
+    been rewritten by a later audit vanished from Commit while its approved
+    plan sat in the database — Review saying "waiting for Commit" and Commit
+    showing nothing was the same disagreement seen from the other side.
+
+    `plans.audit_finding_id` is the link written when the correction was
+    approved, and an approved plan is the thing that has to be committed, so it
+    is the right place to start.
+    """
+    placeholders = ",".join("?" * len(ACTIVE_PLAN_STATUSES))
     return list(
         conn.execute(
-            """
+            f"""
             SELECT f.*, p.id AS plan_id, p.status AS plan_status,
+                   p.approved_at AS approved_at,
                    (SELECT COUNT(*) FROM plan_ops WHERE plan_id=p.id) AS op_count
-            FROM audit_findings f
-            JOIN plans p ON p.id = f.plan_id
-            WHERE f.status='accepted' AND p.status='approved'
+            FROM plans p
+            JOIN audit_findings f ON f.id = p.audit_finding_id
+            WHERE p.status IN ({placeholders})
             ORDER BY f.relpath
-            """
+            """,  # noqa: S608 — placeholders are a module constant, never input
+            ACTIVE_PLAN_STATUSES,
         )
     )
 

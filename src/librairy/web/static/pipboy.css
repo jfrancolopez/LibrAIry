@@ -2519,6 +2519,29 @@ summary.timeline-head::-webkit-details-marker { display: none; }
 .badge-status-dismissed,
 .badge-status-not-on-disk { color: var(--text-dim); border-color: var(--border); }
 .badge-status-corrected { color: var(--ok, var(--text-dim)); }
+/* An approval that can no longer run is the one status on this page that costs
+   something to ignore: the files are not where the approval says they are. */
+.badge-status-approval-outdated { color: var(--warn, var(--text)); border-color: var(--warn, var(--border)); }
+.badge-status-applying { color: var(--audit); border-color: var(--audit); }
+
+/* Said where the decision is, not in a banner at the top of the page. */
+.notice-warn {
+  margin: var(--space-2) 0;
+  padding: var(--space-2);
+  border-left: 3px solid var(--warn, var(--border));
+  color: var(--text);
+  font-size: var(--text-sm);
+  max-width: 70ch;
+}
+/* The album, above the numbers about it. */
+.commit-subject,
+.commit-subject-line {
+  margin: var(--space-1) 0 var(--space-2);
+  font-size: var(--text-lg, 1.05em);
+  font-weight: 600;
+  word-break: break-word;
+}
+.commit-subject-line { color: var(--text-dim); font-weight: 400; }
 .badge-audit { color: var(--audit); border-color: var(--audit); letter-spacing: 0.08em; }
 
 /* What the row is, in a sentence. Deliberately the same quiet treatment as a

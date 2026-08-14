@@ -276,7 +276,10 @@ def test_commit_separates_new_files_from_library_corrections(tmp_path: Path) -> 
     body = client.get("/commit").text
 
     assert "Library corrections" in body
-    assert "EXISTING LIBRARY" in body or "LIBRARY AUDIT" in body
+    # The badge says what state the correction is in, not merely where it came
+    # from. "LIBRARY AUDIT" read identically whether it was waiting for you,
+    # already running, or unable to run at all.
+    assert "Waiting for Commit" in body
     assert "library correction" in body
     assert "you already own" in body
 

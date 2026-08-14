@@ -22,11 +22,23 @@
   {% set moved = done + renamed %}
   {% set total = moved + changed + missing + failed + pending %}
 
+  {% if subject %}<p class="commit-subject-line">{{ subject }}</p>{% endif %}
+
+  {# A correction is all-or-nothing: if any source moved on since approval the
+     executor blocks the whole group before touching anything. That shape —
+     nothing moved, nothing pending, everything skipped — is the only thing
+     this branch claims, and it is exactly what the executor guarantees. #}
+  {% set stopped = subject and moved == 0 and pending == 0 and (changed or missing) %}
+
   {% if plan.status in ('done', 'failed') %}
     {# No smooth bar and no invented percentage — counts and a stage, because
        those are the numbers that exist. #}
     <p class="commit-headline">
-      {% if failed or changed or missing %}
+      {% if stopped %}
+        <strong>Correction stopped.</strong>
+        {{ 'A source file changed after approval.' if changed else 'A source file is no longer on disk.' }}
+        No files were moved.
+      {% elif failed or changed or missing %}
         <strong>{{ moved }} of {{ total }} moved.</strong>
       {% else %}
         <strong>{{ moved }} file{{ '' if moved == 1 else 's' }} moved.</strong>
@@ -35,7 +47,7 @@
     </p>
   {% else %}
     <p class="commit-headline">
-      <strong>{{ moved }} of {{ total }} complete</strong>
+      <strong>{{ moved }} of {{ total }} {{ 'files moved' if subject else 'complete' }}</strong>
       <span class="muted">— copied and verified by hash, one at a time.</span>
     </p>
   {% endif %}

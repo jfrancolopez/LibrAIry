@@ -168,7 +168,11 @@ def _check_finding(
                         ids,
                     )
                 )
-    elif status == "accepted":
+    elif status == "accepted" and not _finished_plan(conn, row["plan_id"]):
+        # A finished plan behind an `accepted` finding is the same row seen
+        # from the other end, and `_orphan_plans` reports it with the outcome
+        # the executor already recorded. Saying both would be one problem
+        # described twice, with two different repairs offered for it.
         issues.append(
             Issue(
                 ACCEPTED_WITHOUT_PLAN,
@@ -204,6 +208,13 @@ def _accepted_detail(conn: sqlite3.Connection, row: sqlite3.Row) -> str:
         "the finding is still marked approved, but its plan has finished "
         f"({plan['status']})"
     )
+
+
+def _finished_plan(conn: sqlite3.Connection, plan_id: str | None) -> bool:
+    if not plan_id:
+        return False
+    row = conn.execute("SELECT status FROM plans WHERE id=?", (plan_id,)).fetchone()
+    return row is not None and row["status"] in {"done", "failed"}
 
 
 def _plan_exists(conn: sqlite3.Connection, plan_id: str) -> bool:

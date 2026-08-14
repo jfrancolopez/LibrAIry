@@ -1256,7 +1256,7 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             request,
             "commit.html",
             {
-                **commit_overview(conn),
+                **commit_overview(conn, settings),
                 "title": "Commit",
                 "csrf_token": request.state.session["csrf_token"],
             },
