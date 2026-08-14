@@ -293,6 +293,16 @@ def says_nothing(stem: str) -> bool:
     return True
 
 
+def named_with_vision(clean_name: str, answer: VisionResult) -> str:
+    """The shared naming policy, under a name other modules may call.
+
+    Video vision uses this and does not get its own sanitizer. Two ways of
+    turning model words into a filename would drift, and the day they disagree
+    is the day a photo and the clip beside it are named by different rules.
+    """
+    return _named(clean_name, answer)
+
+
 def _named(clean_name: str, answer: VisionResult) -> str:
     """`clean_name` with the model's words appended, if it needs them.
 
@@ -325,14 +335,28 @@ def _named(clean_name: str, answer: VisionResult) -> str:
 
 
 def save_vision(
-    conn: sqlite3.Connection, item: Item, answer: VisionResult, *, provider: str, model: str
+    conn: sqlite3.Connection,
+    item: Item,
+    answer: VisionResult,
+    *,
+    provider: str,
+    model: str,
+    strategy: str = "image",
 ) -> None:
+    """Record what a model saw, and how it was shown it.
+
+    `strategy` distinguishes a photo the model was given directly from a video
+    it was never given at all — one already-rendered frame, or three frames as
+    a single sheet. It carries a version, so changing which frames are sent
+    correctly invalidates every answer produced by the old strategy instead of
+    silently reusing it.
+    """
     conn.execute(
         """
         INSERT OR REPLACE INTO vision_results(
           item_id, fingerprint, provider, model, category, caption,
-          subjects, tags, name_tokens, visible_text, confidence, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          subjects, tags, name_tokens, visible_text, confidence, created_at, strategy
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             item.id,
@@ -347,12 +371,17 @@ def save_vision(
             answer.visible_text,
             answer.confidence,
             utc_now(),
+            strategy,
         ),
     )
 
 
 def stored_vision(
-    conn: sqlite3.Connection, item_id: int, *, fingerprint: str | None = None
+    conn: sqlite3.Connection,
+    item_id: int,
+    *,
+    fingerprint: str | None = None,
+    strategy: str | None = None,
 ) -> StoredVision | None:
     """What was recorded for this item, if it still describes the same bytes.
 
@@ -360,13 +389,27 @@ def stored_vision(
     has been edited since is a different picture and gets looked at again.
     Leaving it out is the read Review and search do, where the question is
     simply "what does the record say about this item?".
+
+    `strategy` is the same check one level up, for videos. An answer read off a
+    single thumbnail is not the answer three frames would have given, so asking
+    for `contact-sheet-v1` must not be satisfied by a `thumbnail-v1` row.
     """
     row = conn.execute("SELECT * FROM vision_results WHERE item_id=?", (item_id,)).fetchone()
     if row is None:
         return None
     if fingerprint is not None and row["fingerprint"] != (fingerprint or ""):
         return None
+    if strategy is not None and _column(row, "strategy", "image") != strategy:
+        return None
     return _from_row(row)
+
+
+def _column(row: sqlite3.Row, name: str, default: str) -> str:
+    try:
+        value = row[name]
+    except (IndexError, KeyError):
+        return default
+    return value if value is not None else default
 
 
 def _from_row(row: sqlite3.Row) -> StoredVision:

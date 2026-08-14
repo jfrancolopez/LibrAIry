@@ -14,6 +14,7 @@ from librairy.classify.heuristics import classify_path
 from librairy.classify.images import enrich_with_vision
 from librairy.classify.music import AUDIO_EXTS, classify_music
 from librairy.classify.video import VIDEO_EXTS, classify_video
+from librairy.classify.video_vision import enrich_video
 from librairy.config import Settings
 from librairy.indexer import apply_library_pattern, pattern_key
 from librairy.lifecycle import transition_item
@@ -241,6 +242,13 @@ def _enriched(
     if sidecar_kind(item.relpath) is not None:
         return result
     result = enrich_with_vision(conn, settings, item, result, ai_state)
+    # A personal video gets the same kind of help, from images — the photo
+    # beside it, or a frame that already exists, or three frames as one sheet.
+    # Never the video itself; see `video_vision`. It contributes words and a
+    # filename, and it is not allowed to decide a category: a frame showing a
+    # performer is equally consistent with a family video, a concert bootleg
+    # and a DJ music video, and only one of those has an architecture.
+    result = enrich_video(conn, settings, item, result, ai_state)
     return apply_ai_if_needed(conn, settings, item, result, ai_state)
 
 

@@ -9,7 +9,7 @@ from pathlib import Path
 from librairy.config import Settings
 
 LOGGER = logging.getLogger(__name__)
-SCHEMA_VERSION = 21
+SCHEMA_VERSION = 22
 
 
 class DatabaseVersionError(RuntimeError):
@@ -548,6 +548,19 @@ CREATE UNIQUE INDEX idx_optimization_jobs_live
 """
 
 
+MIGRATION_022 = """
+-- How a vision answer was obtained, so a video's answer and a photo's answer
+-- can live in one table without pretending to be the same kind of thing.
+--
+-- `image` is a picture the model was shown directly. A video is never shown to
+-- a model at all: `thumbnail` means one already-rendered frame, and
+-- `contact-sheet` means three frames stacked into a single JPEG. The version
+-- suffix is part of the value — `contact-sheet-v1` — because changing which
+-- frames are sent can change the answer, and a cached answer from the old
+-- strategy must not be reused under the new one.
+ALTER TABLE vision_results ADD COLUMN strategy TEXT NOT NULL DEFAULT 'image';
+"""
+
 MIGRATIONS = {
     1: MIGRATION_001,
     2: MIGRATION_002,
@@ -570,6 +583,7 @@ MIGRATIONS = {
     19: MIGRATION_019,
     20: MIGRATION_020,
     21: MIGRATION_021,
+    22: MIGRATION_022,
 }
 
 
