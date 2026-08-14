@@ -126,7 +126,7 @@ def test_the_conversational_wording_is_gone(tmp_path: Path) -> None:
 def test_no_change_is_the_wording(tmp_path: Path) -> None:
     client, *_ = scene(tmp_path, correction(), observation())
 
-    assert ">No change</button>" in rows(client.get("/review").text)
+    assert ">Dismiss suggestion</button>" in rows(client.get("/review").text)
 
 
 def test_stored_status_values_never_reach_a_control(tmp_path: Path) -> None:
@@ -354,7 +354,7 @@ def test_the_menu_holds_no_dead_controls(tmp_path: Path) -> None:
     section = rows(client.get("/review").text)
 
     assert "Other options" not in section
-    assert "Accept correction" not in section
+    assert "Approve change" not in section
 
 
 # --- selection ----------------------------------------------------------------
@@ -388,7 +388,7 @@ def test_the_audit_checkbox_says_what_it_selects(tmp_path: Path) -> None:
 
     section = rows(client.get("/review").text)
 
-    assert f'aria-label="Select library audit finding for {TRACK}"' in section
+    assert 'aria-label="Select 05 - Song.flac"' in section
 
 
 def test_the_inbox_bulk_endpoint_cannot_name_a_finding(tmp_path: Path) -> None:
@@ -467,7 +467,7 @@ def test_bulk_no_change_resolves_every_selected_finding(tmp_path: Path) -> None:
 
     result = apply_audit_bulk(conn, settings, "keep", ids)
 
-    assert result == "Marked 2 as no change."
+    assert result == "Dismissed 2. They stay in Dismissed and can be restored."
     statuses = {row["status"] for row in conn.execute("SELECT status FROM audit_findings")}
     assert statuses == {"kept"}
 
@@ -503,8 +503,9 @@ def test_bulk_accept_only_touches_the_eligible_ones(tmp_path: Path) -> None:
 
     result = apply_audit_bulk(conn, settings, "accept", ids)
 
-    assert "Accepted 1 of 2" in result
-    assert "observation" in result
+    assert "Selected: 2" in result
+    assert "Approved: 1" in result
+    assert "Observation only: 1" in result
     assert result.endswith(".")
     assert conn.execute("SELECT COUNT(*) FROM plans").fetchone()[0] == 1
 
@@ -518,9 +519,9 @@ def test_a_mixed_selection_is_explained_rather_than_silently_trimmed(
 
     result = apply_audit_bulk(conn, settings, "accept", list(findings_by_path(conn).values()))
 
-    assert "Nothing was accepted" in result
-    assert "re-analysis" in result
-    assert "observation" in result
+    assert "Nothing was approved" in result
+    assert "Changed since the audit" in result
+    assert "Observation only: 1" in result
     assert conn.execute("SELECT COUNT(*) FROM plans").fetchone()[0] == 0
     assert conn.execute(
         "SELECT status FROM audit_findings WHERE id=?", (stale,)
@@ -532,7 +533,7 @@ def test_the_toolbar_counts_eligibility_before_the_button_is_pressed() -> None:
 
     assert "refreshEligibility" in script
     assert "eligible" in script
-    assert "cannot be accepted" in script
+    assert "cannot be approved" in script
 
 
 def test_there_is_no_bulk_approve_by_threshold(tmp_path: Path) -> None:
@@ -568,7 +569,7 @@ def test_the_bulk_result_is_shown_on_the_page(tmp_path: Path) -> None:
     )
 
     assert response.status_code == 200
-    assert "Marked 1 as no change." in response.text
+    assert "Dismissed 1." in response.text
 
 
 # --- grouping and affected files ----------------------------------------------
@@ -640,8 +641,8 @@ def test_the_state_is_never_carried_by_colour_alone(tmp_path: Path) -> None:
 
     section = rows(client.get("/review").text)
 
-    assert "Needs re-analysis" in section
-    assert "The file changed after this audit was created." in section
+    assert "Needs analysis again" in section
+    assert "The file changed after this was found" in section
 
 
 def test_the_row_is_not_a_clickable_container(tmp_path: Path) -> None:
@@ -730,9 +731,9 @@ def test_every_refusal_reason_is_reported_not_just_the_first(tmp_path: Path) -> 
 
     result = apply_audit_bulk(conn, settings, "accept", list(findings_by_path(conn).values()))
 
-    assert "already waiting" in result
-    assert "re-analysis" in result
-    assert "observation" in result
+    assert "Already waiting for Commit: 1" in result
+    assert "Changed since the audit" in result
+    assert "Observation only: 1" in result
 
 
 # --- one visual grammar -------------------------------------------------------
@@ -780,7 +781,7 @@ def test_the_actions_use_the_inbox_button_hierarchy(tmp_path: Path) -> None:
 
     section = rows(client.get("/review").text)
 
-    assert 'class="btn-primary">Accept correction' in section
+    assert 'class="btn-primary">Approve change' in section
     assert 'class="btn-ghost"' in section
     assert "action-gap" in section
 

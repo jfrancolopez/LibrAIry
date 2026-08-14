@@ -5,14 +5,13 @@ from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from librairy.audit import FOLDER_KINDS, KINDS, open_findings
+from librairy.audit import FOLDER_KINDS, KINDS, findings_with_status
 from librairy.audit_job import progress as audit_progress
 from librairy.classify.images import vision_disagrees, vision_for_items
 from librairy.config import Settings
 from librairy.corrections import (
     CURRENT,
     MISSING,
-    STALE,
     STATE_LABEL,
     CorrectionRefused,
     describe_state,
@@ -42,6 +41,19 @@ from librairy.review_undo import record as record_undo
 from librairy.review_undo import snapshot_proposals
 from librairy.search import sync_search_item
 from librairy.taxonomy import CATEGORIES, render_destination
+from librairy.web.actionability import (
+    EXPLANATION as ACTION_NOTE,
+)
+from librairy.web.actionability import (
+    LABEL as ACTION_LABEL,
+)
+from librairy.web.actionability import (
+    NEEDS_ANALYSIS,
+    READY,
+    actionability,
+    can_approve,
+    summarize,
+)
 from librairy.web.evidence import (
     confidence_caption,
     confidence_segments,
@@ -154,8 +166,7 @@ def review_data(
         "confident": CONFIDENT,
         "confident_ready": _confident_count(conn, filters),
         # A separate list for a separate question. See audit_view.
-        "audit_groups": audit_groups,
-        "audit_open": sum(len(group["findings"]) for group in audit_groups),
+        **audit_groups,
         # None until an audit has ever been asked for, which is what lets the
         # empty state distinguish "nothing is wrong" from "nobody has looked".
         "progress": audit_progress(conn),
@@ -831,10 +842,8 @@ def _why_summary(evidence: str | None) -> str:
     return " · ".join(view.text for view in views[:2])
 
 
-def audit_view(
-    conn: sqlite3.Connection, settings: Settings | None = None
-) -> list[dict[str, object]]:
-    """Library Audit findings, grouped by folder, for the Review page.
+def audit_view(conn: sqlite3.Connection, settings: Settings | None = None) -> dict[str, object]:
+    """Library Audit findings, split by what each one is waiting for.
 
     Kept in its own table and rendered outside the inbox form on purpose. The
     inbox bulk actions ("Approve all confident") select checkboxes inside that
@@ -842,15 +851,37 @@ def audit_view(
     button meant for files arriving. Structure enforces it, not a filter
     somebody could forget.
 
+    Three lists, not one. An approved correction that keeps sitting among the
+    undecided ones looks exactly like a correction nobody approved — which is
+    what "I approved it and nothing happened" turned out to mean. And a
+    dismissed suggestion has to remain reachable, or dismissing is a decision
+    you cannot take back.
+
     Every row also carries whether it is still true. A finding is a statement
     about a file at a moment, and the file can be re-tagged or replaced between
-    the audit and the button — so the row says *Needs re-analysis* rather than
-    offering a correction that would move something nobody looked at. Reads
-    only: rendering this page must not write, which is what keeps a page load
-    from competing with the worker for SQLite's one writer lock.
+    the audit and the button — so the row says *Needs analysis again* rather
+    than offering a correction that would move something nobody looked at.
+    Reads only: rendering this page must not write, which is what keeps a page
+    load from competing with the worker for SQLite's one writer lock.
     """
+    open_rows = findings_with_status(conn, ("open",))
+    waiting_rows = findings_with_status(conn, ("accepted",))
+    dismissed_rows = findings_with_status(conn, ("kept",))
+    groups = _subject_groups(conn, settings, open_rows)
+    return {
+        "audit_groups": groups,
+        "audit_open": sum(int(group["count"]) for group in groups),
+        "audit_waiting": [_audit_row(conn, settings, row) for row in waiting_rows],
+        "audit_dismissed": [_audit_row(conn, settings, row) for row in dismissed_rows],
+    }
+
+
+def _subject_groups(
+    conn: sqlite3.Connection, settings: Settings | None, rows: list[sqlite3.Row]
+) -> list[dict[str, object]]:
+    """One group per folder, as before. Subject consolidation lands separately."""
     groups: dict[str, list[dict[str, object]]] = {}
-    for row in open_findings(conn, include_accepted=True):
+    for row in rows:
         folder = row["relpath"].rpartition("/")[0] or row["relpath"]
         groups.setdefault(folder, []).append(_audit_row(conn, settings, row))
     return [
@@ -859,7 +890,7 @@ def audit_view(
     ]
 
 
-AUDIT_BULK_ACTIONS = ("accept", "keep", "reaudit")
+AUDIT_BULK_ACTIONS = ("accept", "keep", "reaudit", "restore")
 
 
 def apply_audit_bulk(
@@ -875,10 +906,11 @@ def apply_audit_bulk(
     resolve — and the caller's field is named `finding_id`, so one cannot be
     passed by accident either.
 
-    Returns a sentence for the page, because "accepted 1 of 3" is the whole
-    point of allowing a mixed selection at all.
+    Returns a sentence for the page. Never "2 item(s) updated": on a page that
+    moves files somebody already owns, the ones that were *not* acted on are
+    the interesting half, and each of them gets counted by name.
     """
-    from librairy.audit import audit_library, keep_as_is, sanitize_scope
+    from librairy.audit import audit_library, keep_as_is, restore_suggestion, sanitize_scope
     from librairy.corrections import CorrectionRefused, accept_correction
 
     if action not in AUDIT_BULK_ACTIONS:
@@ -895,9 +927,23 @@ def apply_audit_bulk(
         return "Nothing was selected."
 
     if action == "keep":
+        # Only an undecided row can be dismissed. Dismissing one that is
+        # waiting for Commit would leave an approved plan with no row admitting
+        # to it, and dismissing one already applied would claim a decision
+        # nobody made.
+        kept = 0
         for row in rows:
+            if row["status"] != "open":
+                continue
             keep_as_is(conn, row["id"])
-        return f"Marked {len(rows)} as no change."
+            kept += 1
+        return _plain(
+            len(rows), kept, "Dismissed", "They stay in Dismissed and can be restored."
+        )
+
+    if action == "restore":
+        restored = sum(1 for row in rows if restore_suggestion(conn, row["id"]))
+        return _plain(len(rows), restored, "Restored", "They are back in Library Review.")
 
     if action == "reaudit":
         # One audit per distinct folder, not one per row: re-auditing the same
@@ -909,56 +955,30 @@ def apply_audit_bulk(
             )
         return f"Looked again at {len(folders)} folder(s)."
 
-    accepted, refused = 0, []
+    # Approval. Every row is counted under what it actually is, so a selection
+    # of one correction and two observations reports three outcomes rather than
+    # one number that flatters the result.
+    counts: dict[str, int] = {}
     for row in rows:
         try:
             accept_correction(conn, settings, row["id"])
-        except CorrectionRefused as exc:
-            refused.append(str(exc))
+        except CorrectionRefused:
+            state = CURRENT if settings is None else finding_state(settings, row)
+            counts_key = actionability(row, state, executable=False)
+            counts[counts_key] = counts.get(counts_key, 0) + 1
         else:
-            accepted += 1
-    if not refused:
-        return f"Accepted {accepted} correction(s). Nothing has moved yet — commit to apply."
-    # Every distinct reason, not just the first. "4 could not be accepted:
-    # already waiting for Commit" is actively misleading when two of them were
-    # actually observations and one had changed on disk.
-    reasons = "; ".join(dict.fromkeys(refused))
-    if not accepted:
-        return f"Nothing was accepted. {reasons}."
-    return f"Accepted {accepted} of {len(rows)}. {len(refused)} could not be: {reasons}."
+            counts[READY] = counts.get(READY, 0) + 1
+    summary = summarize(counts, len(rows))
+    if counts.get(READY):
+        return f"{summary}. Approved changes are waiting for Commit — nothing has moved yet."
+    return f"{summary}. Nothing was approved."
 
 
-def _corrigible(row: sqlite3.Row) -> bool:
-    """Could this kind of finding ever produce a move, staleness aside?"""
-    from librairy.audit import EXECUTABLE_KINDS
-
-    return row["kind"] in EXECUTABLE_KINDS and bool(row["dest_relpath"])
-
-
-def _audit_status(
-    row: sqlite3.Row, state: str, executable: bool, stale_matters: bool
-) -> tuple[str, str]:
-    """The chip on the row, in words a person would use.
-
-    Never the stored status value. `open`, `accepted` and `kept` are database
-    states; "Waiting for Commit" is what someone is actually looking at.
-
-    Staleness is only mentioned where it changes what you can do. An unindexed
-    file has no recorded hash, so it can never be *proved* unchanged — but
-    "Needs re-analysis" on an observation that is perfectly accurate would be
-    a warning about nothing, followed by a button that re-finds the same thing.
-    """
-    if row["status"] == "accepted":
-        return "waiting", "Waiting for Commit"
-    if row["status"] == "corrected":
-        return "corrected", "Corrected"
-    if row["status"] == "kept":
-        return "kept", "No change"
-    if state == MISSING:
-        return "missing", "Not on disk"
-    if state == STALE and stale_matters:
-        return "stale", "Needs re-analysis"
-    return ("correction", "Correction") if executable else ("observation", "Observation")
+def _plain(selected: int, changed: int, verb: str, note: str) -> str:
+    """A bulk sentence for actions that cannot partially refuse for many reasons."""
+    if changed == selected:
+        return f"{verb} {changed}. {note}"
+    return f"Selected: {selected} · {verb}: {changed} · Unchanged: {selected - changed}. {note}"
 
 
 def _audit_title(relpath: str, kind: str) -> str:
@@ -1008,11 +1028,15 @@ def _audit_row(
             for op in plan_files(conn, row["plan_id"])
         ]
     views = humanize_evidence(row["evidence"]) if row["evidence"] else []
+    # One value, and every control on the row derives from it. See
+    # `web/actionability.py` for why inferring this from button presence was
+    # the actual cause of "I approved it and nothing happened".
+    status_kind = actionability(row, state, executable=executable, blocked=blocked)
+    status_label = ACTION_LABEL[status_kind]
     # A stale observation is still a true observation. Only a finding that
     # could otherwise move a file has anything to gain from being looked at
-    # again, so only that one says so and only that one offers Re-audit.
-    stale_matters = state == STALE and _corrigible(row)
-    status_kind, status_label = _audit_status(row, state, executable, stale_matters)
+    # again, so only that one says so and only that one offers Analyse again.
+    stale_matters = status_kind == NEEDS_ANALYSIS
     # Preview resolves the item, which carries its *current* root and relpath —
     # so it can only ever show the file where it is now, never the destination
     # being suggested for it. A file that is not there gets no control at all.
@@ -1044,6 +1068,14 @@ def _audit_row(
         "offer_reaudit": stale_matters,
         "status_kind": status_kind,
         "status_label": status_label,
+        # Said on the row, not implied by a missing button. "Observation only —
+        # no automatic correction is available" is a fact about the finding;
+        # an absent control is a fact about the template.
+        "status_note": ACTION_NOTE[status_kind],
+        # The only gate on selection and on the Approve control. A row that is
+        # not approvable renders a disabled checkbox, so it can never be part
+        # of a selection whose button then quietly does nothing.
+        "can_approve": can_approve(status_kind),
         "executable": executable,
         "accepted": accepted,
         "blocked": blocked,

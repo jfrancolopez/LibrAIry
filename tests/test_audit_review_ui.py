@@ -197,7 +197,11 @@ def test_keep_as_is_removes_it_from_the_open_list(tmp_path: Path) -> None:
 
     response = post(client, f"/review/audit/{finding_id}/keep")
 
-    assert response.status_code == 303
+    # Rendered, not redirected: a dismissal that produces no visible trace is
+    # indistinguishable from a deletion, and people press it accordingly.
+    assert response.status_code == 200
+    assert "Suggestion dismissed" in response.text
+    assert "can be restored" in response.text
     row = conn.execute(
         "SELECT status FROM audit_findings WHERE id=?", (finding_id,)
     ).fetchone()

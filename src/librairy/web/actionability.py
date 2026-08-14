@@ -1,0 +1,163 @@
+"""What a person can actually do with one Library Review row.
+
+This exists because actionability used to be *inferred* rather than stated.
+The template asked `finding.executable` in three places and drew a button in
+one of them; the checkbox beside every row was always enabled; and the toolbar
+disabled its own button when nothing eligible was selected. Put together, a
+folder-naming observation looked exactly like a correction right up to the
+moment you pressed a button that could not be pressed — and pressing a disabled
+button produces no request, no message and no change. "I approved it and
+nothing happened" was a completely accurate description of the software.
+
+So the row now carries one value that says what it is, and every control on it
+is derived from that value:
+
+    READY           a correction LibrAIry can execute, right now
+    BLOCKED         a correction in principle, refused today, and why
+    OBSERVATION     nothing to execute — no move answers this
+    NEEDS_ANALYSIS  the file changed after the audit
+    NOT_ON_DISK     the file is gone
+    WAITING         approved, waiting for Commit
+    CORRECTED       approved and executed
+    DISMISSED       the owner decided against it; reversible
+
+Only READY is approvable. That is asserted here, once, rather than being a
+property of which template branch happened to render — the same request can
+arrive from a page left open since yesterday, from a second tab, or from curl,
+and `accept_correction` refuses all three. This module is what stops the UI
+from *offering* it.
+"""
+
+from __future__ import annotations
+
+import sqlite3
+
+from librairy.corrections import MISSING, STALE
+
+READY = "ready"
+BLOCKED = "blocked"
+OBSERVATION = "observation"
+NEEDS_ANALYSIS = "needs-analysis"
+NOT_ON_DISK = "not-on-disk"
+WAITING = "waiting"
+CORRECTED = "corrected"
+DISMISSED = "dismissed"
+
+# The single source of "may this be approved". One member today; a set rather
+# than an equality test because the next state added has to make the decision
+# deliberately instead of inheriting it.
+APPROVABLE = frozenset({READY})
+
+# The chip on the row. Never the stored status value: `open`, `accepted` and
+# `kept` are database states, and "Waiting for Commit" is what a person is
+# actually looking at.
+LABEL = {
+    READY: "Ready to approve",
+    BLOCKED: "Cannot be applied",
+    OBSERVATION: "Observation",
+    NEEDS_ANALYSIS: "Needs analysis again",
+    NOT_ON_DISK: "Not on disk",
+    WAITING: "Waiting for Commit",
+    CORRECTED: "Corrected",
+    DISMISSED: "Dismissed",
+}
+
+# Said on the row itself, not hidden behind the absence of a button. A row that
+# simply lacks an Approve control leaves the reader to work out whether that is
+# a rule or a bug.
+EXPLANATION = {
+    READY: "",
+    BLOCKED: "",
+    OBSERVATION: "No automatic correction is available for this.",
+    NEEDS_ANALYSIS: "The file changed after this was found, so the suggestion "
+    "no longer describes it.",
+    NOT_ON_DISK: "The file is no longer where it was found.",
+    WAITING: "Approved. Nothing has moved yet.",
+    CORRECTED: "This was approved and applied.",
+    DISMISSED: "You decided against this. It can be restored.",
+}
+
+# How a bulk result names each outcome, in the order a summary reads best:
+# what happened first, then what did not, then why not.
+BULK_ORDER = (READY, WAITING, CORRECTED, DISMISSED, BLOCKED, NEEDS_ANALYSIS, NOT_ON_DISK,
+              OBSERVATION)
+
+
+def actionability(
+    row: sqlite3.Row, state: str, *, executable: bool, blocked: str = ""
+) -> str:
+    """The one value every control on the row is derived from.
+
+    Order matters, twice.
+
+    A decision the owner already made outranks anything the filesystem has to
+    say: telling someone their dismissed suggestion "needs analysis again"
+    invites them to re-open a question they closed.
+
+    And what a finding *is* outranks what has happened to the file since. A
+    kind that can never produce a move is an observation whether or not its
+    folder is still there — "not on disk" would suggest that finding the file
+    again would make it approvable, and it would not. The row still says the
+    file is gone; it just does not say it instead of the truth.
+    """
+    status = row["status"]
+    if status == "accepted":
+        return WAITING
+    if status == "corrected":
+        return CORRECTED
+    if status == "kept":
+        return DISMISSED
+    if not _corrigible(row):
+        return OBSERVATION
+    if state == MISSING:
+        return NOT_ON_DISK
+    if blocked:
+        return BLOCKED
+    if executable:
+        return READY
+    # Staleness is only worth reporting where it changes the answer. "Needs
+    # analysis again" on an observation that is perfectly accurate is a warning
+    # about nothing, followed by a button that re-finds the same thing.
+    if state == STALE:
+        return NEEDS_ANALYSIS
+    return OBSERVATION
+
+
+def _corrigible(row: sqlite3.Row) -> bool:
+    """Could this kind of finding ever produce a move, staleness aside?"""
+    from librairy.audit import EXECUTABLE_KINDS
+
+    return row["kind"] in EXECUTABLE_KINDS and bool(row["dest_relpath"])
+
+
+def can_approve(value: str) -> bool:
+    return value in APPROVABLE
+
+
+def summarize(counts: dict[str, int], selected: int) -> str:
+    """What a bulk action actually did, per outcome.
+
+    "2 item(s) updated" is the sentence this replaces. It is true and useless:
+    on a page that moves files somebody already owns, the two that were skipped
+    are the interesting half.
+    """
+    lines = [f"Selected: {selected}"]
+    for key in BULK_ORDER:
+        count = counts.get(key, 0)
+        if count:
+            lines.append(f"{OUTCOME_TEXT[key]}: {count}")
+    return " · ".join(lines)
+
+
+# What a row *became*, or the reason it could not. Phrased as results rather
+# than states, because this sentence is read straight after pressing a button.
+OUTCOME_TEXT = {
+    READY: "Approved",
+    WAITING: "Already waiting for Commit",
+    CORRECTED: "Already applied",
+    DISMISSED: "Dismissed",
+    BLOCKED: "Cannot be applied",
+    NEEDS_ANALYSIS: "Changed since the audit",
+    NOT_ON_DISK: "No longer on disk",
+    OBSERVATION: "Observation only",
+}

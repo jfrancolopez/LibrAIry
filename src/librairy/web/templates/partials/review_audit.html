@@ -16,14 +16,22 @@
    Still deliberately outside the inbox <form>. The bulk toolbar there acts on
    checkboxes inside it, so nothing here can be swept up by "Approve all
    confident" — structure, not a filter someone has to remember. #}
-{% macro audit_row(finding, csrf_token) %}
+{% macro audit_row(finding, csrf_token, scope='open') %}
 <article id="finding-{{ finding.id }}" class="row-shell audit-row audit-is-{{ finding.status_kind }}">
   <label class="row-pick">
-    {# Eligible means "accepting this would work", so the toolbar's count
-       matches what its button will actually do. #}
+    {# A row that cannot be approved cannot be selected for approval. This used
+       to be a `data-` hint on an otherwise ordinary checkbox, and the toolbar
+       disabled its own button when nothing eligible was selected — so ticking
+       an observation and pressing Approve produced no request, no message and
+       no change at all. Nothing on the row said why.
+
+       The dismissed list uses the same macro with a different scope, so its
+       rows stay selectable for Restore. #}
+    {% set selectable = finding.can_approve or (scope == 'dismissed') %}
     <input form="audit-actions" type="checkbox" name="finding_id" value="{{ finding.id }}"
-           {% if finding.executable and not finding.accepted %}data-audit-eligible="1"{% endif %}
-           aria-label="Select library audit finding for {{ finding.current }}">
+           {% if not selectable %}disabled{% endif %}
+           {% if finding.can_approve %}data-audit-eligible="1"{% endif %}
+           aria-label="Select {{ finding.title }}{% if not selectable %} — {{ finding.status_label }}, cannot be approved{% endif %}">
   </label>
 
   <div class="row-body">
@@ -85,39 +93,61 @@
       </p>
 
       <div class="row-actions">
-        {% if finding.accepted %}
+        {% if scope == 'waiting' %}
           <span class="audit-accepted">Approved · nothing has moved yet</span>
-          <a class="btn btn-ghost" href="/commit">View Commit</a>
+          <a class="btn btn-primary" href="/commit">Go to Commit</a>
+          {# Not "Undo". Nothing has happened, so there is nothing to reverse —
+             this takes the approval back and returns the row to Review. The
+             two words are kept apart deliberately: `Undo` on this page would
+             teach people that Undo sometimes means "before" and sometimes
+             means "after". #}
+          <form method="post" action="/review/audit/{{ finding.id }}/unapprove">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button type="submit">Remove approval</button>
+          </form>
+        {% elif scope == 'dismissed' %}
+          <form method="post" action="/review/audit/{{ finding.id }}/restore">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button type="submit">Restore suggestion</button>
+          </form>
         {% else %}
-          {% if finding.executable %}
+          {% if finding.can_approve %}
           <form method="post" action="/review/audit/{{ finding.id }}/accept">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <button type="submit" class="btn-primary">Accept correction</button>
+            <button type="submit" class="btn-primary">Approve change</button>
           </form>
           {% elif finding.offer_reaudit %}
           <form method="post" action="/review/audit/{{ finding.id }}/reaudit">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <button type="submit">Re-audit</button>
+            <button type="submit">Analyse again</button>
           </form>
           {% endif %}
           {# Separate forms rather than one form with two buttons: nested forms
-             are invalid and the CSP forbids the inline JS that would avoid it. #}
+             are invalid and the CSP forbids the inline JS that would avoid it.
+
+             "Dismiss suggestion", not "No change". `No change` was ambiguous
+             between "leave the files alone" and "do nothing at all", and the
+             structural choices in Review details — Keep together, Organize
+             individually, Leave current layout — are the place where the first
+             meaning actually belongs. #}
           <form method="post" action="/review/audit/{{ finding.id }}/keep">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <button type="submit">No change</button>
+            <button type="submit">Dismiss suggestion</button>
           </form>
         {% endif %}
 
         <span class="action-gap"></span>
         {% if finding.can_preview %}
-        <button type="button" class="btn-ghost"
-          hx-get="/preview/items/{{ finding.item_id }}"
-          hx-target="#audit-preview-{{ finding.id }}"
-          hx-swap="innerHTML"
+        {# Toggles. See previews.js: the same button opens and closes, and
+           closing tears the media down rather than hiding it. #}
+        <button type="button" class="btn-ghost" data-preview-toggle
+          data-preview-url="/preview/items/{{ finding.item_id }}"
+          data-preview-target="audit-preview-{{ finding.id }}"
+          aria-expanded="false"
           title="The file as it is now, where it is now">Preview</button>
         {% endif %}
-        <button type="button" class="btn-ghost" data-panel-toggle="audit-why-{{ finding.id }}">Why</button>
-        {% set has_more = finding.browse_href or finding.item_id or (finding.executable and not finding.accepted) %}
+        <button type="button" class="btn-ghost" data-panel-toggle="audit-why-{{ finding.id }}">Evidence</button>
+        {% set has_more = finding.browse_href or finding.item_id or finding.can_approve %}
         {% if has_more %}
         <button type="button" class="btn-ghost btn-more" data-panel-toggle="audit-more-{{ finding.id }}"
                 aria-label="More actions for {{ finding.current }}" title="More actions">⋯</button>
@@ -125,10 +155,20 @@
       </div>
     </div>
 
+    {# What this row *is*, in a sentence, rather than left to be inferred from
+       which buttons happen to be drawn. An observation with no Approve control
+       and no explanation reads as a bug; saying "no automatic correction is
+       available" makes it a rule. #}
+    {% if finding.blocked %}
+    <p class="audit-actionability">{{ finding.blocked }}</p>
+    {% elif finding.status_note %}
+    <p class="audit-actionability">{{ finding.status_note }}</p>
+    {% endif %}
+    {# What the row *is* and what has happened to the file are two statements,
+       and an observation about a folder that has since been deleted deserves
+       both. #}
     {% if finding.show_stale %}
     <p class="audit-stale">{{ finding.state_detail }}</p>
-    {% elif finding.blocked %}
-    <p class="audit-stale">{{ finding.blocked }}</p>
     {% endif %}
 
     {# Only actions that can succeed. A `⋯` opening an empty panel is worse
@@ -142,10 +182,10 @@
       <a class="btn btn-ghost" href="/items/{{ finding.item_id }}">View details</a>
       <span class="muted">Everything LibrAIry has recorded about this file.</span>
       {% endif %}
-      {% if finding.executable and not finding.accepted %}
+      {% if finding.can_approve %}
       <form method="post" action="/review/audit/{{ finding.id }}/reaudit">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <button type="submit" class="btn-ghost">Re-audit</button>
+        <button type="submit" class="btn-ghost">Analyse again</button>
       </form>
       <span class="muted">Look at this folder again and record what is true now.</span>
       {% endif %}
@@ -342,12 +382,15 @@
       nothing changes unless you say so.
     </p>
     {% endif %}
+    {# Directly under the heading of the section the action happened in, so a
+       result cannot end up scrolled off a page that is mostly Inbox. #}
     {% if notice %}<p class="status ok audit-notice">{{ notice }}</p>{% endif %}
   </header>
 
   {% include "partials/audit_progress.html" %}
 
-  {% if not audit_groups %}
+  {% set has_audit = audit_groups or audit_waiting %}
+  {% if not has_audit %}
   {# Compact. An empty section should not be the biggest thing on the page.
      "No issues" is only true if an audit has actually run — before that the
      honest answer is that nobody has looked. #}
@@ -356,7 +399,8 @@
     {% else %}No audit has run yet. <a href="/browse">Audit your library</a> to see
     what LibrAIry makes of it.{% endif %}
   </p>
-  {% else %}
+  {% endif %}
+  {% if has_audit %}
 
   <form id="audit-actions" class="audit-toolbar" method="post" action="/review/audit/bulk">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -367,15 +411,34 @@
     </div>
     <div class="toolbar-group" data-audit-selection-only hidden>
       <button type="submit" name="action" value="accept" class="btn-primary"
-              data-audit-needs-eligible
-              hx-confirm="Accept the selected corrections? Nothing moves until you commit.">
-        Accept corrections</button>
-      <button type="submit" name="action" value="keep" data-audit-needs-selection>No change</button>
-      <button type="submit" name="action" value="reaudit" data-audit-needs-selection>Re-audit</button>
+              data-audit-needs-eligible>
+        Approve selected changes</button>
+      <button type="submit" name="action" value="keep" data-audit-needs-selection>Dismiss suggestions</button>
+      <button type="submit" name="action" value="reaudit" data-audit-needs-selection>Analyse again</button>
       <button type="button" class="btn-ghost audit-clear">Clear selection</button>
       <span class="muted" data-audit-eligibility></span>
     </div>
   </form>
+
+  {# Approved corrections leave the undecided list. Leaving them among the
+     open ones was the whole of "I approved it and nothing happened": the row
+     looked identical afterwards, so the only evidence anything had occurred
+     was a sentence at the top of a page the reader was no longer at. #}
+  {% if audit_waiting %}
+  <details class="review-group audit-group audit-waiting" open>
+    <summary>
+      <span class="audit-folder">Waiting for Commit</span>
+      <span class="muted">{{ audit_waiting|length }} approved</span>
+    </summary>
+    <p class="muted audit-group-note">
+      Approved and ready. Nothing has moved yet — <a href="/commit">Commit</a>
+      is where it happens.
+    </p>
+    <div class="audit-list">
+      {% for finding in audit_waiting %}{{ audit_row(finding, csrf_token, 'waiting') }}{% endfor %}
+    </div>
+  </details>
+  {% endif %}
 
   {% for group in audit_groups %}
     {% if group.count > 1 %}
@@ -396,5 +459,30 @@
     </div>
     {% endif %}
   {% endfor %}
+  {% endif %}
+
+  {# Dismissed is not deleted, and the difference has to be visible or it is
+     not a difference. Collapsed by default and last on the section, because
+     this is a record rather than a workload — but reachable, so that pressing
+     Dismiss is a decision someone can take back rather than a small act of
+     destruction they have to be sure about.
+
+     Not another navigation tab: it belongs to Library Review, it is only ever
+     read from here, and a top-level destination for "things I said no to"
+     would give a record the same weight as the work. #}
+  {% if audit_dismissed %}
+  <details class="review-group audit-group audit-dismissed" id="library-review-dismissed">
+    <summary>
+      <span class="audit-folder">Dismissed</span>
+      <span class="muted">{{ audit_dismissed|length }}</span>
+    </summary>
+    <p class="muted audit-group-note">
+      Suggestions you decided against. They stay out of the active list — and
+      out of the next identical audit — until you restore them.
+    </p>
+    <div class="audit-list">
+      {% for finding in audit_dismissed %}{{ audit_row(finding, csrf_token, 'dismissed') }}{% endfor %}
+    </div>
+  </details>
   {% endif %}
 </section>

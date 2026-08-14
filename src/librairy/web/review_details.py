@@ -256,11 +256,17 @@ def _s(count: int) -> str:
 
 # --- the three decisions -------------------------------------------------------
 #
-# `Keep together` and `No change` are the pair most easily confused, and they
-# are opposites. Keeping the compilation together *fixes* the twenty-seven
-# folder mess by consolidating it. No change *leaves* the twenty-seven folders
-# exactly as they are and stops asking about them. One is a correction and one
-# is a decision that there is nothing to correct.
+# `Keep together` and `Leave current layout` are the pair most easily confused,
+# and they are opposites. Keeping the compilation together *fixes* the
+# twenty-seven folder mess by consolidating it. Leaving the current layout
+# *keeps* the twenty-seven folders exactly as they are and stops asking about
+# them. One is a correction and one is a decision that there is nothing to
+# correct.
+#
+# These three are not `Dismiss suggestion` and must never be collapsed into it.
+# Elsewhere on the page, declining a suggestion means "I do not want this in my
+# active list". Here it is a structural choice about how a release is filed,
+# and the three options are three different libraries.
 
 DECISIONS = {
     "collection-recognized": ("keep", "no-change"),
@@ -280,8 +286,8 @@ DECISION_TEXT = {
         "each track using its own artist and album.",
     ),
     "no-change": (
-        "No change",
-        "Leave the current layout exactly as it is, and stop reporting this. "
+        "Leave current layout",
+        "Keep the current layout exactly as it is, and stop reporting this. "
         "Nothing moves.",
     ),
 }

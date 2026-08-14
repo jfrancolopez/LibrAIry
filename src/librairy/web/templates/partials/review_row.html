@@ -73,10 +73,10 @@
             hx-target="#preview-{{ proposal.id }}"
             hx-swap="innerHTML">Compare</button>
         {% else %}
-          <button type="button" class="btn-ghost"
-            hx-get="/preview/items/{{ proposal.item_id }}"
-            hx-target="#preview-{{ proposal.id }}"
-            hx-swap="innerHTML">Preview</button>
+          <button type="button" class="btn-ghost" data-preview-toggle
+            data-preview-url="/preview/items/{{ proposal.item_id }}"
+            data-preview-target="preview-{{ proposal.id }}"
+            aria-expanded="false">Preview</button>
         {% endif %}
         <button type="button" class="btn-ghost" data-panel-toggle="why-{{ proposal.id }}">Why</button>
 

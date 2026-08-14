@@ -1,8 +1,13 @@
-// Expand every preview on the page at once, and collapse them again.
+// Inline previews: one row at a time, or a whole page at once.
 //
-// Reviewing a page of proposals one Preview click at a time is the slow way to
-// answer "which of these is actually wrong". Delegated from the document so it
-// keeps working after htmx swaps the list.
+// Two things live here because they are the same thing seen twice. A Preview
+// button opens the panel under its row and closes it again; "Preview all" is
+// that same open, applied to every row that is closed. Splitting them meant
+// the row button was htmx and the bulk button was fetch, and they disagreed
+// about what "open" meant — which is how Preview came to be a control that
+// only went one way. Clicking it a second time re-fetched the same panel and
+// swapped it over itself, so the button looked inert and the only way to close
+// a preview was to reload the page.
 //
 // This deliberately does NOT use htmx.ajax in a loop: htmx maintains its own
 // request queue and silently drops concurrent calls, so asking it to expand
@@ -11,22 +16,94 @@
 (function () {
   var MAX_IN_FLIGHT = 4;
 
-  // Read the per-row Preview buttons rather than duplicating their URLs into
-  // data attributes: one source of truth, and the row keeps working on its own.
   function toggles() {
-    return Array.prototype.slice.call(
-      document.querySelectorAll('button[hx-get^="/preview/items/"]')
-    );
+    return Array.prototype.slice.call(document.querySelectorAll("[data-preview-toggle]"));
   }
 
   function targetOf(button) {
-    return document.querySelector(button.getAttribute("hx-target"));
+    return document.getElementById(button.dataset.previewTarget);
   }
+
+  function isOpen(target) {
+    return !!target && target.hasChildNodes();
+  }
+
+  // Closing is not hiding. A `<video>` left in the DOM with `display: none`
+  // keeps its decoder, its buffer and — on more browsers than you would like —
+  // its audio. The fullscreen viewer learned this the hard way; the same
+  // teardown applies here.
+  function close(button) {
+    var target = targetOf(button);
+    if (!target) return;
+    target.querySelectorAll("video, audio").forEach(function (media) {
+      try {
+        media.pause();
+        media.removeAttribute("src");
+        media.querySelectorAll("source").forEach(function (source) {
+          source.removeAttribute("src");
+        });
+        media.load();
+      } catch (err) {
+        /* a browser that refuses to be torn down is still better off paused */
+      }
+    });
+    target.replaceChildren();
+    mark(button, false);
+  }
+
+  // The label changes with the state. A button whose text never moves is a
+  // button people press twice and then stop trusting.
+  function mark(button, open) {
+    button.setAttribute("aria-expanded", open ? "true" : "false");
+    button.textContent = open ? "Hide preview" : "Preview";
+  }
+
+  function open(button, options) {
+    var target = targetOf(button);
+    if (!target) return Promise.resolve();
+    // bulk=1 tells the server not to go looking up album art it does not
+    // already have — see preview_for_item.
+    var url = button.dataset.previewUrl + (options && options.bulk ? "?bulk=1" : "");
+    button.disabled = true;
+    return fetch(url, { headers: { "HX-Request": "true" }, credentials: "same-origin" })
+      .then(function (response) {
+        if (!response.ok) throw new Error(response.status);
+        return response.text();
+      })
+      .then(function (html) {
+        target.innerHTML = html;
+        mark(button, true);
+      })
+      .catch(function () {
+        // Say so in the row itself. A preview that silently stays blank looks
+        // like the button is broken.
+        target.innerHTML =
+          '<p class="muted preview-failed">Preview unavailable — the file may have moved.</p>';
+        mark(button, true);
+        throw new Error("preview failed");
+      })
+      .then(
+        function () {
+          button.disabled = false;
+        },
+        function (err) {
+          button.disabled = false;
+          throw err;
+        }
+      );
+  }
+
+  document.addEventListener("click", function (event) {
+    var button = event.target.closest("[data-preview-toggle]");
+    if (!button) return;
+    event.preventDefault();
+    if (isOpen(targetOf(button))) close(button);
+    else open(button).catch(function () {});
+  });
 
   function expandAll(bar) {
     var queue = toggles().filter(function (button) {
-      var target = targetOf(button);
-      return target && !target.hasChildNodes();
+      return !isOpen(targetOf(button));
     });
     var total = queue.length;
     if (!total) return;
@@ -37,36 +114,17 @@
 
     function report() {
       var left = total - done;
-      if (left > 0) {
-        setStatus(bar, "loading " + left + " of " + total + "…");
-      } else {
-        setStatus(bar, failed ? failed + " could not be previewed" : "");
-      }
+      setStatus(bar, left > 0
+        ? "loading " + left + " of " + total + "…"
+        : failed ? failed + " could not be previewed" : "");
     }
 
     function next() {
       var button = queue.shift();
       if (!button) return;
-      var target = targetOf(button);
-      // bulk=1 tells the server not to go looking up album art it does not
-      // already have — see preview_for_item.
-      fetch(button.getAttribute("hx-get") + "?bulk=1", {
-        headers: { "HX-Request": "true" },
-        credentials: "same-origin"
-      })
-        .then(function (response) {
-          if (!response.ok) throw new Error(response.status);
-          return response.text();
-        })
-        .then(function (html) {
-          target.innerHTML = html;
-        })
+      open(button, { bulk: true })
         .catch(function () {
           failed += 1;
-          // Say so in the row itself. A preview that silently stays blank
-          // looks like the button is broken.
-          target.innerHTML =
-            '<p class="muted preview-failed">Preview unavailable — the file may have moved.</p>';
         })
         .then(function () {
           done += 1;
@@ -79,10 +137,7 @@
   }
 
   function collapseAll(bar) {
-    toggles().forEach(function (button) {
-      var target = targetOf(button);
-      if (target) target.replaceChildren();
-    });
+    toggles().forEach(close);
     setStatus(bar, "");
   }
 
@@ -95,10 +150,15 @@
     var button = event.target.closest("[data-preview-all]");
     if (!button) return;
     var bar = button.closest("[data-preview-bar]");
-    if (button.dataset.previewAll === "collapse") {
-      collapseAll(bar);
-    } else {
-      expandAll(bar);
-    }
+    if (button.dataset.previewAll === "collapse") collapseAll(bar);
+    else expandAll(bar);
+  });
+
+  // An htmx swap can replace a row whose preview was open, leaving a button
+  // that says "Hide preview" over an empty panel.
+  document.body.addEventListener("htmx:afterSwap", function () {
+    toggles().forEach(function (button) {
+      mark(button, isOpen(targetOf(button)));
+    });
   });
 })();

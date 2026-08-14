@@ -85,8 +85,16 @@
   }
 
   // Mixed selections are explained before the button is pressed, not after.
-  // Selecting one correction and two observations must not look as though
-  // three things are about to be accepted.
+  //
+  // This used to be the *only* thing standing between an observation and an
+  // Approve button, and it failed in the worst possible direction: a checkbox
+  // beside a folder-naming observation was enabled and unmarked, ticking it
+  // disabled the Approve button, and pressing a disabled button produces no
+  // request and no message. "Nothing happened" was exactly right.
+  //
+  // The rows themselves now disable checkboxes that cannot be approved, so a
+  // selection of ineligible rows is no longer expressible. This stays as the
+  // count, not as the guard.
   function refreshEligibility(scope, chosen) {
     var note = document.querySelector(scope.eligibility);
     var eligible = chosen.filter(function (box) {
@@ -96,13 +104,13 @@
       button.disabled = eligible === 0;
       button.textContent =
         eligible && eligible !== chosen.length
-          ? "Accept corrections (" + eligible + " eligible)"
-          : "Accept corrections";
+          ? "Approve selected changes (" + eligible + ")"
+          : "Approve selected changes";
     });
     if (!note) return;
     var rest = chosen.length - eligible;
     note.textContent = rest
-      ? rest + " of " + chosen.length + " cannot be accepted — observations, or changed since the audit"
+      ? rest + " of " + chosen.length + " cannot be approved"
       : "";
   }
 

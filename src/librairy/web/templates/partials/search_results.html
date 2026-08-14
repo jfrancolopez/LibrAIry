@@ -42,10 +42,10 @@
             {# Expands in place. Detail used to be a link straight to a fragment
                endpoint, which replaced the page with an unstyled bare card. #}
             <div class="button-row">
-              <button type="button"
-                hx-get="/preview/items/{{ row.item_id }}"
-                hx-target="#search-preview-{{ row.item_id }}"
-                hx-swap="innerHTML">Preview</button>
+              <button type="button" data-preview-toggle
+                data-preview-url="/preview/items/{{ row.item_id }}"
+                data-preview-target="search-preview-{{ row.item_id }}"
+                aria-expanded="false">Preview</button>
               <a class="btn" href="/items/{{ row.item_id }}">Open details</a>
             </div>
             <div id="search-preview-{{ row.item_id }}"></div>

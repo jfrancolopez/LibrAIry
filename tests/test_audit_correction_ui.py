@@ -96,21 +96,21 @@ def test_an_executable_finding_offers_to_accept_the_correction(tmp_path: Path) -
 
     body = client.get("/review").text
 
-    assert ">Accept correction</button>" in rows(body)
+    assert ">Approve change</button>" in rows(body)
     assert "EXISTING LIBRARY" in body
-    assert ">No change</button>" in rows(body)
+    assert ">Dismiss suggestion</button>" in rows(body)
     assert "Keep as it is" not in body
 
 
 def test_the_wording_is_never_the_inbox_wording(tmp_path: Path) -> None:
-    """"Approve" admits a new file. "Accept correction" changes something you
+    """"Approve" admits a new file. "Approve change" changes something you
     already own. The two must not read the same."""
     client, *_ = scene(tmp_path)
 
     body = client.get("/review").text
     audit_section = body.split('id="library-audit"', 1)[1]
 
-    assert ">Accept correction</button>" in audit_section
+    assert ">Approve change</button>" in audit_section
     assert "Approve all confident" not in audit_section
 
 
@@ -120,8 +120,8 @@ def test_an_observation_offers_no_correction(tmp_path: Path) -> None:
     body = client.get("/review").text
 
     assert "EXISTING LIBRARY" in body
-    assert ">Accept correction</button>" not in rows(body)
-    assert ">No change</button>" in rows(body)
+    assert ">Approve change</button>" not in rows(body)
+    assert ">Dismiss suggestion</button>" in rows(body)
     assert ">Observation<" in body
 
 
@@ -141,7 +141,7 @@ def test_a_one_file_correction_does_not_shout_about_a_group(tmp_path: Path) -> N
     body = client.get("/review").text
 
     assert "audit-affected" not in rows(body)
-    assert ">Accept correction</button>" in rows(body)
+    assert ">Approve change</button>" in rows(body)
 
 
 def test_a_stale_finding_offers_re_analysis_and_not_a_correction(tmp_path: Path) -> None:
@@ -150,10 +150,10 @@ def test_a_stale_finding_offers_re_analysis_and_not_a_correction(tmp_path: Path)
 
     body = client.get("/review").text
 
-    assert "Needs re-analysis" in rows(body)
-    assert "The file changed after this audit was created." in body
-    assert ">Re-audit</button>" in rows(body)
-    assert ">Accept correction</button>" not in rows(body)
+    assert "Needs analysis again" in rows(body)
+    assert "The file changed after this was found" in body
+    assert ">Analyse again</button>" in rows(body)
+    assert ">Approve change</button>" not in rows(body)
 
 
 def test_a_finding_whose_file_is_gone_says_so_plainly(tmp_path: Path) -> None:
@@ -163,9 +163,9 @@ def test_a_finding_whose_file_is_gone_says_so_plainly(tmp_path: Path) -> None:
     body = client.get("/review").text
 
     assert "Not on disk" in rows(body)
-    assert ">Accept correction</button>" not in rows(body)
+    assert ">Approve change</button>" not in rows(body)
     # Nothing to re-analyse either: the file is not there to look at.
-    assert ">Re-audit</button>" not in rows(body)
+    assert ">Analyse again</button>" not in rows(body)
 
 
 def test_the_stale_wording_is_not_alarming(tmp_path: Path) -> None:
@@ -187,7 +187,7 @@ def test_accepting_marks_the_finding_as_waiting_for_commit(tmp_path: Path) -> No
     body = client.get("/review").text
     assert "Waiting for Commit" in rows(body)
     assert "nothing has moved yet" in rows(body)
-    assert ">Accept correction</button>" not in rows(body)
+    assert ">Approve change</button>" not in rows(body)
 
 
 def test_accepting_a_stale_finding_over_http_is_refused(tmp_path: Path) -> None:
@@ -378,14 +378,14 @@ def test_keeping_a_finding_stops_it_coming_back(tmp_path: Path) -> None:
 
     row = conn.execute("SELECT status FROM audit_findings WHERE id=?", (finding["id"],)).fetchone()
     assert row["status"] == "kept"
-    assert "Accept correction" not in client.get("/review").text
+    assert "Approve change" not in client.get("/review").text
 
 
 # --- mobile -------------------------------------------------------------------
 
 
 def test_the_correction_actions_stack_on_a_narrow_screen() -> None:
-    """Accept correction and No change must never be a mis-tap apart at
+    """Approve change and Dismiss suggestion must never be a mis-tap apart at
     375px, so at that width they stop sharing a line."""
     css = Path("src/librairy/web/static/pipboy.css").read_text(encoding="utf-8")
     blocks = [block.split("\n}")[0] for block in css.split("@media (max-width: 40rem) {")[1:]]

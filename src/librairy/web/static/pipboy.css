@@ -2436,18 +2436,28 @@ summary.timeline-head::-webkit-details-marker { display: none; }
 .why-paths dt { color: var(--text-dim); text-transform: uppercase; font-size: 0.8em; }
 .why-paths dd { margin: 0; font-family: var(--font-mono); word-break: break-all; }
 .why-note { margin: var(--space-2) 0 0; font-size: 0.85em; }
-/* Status chips. Neutral by default — a finding is information, not a fault. */
-.badge-status-correction { color: var(--audit); border-color: var(--audit); }
-.badge-status-observation,
-.badge-status-stale,
-.badge-status-missing { color: var(--text-dim); border-color: var(--border); }
+/* Status chips. Neutral by default — a finding is information, not a fault.
+   Only the two that can be acted on are coloured, so the eye lands on the
+   rows where a decision is actually waiting. */
+.badge-status-ready { color: var(--audit); border-color: var(--audit); }
 .badge-status-waiting { color: var(--audit); border-color: var(--audit); }
+.badge-status-observation,
+.badge-status-blocked,
+.badge-status-needs-analysis,
+.badge-status-dismissed,
+.badge-status-not-on-disk { color: var(--text-dim); border-color: var(--border); }
 .badge-status-corrected { color: var(--ok, var(--text-dim)); }
 .badge-audit { color: var(--audit); border-color: var(--audit); letter-spacing: 0.08em; }
 
-/* A stale finding. Stated plainly and in words — the file changed, so it gets
-   looked at again. No red, no alarm: nothing has gone wrong. */
-.audit-stale { margin: 0; color: var(--text-dim); font-size: var(--text-sm); }
+/* What the row is, in a sentence. Deliberately the same quiet treatment as a
+   stale notice: "no automatic correction is available" is a fact about the
+   suggestion, not a problem with the file. */
+.audit-stale,
+.audit-actionability { margin: 0; color: var(--text-dim); font-size: var(--text-sm); }
+.audit-group-note { margin: var(--space-1) 0 var(--space-2); font-size: var(--text-sm); }
+/* Dismissed rows read as a record rather than a queue. */
+.audit-dismissed .audit-row { opacity: 0.75; }
+.audit-dismissed[open] .audit-row { opacity: 1; }
 .audit-affected { margin: 0 0 var(--space-2); }
 .audit-affected summary { cursor: pointer; }
 .audit-affected ul { list-style: none; margin: var(--space-2) 0 0; padding: 0; }

@@ -351,7 +351,7 @@ def test_quarantine_rows_can_show_what_the_file_actually_is(tmp_path: Path) -> N
 
     body = client.get("/quarantine").text
 
-    assert f'hx-get="/preview/items/{item_id}"' in body
+    assert f'data-preview-url="/preview/items/{item_id}"' in body
     assert f'id="qpreview-{entry_id}"' in body
     # The preview card carries an expand control, so the page must carry the
     # viewer it opens — otherwise Quarantine grows the dead button Browse had.
@@ -368,5 +368,5 @@ def test_a_staged_quarantine_can_be_previewed_before_you_decide(tmp_path: Path) 
 
     body = client.get("/quarantine").text
 
-    assert f'hx-get="/preview/items/{item_id}"' in body
+    assert f'data-preview-url="/preview/items/{item_id}"' in body
     assert f'id="spreview-{proposal_id}"' in body

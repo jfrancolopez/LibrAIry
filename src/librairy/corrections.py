@@ -372,6 +372,46 @@ def accept_correction(conn: sqlite3.Connection, settings: Settings, finding_id: 
     return plan_id
 
 
+def withdraw_approval(conn: sqlite3.Connection, finding_id: int) -> None:
+    """Take back an approval that has not executed, and return the row to Review.
+
+    Deliberately not called Undo. Undo reverses files that moved; this reverses
+    a decision about files that did not. Calling both by the same word is how
+    someone comes to believe Undo will put their library back after a commit
+    they never made — or, worse, hesitates to press the one that would.
+
+    An approved plan is immutable, and this does not mutate one: it withdraws
+    it whole. The plan and its operations are removed, which is safe precisely
+    because nothing executed — there is no journal entry, no moved file and no
+    partial state to reconcile. A plan with any executed operation is refused,
+    so a half-run commit can never be "unapproved" out of existence.
+    """
+    row = load_finding(conn, finding_id)
+    if row["status"] != "accepted":
+        raise CorrectionRefused("this is not waiting for Commit")
+    plan_id = row["plan_id"]
+    plan = conn.execute("SELECT status FROM plans WHERE id=?", (plan_id,)).fetchone()
+    if plan is not None:
+        if plan["status"] != "approved":
+            raise CorrectionRefused("this correction has already started and cannot be recalled")
+        executed = conn.execute(
+            "SELECT COUNT(*) AS n FROM plan_ops WHERE plan_id=? AND executed_at IS NOT NULL",
+            (plan_id,),
+        ).fetchone()["n"]
+        if executed:
+            raise CorrectionRefused("part of this correction has already run")
+    # The row lets go of the plan before the plan is removed. Both directions
+    # are foreign keys — `audit_findings.plan_id` and `plans.audit_finding_id`
+    # — so the order is not stylistic; the other way round fails outright.
+    conn.execute(
+        "UPDATE audit_findings SET status='open', plan_id=NULL, updated_at=? WHERE id=?",
+        (utc_now(), finding_id),
+    )
+    if plan is not None:
+        conn.execute("DELETE FROM plan_ops WHERE plan_id=?", (plan_id,))
+        conn.execute("DELETE FROM plans WHERE id=?", (plan_id,))
+
+
 def _refusal(row: sqlite3.Row, state: str) -> str:
     """Why this cannot be accepted, in words that reach the page.
 

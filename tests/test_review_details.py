@@ -302,10 +302,13 @@ def test_a_conflict_is_prominent(tmp_path: Path) -> None:
 # --- the three decisions ---------------------------------------------------------
 
 
-def test_keep_together_and_no_change_are_opposite_decisions() -> None:
+def test_keep_together_and_leave_current_layout_are_opposite_decisions() -> None:
     """The pair most easily confused, and they do opposite things. Keeping the
     compilation together *fixes* the twenty-seven folders by consolidating
-    them. No change *leaves* them exactly as they are."""
+    them. Leaving the current layout *keeps* them exactly as they are.
+
+    Neither is `Dismiss suggestion`. That word means "not in my active list";
+    these three are three different libraries."""
     keep, no_change = (
         review_details.DECISION_TEXT["keep"],
         review_details.DECISION_TEXT["no-change"],
@@ -319,7 +322,7 @@ def test_keep_together_and_no_change_are_opposite_decisions() -> None:
 def test_a_custom_compilation_offers_all_three(tmp_path: Path) -> None:
     shown = text_of(panel(tmp_path, collection_finding("collection-custom")))
 
-    for label in ("Keep together", "Organize individually", "No change"):
+    for label in ("Keep together", "Organize individually", "Leave current layout"):
         assert label in shown, label
 
 
@@ -350,7 +353,7 @@ def test_every_decision_says_what_it_would_do(tmp_path: Path) -> None:
     shown = text_of(panel(tmp_path, collection_finding()))
 
     assert "Treat the collection folder as filing rather than identity" in shown
-    assert "Leave the current layout exactly as it is" in shown
+    assert "Keep the current layout exactly as it is" in shown
 
 
 def test_the_recommendation_is_separated_from_the_facts(tmp_path: Path) -> None:

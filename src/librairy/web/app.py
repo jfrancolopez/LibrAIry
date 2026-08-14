@@ -790,18 +790,65 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         return RedirectResponse("/review", status_code=303)
 
     @app.post("/review/audit/{finding_id}/keep", include_in_schema=False)
-    def review_audit_keep(
-        request: Request,  # noqa: ARG001
-        finding_id: int,
-    ) -> RedirectResponse:
-        """"This organisation is deliberate." Records the answer and moves on.
+    def review_audit_keep(request: Request, finding_id: int) -> HTMLResponse:
+        """"I do not want this suggestion." Records the answer and moves on.
 
         The finding stays as a record rather than vanishing, and the next audit
         leaves it alone unless the file itself changes — otherwise the same
         question comes back every week and the list stops being read.
+
+        Rendered rather than redirected so the page can say what happened and
+        point at where the row went. A dismissal that produces no visible trace
+        is indistinguishable from a deletion, and people press it accordingly.
         """
         keep_as_is(conn, finding_id)
-        return RedirectResponse("/review#library-audit", status_code=303)
+        return _review_page(
+            request,
+            "Suggestion dismissed. It is in Dismissed below, and can be restored.",
+        )
+
+    @app.post("/review/audit/{finding_id}/restore", include_in_schema=False)
+    def review_audit_restore(request: Request, finding_id: int) -> HTMLResponse:
+        """Put a dismissed suggestion back into the active list."""
+        from librairy.audit import restore_suggestion
+
+        if not restore_suggestion(conn, finding_id):
+            raise HTTPException(
+                status_code=409, detail="only a dismissed suggestion can be restored"
+            )
+        return _review_page(request, "Suggestion restored to Library Review.")
+
+    @app.post("/review/audit/{finding_id}/unapprove", include_in_schema=False)
+    def review_audit_unapprove(request: Request, finding_id: int) -> HTMLResponse:
+        """Take an approval back before anything has moved.
+
+        Not Undo — see `withdraw_approval`. Nothing has happened on disk, so
+        there is nothing to reverse; this returns the decision to Review.
+        """
+        from librairy.corrections import withdraw_approval
+
+        try:
+            withdraw_approval(conn, finding_id)
+        except CorrectionRefused as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return _review_page(request, "Approval removed. The change is back in Library Review.")
+
+    def _review_page(request: Request, notice: str) -> HTMLResponse:
+        """The Review page with a sentence about what just happened.
+
+        Rendered rather than redirected, so the sentence can name a file
+        without putting a library path into a URL — and so it survives at all,
+        which a redirect with no flash store cannot manage.
+        """
+        return TEMPLATES.TemplateResponse(
+            request,
+            "review.html",
+            {
+                "title": "Review",
+                **review_data(conn, filters_from_query(), settings),
+                "notice": notice,
+            },
+        )
 
     @app.post("/review/audit/bulk", include_in_schema=False)
     def review_audit_bulk(
@@ -825,17 +872,7 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             result = apply_audit_bulk(conn, settings, action, finding_id)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
-        # Rendered rather than redirected, so the sentence can name a file
-        # without putting a library path into a URL.
-        return TEMPLATES.TemplateResponse(
-            request,
-            "review.html",
-            {
-                "title": "Review",
-                **review_data(conn, filters_from_query(), settings),
-                "notice": result,
-            },
-        )
+        return _review_page(request, result)
 
     @app.post("/review/storage/bulk", include_in_schema=False)
     def review_storage_bulk(

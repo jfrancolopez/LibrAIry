@@ -979,16 +979,29 @@ def open_findings(
     Review wants them — a correction you accepted should stay visible, saying
     what it is waiting for — while the CLI's "what is open" count does not.
     """
-    statuses = "('open','accepted')" if include_accepted else "('open')"
+    statuses = ("open", "accepted") if include_accepted else ("open",)
+    return findings_with_status(conn, statuses, scope=scope)
+
+
+def findings_with_status(
+    conn: sqlite3.Connection, statuses: tuple[str, ...], *, scope: str = ""
+) -> list[sqlite3.Row]:
+    """Findings in any of the given database statuses.
+
+    One query rather than one per view, because the four Review workloads
+    (open, waiting for Commit, dismissed, corrected) differ only in this tuple
+    and every column below has to be identical for the row renderer to work.
+    """
+    placeholders = ",".join("?" for _ in statuses)
     # `i.size` comes along so a finding about a file can show how big it is.
     # A left join, because a finding can name a file nothing has indexed —
     # "not indexed" is one of the things the audit reports — and an inner join
     # would silently drop exactly those rows.
     sql = (
         "SELECT f.*, i.size AS item_size FROM audit_findings f "  # noqa: S608
-        f"LEFT JOIN items i ON i.id = f.item_id WHERE f.status IN {statuses}"
+        f"LEFT JOIN items i ON i.id = f.item_id WHERE f.status IN ({placeholders})"
     )
-    params: list[object] = []
+    params: list[object] = list(statuses)
     if scope:
         sql += " AND f.relpath LIKE ?"
         params.append(f"{scope.strip('/')}/%")
@@ -1005,11 +1018,38 @@ def finding_counts(conn: sqlite3.Connection) -> dict[str, int]:
 
 
 def keep_as_is(conn: sqlite3.Connection, finding_id: int) -> None:
-    """"This is deliberate." The row stays as a record of the answer."""
+    """"I do not want this suggestion." The row stays as a record of the answer.
+
+    Never a delete. The record is what makes the decision reversible, what
+    keeps the next identical audit quiet, and what lets someone ask months
+    later why their library looks the way it does. `restore_suggestion` is the
+    other half, and the pair is the reason this is safe to press.
+    """
     conn.execute(
         "UPDATE audit_findings SET status='kept', updated_at=? WHERE id=?",
         (utc_now(), finding_id),
     )
+
+
+def restore_suggestion(conn: sqlite3.Connection, finding_id: int) -> bool:
+    """Put a dismissed suggestion back into the active list.
+
+    Only from `kept`, and deliberately so. Restoring an executed correction
+    would mean re-proposing a move that already happened, and restoring one
+    that is waiting for Commit would leave two rows claiming the same plan.
+    Those have their own reversals — Undo and Remove approval — and one
+    control that sometimes means three different things is how people stop
+    trusting all three.
+
+    No re-analysis. The evidence that produced the suggestion is still the
+    evidence; if the file itself changed, the row will say so on its own,
+    because staleness is measured at render time against the fingerprint.
+    """
+    changed = conn.execute(
+        "UPDATE audit_findings SET status='open', updated_at=? WHERE id=? AND status='kept'",
+        (utc_now(), finding_id),
+    )
+    return changed.rowcount > 0
 
 
 def sanitize_scope(scope: str, library_dir: Path | None = None) -> str:

@@ -73,10 +73,10 @@
           {% endif %}
           <div class="button-row">
             {% if proposal.item_id %}
-              <button type="button" class="btn-ghost"
-                      hx-get="/preview/items/{{ proposal.item_id }}"
-                      hx-target="#spreview-{{ proposal.id }}"
-                      hx-swap="innerHTML">Preview</button>
+              <button type="button" class="btn-ghost" data-preview-toggle
+                      data-preview-url="/preview/items/{{ proposal.item_id }}"
+                      data-preview-target="spreview-{{ proposal.id }}"
+                      aria-expanded="false">Preview</button>
             {% endif %}
             <button class="btn-primary" hx-post="/quarantine/staged/{{ proposal.id }}/approve" hx-target="#quarantine-result" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>Move it out</button>
             <button hx-post="/quarantine/staged/{{ proposal.id }}/unstage" hx-target="#quarantine-result" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>Keep it — file it normally</button>
@@ -133,10 +133,10 @@
                    whether a file goes back is a question about what the file
                    is, and a UUID filename does not answer it. #}
                 {% if entry.item_id %}
-                  <button type="button" class="btn-ghost"
-                          hx-get="/preview/items/{{ entry.item_id }}"
-                          hx-target="#qpreview-{{ entry.id }}"
-                          hx-swap="innerHTML">Preview</button>
+                  <button type="button" class="btn-ghost" data-preview-toggle
+                          data-preview-url="/preview/items/{{ entry.item_id }}"
+                          data-preview-target="qpreview-{{ entry.id }}"
+                          aria-expanded="false">Preview</button>
                 {% endif %}
                 {% if not entry.restored_at %}
                   <button hx-post="/quarantine/restore/{{ entry.id }}" hx-target="#quarantine-result" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>Put it back</button>

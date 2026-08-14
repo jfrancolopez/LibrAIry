@@ -61,7 +61,7 @@ def test_search_highlight_pagination_host_path_and_actions(tmp_path: Path) -> No
     # Preview expands in place; "Open details" is the only navigation. The old
     # Detail link pointed straight at a fragment endpoint, which replaced the
     # whole page with an unstyled bare card.
-    assert 'hx-target="#search-preview-' in page.text
+    assert 'data-preview-target="search-preview-' in page.text
     assert "Open details" in page.text
     assert 'href="/items/' in page.text
 
