@@ -32,7 +32,7 @@ from librairy.corrections import CorrectionRefused, accept_correction
 from librairy.db import connect, impatient, is_locked
 from librairy.dedup import DedupConfigError
 from librairy.filetypes import aria_label as ext_aria_label
-from librairy.filetypes import extension_info
+from librairy.filetypes import extension_info, next_ext_id
 from librairy.lifecycle import forget_vanished
 from librairy.logging import configure_logging
 from librairy.paths import PathValidationError
@@ -203,6 +203,12 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
     # and nothing it returns can change a classification.
     TEMPLATES.env.globals["extension_info"] = extension_info
     TEMPLATES.env.globals["ext_aria_label"] = ext_aria_label
+    # A distinct id per `?` on the page. `popovertarget` resolves to the first
+    # element with a matching id, so two rows sharing one would both open the
+    # first row's panel — the kind of bug that looks like "the control works on
+    # some files and not others". Monotonic rather than derived from the
+    # filename, because two rows can legitimately name the same extension.
+    TEMPLATES.env.globals["next_ext_id"] = next_ext_id
     TEMPLATES.env.globals["welcome_banner_visible"] = lambda request: welcome_banner_visible(
         conn, request.state.session
     )

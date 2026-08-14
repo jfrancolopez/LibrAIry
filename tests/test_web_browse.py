@@ -174,7 +174,15 @@ def test_browse_templates_have_no_mutating_affordances(tmp_path: Path) -> None:
     # controls Review has. Naming them keeps the invariant instead: a button
     # here is the search submit or a view-only control, and a new one that
     # writes matches neither and fails.
-    view_only = ("data-lightbox", "data-preview-all", "preview-expand")
+    # `popovertarget` joins the list because the file-type `?` became a
+    # popover button. It opens a panel of reference text and cannot write.
+    view_only = (
+        "data-lightbox",
+        "data-preview-all",
+        "data-preview-toggle",
+        "preview-expand",
+        "popovertarget=",
+    )
     buttons = re.findall(r"<button\b[^>]*>", html)
     unexplained = [
         button

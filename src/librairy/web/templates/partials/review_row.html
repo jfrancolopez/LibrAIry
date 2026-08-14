@@ -16,7 +16,7 @@
       {# The size is a property of the file, so it belongs to the filename. It
          was sitting in the confidence cluster, where it read as part of the
          score. #}
-      <h3 class="proposal-name" title="{{ proposal.item_relpath }}">{{ proposal.display_name or proposal.item_relpath }}{% if proposal.size_label %}<span class="name-size"> · {{ proposal.size_label }}</span>{% endif %}{{ ext_info(proposal.item_relpath) }}</h3>
+      <h3 class="proposal-name" title="{{ proposal.item_relpath }}"><span class="name-text">{{ proposal.display_name or proposal.item_relpath }}{% if proposal.size_label %}<span class="name-size"> · {{ proposal.size_label }}</span>{% endif %}</span>{{ ext_info(proposal.item_relpath) }}</h3>
       <span class="proposal-meta">
         {% if proposal.rechecking %}<span class="badge badge-info">looking again</span>{% endif %}
         {# Says there is something in Why worth opening. Without it the caption

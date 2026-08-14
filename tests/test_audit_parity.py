@@ -679,7 +679,7 @@ def test_nothing_in_an_audit_row_is_wider_than_the_screen() -> None:
 
 def test_long_paths_wrap_instead_of_pushing_the_page_sideways() -> None:
     shared = Path("src/librairy/web/static/pipboy.css").read_text(encoding="utf-8")
-    clamp = shared.split(".proposal-name,\n.row-name {")[1].split("}")[0]
+    clamp = shared.split(".row-name > .name-text {")[1].split("}")[0]
     assert "overflow-wrap: anywhere" in clamp
 
 

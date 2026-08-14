@@ -701,7 +701,17 @@ tbody tr:hover { background: var(--bg-metric); }
 /* Two lines, then an ellipsis. A UUID-named attachment three folders deep
    wraps to eight lines otherwise, and one such row was 496px tall — half a
    screen to say one filename. The whole value stays in the title attribute,
-   and the preview shows it in full. */
+   and the preview shows it in full.
+
+   The clamp belongs to the *text*, not to the heading, and this is not a
+   refinement — it is the fix for a regression. The heading also contains the
+   `?` file-type control, whose panel is absolutely positioned; when the clamp
+   and its `overflow: hidden` lived here, that panel was clipped to a 24px-tall
+   box and zero pixels of it survived. `elementFromPoint` at the panel's centre
+   returned null: the control opened correctly and painted nothing, on every
+   screen with a filename heading, which is why it looked dead rather than
+   broken. Anything absolutely positioned inside a heading has to sit outside
+   whatever is doing the clipping. */
 .proposal-name,
 .row-name {
   margin: 0;
@@ -710,6 +720,14 @@ tbody tr:hover { background: var(--bg-metric); }
   /* A flex item will not shrink below its content by default, so a long title
      with an inline-block `?` beside it pushed the row past a 375px screen.
      Measured at 375px in a headless render, not theorised. */
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0;
+}
+.proposal-name > .name-text,
+.row-name > .name-text {
   min-width: 0;
   overflow-wrap: anywhere;
   display: -webkit-box;
@@ -1393,7 +1411,14 @@ tbody tr:hover { background: var(--bg-metric); }
 }
 /* Keeps names aligned whether or not a row has a picture. */
 .row-thumb.is-placeholder { display: block; }
-.row-name {
+/* Scoped to Browse, and that is the whole point of the selector.
+   `.row-name` is also the filename heading on every Review card, and this
+   block — declared later in the file, so it wins — was quietly putting
+   `overflow: hidden` on all of them. That is what clipped the `?` panel out of
+   existence: the control opened, laid out a 360px panel, and painted none of
+   it. A shared class name is a shared contract, and this rule was never
+   entitled to it. */
+.browse-row .row-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2647,13 +2672,20 @@ summary.timeline-head::-webkit-details-marker { display: none; }
    so it gets one neutral mark rather than a coloured badge per format. */
 .ext-info {
   display: inline-block;
-  position: relative;
+  /* Not `position: relative` any more: the panel is a popover in the top
+     layer, so nothing about this element positions it, and pretending
+     otherwise invites the next person to "fix" the panel by changing this. */
   vertical-align: baseline;
 }
 .ext-info-toggle {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  /* It is a <button> now, so it inherits the button skin unless told not to.
+     A `?` the size of Approve would be the loudest thing on the row. */
+  padding: 0;
+  background: none;
+  font-family: inherit;
   /* 1.5rem is the tap target; the mark inside it is small. Anything less is
      a coin toss on a phone. */
   min-width: 1.5rem;
@@ -2668,52 +2700,72 @@ summary.timeline-head::-webkit-details-marker { display: none; }
   list-style: none;
   user-select: none;
 }
-.ext-info-toggle::-webkit-details-marker { display: none; }
 .ext-info-toggle:hover,
 .ext-info-toggle:focus-visible {
   color: var(--accent);
   border-color: var(--accent);
 }
-.ext-info[open] > .ext-info-toggle { color: var(--accent); border-color: var(--accent); }
-.ext-info-panel {
-  position: absolute;
-  z-index: 40;
-  top: calc(100% + var(--space-1));
-  left: 0;
+.ext-info-toggle:is(:hover, :focus-visible, [aria-expanded="true"]) {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+/* A popover: the browser puts it in the top layer and switches it to
+   `display: block` when open, so it escapes every clip on the page. What is
+   left to say is what it looks like and roughly where it sits. */
+.ext-info-panel[popover] {
+  margin: 0;
+  inset: auto;
   width: max-content;
   max-width: min(28rem, calc(100vw - 2rem));
   padding: var(--space-3);
   border: var(--border-thin) solid var(--border);
+  border-radius: var(--radius-ui);
   background: var(--bg-panel);
+  color: var(--text);
   box-shadow: var(--panel-shadow);
   text-align: left;
   white-space: normal;
   font-weight: normal;
+  /* A small card near the top of the viewport. Reference text does not need
+     to touch the thing it describes, and a panel that is definitely visible
+     beats one that is beautifully placed on one engine and clipped on the
+     others. See the note below for what was tried instead. */
+  position: fixed;
+  top: 15vh;
+  left: 50%;
+  translate: -50% 0;
 }
+/* No attempt to float it beside the `?`, and that is a decision rather than
+   an omission.
+
+   CSS anchor positioning was tried and did work, once the anchor was the
+   popover's *implicit* one — the invoking button — rather than a shared
+   `anchor-name`. A single `anchor-name: --ext-info` on fourteen controls
+   resolves to the last one in the document, so every panel on Review opened
+   3,986 pixels down the page: still "working", still invisible, and only ever
+   discovered by measuring it in a real browser.
+
+   What is left is a small card in one fixed, known place. It needs one rule,
+   behaves the same on every engine, and has no geometry left to get wrong.
+   For two sentences of reference text that is the better trade than a
+   position that has to be recomputed, flipped and fallen back. */
+/* No dimming. This is a footnote, not a dialog. */
+.ext-info-panel[popover]::backdrop { background: none; }
 .ext-info-panel p { margin: 0 0 var(--space-2); }
 .ext-info-panel p:last-child { margin-bottom: 0; }
 .ext-info-head { display: flex; gap: var(--space-2); flex-wrap: wrap; align-items: baseline; }
 .ext-info-caution { color: var(--warn); }
 
-/* Near the right edge the panel would run off screen; anchor it to the right
-   instead. Cheap and static — no measuring, no script. */
-.ext-info-right .ext-info-panel { left: auto; right: 0; }
-
 @media (max-width: 40rem) {
   /* On a phone there is no room to float beside anything, so it becomes a
-     small sheet at the bottom of the screen.
-
-     It was `position: fixed` with the desktop `top: calc(100% + ...)` still
-     applying, and a percentage top against a fixed element resolves to the
-     *viewport*, not the parent: the panel rendered at 816px on an 812px
-     screen and was never visible. Anchoring to the bottom edge removes the
-     percentage entirely, so there is nothing left to resolve wrongly. */
-  .ext-info-panel {
+     small sheet at the bottom of the screen. Wins over the anchored rule
+     above, which is why it repeats the properties that rule sets. */
+  .ext-info-panel[popover] {
     position: fixed;
+    inset: auto var(--space-2) var(--space-2);
     top: auto;
-    bottom: var(--space-2);
-    left: var(--space-2);
-    right: var(--space-2);
+    translate: none;
+    margin: 0;
     width: auto;
     max-width: none;
   }

@@ -113,7 +113,11 @@ def scene(tmp_path: Path):
 
 
 def panels(html: str) -> list[str]:
-    return re.findall(r'<div class="ext-info-panel"[^>]*>(.*?)</div>', html, flags=re.S)
+    return re.findall(
+        r'<div id="ext-info-\d+" popover class="ext-info-panel"[^>]*>(.*?)\n  </div>',
+        html,
+        flags=re.S,
+    )
 
 
 def has_control(html: str) -> bool:
@@ -262,26 +266,52 @@ def test_the_icon_glyph_is_hidden_from_screen_readers(tmp_path: Path) -> None:
     assert '<span aria-hidden="true">?</span>' in html
 
 
-def test_it_is_a_details_element_so_the_keyboard_works_without_script(
+def test_it_is_a_popover_so_the_keyboard_works_without_script(
     tmp_path: Path,
 ) -> None:
+    """`popovertarget` toggles on click, Escape closes and clicking elsewhere
+    light-dismisses, all without a line of JavaScript — which matters because
+    the CSP forbids inline script.
+
+    It was a `<details>`, which cost no script either and was still wrong: its
+    panel is an ordinary positioned element, so the `-webkit-line-clamp` on the
+    filename heading clipped it to nothing. A popover renders in the top layer
+    and cannot be clipped by an ancestor at all."""
     client, _, _ = scene(tmp_path)
 
     html = client.get("/review").text
 
-    assert '<details class="ext-info">' in html
+    assert 'class="ext-info-toggle"' in html
+    assert "popovertarget=" in html
+    assert "<div id=\"ext-info-" in html
+    assert " popover " in html
     assert "onclick" not in html.lower()
+
+
+def test_every_control_on_a_page_targets_its_own_panel(tmp_path: Path) -> None:
+    """`popovertarget` resolves to the first element with a matching id, so a
+    shared id would make several rows open one row's panel — a control that
+    appears to work on some files and not others."""
+    client, _, _ = scene(tmp_path)
+
+    html = client.get("/review").text
+    targets = re.findall(r'popovertarget="([^"]+)"', html)
+    ids = re.findall(r'<div id="(ext-info-\d+)" popover', html)
+
+    assert targets, "no controls rendered"
+    assert len(set(targets)) == len(targets), "two controls share a target"
+    assert sorted(targets) == sorted(ids)
 
 
 def test_the_panel_is_constrained_so_it_cannot_widen_the_page() -> None:
     css = Path("src/librairy/web/static/pipboy.css").read_text(encoding="utf-8")
-    block = css.split(".ext-info-panel {", 1)[1].split("}", 1)[0]
+    block = css.split(".ext-info-panel[popover] {", 1)[1].split("}", 1)[0]
 
     assert "max-width" in block
     assert "100vw" in block, "bounded by the viewport, not by the text"
     assert "white-space: normal" in block, "long paths wrap"
     mobile = css.split("@media (max-width: 40rem) {", 2)[-1]
-    mobile_panel = mobile.split(".ext-info-panel {", 1)[1].split("}", 1)[0]
+    mobile_panel = mobile.split(".ext-info-panel[popover] {", 1)[1].split("}", 1)[0]
     # Found on a real phone-sized page, not here: the mobile rule switched to
     # position:fixed while the desktop `top: calc(100% + ...)` still applied,
     # and a percentage top on a fixed element resolves against the viewport.
@@ -289,7 +319,7 @@ def test_the_panel_is_constrained_so_it_cannot_widen_the_page() -> None:
     # invisible to the user. Anchoring to the bottom removes the percentage.
     assert "position: fixed" in mobile_panel
     assert "top: auto" in mobile_panel, "or a percentage top pushes it off-screen"
-    assert "bottom:" in mobile_panel
+    assert "inset: auto" in mobile_panel
 
 
 def test_the_tap_target_is_big_enough_to_hit() -> None:

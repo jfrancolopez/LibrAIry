@@ -89,6 +89,16 @@ def settings_for(root: Path) -> Settings:
 
 def build_fixture(root: Path) -> TestClient:
     """A library, an index, and one finding of every shape."""
+    return TestClient(build_app(root))
+
+
+def build_app(root: Path):  # noqa: ANN201
+    """The same fixture as an ASGI app, for `ui_serve.py` to put on a socket.
+
+    Screenshots need a client; clicking needs a server. One builder either way,
+    because a fixture that differs between "the page we photograph" and "the
+    page we press buttons on" is two fixtures pretending to be one.
+    """
     settings = settings_for(root)
     for relpath, body in FILES.items():
         path = settings.library_dir / relpath
@@ -306,7 +316,7 @@ def build_fixture(root: Path) -> TestClient:
     _storage_opportunities(conn)
     _optimization_jobs(conn)
 
-    return TestClient(create_app(settings, conn))
+    return create_app(settings, conn)
 
 
 def _optimization_jobs(conn) -> None:  # noqa: ANN001

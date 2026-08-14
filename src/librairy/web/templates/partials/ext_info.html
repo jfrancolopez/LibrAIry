@@ -1,9 +1,28 @@
 {# The info control that appears beside a filename, everywhere one is shown.
 
-   A native <details>: no JavaScript, keyboard-operable for free, closes by
-   the same key that opened it, and degrades to visible text if the CSS never
-   arrives. The CSP forbids inline script, so a popover library was never an
-   option and is not missed for two sentences of reference text.
+   A native popover. No JavaScript: `popovertarget` toggles on click, Escape
+   closes, clicking elsewhere light-dismisses, and it is keyboard-operable and
+   announced for free. The CSP forbids inline script, so a popover library was
+   never an option and is not missed for two sentences of reference text.
+
+   It used to be a `<details>`, which was the right instinct and the wrong
+   primitive. A `<details>` panel is an ordinary absolutely-positioned element,
+   so it lives inside whatever its ancestors do — and this control sits beside
+   a filename, which is the single most clipped place on any page. On Review
+   the filename heading carries a `-webkit-line-clamp`, so that a long name
+   cannot make a row 496px tall. That clamp needs `overflow: hidden`, which
+   clipped this panel out of existence. Measured in a real browser:
+   `details.open === true`, panel laid out at 360x118, heading clip box 24px
+   tall, zero pixels of the panel inside it, and `elementFromPoint` at the
+   panel's centre returning `null`. The control opened perfectly and painted
+   nothing, which is exactly why it was reported as "does nothing" rather than
+   as an error.
+
+   Browse has the same shape of hazard for a different reason: its rows sit
+   inside a scrolling pane. Chasing each surface would have left the next one
+   to find. A popover renders in the top layer — outside every `overflow`,
+   every clip and every stacking context by construction — so there is no
+   third screen waiting to break.
 
    Import it rather than including it, so the filename can be passed in:
      {% from "partials/ext_info.html" import ext_info %}
@@ -12,13 +31,16 @@
 {% macro ext_info(name) %}
 {%- set info = extension_info(name) -%}
 {%- if info -%}
-<details class="ext-info">
-  <summary
+{%- set panel_id = next_ext_id() -%}
+<span class="ext-info">
+  <button
+    type="button"
     class="ext-info-toggle"
+    popovertarget="{{ panel_id }}"
     title="{{ ext_aria_label(name) }}"
     aria-label="{{ ext_aria_label(name) }}"
-  ><span aria-hidden="true">?</span></summary>
-  <div class="ext-info-panel" role="note">
+  ><span aria-hidden="true">?</span></button>
+  <div id="{{ panel_id }}" popover class="ext-info-panel" role="note">
     <p class="ext-info-head">
       <strong>{{ info.title or 'This file' }}</strong>
       <span class="muted">{{ info.label }}</span>
@@ -31,6 +53,6 @@
     {% if info.role %}<p class="muted">In LibrAIry: {{ info.role }}</p>{% endif %}
     {% if not info.known and info.mime %}<p class="muted mono">{{ info.mime }}</p>{% endif %}
   </div>
-</details>
+</span>
 {%- endif -%}
 {% endmacro %}

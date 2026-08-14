@@ -20,6 +20,7 @@ treated it as a subtitle companion would be worse than no UI.
 
 from __future__ import annotations
 
+import itertools
 import mimetypes
 from dataclasses import dataclass
 from pathlib import PurePosixPath
@@ -335,3 +336,17 @@ def aria_label(name: str) -> str:
     if not info.extension:
         return "About this file's type"
     return f"About {info.extension} files"
+
+
+# One counter for every `?` rendered by this process.
+#
+# `popovertarget` resolves to the first element with a matching id, so two rows
+# sharing an id would both open the first row's panel — a control that appears
+# to work on some files and not others. Deriving the id from the filename does
+# not help: two rows can legitimately hold two `.flac` files, and two rows can
+# hold the same filename in different folders.
+_ext_ids = itertools.count(1)
+
+
+def next_ext_id() -> str:
+    return f"ext-info-{next(_ext_ids)}"

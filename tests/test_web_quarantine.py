@@ -64,7 +64,10 @@ def test_quarantine_screen_lists_staged_and_similar_flags_without_delete(tmp_pat
     assert "LibrAIry never deletes anything" in response.text
     assert "copy.txt" in response.text
     assert "inbox:dupe.txt" in response.text or "dupe.txt" in response.text
-    assert "your call" in response.text.lower()
+    # Not "your call". That wording was rejected: it puts the burden on the
+    # reader without saying what the software has and has not done.
+    assert "looks similar" in response.text.lower()
+    assert "your call" not in response.text.lower()
     assert "similarity 0.91" in response.text
     # The page now tells you where to go and delete things yourself, so the
     # invariant is "no control that deletes", not "the word never appears".

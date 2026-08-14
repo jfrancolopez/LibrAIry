@@ -29,7 +29,7 @@ UNWANTED = "you sent it here from Review"
 REASON_TAGS = {
     "exact_duplicate": "duplicate",
     "similar_media": "similar",
-    "user": "your call",
+    "user": "you sent it here",
 }
 
 

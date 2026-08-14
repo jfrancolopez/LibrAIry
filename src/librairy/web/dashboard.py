@@ -53,7 +53,7 @@ LIFECYCLE_LABELS = {
     "proposed": "waiting for your review",
     "postponed": "put off for later",
     "approved": "approved, ready to commit",
-    "quarantine-proposed": "duplicate, awaiting your call",
+    "quarantine-proposed": "duplicate, waiting for a decision",
     "quarantined": "moved to quarantine",
     "committed": "filed in your library",
 }

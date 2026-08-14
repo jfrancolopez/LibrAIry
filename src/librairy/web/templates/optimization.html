@@ -56,7 +56,7 @@
 
         <div class="row-body">
           <header class="row-head">
-            <h3 class="row-name" title="{{ job.relpath }}">{{ job.name }}{{ ext_info(job.relpath) }}</h3>
+            <h3 class="row-name" title="{{ job.relpath }}"><span class="name-text">{{ job.name }}</span>{{ ext_info(job.relpath) }}</h3>
             <span class="name-size">{{ job.size_label }}</span>
             <span class="row-meta">
               <span class="badge badge-quality badge-{{ job.quality }}">{{ job.quality_label }}</span>

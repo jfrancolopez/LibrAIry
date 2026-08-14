@@ -252,7 +252,10 @@ def test_long_names_and_paths_are_clamped_not_wrapped_forever() -> None:
     one such row measured 496px — half a screen to say one filename. The whole
     value stays in the title attribute either way.
     """
-    for selector in (".proposal-name", ".dest-path"):
+    # `.name-text` and not `.proposal-name`: the clamp moved off the heading
+    # and onto the text inside it, because the heading also holds the `?`
+    # control and `overflow: hidden` was clipping that panel out of existence.
+    for selector in (".name-text", ".dest-path"):
         # The selector may be one of several sharing a rule — the inbox row and
         # the library row use the same clamp — so match it anywhere in the list.
         rule = re.search(
