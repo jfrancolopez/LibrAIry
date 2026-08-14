@@ -279,6 +279,31 @@ deliberate gesture you make yourself, in your own file manager. The Quarantine
 page has the same button for files already held there, and *Put it back* still
 works from the pile.
 
+### Finding the work on a busy page
+
+Review holds two workloads: new files from your inbox, and suggestions about
+files you already own. With 95 files waiting — measured on a real installation —
+the page is fourteen screens tall and Library Review begins on the ninth. There
+was nothing above it saying a second workload existed.
+
+So the page opens with counts and links to each part of itself:
+
+```text
+New files 95    Existing library 13    Waiting for Commit 2    Dismissed 3
+```
+
+Deliberately links and not tabs. Tabs would hide one workload behind the other
+and give Review a second kind of state to be in; this leaves both lists whole,
+printable, linkable, and leaves each selection scope exactly where it was. A
+workload with nothing in it gets no entry.
+
+Named groups — an album, a season — fold away with the disclosure triangle on
+their heading, and **Expand all groups** / **Collapse all groups** appear once
+there are enough groups to be worth it. Collapsing is a view and never a
+decision: a selection survives it, because a closed group still submits its
+checkboxes. *Collapse group* and *Dismiss suggestion* are far apart in wording
+for exactly that reason.
+
 ### Undo
 
 After any decision an **Undo** bar appears above the list, naming what it will
@@ -308,13 +333,13 @@ cloud AI to a plain guess from the filename. 62% off a catalog match is a
 different proposition from 62% assembled out of a name.
 
 Hover any bar for the same thing in words. The full breakdown, entry by entry,
-is behind **Why** on the row.
+is behind **Evidence** on the row.
 
-### Other options
+### Compare suggestions
 
 "Why is it this?" and "what else could it be?" are the same moment, so the
-second question lives at the bottom of the answer to the first. **Why → Other
-options** asks every catalog and every AI provider you have switched on — each
+second question lives at the bottom of the answer to the first. **Evidence →
+Compare suggestions** asks every catalog and every AI provider you have switched on — each
 one separately, about this one file, right now — and lists what each said, with
 the destination it would give the file and a **Use this** button.
 
@@ -354,8 +379,8 @@ undermine the one thing this panel is for.
 
 The button next to it in the row, **Re-analyse**, is the same machinery aimed
 the other way: it hands the file back to the worker to pick a new winner. Use
-*Other options* to choose an answer yourself, and *Re-analyse* to let LibrAIry
-choose again.
+*Compare suggestions* to choose an answer yourself, and *Re-analyse* to let
+LibrAIry choose again.
 
 ### Fitting your existing layout
 
@@ -432,6 +457,48 @@ adding an image library to decode it is a bigger change than this feature is
 worth. Expect a few seconds per image on a small model and considerably longer
 on a large one; a re-analysis of an unchanged file reuses the stored answer
 instead of looking again.
+
+### Video understanding
+
+The same help for personal videos, and under one rule that does not bend: **the
+model is shown images, never a video.** No clip is decoded for a model, no
+container is uploaded, and the frame budget does not grow with duration.
+
+Three tiers, cheapest first, and the first that answers wins:
+
+1. **The photo beside it.** `IMG_0585.MOV` usually has `IMG_0585.jpeg` next to
+   it, taken seconds apart, already described. That caption is free and often
+   better evidence than a frame — the photo is the moment somebody chose. It is
+   recorded as *context*, never as identity: *"paired phone photo"*, and a
+   visual hint marked `from the paired photo, not from the video`. The still and
+   the clip are not guaranteed to show the same thing.
+2. **The thumbnail Browse already made.** If it is on disk, that is the frame.
+   One inference, no extra decoding, nothing re-extracted.
+3. **Three frames as one image.** Only when there is no thumbnail. 10%, 50% and
+   90% of the duration, stacked into a single JPEG — one request with three
+   frames costs far less on a local model than three requests with one. Three is
+   the ceiling and it does not move; there is no scene detection and no "a few
+   more for long videos".
+
+Only phone-shaped clips are eligible: an `IMG_`/`VID_`/`PXL_` stem, and under
+twenty minutes. A film has an identity a catalog should be answering for, and
+decoding a frame out of a 40 GB remux to get a caption is the opposite of
+lightweight.
+
+**A frame is a hint, never an identity.** It is labelled that way in the
+evidence — `read from 3 frames, which may not describe the whole clip` — and it
+cannot decide a category. A frame showing a performer is equally consistent with
+a family video, a concert bootleg and a DJ music video, and Music Video
+classification stays where it belongs: filenames, tags, version parsing and
+catalogs. What this does fix is the old failure where a `.MOV` from a phone went
+to Movies because of its extension.
+
+Names go through the same policy photos use — `IMG_0585.MOV` can become
+`IMG_0585-dog-yard.MOV`, keeping the camera's sequence number, and a name you
+chose is never overwritten. Answers cache against the file's fingerprint, the
+provider and model, and the frame strategy, so an unchanged video is never
+looked at twice and changing the strategy correctly invalidates the old answer.
+Local providers only, exactly as for photos.
 
 ## Duplicates
 
@@ -791,7 +858,8 @@ of what each one proves:
    if no catalog has heard of it. This is weaker, because the files wrote it
    about themselves — so a contradiction cancels it outright. Ten tracks all
    numbered 1 look coherent until you count them.
-3. **Have you already decided?** **No change** on this folder is remembered,
+3. **Have you already decided?** **Leave current layout** on this folder is
+   remembered,
    and it is the strongest evidence there is, because it is the only kind that
    knows what the folder is *for*.
 
@@ -923,13 +991,23 @@ Every row answers five questions in this order:
 
    ▇▇▇▇▇▇▇▇   Embedded tags · On disk · Your library
 
-   [Accept correction] [No change] [⋯]   Preview  Why
+   [Approve change] [Dismiss suggestion] [⋯]   Preview  Evidence
    ▸ Moves 2 files
 ```
 
-The chip after **LIBRARY AUDIT** says what kind of row it is: *Correction*,
-*Observation*, *Needs re-analysis*, *Not on disk*, *Waiting for Commit* or
-*Corrected*. **Worth acting on** appears only where the audit thinks so.
+The chip after **LIBRARY AUDIT** says what kind of row it is: *Ready to
+approve*, *Observation*, *Cannot be applied*, *Needs analysis again*, *Not on
+disk*, *Waiting for Commit*, *Corrected* or *Dismissed*. **Worth acting on**
+appears only where the audit thinks so.
+
+That chip is not decoration and not a summary of which buttons rendered. It is
+the single value every control on the row is derived from, and only *Ready to
+approve* can be approved — the checkbox on any other row is disabled, and the
+row says in a sentence why. This used to be inferred: a folder-naming
+observation had an ordinary enabled checkbox, and the toolbar quietly disabled
+its own Approve button when nothing eligible was selected. Pressing a disabled
+button produces no request and no message, so "I approved it and nothing
+happened" was a completely accurate description of the software.
 
 The bar is **evidence composition, not confidence**. Unlike an inbox proposal,
 an audit finding has no single score — see below.
@@ -938,18 +1016,25 @@ an audit finding has no single score — see below.
 
 Three answers, and one of them is always available.
 
-**Accept correction** approves one specific library → library move. Note the
-wording: Review's inbox queue says *Approve*, which admits a new file. A
-correction changes something you already own, so it says something else. Nothing
-happens on acceptance except that a plan is written down — the files move when
-you press Commit, and not before. The row then reads *Approved · nothing has
-moved yet*.
+**Approve change** approves one specific library → library move. Nothing
+happens on approval except that a plan is written down — the files move when you
+press Commit, and not before. The row leaves the undecided list and appears
+under **Waiting for Commit**, where **Remove approval** takes the decision back.
+That is deliberately not called *Undo*: nothing has moved, so there is nothing
+to reverse, and one word for both is how somebody comes to believe Undo will
+rescue a commit they never made.
 
-**No change** records that the organisation is deliberate. The next audit leaves
-it alone unless the file itself changes, so the same question does not come back
-every week. A finding whose problem has gone away disappears on its own.
+**Dismiss suggestion** records that you do not want this suggestion. The next
+audit leaves it alone unless the file itself changes, so the same question does
+not come back every week — and it is **reversible**: the row moves to a
+collapsed **Dismissed** group at the foot of Library Review with a **Restore
+suggestion** button. Nothing is deleted.
 
-**Re-audit** appears when a finding has gone stale. See below.
+The three structural choices for a multi-artist folder — **Keep together**,
+**Organize individually**, **Leave current layout** — are *not* dismissals and
+keep their own names. Those are three different libraries.
+
+**Analyse again** appears when a finding has gone stale. See below.
 
 Behind **⋯**: *Open in Browse*, which opens the folder the file is in **now**
 rather than any suggested destination, and *View details* when the file is
@@ -961,16 +1046,22 @@ a folder-level finding or for a file that is not on disk.
 
 ### Selecting several at once
 
-Tick the box on any row for a toolbar with **No change**, **Re-audit** and
-**Accept corrections**. It is a separate selection from the inbox queue's, and
-deliberately so: the two post different fields to different endpoints, so an
-inbox bulk action cannot reach a library finding and vice versa.
+Tick the box on any row for a toolbar with **Approve selected changes**,
+**Dismiss suggestions** and **Analyse again**. It is a separate selection from
+the inbox queue's, and deliberately so: the two post different fields to
+different endpoints, so an inbox bulk action cannot reach a library finding and
+vice versa.
 
-A mixed selection is explained rather than trimmed. Select one correction and
-two observations and the button reads **Accept corrections (1 eligible)**, with
-a note saying the other two cannot be accepted; afterwards the page says
-*Accepted 1 of 3*. There is no "accept everything above N%" — inbox files and
-existing-library corrections do not carry the same risk.
+Only approvable rows have an enabled checkbox, so a selection of things that
+cannot be approved is not expressible. Every bulk result names what happened to
+each row rather than counting successes:
+
+```text
+Selected: 4 · Approved: 2 · Already waiting for Commit: 1 · Observation only: 1
+```
+
+There is no "approve everything above N%" — inbox files and existing-library
+corrections do not carry the same risk.
 
 ### What the audit knows, and what it does not
 
@@ -998,9 +1089,9 @@ which of three things is true:
 
 | State | Means | Offered |
 |---|---|---|
-| *(nothing shown)* | The file is exactly as audited. | Accept correction, Keep as it is |
-| **Needs re-analysis** | The file changed after the audit. | Re-audit, Keep as it is |
-| **Not on disk** | Nothing is at the audited path any more. | Keep as it is |
+| **Ready to approve** | The file is exactly as audited. | Approve change, Dismiss suggestion |
+| **Needs analysis again** | The file changed after the audit. | Analyse again, Dismiss suggestion |
+| **Not on disk** | Nothing is at the audited path any more. | Dismiss suggestion |
 
 Timestamps are not used for this. Copying a library between disks rewrites every
 mtime without changing a byte, and a file can be replaced with its timestamps
@@ -1115,7 +1206,22 @@ one tidy one.
 
 Corrections appear on the Commit page under **Library corrections**, counted and
 listed separately from new files, with every move spelled out. Each commits on
-its own.
+its own. Each shows where the file is now, where it will be after Commit, and
+how many files it affects — before the button, not one click behind it. **Send
+back to Review** returns the decision if you change your mind; nothing has moved
+yet, so that is not called Undo.
+
+While it runs the page says what is happening in words — *1 file moved. Nothing
+failed.* — and lists only the outcomes that actually occurred. There is no
+percentage, because no honest one exists: files are copied and verified one at a
+time, so a count and a stage is all there is to report. When it finishes the
+page offers **View in Browse**, **View History** and **Undo**, which is the same
+hash-verified reversal History uses. There is one undo.
+
+Committing the last thing in the queue does not erase what you just did. The
+Commit page keeps a **Last completed** line — what moved, how many, when — with
+History and Undo beside it, and the Commit tab stays in the navigation whether
+or not anything is waiting.
 
 Immediately before anything moves, every file in the group is re-checked against
 the fingerprint that was approved. If any of them has changed, **none of them
