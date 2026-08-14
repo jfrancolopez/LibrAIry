@@ -125,6 +125,49 @@ def test_the_warning_reaches_the_page(tmp_path: Path) -> None:
     assert "View details" in body
 
 
+def test_the_repair_clears_the_warning_by_being_true(tmp_path: Path) -> None:
+    """Both halves, in one test, because the risk is fixing the wrong one.
+
+    A warning removed by editing the template rather than by repairing the
+    index would pass every test above. This one breaks it, sees the warning,
+    runs the supported rebuild, and requires the warning to have gone — with
+    nothing between the two assertions but the repair.
+    """
+    client, conn, _settings = scene(tmp_path)
+    break_index(conn)
+    mark_damaged(conn)
+    assert "Search index needs rebuild" in client.get("/browse?q=heroes").text
+
+    rebuild_search_index(conn)
+
+    assert check_search_index(conn).ok is True
+    body = client.get("/browse?q=heroes").text
+    assert "Search index needs rebuild" not in body
+
+
+def test_a_search_get_is_still_read_only_either_way(tmp_path: Path) -> None:
+    """The FTS integrity check is an INSERT. Asking it while drawing a page is
+    the regression the last pass caught; the warning is a *recorded* verdict."""
+    client, conn, _settings = scene(tmp_path)
+    break_index(conn)
+    mark_damaged(conn)
+    writes: list[str] = []
+
+    def watch(sql: str) -> None:
+        if sql.lstrip()[:6].upper() in {"INSERT", "UPDATE", "DELETE"}:
+            writes.append(" ".join(sql.split())[:90])
+
+    conn.set_trace_callback(watch)
+    try:
+        client.get("/browse?q=heroes")
+        client.get("/browse")
+    finally:
+        conn.set_trace_callback(None)
+
+    # Touching the session is the one legitimate write on a GET.
+    assert [sql for sql in writes if "sessions" not in sql.lower()] == []
+
+
 def test_browse_is_never_blocked_by_a_damaged_index(tmp_path: Path) -> None:
     """Browse reads the disk. It owes the index nothing."""
     client, conn, _settings = scene(tmp_path)

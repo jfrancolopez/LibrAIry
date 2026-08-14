@@ -17,22 +17,21 @@ import sys
 
 from librairy.config import Settings
 from librairy.db import connect
-from librairy.search import SEARCH_SQL_SAMPLES
-from librairy.search_health import index_counts
+from librairy.search_health import check_search_index, index_counts, recorded_health
 
-# Three queries that have to keep answering the same thing. A corrupt FTS index
-# fails quietly by returning *fewer* rows, so a count that survives a rebuild
-# unchanged is the evidence that nothing was lost.
-SAMPLES = SEARCH_SQL_SAMPLES
+# Queries that have to keep answering the same thing across the rebuild. A
+# corrupt FTS index fails quietly by returning *fewer* rows, so counts that
+# survive unchanged are the evidence that nothing was lost.
+SAMPLES = ("matrix", "the", "a*", "mp3", "jpg")
 
 
 def snapshot() -> dict[str, object]:
     settings = Settings()
     conn = connect(settings)
-    from librairy.search_health import check_search_index
-
     counts = index_counts(conn)
     row = conn.execute("PRAGMA user_version").fetchone()
+    # The FTS integrity check is an INSERT, so this is the one write here and
+    # it is the same one Health performs. Everything else is a read.
     integrity = check_search_index(conn)
     quick = conn.execute("PRAGMA integrity_check").fetchone()[0]
     searchable = conn.execute(
@@ -61,7 +60,8 @@ def snapshot() -> dict[str, object]:
             queries[term] = f"error: {exc}"
     return {
         "schema_version": row[0],
-        "fts_integrity": integrity or "ok",
+        "fts_integrity": "ok" if integrity.ok else f"FAILED: {integrity.detail}",
+        "recorded_health": "ok" if recorded_health(conn).ok else "damaged",
         "sqlite_integrity_check": quick,
         "index_counts": counts,
         "items_searchable": searchable,
