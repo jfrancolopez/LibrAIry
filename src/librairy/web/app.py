@@ -1201,7 +1201,9 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             },
         )
 
-    def _quarantine_page(request: Request, notice: str, view: str = "") -> HTMLResponse:
+    def _quarantine_page(
+        request: Request, notice: str, view: str = "", status_code: int = 200
+    ) -> HTMLResponse:
         """The Quarantine page, re-rendered, with a sentence about what changed.
 
         The whole page rather than a fragment appended at the bottom. Every
@@ -1219,6 +1221,10 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
                 **quarantine_data(conn, settings, view=view or _query(request, "view")),
                 "notice": notice,
             },
+            # A refusal is a real answer and gets a real status. The page is
+            # still the page, so a browser shows the sentence rather than a
+            # JSON blob, and anything scripted sees the 409 it should.
+            status_code=status_code,
         )
 
     def _query(request: Request, name: str, default: str = "") -> str:
@@ -1237,7 +1243,7 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         try:
             request_restore(conn, settings, entry_id)
         except QuarantineError as exc:
-            return _quarantine_page(request, str(exc))
+            return _quarantine_page(request, str(exc), status_code=409)
         # Rendered on the view the row has just moved to. Leaving the reader on
         # the tab it left means pressing a button makes a row disappear, which
         # is the same confusion this pass exists to remove, one step along.
@@ -1256,7 +1262,7 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         try:
             request_delete_queue(conn, settings, entry_id)
         except QuarantineError as exc:
-            return _quarantine_page(request, str(exc))
+            return _quarantine_page(request, str(exc), status_code=409)
         return _quarantine_page(
             request,
             "Added to the delete queue on the next commit. Nothing is deleted.",
@@ -1269,39 +1275,45 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         try:
             cancel_request(conn, entry_id)
         except QuarantineError as exc:
-            return _quarantine_page(request, str(exc))
+            return _quarantine_page(request, str(exc), status_code=409)
         return _quarantine_page(
             request, "Request cancelled. Nothing was moved.", view="held"
         )
 
+    # The three staged actions answer the way every other quarantine action
+    # does: the whole page back, with a sentence at the top. They used to swap
+    # one line into a `<div>` at the page footer whose final words were "Reload
+    # the page to see the list catch up" — and pressing a second button on that
+    # un-reloaded page is what produced the 500 this closes.
     @app.post("/quarantine/staged/{proposal_id}/unstage", response_class=HTMLResponse)
     def quarantine_unstage(request: Request, proposal_id: int) -> HTMLResponse:
-        unstage_proposal(conn, proposal_id)
-        return TEMPLATES.TemplateResponse(
-            request,
-            "partials/quarantine_result.html",
-            {"result": {"outcome": "unstaged", "entry_id": proposal_id}},
-        )
+        """"Keep it" — withdraw the quarantine suggestion, file it normally."""
+        try:
+            unstage_proposal(conn, proposal_id)
+        except QuarantineError as exc:
+            return _quarantine_page(request, str(exc), status_code=409)
+        return _quarantine_page(request, "Kept. It will be filed normally.")
 
     @app.post("/quarantine/staged/{proposal_id}/mark-delete", response_class=HTMLResponse)
     def quarantine_stage_delete(request: Request, proposal_id: int) -> HTMLResponse:
-        """Approve a staged quarantine straight into the delete pile, so being
+        """Approve a staged quarantine straight into the delete queue, so being
         finished with a duplicate is one commit rather than two."""
-        stage_for_deletion(conn, proposal_id)
-        return TEMPLATES.TemplateResponse(
+        try:
+            stage_for_deletion(conn, proposal_id)
+        except QuarantineError as exc:
+            return _quarantine_page(request, str(exc), status_code=409)
+        return _quarantine_page(
             request,
-            "partials/quarantine_result.html",
-            {"result": {"outcome": "marked", "entry_id": proposal_id}},
+            "Added to the delete queue on the next commit. Nothing is deleted.",
         )
 
     @app.post("/quarantine/staged/{proposal_id}/approve", response_class=HTMLResponse)
     def quarantine_approve(request: Request, proposal_id: int) -> HTMLResponse:
-        approve_stage(conn, proposal_id)
-        return TEMPLATES.TemplateResponse(
-            request,
-            "partials/quarantine_result.html",
-            {"result": {"outcome": "approved", "entry_id": proposal_id}},
-        )
+        try:
+            approve_stage(conn, proposal_id)
+        except QuarantineError as exc:
+            return _quarantine_page(request, str(exc), status_code=409)
+        return _quarantine_page(request, "Approved. It moves out on the next commit.")
 
     @app.get("/commit", response_class=HTMLResponse)
     def commit_home(request: Request) -> HTMLResponse:

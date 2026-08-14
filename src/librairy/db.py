@@ -716,6 +716,38 @@ def connect(settings: Settings | None = None, path: Path | None = None) -> sqlit
     return conn
 
 
+_savepoints = 0
+
+
+@contextmanager
+def transaction(conn: sqlite3.Connection):
+    """All of these writes, or none of them.
+
+    Every connection here is opened `isolation_level=None`, which means
+    autocommit: `with conn:` reads like a transaction and is not one. A
+    multi-row change that raised half way through therefore left the half
+    behind — a staged proposal retargeted at the delete pile with no approval
+    to go with it was found exactly this way.
+
+    A named SAVEPOINT rather than BEGIN so that nesting is legal; SQLite has no
+    nested BEGIN, and these helpers call each other.
+    """
+    global _savepoints
+    _savepoints += 1
+    name = f"librairy_{_savepoints}"
+    conn.execute(f"SAVEPOINT {name}")
+    try:
+        yield conn
+    except BaseException:
+        conn.execute(f"ROLLBACK TO {name}")
+        conn.execute(f"RELEASE {name}")
+        raise
+    else:
+        conn.execute(f"RELEASE {name}")
+    finally:
+        _savepoints -= 1
+
+
 def apply_pragmas(conn: sqlite3.Connection, journal_mode: str = "WAL") -> None:
     conn.execute(f"PRAGMA journal_mode={journal_mode}")
     conn.execute("PRAGMA foreign_keys=ON")

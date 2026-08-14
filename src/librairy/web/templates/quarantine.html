@@ -25,7 +25,7 @@
     <p>
       {% if held %}
         <strong>{{ held }} file{{ 's' if held != 1 else '' }} held here{% if for_deletion %},
-          {{ for_deletion }} marked for deletion{% endif %}.</strong>
+          {{ for_deletion }} in the delete queue{% endif %}.</strong>
       {% else %}
         <strong>Nothing is being held.</strong>
       {% endif %}
@@ -43,7 +43,7 @@
   {% if for_deletion %}
     <section class="card notice-row">
       <p>
-        <strong>{{ for_deletion }} file{{ 's' if for_deletion != 1 else '' }} marked for deletion.</strong>
+        <strong>{{ for_deletion }} file{{ 's' if for_deletion != 1 else '' }} in the delete queue.</strong>
         {{ 'They are' if for_deletion != 1 else 'It is' }} gathered in one folder, still
         whole and still restorable. Delete that folder's contents when you are ready —
         LibrAIry will not.
@@ -82,13 +82,23 @@
                       data-preview-target="spreview-{{ proposal.id }}"
                       aria-expanded="false">Preview</button>
             {% endif %}
-            <button class="btn-primary" hx-post="/quarantine/staged/{{ proposal.id }}/approve" hx-target="#quarantine-result" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>Move it out</button>
-            <button hx-post="/quarantine/staged/{{ proposal.id }}/unstage" hx-target="#quarantine-result" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>Keep it</button>
-            {# Straight to the pile: being finished with a duplicate that has
-               not moved yet was otherwise two commits. #}
-            <button class="btn-danger" hx-post="/quarantine/staged/{{ proposal.id }}/mark-delete" hx-target="#quarantine-result"
-              hx-confirm="Send this to the delete pile on the next commit? Nothing is deleted — it gathers in one folder for you to empty yourself."
-              hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>Delete queue</button>
+            {# Plain forms, like every other decision on this page. Each one
+               answers with the whole page and a sentence at the top, so the
+               row you pressed is the row you see afterwards. #}
+            <form method="post" action="/quarantine/staged/{{ proposal.id }}/approve">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button type="submit" class="btn-primary">Move it out</button>
+            </form>
+            <form method="post" action="/quarantine/staged/{{ proposal.id }}/unstage">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button type="submit">Keep it</button>
+            </form>
+            {# Straight to the queue: being finished with a duplicate that has
+               not moved yet was otherwise two commits. Nothing is deleted. #}
+            <form method="post" action="/quarantine/staged/{{ proposal.id }}/mark-delete">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button type="submit" class="btn-danger">Delete queue</button>
+            </form>
           </div>
           <div id="spreview-{{ proposal.id }}"></div>
         </article>
@@ -283,7 +293,6 @@
     {% endif %}
   </section>
 
-  <div id="quarantine-result"></div>
   {# The preview card carries an expand control, so the page that renders one
      has to carry the viewer it opens — otherwise Quarantine grows the exact
      dead button Browse had. #}

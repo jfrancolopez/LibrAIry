@@ -4,10 +4,12 @@ import sqlite3
 from dataclasses import asdict
 
 from librairy.config import Settings
-from librairy.lifecycle import transition_item
+from librairy.db import transaction
+from librairy.lifecycle import LifecycleError, assert_transition, transition_item
 from librairy.planner import utc_now
 from librairy.quarantine import (
     DELETE_PILE,
+    QuarantineError,
     mark_entry_for_deletion,
     marked_for_deletion,
     restore_entry,
@@ -169,19 +171,71 @@ def mark_for_deletion(
     return asdict(mark_entry_for_deletion(conn, entry_id, settings))
 
 
-def unstage_proposal(conn: sqlite3.Connection, proposal_id: int) -> None:
-    row = conn.execute("SELECT item_id FROM proposals WHERE id=?", (proposal_id,)).fetchone()
-    if row is None:
-        raise ValueError("proposal not found")
-    transition_item(conn, row["item_id"], "proposed")
-    conn.execute(
+# The three buttons on a staged row only make sense while the row is still
+# waiting on an answer. The page can be a minute old, the same POST can arrive
+# from curl, and pressing two buttons in a row on one stale page is not exotic:
+# `Move it out` followed by `Keep it` was the first thing that produced a 500.
+STAGED_STATUSES = ("proposed", "postponed", "approved")
+_NOT_STAGED = "that suggestion is no longer waiting for an answer"
+_NOT_ELIGIBLE = "this item is no longer eligible for that action"
+
+
+def _staged_proposal(conn: sqlite3.Connection, proposal_id: int) -> sqlite3.Row:
+    """The row, or a refusal. Never an exception a route has to guess at.
+
+    Refusals are decided here rather than by drawing or not drawing a button.
+    A control that is absent from the page is not a guarantee about what the
+    server will accept.
+    """
+    row = conn.execute(
         """
-        UPDATE proposals
-        SET action='move', dest_root='library', status='proposed', updated_at=?
-        WHERE id=?
+        SELECT p.id, p.item_id, p.status, p.action, i.state, i.relpath
+        FROM proposals p JOIN items i ON i.id = p.item_id
+        WHERE p.id=?
         """,
-        (utc_now(), proposal_id),
-    )
+        (proposal_id,),
+    ).fetchone()
+    if row is None:
+        raise QuarantineError("that suggestion no longer exists")
+    if row["action"] != "quarantine" or row["status"] not in STAGED_STATUSES:
+        raise QuarantineError(_NOT_STAGED)
+    return row
+
+
+def _may_transition(state: str, target: str) -> bool:
+    try:
+        assert_transition(state, target)
+    except LifecycleError:
+        return False
+    return True
+
+
+def unstage_proposal(conn: sqlite3.Connection, proposal_id: int) -> None:
+    """"Keep it" — the file is filed normally after all.
+
+    Withdrawing an approval is two events, and the lifecycle is right to want
+    both spelled out: the answer is taken back (the item is undecided again),
+    and only then does the machine's suggestion stand once more. Going straight
+    from `approved` to `proposed` is what the lifecycle forbids on purpose, so
+    that a duplicate found late cannot quietly overwrite an answer already
+    given. This is the owner giving a different one.
+    """
+    row = _staged_proposal(conn, proposal_id)
+    if row["state"] == "approved" and _may_transition(row["state"], "discovered"):
+        transition_item(conn, row["item_id"], "discovered")
+        row = _staged_proposal(conn, proposal_id)
+    if not _may_transition(row["state"], "proposed"):
+        raise QuarantineError(_NOT_ELIGIBLE)
+    with transaction(conn):
+        transition_item(conn, row["item_id"], "proposed")
+        conn.execute(
+            """
+            UPDATE proposals
+            SET action='move', dest_root='library', status='proposed', updated_at=?
+            WHERE id=?
+            """,
+            (utc_now(), proposal_id),
+        )
 
 
 def stage_for_deletion(conn: sqlite3.Connection, proposal_id: int) -> None:
@@ -189,22 +243,35 @@ def stage_for_deletion(conn: sqlite3.Connection, proposal_id: int) -> None:
 
     Without this, being finished with a duplicate that has not moved yet costs
     two commits: one to put it in quarantine and another to move it along.
+
+    The eligibility question is asked before anything is written. It used to be
+    asked in the middle: `discard_proposals` rewrote the proposal's status and
+    destination, *then* moved the item, so an item that could not legally reach
+    `approved` left the row pointing at `_to-delete/` with no approval behind
+    it. A refusal that half-applies is worse than the 500 it came with.
     """
     from librairy.web.review import discard_proposals
 
-    if not discard_proposals(conn, [proposal_id], to_delete_pile=True):
-        raise ValueError("proposal not found")
+    row = _staged_proposal(conn, proposal_id)
+    if row["status"] not in ("proposed", "postponed"):
+        raise QuarantineError(_NOT_STAGED)
+    if not _may_transition(row["state"], "approved"):
+        raise QuarantineError(_NOT_ELIGIBLE)
+    with transaction(conn):
+        if not discard_proposals(conn, [proposal_id], to_delete_pile=True):
+            raise QuarantineError(_NOT_STAGED)
 
 
 def approve_stage(conn: sqlite3.Connection, proposal_id: int) -> None:
-    row = conn.execute("SELECT item_id FROM proposals WHERE id=?", (proposal_id,)).fetchone()
-    if row is None:
-        raise ValueError("proposal not found")
-    transition_item(conn, row["item_id"], "approved")
-    conn.execute(
-        "UPDATE proposals SET status='approved', updated_at=? WHERE id=?",
-        (utc_now(), proposal_id),
-    )
+    row = _staged_proposal(conn, proposal_id)
+    if not _may_transition(row["state"], "approved"):
+        raise QuarantineError(_NOT_ELIGIBLE)
+    with transaction(conn):
+        transition_item(conn, row["item_id"], "approved")
+        conn.execute(
+            "UPDATE proposals SET status='approved', updated_at=? WHERE id=?",
+            (utc_now(), proposal_id),
+        )
 
 
 def _staged(conn: sqlite3.Connection) -> list[dict[str, object]]:

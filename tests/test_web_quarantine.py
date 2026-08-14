@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from librairy.config import Settings
@@ -116,7 +117,7 @@ def test_staged_quarantine_approve_and_unstage_actions(tmp_path: Path) -> None:
     )
 
     assert unstage.status_code == 200
-    assert "Kept — it will be filed normally" in unstage.text
+    assert "Kept. It will be filed normally" in unstage.text
     row = conn.execute(
         "SELECT action, dest_root FROM proposals WHERE id=?", (proposal_id,)
     ).fetchone()
@@ -274,7 +275,132 @@ def test_a_staged_duplicate_can_go_straight_to_the_delete_pile(tmp_path: Path) -
     assert row["status"] == "approved"
     assert row["action"] == "quarantine"
     assert row["dest_relpath"].startswith("_to-delete/")
-    assert "still not deleted" in response.text
+    assert "Nothing is deleted" in response.text
+
+
+# --- a stale page, or a crafted request -------------------------------------
+#
+# The three staged buttons all wrote first and checked the lifecycle second, so
+# an item that could not legally be approved produced an unhandled
+# LifecycleError — a 500 — and `mark-delete` had already retargeted the
+# proposal at the delete queue by the time it threw. None of this needed a
+# crafted request: `Move it out` then `Keep it` on one un-reloaded page did it.
+
+STAGED_ROUTES = ("approve", "unstage", "mark-delete")
+# `quarantine-proposed` is the normal staged state, so it is not here.
+ILLEGAL_STATES = ("committed", "quarantined")
+
+
+def staged_snapshot(conn, proposal_id: int) -> tuple:
+    row = conn.execute(
+        "SELECT p.status, p.action, p.dest_root, p.dest_relpath, i.state "
+        "FROM proposals p JOIN items i ON i.id = p.item_id WHERE p.id=?",
+        (proposal_id,),
+    ).fetchone()
+    return tuple(row)
+
+
+@pytest.mark.parametrize("route", STAGED_ROUTES)
+@pytest.mark.parametrize("state", ILLEGAL_STATES)
+def test_an_ineligible_staged_action_is_refused_not_a_fault(
+    tmp_path: Path, route: str, state: str
+) -> None:
+    client, conn, settings = client_for(tmp_path)
+    proposal_id = seed_staged_quarantine(conn)
+    conn.execute(
+        "UPDATE items SET state=? WHERE id=(SELECT item_id FROM proposals WHERE id=?)",
+        (state, proposal_id),
+    )
+    before = staged_snapshot(conn, proposal_id)
+    files_before = sorted(p.name for p in tmp_path.rglob("*") if p.is_file())
+    plans_before = conn.execute("SELECT COUNT(*) FROM plans").fetchone()[0]
+
+    response = client.post(
+        f"/quarantine/staged/{proposal_id}/{route}",
+        headers={"x-csrf-token": client.cookies["csrf_token"]},
+    )
+
+    assert response.status_code == 409
+    assert "no longer eligible" in response.text or "no longer waiting" in response.text
+    # Nothing half-applied: not the proposal, not the item, not a plan, not a
+    # file. A refusal that leaves a row rewritten is worse than the fault.
+    assert staged_snapshot(conn, proposal_id) == before
+    assert conn.execute("SELECT COUNT(*) FROM plans").fetchone()[0] == plans_before
+    assert sorted(p.name for p in tmp_path.rglob("*") if p.is_file()) == files_before
+
+    # And again, because a person who gets a refusal presses the button again.
+    again = client.post(
+        f"/quarantine/staged/{proposal_id}/{route}",
+        headers={"x-csrf-token": client.cookies["csrf_token"]},
+    )
+    assert again.status_code == 409
+    assert staged_snapshot(conn, proposal_id) == before
+    assert settings.quarantine_dir.exists()
+
+
+@pytest.mark.parametrize("route", STAGED_ROUTES)
+def test_a_staged_action_on_a_proposal_that_is_gone_is_refused(
+    tmp_path: Path, route: str
+) -> None:
+    client, _, _ = client_for(tmp_path)
+
+    response = client.post(
+        f"/quarantine/staged/4242/{route}",
+        headers={"x-csrf-token": client.cookies["csrf_token"]},
+    )
+
+    assert response.status_code == 409
+    assert "no longer exists" in response.text
+
+
+def test_approving_then_keeping_a_staged_row_is_not_a_fault(tmp_path: Path) -> None:
+    """Two buttons on one page, pressed in order. This was the 500.
+
+    Withdrawing an approval passes through `discovered`: the answer is taken
+    back before the machine's suggestion stands again. Going straight from
+    `approved` to `proposed` is what the lifecycle forbids, so that a duplicate
+    found late cannot overwrite an answer already given.
+    """
+    client, conn, _ = client_for(tmp_path)
+    proposal_id = seed_staged_quarantine(conn)
+    csrf = client.cookies["csrf_token"]
+
+    assert client.post(
+        f"/quarantine/staged/{proposal_id}/approve", headers={"x-csrf-token": csrf}
+    ).status_code == 200
+    kept = client.post(
+        f"/quarantine/staged/{proposal_id}/unstage", headers={"x-csrf-token": csrf}
+    )
+
+    assert kept.status_code == 200
+    assert "filed normally" in kept.text
+    row = conn.execute(
+        "SELECT p.status, p.action, p.dest_root, i.state FROM proposals p "
+        "JOIN items i ON i.id = p.item_id WHERE p.id=?",
+        (proposal_id,),
+    ).fetchone()
+    assert (row["status"], row["action"], row["dest_root"], row["state"]) == (
+        "proposed",
+        "move",
+        "library",
+        "proposed",
+    )
+
+
+def test_a_staged_answer_lands_on_the_page_it_changed(tmp_path: Path) -> None:
+    """Not one line swapped into a `<div>` at the foot of a long page, ending
+    "Reload the page to see the list catch up"."""
+    client, conn, _ = client_for(tmp_path)
+    proposal_id = seed_staged_quarantine(conn)
+
+    response = client.post(
+        f"/quarantine/staged/{proposal_id}/approve",
+        headers={"x-csrf-token": client.cookies["csrf_token"]},
+    )
+
+    assert "Reload the page" not in response.text
+    assert "moves out on the next commit" in response.text
+    assert "<h1>Quarantine</h1>" in response.text
 
 
 # --- what a quarantine row says, and why -----------------------------------
