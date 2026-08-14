@@ -18,6 +18,8 @@ is derived from that value:
     NEEDS_ANALYSIS  the file changed after the audit
     NOT_ON_DISK     the file is gone
     WAITING         approved, waiting for Commit
+    OUTDATED        approved, but the file changed since — cannot be committed
+    APPLYING        the approved plan is running now
     CORRECTED       approved and executed
     DISMISSED       the owner decided against it; reversible
 
@@ -40,6 +42,8 @@ OBSERVATION = "observation"
 NEEDS_ANALYSIS = "needs-analysis"
 NOT_ON_DISK = "not-on-disk"
 WAITING = "waiting"
+OUTDATED = "approval-outdated"
+APPLYING = "applying"
 CORRECTED = "corrected"
 DISMISSED = "dismissed"
 
@@ -58,6 +62,8 @@ LABEL = {
     NEEDS_ANALYSIS: "Needs analysis again",
     NOT_ON_DISK: "Not on disk",
     WAITING: "Waiting for Commit",
+    OUTDATED: "Approval is outdated",
+    APPLYING: "Applying",
     CORRECTED: "Corrected",
     DISMISSED: "Dismissed",
 }
@@ -73,25 +79,41 @@ EXPLANATION = {
     "no longer describes it.",
     NOT_ON_DISK: "The file is no longer where it was found.",
     WAITING: "Approved. Nothing has moved yet.",
+    OUTDATED: "The file changed after you approved this correction, so it can "
+    "no longer be applied as approved.",
+    APPLYING: "This correction is running now.",
     CORRECTED: "This was approved and applied.",
     DISMISSED: "You decided against this. It can be restored.",
 }
 
 # How a bulk result names each outcome, in the order a summary reads best:
 # what happened first, then what did not, then why not.
-BULK_ORDER = (READY, WAITING, CORRECTED, DISMISSED, BLOCKED, NEEDS_ANALYSIS, NOT_ON_DISK,
-              OBSERVATION)
+BULK_ORDER = (READY, WAITING, OUTDATED, APPLYING, CORRECTED, DISMISSED, BLOCKED,
+              NEEDS_ANALYSIS, NOT_ON_DISK, OBSERVATION)
 
 
 def actionability(
-    row: sqlite3.Row, state: str, *, executable: bool, blocked: str = ""
+    row: sqlite3.Row,
+    state: str,
+    *,
+    executable: bool,
+    blocked: str = "",
+    plan: object | None = None,
 ) -> str:
     """The one value every control on the row is derived from.
 
-    Order matters, twice.
+    Order matters, three times.
 
-    A decision the owner already made outranks anything the filesystem has to
-    say: telling someone their dismissed suggestion "needs analysis again"
+    **An active plan outranks everything, including the row's own status.** If
+    an approved, unexecuted plan names this finding then approval has already
+    happened, whatever `audit_findings.status` says — and on the live database
+    it said `open`, which is how a correction that was already approved came to
+    render an Approve button that would have built a second plan. The reasoning
+    is in `librairy/correction_state.py`; the consequence is here, first,
+    because every later branch can offer approval and this one never can.
+
+    Then a decision the owner already made outranks anything the filesystem has
+    to say: telling someone their dismissed suggestion "needs analysis again"
     invites them to re-open a question they closed.
 
     And what a finding *is* outranks what has happened to the file since. A
@@ -100,6 +122,10 @@ def actionability(
     again would make it approvable, and it would not. The row still says the
     file is gone; it just does not say it instead of the truth.
     """
+    if plan is not None:
+        if plan.applying:
+            return APPLYING
+        return OUTDATED if plan.stale else WAITING
     status = row["status"]
     if status == "accepted":
         return WAITING
@@ -154,6 +180,8 @@ def summarize(counts: dict[str, int], selected: int) -> str:
 OUTCOME_TEXT = {
     READY: "Approved",
     WAITING: "Already waiting for Commit",
+    OUTDATED: "Approved earlier, now outdated",
+    APPLYING: "Already running",
     CORRECTED: "Already applied",
     DISMISSED: "Dismissed",
     BLOCKED: "Cannot be applied",

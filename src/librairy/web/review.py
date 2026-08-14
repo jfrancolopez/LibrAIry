@@ -9,6 +9,7 @@ from librairy.audit import FOLDER_KINDS, KINDS, findings_with_status
 from librairy.audit_job import progress as audit_progress
 from librairy.classify.images import vision_disagrees, vision_for_items
 from librairy.config import Settings
+from librairy.correction_state import active_plan
 from librairy.corrections import (
     CURRENT,
     MISSING,
@@ -42,17 +43,21 @@ from librairy.review_undo import snapshot_proposals
 from librairy.search import sync_search_item
 from librairy.taxonomy import CATEGORIES, render_destination
 from librairy.web.actionability import (
+    APPLYING,
+    DISMISSED,
+    NEEDS_ANALYSIS,
+    OUTDATED,
+    READY,
+    WAITING,
+    actionability,
+    can_approve,
+    summarize,
+)
+from librairy.web.actionability import (
     EXPLANATION as ACTION_NOTE,
 )
 from librairy.web.actionability import (
     LABEL as ACTION_LABEL,
-)
-from librairy.web.actionability import (
-    NEEDS_ANALYSIS,
-    READY,
-    actionability,
-    can_approve,
-    summarize,
 )
 from librairy.web.evidence import (
     confidence_caption,
@@ -63,6 +68,11 @@ from librairy.web.evidence import (
 )
 from librairy.web.subjects import group as group_subjects
 from librairy.web.subjects import subject_key
+
+# The three effective states that mean "an approved plan already owns this".
+# All three belong under Waiting for Commit: an outdated approval is still an
+# approval, and hiding it back among the undecided rows would offer a second.
+PENDING_KINDS = (WAITING, OUTDATED, APPLYING)
 
 PAGE_SIZE = 50
 DEFAULT_CATEGORY_FIELDS = {
@@ -866,21 +876,30 @@ def audit_view(conn: sqlite3.Connection, settings: Settings | None = None) -> di
     Reads only: rendering this page must not write, which is what keeps a page
     load from competing with the worker for SQLite's one writer lock.
     """
-    open_rows = findings_with_status(conn, ("open",))
-    waiting_rows = findings_with_status(conn, ("accepted",))
-    dismissed_rows = findings_with_status(conn, ("kept",))
-    groups = _subject_groups(conn, settings, open_rows)
+    views = [
+        _audit_row(conn, settings, row)
+        for row in findings_with_status(conn, ("open", "accepted", "kept"))
+    ]
+    # Which list a row belongs in is decided by its *effective* state, never by
+    # the status column it was fetched under. Those two disagree on the live
+    # database — a finding reading `open` that an approved plan already claims —
+    # and a row that says "Waiting for Commit" while sitting under the heading
+    # of things nobody has answered is the same lie in a different place.
+    waiting = [view for view in views if view["status_kind"] in PENDING_KINDS]
+    dismissed = [view for view in views if view["status_kind"] == DISMISSED]
+    pending_or_done = {*PENDING_KINDS, DISMISSED}
+    groups = _subject_groups(
+        [view for view in views if view["status_kind"] not in pending_or_done]
+    )
     return {
         "audit_groups": groups,
         "audit_open": sum(int(group["count"]) for group in groups),
-        "audit_waiting": [_audit_row(conn, settings, row) for row in waiting_rows],
-        "audit_dismissed": [_audit_row(conn, settings, row) for row in dismissed_rows],
+        "audit_waiting": waiting,
+        "audit_dismissed": dismissed,
     }
 
 
-def _subject_groups(
-    conn: sqlite3.Connection, settings: Settings | None, rows: list[sqlite3.Row]
-) -> list[dict[str, object]]:
+def _subject_groups(views: list[dict[str, object]]) -> list[dict[str, object]]:
     """One group per real-world thing, not one per folder path.
 
     Grouping used to be `relpath.rpartition("/")`, which put every finding
@@ -890,7 +909,7 @@ def _subject_groups(
     saying they were about the same album. See `web/subjects.py` for what
     replaced it, and for why the two are *not* merged into one decision.
     """
-    subjects = group_subjects([_audit_row(conn, settings, row) for row in rows])
+    subjects = group_subjects(views)
     return [
         {
             "key": subject.key,
@@ -1009,7 +1028,11 @@ def _audit_title(relpath: str, kind: str) -> str:
 def _audit_row(
     conn: sqlite3.Connection, settings: Settings | None, row: sqlite3.Row
 ) -> dict[str, object]:
-    accepted = row["status"] == "accepted"
+    # The plan, not the status column. A finding can be `open` and still own an
+    # approved plan — that is the inconsistency this pass exists to stop
+    # rendering as an invitation to approve it a second time.
+    plan = active_plan(conn, row["id"], settings)
+    accepted = plan is not None
     state = CURRENT if settings is None else finding_state(settings, row)
     executable = settings is not None and is_executable(row, state)
     affected: list[dict[str, str]] = []
@@ -1043,13 +1066,13 @@ def _audit_row(
                 "role": op["role"],
                 "reason": "",
             }
-            for op in plan_files(conn, row["plan_id"])
+            for op in plan_files(conn, plan.plan_id)
         ]
     views = humanize_evidence(row["evidence"]) if row["evidence"] else []
     # One value, and every control on the row derives from it. See
     # `web/actionability.py` for why inferring this from button presence was
     # the actual cause of "I approved it and nothing happened".
-    status_kind = actionability(row, state, executable=executable, blocked=blocked)
+    status_kind = actionability(row, state, executable=executable, blocked=blocked, plan=plan)
     status_label = ACTION_LABEL[status_kind]
     # A stale observation is still a true observation. Only a finding that
     # could otherwise move a file has anything to gain from being looked at
