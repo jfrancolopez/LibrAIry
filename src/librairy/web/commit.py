@@ -84,6 +84,55 @@ def commit_overview(conn: sqlite3.Connection) -> dict[str, Any]:
         "last_plan": conn.execute(
             "SELECT * FROM plans WHERE status='done' ORDER BY finished_at DESC LIMIT 1"
         ).fetchone(),
+        # What just happened, kept visible after the pending count reaches
+        # zero. Committing the last item used to replace the whole page with
+        # "Nothing is approved yet", which is true and reads as though the
+        # thing you just did never occurred. Built from History, which already
+        # has all of it — this is a view, not a second record.
+        "last_result": _last_result(conn),
+    }
+
+
+def _last_result(conn: sqlite3.Connection) -> dict[str, Any] | None:
+    plan = conn.execute(
+        "SELECT * FROM plans WHERE status IN ('done','failed')"
+        " ORDER BY finished_at DESC, id DESC LIMIT 1"
+    ).fetchone()
+    if plan is None:
+        return None
+    counts = {
+        row["result"] or "pending": row["count"]
+        for row in conn.execute(
+            "SELECT result, COUNT(*) AS count FROM plan_ops WHERE plan_id=? GROUP BY result",
+            (plan["id"],),
+        )
+    }
+    finding = conn.execute(
+        "SELECT relpath, summary FROM audit_findings WHERE plan_id=?", (plan["id"],)
+    ).fetchone()
+    moved = counts.get("done", 0) + counts.get("renamed_collision", 0)
+    failed = counts.get("failed", 0) + counts.get("skipped_changed", 0) + counts.get(
+        "skipped_missing", 0
+    )
+    return {
+        "plan_id": plan["id"],
+        "finished_at": plan["finished_at"],
+        "moved": moved,
+        "failed": failed,
+        # A correction says what it was about; an inbox commit is a count.
+        "label": (
+            finding["relpath"].rpartition("/")[2] or finding["relpath"]
+            if finding is not None
+            else f"{moved} file{'' if moved == 1 else 's'} from your inbox"
+        ),
+        # Only offered while History still has something to reverse.
+        "can_undo": bool(
+            conn.execute(
+                "SELECT COUNT(*) AS n FROM history"
+                " WHERE plan_id=? AND action='move' AND outcome='ok'",
+                (plan["id"],),
+            ).fetchone()["n"]
+        ),
     }
 
 

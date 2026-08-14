@@ -86,7 +86,7 @@ def test_commit_will_not_build_a_plan_around_a_missing_file(tmp_path: Path) -> N
         follow_redirects=False,
     )
 
-    assert "Nothing is approved yet" in page
+    assert "Nothing waiting to commit" in page
     assert created.status_code != 422
 
 

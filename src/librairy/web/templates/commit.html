@@ -31,6 +31,13 @@
           <button type="submit" class="btn-lg">See exactly what will move</button>
         </form>
         <p class="muted">Next screen lists every move, one by one. Nothing happens until you confirm there.</p>
+        {# Changing your mind before execution is not Undo — nothing has
+           happened yet. Kept visually quiet: it is the escape hatch, not the
+           thing this card is for. #}
+        <form method="post" action="/commit/unapprove">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button type="submit" class="btn-ghost">Send all back to Review</button>
+        </form>
       </section>
 
       <section class="widget card">
@@ -59,15 +66,43 @@
       </section>
     </div>
   {% elif not corrections %}
+    {# The Commit tab stays whether or not there is anything in it, so this
+       state has to be worth arriving at. It says what would appear here, and
+       points at both places decisions get made — the two Review workloads,
+       named, rather than one link to a page with two lists on it. #}
     <section class="card empty-state">
-      <h3>Nothing is approved yet</h3>
-      {% if waiting_review %}
-        <p>{{ waiting_review }} proposal(s) are waiting for you in Review. Approve the ones you want, then come back here to move them.</p>
-        <p><a href="/review">Go to Review</a></p>
-      {% else %}
-        <p>Nothing is waiting for review either. Drop files into your inbox and LibrAIry will propose where they belong.</p>
-        <p><a href="/dashboard">Back to dashboard</a></p>
-      {% endif %}
+      <h3>Nothing waiting to commit</h3>
+      <p>Approved changes appear here before LibrAIry moves anything.</p>
+      <div class="button-row">
+        <a class="btn" href="/review#review-list">Review new files{% if waiting_review %} ({{ waiting_review }}){% endif %}</a>
+        <a class="btn" href="/review#library-audit">Review existing library</a>
+      </div>
+    </section>
+  {% endif %}
+
+  {# What just happened, after the pending count reached zero.
+
+     Committing the last item used to replace the page with "Nothing is
+     approved yet" — true, and reading as though the thing you had just done
+     never occurred. This is History rendered, not a second record of it. #}
+  {% if last_result and not approved_count and not corrections %}
+    <section class="card commit-last">
+      <h3>Last completed</h3>
+      <p><strong>{{ last_result.label }}</strong> —
+        {{ last_result.moved }} file{{ '' if last_result.moved == 1 else 's' }} moved{% if last_result.failed %},
+        {{ last_result.failed }} not moved{% endif %}.
+        <span class="muted">{{ last_result.finished_at }}</span>
+      </p>
+      <div class="button-row">
+        <a class="btn" href="/history/plans/{{ last_result.plan_id }}">View History</a>
+        {% if last_result.can_undo %}
+        {# The same hash-verified reversal History uses. There is one undo. #}
+        <form method="post" action="/history/plans/{{ last_result.plan_id }}/undo">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button type="submit" class="btn-ghost">Undo</button>
+        </form>
+        {% endif %}
+      </div>
     </section>
   {% endif %}
 
@@ -90,6 +125,16 @@
               <span class="muted">{{ correction.op_count }} file{{ '' if correction.op_count == 1 else 's' }}</span>
             </div>
             <p class="audit-summary">{{ correction.summary }}</p>
+            {# Where it is now and where it is going, both, before the button.
+               "Commit this correction" over a summary alone asks somebody to
+               approve a move whose destination is one click away. #}
+            <dl class="correction-shape">
+              <div><dt>Current</dt><dd class="mono">{{ correction.current }}</dd></div>
+              {% if correction.suggested %}
+              <div><dt>After Commit</dt><dd class="mono">{{ correction.suggested }}</dd></div>
+              {% endif %}
+              <div><dt>Affects</dt><dd>{{ correction.op_count }} file{{ '' if correction.op_count == 1 else 's' }}</dd></div>
+            </dl>
             <details>
               <summary>Every move in this correction</summary>
               <ul class="sample-moves">
@@ -103,10 +148,18 @@
                 {% endfor %}
               </ul>
             </details>
-            <form method="post" action="/commit/execute/{{ correction.plan_id }}">
-              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-              <button type="submit" class="primary">Commit this correction</button>
-            </form>
+            <div class="button-row">
+              <form method="post" action="/commit/execute/{{ correction.plan_id }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button type="submit" class="btn-primary">Commit this correction</button>
+              </form>
+              {# Before execution, not after, and so not called Undo. Nothing
+                 has happened yet; this puts the decision back in Review. #}
+              <form method="post" action="/review/audit/{{ correction.finding_id }}/unapprove">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button type="submit">Send back to Review</button>
+              </form>
+            </div>
           </li>
         {% endfor %}
       </ul>

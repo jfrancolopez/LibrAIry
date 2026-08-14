@@ -59,7 +59,9 @@ def test_commit_flow_executes_exact_approved_plan_and_hash(tmp_path: Path) -> No
         conn.execute("SELECT plan_hash FROM plans WHERE id=?", (plan_id,)).fetchone()[0]
         == plan_hash
     )
-    assert "done: 1" in progress.text
+    # A result, not a counter dump: "1 file moved. Nothing failed."
+    assert "1 file moved" in progress.text
+    assert "Nothing failed" in progress.text
     assert (
         conn.execute("SELECT result FROM plan_ops WHERE plan_id=?", (plan_id,)).fetchone()[0]
         == "done"
@@ -89,7 +91,8 @@ def test_commit_reports_changed_source_without_touching_file(tmp_path: Path) -> 
     wait_for_plan(conn, plan_id)
     progress = client.get(f"/commit/progress/{plan_id}")
 
-    assert "changed: 1" in progress.text
+    assert "0 of 1 moved" in progress.text
+    assert "the file changed after you approved it" in " ".join(progress.text.split())
     assert (
         conn.execute("SELECT result FROM plan_ops WHERE plan_id=?", (plan_id,)).fetchone()[0]
         == "skipped_changed"
@@ -107,8 +110,8 @@ def test_second_commit_attempt_is_blocked_with_friendly_message(tmp_path: Path) 
     response = client.post(f"/commit/execute/{plan_id}", headers=csrf(client))
 
     assert response.status_code == 200
-    assert "execution started" not in response.text
-    assert "pending: 1" in response.text
+    assert "execution started" not in response.text.lower()
+    assert "0 of 1 complete" in response.text
 
 
 def test_start_execution_sets_active_plan_atomically(tmp_path: Path, monkeypatch) -> None:
@@ -155,7 +158,7 @@ def test_progress_endpoint_responds_while_background_commit_runs(
     response = client.get(f"/commit/progress/{plan_id}")
 
     assert response.status_code == 200
-    assert "pending:" in response.text
+    assert "of 1 complete" in response.text
     wait_for_plan(conn, plan_id)
 
 
@@ -228,9 +231,12 @@ def test_commit_page_with_nothing_approved_points_at_review(tmp_path: Path) -> N
 
     page = client.get("/commit").text
 
-    assert "Nothing is approved yet" in page
-    assert "waiting for you in Review" in page
-    assert 'href="/review"' in page
+    assert "Nothing waiting to commit" in page
+    assert "Approved changes appear here before LibrAIry moves anything" in page
+    # Both Review workloads, named. One link to a page with two lists on it
+    # leaves the reader to work out which one they wanted.
+    assert 'href="/review#review-list"' in page
+    assert 'href="/review#library-audit"' in page
     assert "See exactly what will move" not in page, "no button when there is nothing to commit"
 
 
@@ -239,8 +245,8 @@ def test_commit_page_with_an_empty_system_does_not_send_you_to_review(tmp_path: 
 
     page = client.get("/commit").text
 
-    assert "Nothing is approved yet" in page
-    assert "Drop files into your inbox" in page
+    assert "Nothing waiting to commit" in page
+    assert "Approved changes appear here before LibrAIry moves anything" in page
 
 
 def test_unexecuted_plans_are_surfaced_instead_of_vanishing(tmp_path: Path) -> None:

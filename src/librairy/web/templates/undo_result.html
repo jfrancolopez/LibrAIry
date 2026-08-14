@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block content %}
+  {# The same result, as a page, for a request that was not htmx.
+
+     Undo is offered from three places now — History, a plan's own page, and
+     the screen a commit finishes on — and only one of them was ever an htmx
+     swap. The other two rendered the bare fragment as the whole document:
+     a line of badges, no header, no navigation, after an operation that had
+     just moved somebody's files back. #}
+  <header class="page-head">
+    <div>
+      <h1>Undone</h1>
+      <p class="muted">
+        Every file below was put back where it came from, verified by hash
+        before anything was released. Nothing was deleted or overwritten.
+      </p>
+    </div>
+  </header>
+
+  {% include "partials/history_undo_result.html" %}
+
+  <div class="button-row commit-after">
+    <a class="btn" href="/history">View History</a>
+    <a class="btn" href="/browse">View in Browse</a>
+  </div>
+{% endblock %}

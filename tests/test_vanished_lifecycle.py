@@ -320,7 +320,7 @@ def test_review_and_commit_stay_free_of_it(tmp_path: Path) -> None:
     )
 
     assert "gone.mkv" not in queue
-    assert "Nothing is approved yet" in commit
+    assert "Nothing waiting to commit" in commit
     assert "gone.mkv" not in client.get("/review").text.split('id="review-list"')[1]
 
 
@@ -584,7 +584,7 @@ def test_the_whole_missing_lifecycle_still_holds_end_to_end(tmp_path: Path) -> N
     # Excluded from Search, from the Review queue, and from Commit.
     assert search_items(conn, "gone", SearchFilters(root=None)) == []
     assert "gone.mkv" not in client.get("/review").text.split('id="review-list"')[1]
-    assert "Nothing is approved yet" in client.get("/commit").text
+    assert "Nothing waiting to commit" in client.get("/commit").text
     # Still reachable directly, and honest about it.
     detail = client.get(f"/items/{gone}")
     assert detail.status_code == 200

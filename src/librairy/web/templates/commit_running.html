@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block content %}
+  {# The page a normal form post lands on while a plan runs.
+
+     `POST /commit/execute/{plan}` returned `partials/commit_progress.html`
+     unconditionally. From the confirm screen that is correct — htmx swaps it
+     into place. From the Commit page's "Commit this correction", which is an
+     ordinary form with no htmx on it, the browser rendered that bare fragment
+     as the entire document: no header, no navigation, no way back, and this
+     as the whole of it —
+
+         Execution started
+         approved
+         pending: 1 / done: 0 / renamed: 0 / changed: 0 / missing: 0 / failed: 0
+
+     — on the one screen in LibrAIry that moves files. The route now answers
+     the question it was actually asked: a fragment to htmx, a page to a
+     browser. #}
+  <header class="page-head">
+    <div>
+      <h1>{{ heading }}</h1>
+      <p class="muted">{{ blurb }}</p>
+    </div>
+  </header>
+
+  {% include "partials/commit_progress.html" %}
+{% endblock %}

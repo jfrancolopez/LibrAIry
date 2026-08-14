@@ -1,14 +1,88 @@
-<div id="commit-progress" hx-get="/commit/progress/{{ plan.id }}" hx-trigger="every 1s" hx-swap="outerHTML">
+{# What is happening to the files, in a sentence, then in numbers.
+
+   It used to be one line of six counters — `pending: 1 / done: 0 / renamed: 0
+   / changed: 0 / missing: 0 / failed: 0` — which is a debug print. Four of
+   those six are almost always zero, and the two that matter are buried among
+   them. Worse, "renamed" and "changed" are the module's words for two very
+   different things happening to somebody's files.
+
+   It polls only while there is something to poll: the swapped-in markup simply
+   has no `hx-trigger` once the plan is finished, so a completed commit costs
+   nothing and does not sit there re-rendering forever. #}
+<div id="commit-progress" class="commit-progress"
+     {% if plan.status not in ('done', 'failed') %}hx-get="/commit/progress/{{ plan.id }}" hx-trigger="every 1s" hx-swap="outerHTML"{% endif %}>
   {% if error %}<p class="status warn">{{ error }}</p>{% endif %}
-  {% if started %}<p class="status">Execution started</p>{% endif %}
-  <p><span class="badge badge-{{ 'ok' if plan.status == 'done' else 'warn' }}">{{ plan.status }}</span></p>
-  <p>pending: {{ counts.get('pending', 0) }} / done: {{ counts.get('done', 0) }} / renamed: {{ counts.get('renamed_collision', 0) }} / changed: {{ counts.get('skipped_changed', 0) }} / missing: {{ counts.get('skipped_missing', 0) }} / failed: {{ counts.get('failed', 0) }}</p>
+
+  {% set done = counts.get('done', 0) %}
+  {% set renamed = counts.get('renamed_collision', 0) %}
+  {% set changed = counts.get('skipped_changed', 0) %}
+  {% set missing = counts.get('skipped_missing', 0) %}
+  {% set failed = counts.get('failed', 0) %}
+  {% set pending = counts.get('pending', 0) %}
+  {% set moved = done + renamed %}
+  {% set total = moved + changed + missing + failed + pending %}
+
+  {% if plan.status in ('done', 'failed') %}
+    {# No smooth bar and no invented percentage — counts and a stage, because
+       those are the numbers that exist. #}
+    <p class="commit-headline">
+      {% if failed or changed or missing %}
+        <strong>{{ moved }} of {{ total }} moved.</strong>
+      {% else %}
+        <strong>{{ moved }} file{{ '' if moved == 1 else 's' }} moved.</strong>
+        Nothing failed.
+      {% endif %}
+    </p>
+  {% else %}
+    <p class="commit-headline">
+      <strong>{{ moved }} of {{ total }} complete</strong>
+      <span class="muted">— copied and verified by hash, one at a time.</span>
+    </p>
+  {% endif %}
+
+  {# Only the outcomes that actually happened. Four permanent zeroes taught
+     people to read past the line, including the times it was not zero. #}
+  <ul class="commit-outcomes">
+    {% if renamed %}
+    <li><strong>{{ renamed }}</strong> given a new name — something was already
+      at the destination, and nothing was overwritten.</li>
+    {% endif %}
+    {% if changed %}
+    <li><strong>{{ changed }}</strong> not moved: the file changed after you
+      approved it, so it is no longer what you agreed to move.</li>
+    {% endif %}
+    {% if missing %}
+    <li><strong>{{ missing }}</strong> not moved: the file is no longer on disk.</li>
+    {% endif %}
+    {% if failed %}
+    <li class="is-fail"><strong>{{ failed }}</strong> failed.</li>
+    {% endif %}
+  </ul>
+
+  {% if plan.status in ('done', 'failed') %}
+  <div class="button-row commit-after">
+    {# The three things worth doing next, and Undo among them because a
+       finished commit is exactly when somebody realises. It is the same
+       hash-verified reversal History uses — there is only one. #}
+    <a class="btn" href="/browse">View in Browse</a>
+    <a class="btn" href="/history/plans/{{ plan.id }}">View History</a>
+    <form method="post" action="/history/plans/{{ plan.id }}/undo">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button type="submit" class="btn-ghost">Undo</button>
+    </form>
+    <a class="btn" href="/commit">Back to Commit</a>
+  </div>
+  {% endif %}
+
   {% if recent_ops %}
-    <table>
-      <thead><tr><th scope="col">Seq</th><th scope="col">Result</th><th scope="col">Final</th></tr></thead>
-      <tbody>
-        {% for op in recent_ops %}<tr><td>{{ op.seq }}</td><td>{{ op.result }}</td><td>{{ op.final_relpath or op.dest_relpath }}</td></tr>{% endfor %}
-      </tbody>
-    </table>
+    <details class="commit-recent"{% if plan.status not in ('done', 'failed') %} open{% endif %}>
+      <summary>{{ recent_ops|length }} most recent</summary>
+      <table>
+        <thead><tr><th scope="col">#</th><th scope="col">Result</th><th scope="col">Where it went</th></tr></thead>
+        <tbody>
+          {% for op in recent_ops %}<tr><td>{{ op.seq }}</td><td>{{ op.result }}</td><td class="mono">{{ op.final_relpath or op.dest_relpath }}</td></tr>{% endfor %}
+        </tbody>
+      </table>
+    </details>
   {% endif %}
 </div>

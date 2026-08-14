@@ -2553,6 +2553,32 @@ summary.timeline-head::-webkit-details-marker { display: none; }
   color: var(--text-dim);
 }
 .commit-split { max-width: 70ch; }
+
+/* Where a correction is and where it is going, before the button that moves
+   it. A summary alone asks somebody to approve a destination they cannot see. */
+.correction-shape {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--space-1) var(--space-3);
+  margin: var(--space-2) 0;
+}
+.correction-shape > div { display: contents; }
+.correction-shape dt { color: var(--text-dim); text-transform: uppercase; font-size: 0.8em; }
+.correction-shape dd { margin: 0; word-break: break-all; }
+
+/* Execution, read as a result rather than a debug print. The line it replaces
+   was six counters, four of them permanently zero. */
+.commit-progress { margin: var(--space-4) 0; }
+.commit-headline { font-size: var(--text-lg); margin: 0 0 var(--space-2); }
+.commit-outcomes { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-1); }
+.commit-outcomes li { color: var(--text-dim); }
+.commit-outcomes .is-fail { color: var(--fail); }
+.commit-after { margin-top: var(--space-4); align-items: center; }
+.commit-recent { margin-top: var(--space-4); }
+.commit-recent summary { cursor: pointer; color: var(--text-dim); }
+/* What just happened, kept on the page after the pending count reaches zero. */
+.commit-last { margin-top: var(--space-4); }
+
 .correction-list { list-style: none; margin: 0; padding: 0; }
 .correction {
   border-left: 3px solid var(--audit);

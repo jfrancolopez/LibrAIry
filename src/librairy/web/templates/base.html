@@ -31,14 +31,17 @@
         {% for href, label in navitems %}
           <a href="{{ href }}"{% if request.url.path.startswith(href) %} class="active" aria-current="page"{% endif %}>{{ label }}</a>
         {% endfor %}
-        {# Commit is a step, not a place: it is only ever somewhere to go when
-           something is approved and waiting, and then it is the whole point. #}
+        {# Commit stays, with or without a count.
+
+           It used to appear only when something was waiting, which read as
+           "approving made the tab appear" and, worse, meant that committing
+           the last item made the destination vanish underneath the person who
+           had just used it — no way back to see what had happened. A count
+           badge says whether there is work; the tab says the step exists. #}
         {% with pending = approved_waiting() %}
-          {% if pending or request.url.path.startswith('/commit') %}
-            <a href="/commit"{% if request.url.path.startswith('/commit') %} class="active" aria-current="page"{% endif %}>
-              Commit{% if pending %} <span class="nav-count">{{ pending }}</span>{% endif %}
-            </a>
-          {% endif %}
+          <a href="/commit"{% if request.url.path.startswith('/commit') %} class="active" aria-current="page"{% endif %}>
+            Commit{% if pending %} <span class="nav-count">{{ pending }}</span>{% endif %}
+          </a>
         {% endwith %}
         <details class="nav-more">
           <summary>More</summary>

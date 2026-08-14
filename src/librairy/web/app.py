@@ -36,6 +36,7 @@ from librairy.filetypes import extension_info, next_ext_id
 from librairy.lifecycle import forget_vanished
 from librairy.logging import configure_logging
 from librairy.paths import PathValidationError
+from librairy.planner import utc_now
 from librairy.review_undo import undo_last
 from librairy.scanner import VALID_ROOTS
 from librairy.search import (
@@ -149,6 +150,18 @@ LOGGER = logging.getLogger(__name__)
 PACKAGE_DIR = Path(__file__).parent
 
 
+def _is_htmx(request: Request) -> bool:
+    """Whether this request wants a fragment or a page.
+
+    htmx sends `HX-Request: true` on every call it makes. A route that ignores
+    the header and always answers with a partial is correct exactly as long as
+    nobody reaches it any other way — and three routes were reachable from
+    ordinary forms, which is how a bare fragment came to be rendered as a whole
+    document on the screen that moves files.
+    """
+    return request.headers.get("hx-request", "").lower() == "true"
+
+
 def _csrf_context(request: Request) -> dict[str, str]:
     """`csrf_token` is always defined, in every template.
 
@@ -218,12 +231,21 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
     # Commit appears in the nav only when there is something to commit — which
     # means something whose file is still there. A count that led to "nothing
     # is approved yet" was worse than no tab at all.
+    # Everything waiting on one press of Commit, from both directions. It used
+    # to count inbox proposals only, so a library correction approved on its
+    # own left the Commit tab absent and the change apparently nowhere — the
+    # same "I approved it and nothing happened" in a different place.
     TEMPLATES.env.globals["approved_waiting"] = lambda: int(
         conn.execute(
             """
             SELECT COUNT(*) FROM proposals p JOIN items i ON i.id = p.item_id
             WHERE p.status='approved' AND i.missing_since IS NULL
             """
+        ).fetchone()[0]
+    ) + int(
+        conn.execute(
+            "SELECT COUNT(*) FROM audit_findings f JOIN plans p ON p.id = f.plan_id"
+            " WHERE f.status='accepted' AND p.status='approved'"
         ).fetchone()[0]
     )
     app.middleware("http")(_auth_and_security(conn, settings))
@@ -1240,6 +1262,23 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             },
         )
 
+    @app.post("/commit/unapprove", include_in_schema=False)
+    def commit_unapprove(request: Request) -> RedirectResponse:  # noqa: ARG001
+        """Send the approved inbox files back to Review.
+
+        Deliberately not `Undo`. Nothing has moved, so there is nothing to
+        reverse — this puts a decision back, and calling it Undo would teach
+        people that Undo sometimes means "before" and sometimes means "after".
+        Only `approved` rows are touched: a proposal that has already committed
+        has a file somewhere else, and reopening it would describe a move that
+        already happened.
+        """
+        conn.execute(
+            "UPDATE proposals SET status='proposed', updated_at=? WHERE status='approved'",
+            (utc_now(),),
+        )
+        return RedirectResponse("/review", status_code=303)
+
     @app.post("/commit/create", response_class=HTMLResponse)
     def commit_create(request: Request) -> Response:
         if not commit_overview(conn)["approved_count"]:
@@ -1263,22 +1302,78 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
 
     @app.post("/commit/execute/{plan_id}", response_class=HTMLResponse)
     def commit_execute(request: Request, plan_id: str) -> HTMLResponse:
+        """Start a plan, and answer the question the caller actually asked.
+
+        The confirm screen posts with htmx and wants the fragment to swap into
+        place. The Commit page's "Commit this correction" is an ordinary form,
+        and a browser given that fragment renders it as the entire document —
+        six counters and the word `approved`, with no header, no navigation and
+        no way back, on the one screen in LibrAIry that moves files.
+        """
         started = start_execution(conn, settings, commit_state, plan_id)
         data = commit_progress_data(conn, plan_id)
+        context = {"started": started, "error": commit_state.error, **data}
+        if _is_htmx(request):
+            return TEMPLATES.TemplateResponse(
+                request, "partials/commit_progress.html", context
+            )
         return TEMPLATES.TemplateResponse(
             request,
-            "partials/commit_progress.html",
-            {"started": started, "error": commit_state.error, **data},
+            "commit_running.html",
+            {
+                "title": "Committing",
+                "csrf_token": request.state.session["csrf_token"],
+                **_running_words(conn, plan_id),
+                **context,
+            },
         )
 
     @app.get("/commit/progress/{plan_id}", response_class=HTMLResponse)
     def commit_progress(request: Request, plan_id: str) -> HTMLResponse:
         data = commit_progress_data(conn, plan_id)
+        context = {"started": False, "error": commit_state.error, **data}
+        if _is_htmx(request):
+            return TEMPLATES.TemplateResponse(
+                request, "partials/commit_progress.html", context
+            )
+        # Reachable by reload, by a bookmark, and by anyone who lost the tab.
         return TEMPLATES.TemplateResponse(
             request,
-            "partials/commit_progress.html",
-            {"started": False, "error": commit_state.error, **data},
+            "commit_running.html",
+            {
+                "title": "Committing",
+                "csrf_token": request.state.session["csrf_token"],
+                **_running_words(conn, plan_id),
+                **context,
+            },
         )
+
+    def _running_words(conn_: sqlite3.Connection, plan_id: str) -> dict[str, str]:
+        """A heading that names what is moving, rather than a plan id.
+
+        A correction knows its own subject; an inbox commit is a count of
+        files. Neither is `a3f19c2e-…`, which is the one thing on this screen
+        nobody deciding anything needs.
+        """
+        row = conn_.execute(
+            "SELECT f.relpath, f.summary FROM audit_findings f WHERE f.plan_id=?",
+            (plan_id,),
+        ).fetchone()
+        ops = conn_.execute(
+            "SELECT COUNT(*) AS n FROM plan_ops WHERE plan_id=?", (plan_id,)
+        ).fetchone()["n"]
+        if row is not None:
+            name = row["relpath"].rpartition("/")[2] or row["relpath"]
+            return {
+                "heading": f"Applying correction — {name}",
+                "blurb": f"{ops} file{'' if ops == 1 else 's'} already in your library. "
+                "Each is copied and verified by hash before the original is released.",
+            }
+        return {
+            "heading": f"Moving {ops} file{'' if ops == 1 else 's'}",
+            "blurb": "Each file is copied and verified by hash before the original is "
+            "released from the inbox. Nothing is deleted or overwritten.",
+        }
 
     @app.get("/history", response_class=HTMLResponse)
     def history(
@@ -1325,11 +1420,26 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
 
     @app.post("/history/plans/{plan_id}/undo", response_class=HTMLResponse)
     def history_plan_undo(request: Request, plan_id: str) -> HTMLResponse:
+        """The one undo. Same implementation wherever it is offered from.
+
+        Reached by htmx from History and by an ordinary form from the screen a
+        commit finishes on, so it answers with a fragment or a page as asked —
+        the bare fragment as a whole document was a line of badges after an
+        operation that had just moved somebody's files back.
+        """
         results = undo_history_plan(conn, settings, plan_id)
+        if _is_htmx(request):
+            return TEMPLATES.TemplateResponse(
+                request, "partials/history_undo_result.html", {"results": results}
+            )
         return TEMPLATES.TemplateResponse(
             request,
-            "partials/history_undo_result.html",
-            {"results": results},
+            "undo_result.html",
+            {
+                "title": "Undone",
+                "csrf_token": request.state.session["csrf_token"],
+                "results": results,
+            },
         )
 
     @app.post("/csrf-check")
