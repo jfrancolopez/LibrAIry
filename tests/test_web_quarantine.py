@@ -170,7 +170,7 @@ def test_quarantine_staged_rows_show_from_to_and_why(tmp_path: Path) -> None:
     page = client.get("/quarantine").text
 
     assert 'class="from-to"' in page
-    assert "Why?" in page
+    assert "Evidence" in page
     # Humanized, not a bracket code.
     assert "duplicate: same fingerprint" in page
 

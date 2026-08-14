@@ -425,7 +425,7 @@
      looked identical afterwards, so the only evidence anything had occurred
      was a sentence at the top of a page the reader was no longer at. #}
   {% if audit_waiting %}
-  <details class="review-group audit-group audit-waiting" open>
+  <details class="review-group audit-group audit-waiting" id="library-review-waiting" open>
     <summary>
       <span class="audit-folder">Waiting for Commit</span>
       <span class="muted">{{ audit_waiting|length }} approved</span>

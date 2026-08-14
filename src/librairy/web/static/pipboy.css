@@ -1166,6 +1166,53 @@ tbody tr:hover { background: var(--bg-metric); }
   font-size: var(--text-lg);
 }
 .review-group h2 .muted { font-size: var(--text-sm); font-weight: normal; }
+/* An album or season heading, now a `<details>` summary so a long queue folds
+   down to its headings without a line of script. */
+details.review-group > summary {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  cursor: pointer;
+  padding: var(--space-1) 0;
+}
+details.review-group > summary .group-name {
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+details.review-group > summary .muted { font-size: var(--text-sm); }
+.group-pick { display: inline-flex; align-items: center; gap: var(--space-2); }
+.group-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: var(--space-3) 0;
+}
+
+/* Where the work is, at the top, before any of it.
+   See review.html for the measurement that put it there. */
+.review-jump {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: var(--space-3) 0 var(--space-4);
+}
+.review-jump a {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  border: var(--border-thin) solid var(--border);
+  border-radius: var(--radius-ui);
+  text-decoration: none;
+  color: var(--text);
+  font-size: var(--text-sm);
+}
+.review-jump a:hover,
+.review-jump a:focus-visible { border-color: var(--accent); color: var(--accent); }
+.review-jump a strong { font-variant-numeric: tabular-nums; }
+/* A record rather than a workload, so it does not compete with the counts
+   that are actually waiting on someone. */
+.review-jump .jump-quiet { color: var(--text-dim); }
 
 /* ---- Settings tabs ---------------------------------------------------- */
 .settings-tabs {

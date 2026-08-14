@@ -31,6 +31,35 @@
     </div>
   </header>
 
+  {# Where the work is, and how to get to it.
+
+     Measured, not assumed: with 95 files waiting — the number on the live
+     installation — Library Review began 6,173 pixels down a 10,505-pixel page.
+     Eight and a half screens of Inbox before the second workload was even
+     visible, and nothing above it said the second workload existed.
+
+     This is not another navigation system, and deliberately not tabs. Tabs
+     would hide one workload behind the other and give Review a second kind of
+     state to be in; these are four counts and four anchors on one page, so
+     both lists stay whole, both stay printable, both stay linkable, and each
+     selection scope stays exactly where it was. #}
+  {% set jump = [
+       ('#review-list', 'New files', total),
+       ('#library-audit', 'Existing library', audit_open),
+       ('#storage-opportunities', 'Storage', storage.count or 0),
+     ] %}
+  <nav class="review-jump" aria-label="Review sections">
+    {% for anchor, label, count in jump %}
+      {% if count %}<a href="{{ anchor }}">{{ label }} <strong>{{ count }}</strong></a>{% endif %}
+    {% endfor %}
+    {% if audit_waiting %}
+      <a href="#library-review-waiting">Waiting for Commit <strong>{{ audit_waiting|length }}</strong></a>
+    {% endif %}
+    {% if audit_dismissed %}
+      <a href="#library-review-dismissed" class="jump-quiet">Dismissed <strong>{{ audit_dismissed|length }}</strong></a>
+    {% endif %}
+  </nav>
+
   {# Approving is a decision, not a move, and nothing on this page said where
      the approved pile had gone or that it was still waiting on one press.
      Same count as the nav badge, from the same query — two numbers about the
@@ -115,7 +144,7 @@
       public catalog or the file's own tags earned it, fading out through local AI and
       cloud AI to a plain guess from the filename. 62% off a catalog match is a
       different proposition from 62% assembled out of a name. Hover any bar for that in
-      words, or open <strong>Why</strong> on the row for the entries themselves.</p>
+      words, or open <strong>Evidence</strong> on the row for the entries themselves.</p>
 
     <p class="muted">Got one wrong? <strong>Undo</strong> appears above the list after
       any decision and takes the whole batch back.

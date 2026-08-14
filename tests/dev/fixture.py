@@ -484,3 +484,36 @@ def _running_audit(conn) -> None:  # noqa: ANN001
         "VALUES ('', ?, 'artwork', ?, ?, ?)",
         (RUNNING, counters.as_json(), utc_now(), utc_now()),
     )
+
+
+def stage_inbox(conn, settings: Settings, count: int) -> None:
+    """Fill the inbox with `count` staged proposals.
+
+    Not part of the standard fixture, because the standard fixture is about
+    Library Review and one empty inbox reads more clearly there. This exists
+    for the other question: what does Review look like when the inbox is the
+    size the live installation's was — 95 files — and Library Review is
+    somewhere underneath all of it?
+
+    The answer, measured rather than guessed, is what the navigation between
+    the two workloads was designed against.
+    """
+    from librairy.models import EvidenceEntry as Entry
+    from librairy.proposals import upsert_proposal
+
+    for index in range(count):
+        path = settings.inbox_dir / f"2026-05-0{index % 7 + 1}" / f"IMG_{1000 + index}.jpeg"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(JPEG)
+    scan_root(conn, "inbox", settings.inbox_dir, settings)
+    for row in conn.execute("SELECT id, relpath FROM items WHERE root='inbox'"):
+        name = Path(row["relpath"]).name
+        upsert_proposal(
+            conn,
+            item_id=row["id"],
+            category="photos",
+            clean_name=name,
+            dest_relpath=f"Photos/2026/Spring Trip/{name}",
+            confidence=0.91,
+            evidence=[Entry("filesystem", "folder date", "2026-05", 0.9)],
+        )

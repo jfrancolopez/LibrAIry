@@ -164,6 +164,21 @@
     refreshCount(scope);
   });
 
+  // Fold every group at once, or unfold them.
+  //
+  // Collapsing is a view and never a decision: the checkboxes stay in the
+  // document, a closed <details> still submits them, and nothing here touches
+  // `checked`. "Collapse group" and "Dismiss suggestion" must not be one
+  // gesture apart in meaning.
+  document.addEventListener("click", function (event) {
+    var button = event.target.closest("[data-groups]");
+    if (!button) return;
+    var open = button.dataset.groups === "expand";
+    document.querySelectorAll("details.review-group").forEach(function (group) {
+      group.open = open;
+    });
+  });
+
   // "Change…" and "Cancel" open and close the edit panel. A <details> would
   // need no script, but its disclosure triangle and default typography are
   // exactly the "ugly" the edit form was called out for; this is a button that

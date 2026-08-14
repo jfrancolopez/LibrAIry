@@ -70,7 +70,7 @@ def test_review_evidence_labels_cloud_marker_and_pending_edit(tmp_path: Path) ->
     # Evidence renders as plain-language "why" lines, not bracket codes.
     assert "Looks like unknown item fallback" in response.text
     assert "AI · openai" in response.text
-    assert ">Why</button>" in response.text
+    assert ">Evidence</button>" in response.text
     assert "no destination yet" in response.text
     assert "Destination" in response.text
 

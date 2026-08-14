@@ -47,17 +47,25 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--host", default="127.0.0.1")
+    # The live installation had 95 files waiting, which is the condition under
+    # which Review stops being a page and starts being a scroll. The default
+    # fixture has none, so the problem is invisible in it.
+    parser.add_argument(
+        "--inbox", type=int, default=0, help="stage N inbox proposals as well"
+    )
     args = parser.parse_args(argv)
 
     if str(REPO) not in sys.path:
         sys.path.insert(0, str(REPO))
     import uvicorn  # noqa: PLC0415
 
-    from tests.dev.fixture import build_app  # noqa: PLC0415
+    from tests.dev.fixture import build_app, stage_inbox  # noqa: PLC0415
 
     root = Path(tempfile.mkdtemp(prefix="librairy-ui-"))
     try:
         app = build_app(root)
+        if args.inbox:
+            stage_inbox(app.state.conn, app.state.settings, args.inbox)
         print(f"fixture library at {root}")  # noqa: T201
         print(f"serving http://{args.host}:{args.port}/review")  # noqa: T201
         uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
