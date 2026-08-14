@@ -50,6 +50,36 @@ lose the review queue and history, not a single file.
 
 The image includes `ffprobe`, `exiftool`, `fpcalc`, `rmlint`, and `czkawka_cli`. Missing or failing tools show warnings in Health with remedy hints.
 
+## A Library Review Row Disagrees With Commit
+
+A correction is approved in Review and Commit shows nothing, or a row offers
+*Approve change* for something already waiting. Both are the same underlying
+thing: the finding's status and the plan pointing at it no longer agree.
+
+Run `librairy db check`. It reads and changes nothing:
+
+```
+1 inconsistency(ies); 1 can be repaired automatically, 0 need a decision.
+ - open-finding-with-active-plan: Music/Pop/… — an approved plan is waiting
+   for Commit, but the finding reads as unanswered
+```
+
+The pages themselves are already honest about this: an approved plan outranks
+the status everywhere, so such a row shows **Waiting for Commit** and offers no
+second approval. Repair is about the stored rows, not about what you see.
+
+```
+librairy db repair --finding-plan-state --yes
+```
+
+Repair applies only the cases where the database already contains the answer.
+If anything ambiguous is reported — two active plans for one finding above all
+— it refuses the entire run rather than guessing which approval you meant. Send
+the correction back to Review and approve it again if that happens.
+
+Nothing repairs itself at startup, deliberately: a database that quietly fixes
+its own history hides the bug that produced it.
+
 ## Search Looks Stale
 
 Run `librairy index rebuild` or use the Health screen rebuild button. The FTS index is derived state and can be rebuilt from SQLite item/proposal metadata.

@@ -144,6 +144,8 @@ its usage and exits `2` rather than doing nothing quietly.
 | `audit list [--scope <folder>]` | Show open findings. |
 | `index rebuild [--content]` | Rebuild the search index from existing rows. Discovers nothing. |
 | `db path \| migrate` | Where the database is; apply migrations. |
+| `db check` | Report disagreements between a Library Review finding and the plan that claims it. Read-only. |
+| `db repair --finding-plan-state --yes` | Fix only the unambiguous ones. Refuses the whole run if any case needs a decision. |
 | `ai status \| test [provider]` | Provider configuration and a live round trip. |
 | `worker [--once]` | Run the background worker. |
 | `run` | Web and worker under the supervisor — what the container does. |

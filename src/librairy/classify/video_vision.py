@@ -389,19 +389,33 @@ def enrich_video(
     if plan.strategy == "paired-photo":
         return _with_evidence(result, sibling_evidence(plan.sibling))
 
-    cached = stored_vision(
-        conn, item.id, fingerprint=item.fingerprint, strategy=plan.cache_key
-    )
-    if cached is not None:
-        return _with_evidence(result, frame_evidence(cached.caption or "", plan.strategy))
-
     # Local only, and silently skipped when there is none. Personal video
     # frames are exactly the thing that must not leave the machine because a
     # cloud provider happened to be configured for filenames.
     config = provider or local_vision_provider(conn, settings)
     if config is None:
         LOGGER.debug("video vision skipped: no local AI provider is switched on")
-        return result
+        # A stored answer is still what LibrAIry knows about this clip, even
+        # with the provider switched off — this is a read, and reading costs
+        # nothing. It is the *inference* that needs a provider.
+        cached = stored_vision(
+            conn, item.id, fingerprint=item.fingerprint, strategy=plan.cache_key
+        )
+        return result if cached is None else _with_evidence(
+            result, frame_evidence(cached.caption or "", plan.strategy)
+        )
+
+    # The cache is keyed on all three things that can change the answer: the
+    # bytes, how they were looked at, and who looked. Resolving the model first
+    # is what makes the third possible — asking for the cache before knowing
+    # which model would answer is how a stale caption outlives the model that
+    # produced it.
+    model = settings.vision_model.strip() or config.model
+    cached = stored_vision(
+        conn, item.id, fingerprint=item.fingerprint, strategy=plan.cache_key, model=model
+    )
+    if cached is not None:
+        return _with_evidence(result, frame_evidence(cached.caption or "", plan.strategy))
 
     source = settings.library_dir / item.relpath
     if not source.is_file():
@@ -420,7 +434,7 @@ def enrich_video(
             config,
             frames[0],
             timeout=settings.ai_timeout,
-            model=settings.vision_model.strip() or config.model,
+            model=model,
             max_edge=settings.vision_max_edge,
             settings=settings,
         )
@@ -430,7 +444,6 @@ def enrich_video(
     if answer is None:
         return result
 
-    model = settings.vision_model.strip() or config.model
     save_vision(conn, item, answer, provider=config.name, model=model, strategy=plan.cache_key)
     # The name goes through the same policy photos use; the category does not
     # move. A frame is not allowed to decide what kind of thing this is.

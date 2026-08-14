@@ -382,6 +382,7 @@ def stored_vision(
     *,
     fingerprint: str | None = None,
     strategy: str | None = None,
+    model: str | None = None,
 ) -> StoredVision | None:
     """What was recorded for this item, if it still describes the same bytes.
 
@@ -393,6 +394,16 @@ def stored_vision(
     `strategy` is the same check one level up, for videos. An answer read off a
     single thumbnail is not the answer three frames would have given, so asking
     for `contact-sheet-v1` must not be satisfied by a `thumbnail-v1` row.
+
+    `model` is the third axis, and the one that is easiest to forget: the same
+    bytes, looked at the same way, by a different model, is a different answer.
+    The provider and model were always *stored*; not checking them meant that
+    swapping the model on the Settings page silently kept serving the previous
+    model's captions under the new one's name, with nothing to indicate it.
+
+    All three are opt-in. The read Review and search do asks none of them —
+    there the question is "what does the record say?", and the answer is the
+    record whatever produced it.
     """
     row = conn.execute("SELECT * FROM vision_results WHERE item_id=?", (item_id,)).fetchone()
     if row is None:
@@ -400,6 +411,8 @@ def stored_vision(
     if fingerprint is not None and row["fingerprint"] != (fingerprint or ""):
         return None
     if strategy is not None and _column(row, "strategy", "image") != strategy:
+        return None
+    if model is not None and row["model"] != model:
         return None
     return _from_row(row)
 

@@ -77,6 +77,10 @@ def test_fresh_db_migrates_to_current_schema(tmp_path: Path) -> None:
         "idx_optimization_status",
         "idx_optimization_jobs_state",
         "idx_optimization_jobs_live",
+        # A finding may have at most one active correction plan. Partial, so a
+        # finished plan never blocks correcting the same folder again.
+        "idx_plans_one_active_per_finding",
+        "idx_plan_withdrawals_finding",
     }
 
     columns = {row[1] for row in conn.execute("PRAGMA table_info(provider_status)")}
@@ -147,6 +151,12 @@ def test_migration_011_closes_proposals_for_files_already_filed(tmp_path: Path) 
         DROP INDEX IF EXISTS idx_catalog_identity_scope;
         DROP TABLE IF EXISTS catalog_identity;
         DROP INDEX IF EXISTS idx_plans_audit_finding;
+        -- Before the column it is built on, or SQLite refuses the drop. Both
+        -- indexes on `audit_finding_id` have to go for this to look like a
+        -- database from before that column existed.
+        DROP INDEX IF EXISTS idx_plans_one_active_per_finding;
+        DROP INDEX IF EXISTS idx_plan_withdrawals_finding;
+        DROP TABLE IF EXISTS plan_withdrawals;
         ALTER TABLE plans DROP COLUMN audit_finding_id;
         ALTER TABLE plan_ops DROP COLUMN role;
         DROP TABLE IF EXISTS audit_findings;
