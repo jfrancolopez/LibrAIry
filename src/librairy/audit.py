@@ -904,6 +904,23 @@ def record_findings(
             and existing["fingerprint"] == finding.fingerprint
         ):
             continue
+        # An approval survives re-discovery.
+        #
+        # This is where the live inconsistency came from. The audit re-finds a
+        # problem it has already reported — which it must, since the files have
+        # not moved yet — and the upsert below wrote `status='open'`
+        # unconditionally. A finding that had been approved, and whose plan was
+        # sitting in Commit waiting to be run, silently became an open question
+        # again while still pointing at that plan. Review then offered to
+        # approve it a second time.
+        #
+        # The newer evidence is still worth keeping: the summary, the severity
+        # and the fingerprint are what the row *is*, and refusing to update them
+        # would leave the page describing a library that has moved on. Only the
+        # status is protected, because only the status is a decision.
+        if existing and _has_active_plan(conn, existing["id"]):
+            _update_evidence(conn, existing["id"], finding, now)
+            continue
         conn.execute(
             """
             INSERT INTO audit_findings(
@@ -939,6 +956,40 @@ def record_findings(
     _retire_resolved(conn, seen, scope)
 
 
+def _has_active_plan(conn: sqlite3.Connection, finding_id: int) -> bool:
+    from librairy.correction_state import active_plans
+
+    return bool(active_plans(conn, finding_id))
+
+
+def _update_evidence(
+    conn: sqlite3.Connection, finding_id: int, finding: Finding, now: str
+) -> None:
+    """Refresh what the audit now knows, without touching the decision.
+
+    The fingerprint comes along deliberately. It is the record of what the file
+    was when this was last looked at, and the pending plan's own staleness is
+    measured against the *plan's* copies of it, not this one — so updating here
+    keeps the finding honest without quietly making an outdated approval look
+    current. See `correction_state.plan_drift`.
+    """
+    conn.execute(
+        "UPDATE audit_findings SET item_id=?, severity=?, summary=?, dest_root=?,"
+        " dest_relpath=?, evidence=?, fingerprint=?, updated_at=? WHERE id=?",
+        (
+            finding.item_id,
+            finding.severity,
+            finding.summary,
+            "library" if finding.dest_relpath else None,
+            finding.dest_relpath,
+            json.dumps([entry.__dict__ for entry in finding.evidence]),
+            finding.fingerprint,
+            now,
+            finding_id,
+        ),
+    )
+
+
 def _live_item_ids(conn: sqlite3.Connection, findings: list[Finding]) -> set[int]:
     """Which of the item ids these findings carry still exist.
 
@@ -961,12 +1012,20 @@ def _retire_resolved(
 ) -> None:
     prefix = f"{scope.strip('/')}/" if scope else ""
     rows = conn.execute(
-        "SELECT id, root, relpath, kind FROM audit_findings WHERE status='open'"
+        "SELECT id, root, relpath, kind, plan_id FROM audit_findings WHERE status='open'"
     ).fetchall()
     for row in rows:
         if prefix and not row["relpath"].startswith(prefix):
             continue
         if (row["root"], row["relpath"], row["kind"]) not in seen:
+            # Never delete a finding a plan still points at. An `open` row is
+            # normally nobody's, but the pair of foreign keys can leave one
+            # holding an approved plan — and deleting it would leave that plan
+            # in Commit with nothing to explain what it was for, which is worse
+            # than the inconsistency it came from. `librairy db check` reports
+            # these; retiring the list quietly is not a repair.
+            if row["plan_id"] or _has_active_plan(conn, row["id"]):
+                continue
             conn.execute("DELETE FROM audit_findings WHERE id=?", (row["id"],))
 
 

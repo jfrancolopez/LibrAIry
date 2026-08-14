@@ -289,7 +289,7 @@ def test_a_started_correction_cannot_be_unapproved(tmp_path: Path) -> None:
     try:
         withdraw_approval(conn, ident)
     except CorrectionRefused as exc:
-        assert "already run" in str(exc)
+        assert "already started" in str(exc)
     else:  # pragma: no cover
         raise AssertionError("an executed correction was unapproved")
 
