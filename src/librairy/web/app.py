@@ -37,6 +37,12 @@ from librairy.lifecycle import forget_vanished
 from librairy.logging import configure_logging
 from librairy.paths import PathValidationError
 from librairy.planner import utc_now
+from librairy.quarantine import QuarantineError
+from librairy.quarantine_requests import (
+    cancel_request,
+    request_delete_queue,
+    request_restore,
+)
 from librairy.review_undo import undo_last
 from librairy.scanner import VALID_ROOTS
 from librairy.search import (
@@ -106,9 +112,7 @@ from librairy.web.history import (
 from librairy.web.params import OptionalFloat, OptionalInt, PageNumber
 from librairy.web.quarantine import (
     approve_stage,
-    mark_for_deletion,
     quarantine_data,
-    restore_quarantine,
     stage_for_deletion,
     unstage_proposal,
 )
@@ -1193,32 +1197,74 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             {
                 "title": "Quarantine",
                 "csrf_token": request.state.session["csrf_token"],
-                **quarantine_data(conn, settings),
+                **quarantine_data(conn, settings, view=_query(request, "view")),
             },
         )
 
-    @app.post("/quarantine/restore/{entry_id}", response_class=HTMLResponse)
-    def quarantine_restore(request: Request, entry_id: int) -> HTMLResponse:
-        result = restore_quarantine(conn, settings, entry_id)
+    def _quarantine_page(request: Request, notice: str, view: str = "") -> HTMLResponse:
+        """The Quarantine page, re-rendered, with a sentence about what changed.
+
+        The whole page rather than a fragment appended at the bottom. Every
+        action used to swap one line into a `<div>` at the very foot of a long
+        page — under the row you pressed, which did not change — and the line
+        itself ended "Reload the page to see the list catch up". That is the
+        mechanism behind "I clicked it and nothing happened".
+        """
         return TEMPLATES.TemplateResponse(
             request,
-            "partials/quarantine_result.html",
-            {"result": result},
+            "quarantine.html",
+            {
+                "title": "Quarantine",
+                "csrf_token": request.state.session["csrf_token"],
+                **quarantine_data(conn, settings, view=view or _query(request, "view")),
+                "notice": notice,
+            },
         )
 
-    @app.post("/quarantine/mark-delete/{entry_id}", response_class=HTMLResponse)
-    def quarantine_mark_delete(request: Request, entry_id: int) -> HTMLResponse:
-        """Gather a held file into the delete pile. Still never deletes.
+    def _query(request: Request, name: str, default: str = "") -> str:
+        return str(request.query_params.get(name, default) or default)
 
-        Quarantine answers "not in my library". It had no way to say "and I am
-        done with this one", which left emptying it a file-by-file job in a
-        file manager.
+    @app.post("/quarantine/restore/{entry_id}", response_class=HTMLResponse)
+    def quarantine_restore(request: Request, entry_id: int) -> HTMLResponse:
+        """Ask for this file to go back. It goes back at Commit, not now."""
+        try:
+            request_restore(conn, settings, entry_id)
+        except QuarantineError as exc:
+            return _quarantine_page(request, str(exc))
+        # Rendered on the view the row has just moved to. Leaving the reader on
+        # the tab it left means pressing a button makes a row disappear, which
+        # is the same confusion this pass exists to remove, one step along.
+        return _quarantine_page(
+            request, "Restore requested. It moves back when you commit.", view="waiting"
+        )
+
+    @app.post("/quarantine/delete-queue/{entry_id}", response_class=HTMLResponse)
+    def quarantine_delete_queue(request: Request, entry_id: int) -> HTMLResponse:
+        """Ask for this file to join the delete queue. Never deletes anything.
+
+        This used to move the file the instant it was pressed, with no plan and
+        nothing in Commit. It is a request now, like every other decision that
+        moves a file.
         """
-        result = mark_for_deletion(conn, settings, entry_id)
-        return TEMPLATES.TemplateResponse(
+        try:
+            request_delete_queue(conn, settings, entry_id)
+        except QuarantineError as exc:
+            return _quarantine_page(request, str(exc))
+        return _quarantine_page(
             request,
-            "partials/quarantine_result.html",
-            {"result": result},
+            "Added to the delete queue on the next commit. Nothing is deleted.",
+            view="waiting",
+        )
+
+    @app.post("/quarantine/cancel/{entry_id}", response_class=HTMLResponse)
+    def quarantine_cancel(request: Request, entry_id: int) -> HTMLResponse:
+        """Take the decision back. Not called Undo: nothing has moved."""
+        try:
+            cancel_request(conn, entry_id)
+        except QuarantineError as exc:
+            return _quarantine_page(request, str(exc))
+        return _quarantine_page(
+            request, "Request cancelled. Nothing was moved.", view="held"
         )
 
     @app.post("/quarantine/staged/{proposal_id}/unstage", response_class=HTMLResponse)

@@ -9,7 +9,7 @@ from pathlib import Path
 from librairy.config import Settings
 
 LOGGER = logging.getLogger(__name__)
-SCHEMA_VERSION = 23
+SCHEMA_VERSION = 24
 
 
 class DatabaseVersionError(RuntimeError):
@@ -613,6 +613,31 @@ CREATE TABLE plan_withdrawals (
 CREATE INDEX idx_plan_withdrawals_finding ON plan_withdrawals(audit_finding_id);
 """
 
+MIGRATION_024 = """
+-- A quarantine decision is a plan, like everything else that moves a file.
+--
+-- It was not. "Mark for deletion" on a held file called the executor's move
+-- helper directly, inside the request: the file moved to `_to-delete` before
+-- the response was written, with no plan, nothing in Commit, and a one-line
+-- confirmation appended to the bottom of a long page. Every other way of
+-- moving a file in LibrAIry goes approve → Commit → journal → Undo, and this
+-- one went straight to the disk.
+--
+-- Reusing `plans` rather than inventing a pending-quarantine table is the
+-- point: the hash check before execution, the all-or-nothing group, the
+-- journal entry and the existing Undo all come with it, and Commit can show a
+-- quarantine move beside a correction because they are the same kind of thing.
+ALTER TABLE plans ADD COLUMN quarantine_entry_id INTEGER REFERENCES quarantine_entries(id);
+CREATE INDEX idx_plans_quarantine_entry ON plans(quarantine_entry_id);
+
+-- One pending decision per held file, for the same reason a finding may have
+-- only one active correction: two approved plans over one file are two answers
+-- to a question that has one.
+CREATE UNIQUE INDEX idx_plans_one_active_per_quarantine
+  ON plans(quarantine_entry_id)
+  WHERE quarantine_entry_id IS NOT NULL AND status IN ('approved', 'executing');
+"""
+
 MIGRATIONS = {
     1: MIGRATION_001,
     2: MIGRATION_002,
@@ -637,6 +662,7 @@ MIGRATIONS = {
     21: MIGRATION_021,
     22: MIGRATION_022,
     23: MIGRATION_023,
+    24: MIGRATION_024,
 }
 
 

@@ -42,14 +42,25 @@ def test_quarantine_restore_round_trips_file_and_journals(tmp_path: Path) -> Non
         headers={"x-csrf-token": client.cookies["csrf_token"]},
     )
 
+    # A request now, not an immediate move. The file goes back at Commit, the
+    # same way every other file movement in LibrAIry happens.
     assert response.status_code == 200
-    assert "Done</span>" in response.text and "dupe.txt" in response.text
+    assert "Restore requested" in response.text
+    assert "Waiting for Commit" in response.text
+    assert (settings.quarantine_dir / "2026-07-22/dupe.txt").exists()
+    assert not (settings.inbox_dir / "dupe.txt").exists()
+    plan = conn.execute(
+        "SELECT id, status FROM plans WHERE quarantine_entry_id=?", (entry_id,)
+    ).fetchone()
+    assert plan["status"] == "approved"
+
+    # And committing it does what the row promised.
+    execute_plan(conn, plan["id"], settings)
     assert (settings.inbox_dir / "dupe.txt").read_text(encoding="utf-8") == "dupe"
     assert not (settings.quarantine_dir / "2026-07-22/dupe.txt").exists()
-    assert (
-        conn.execute("SELECT action FROM history ORDER BY id DESC LIMIT 1").fetchone()[0]
-        == "restore_quarantine"
-    )
+    assert conn.execute(
+        "SELECT restored_at FROM quarantine_entries WHERE id=?", (entry_id,)
+    ).fetchone()[0] is not None
 
 
 def test_quarantine_screen_lists_staged_and_similar_flags_without_delete(tmp_path: Path) -> None:
@@ -71,8 +82,12 @@ def test_quarantine_screen_lists_staged_and_similar_flags_without_delete(tmp_pat
     assert "similarity 0.91" in response.text
     # The page now tells you where to go and delete things yourself, so the
     # invariant is "no control that deletes", not "the word never appears".
-    for control in ("hx-delete", 'action="/quarantine/delete', "/quarantine/purge"):
+    # The invariant is "nothing here deletes a file", not "the word never
+    # appears". `Delete queue` posts a *request* to move a file into a folder
+    # you empty yourself; there is still no control anywhere that unlinks one.
+    for control in ("hx-delete", "/quarantine/purge", "/quarantine/destroy"):
         assert control not in response.text
+    assert "Nothing is deleted" in response.text or "never deletes" in response.text
 
 
 def test_staged_quarantine_approve_and_unstage_actions(tmp_path: Path) -> None:
@@ -186,22 +201,31 @@ def test_marking_a_held_file_for_deletion_gathers_it_without_deleting_it(
     entry_id = seed_executed_quarantine(conn, settings)
 
     response = client.post(
-        f"/quarantine/mark-delete/{entry_id}",
+        f"/quarantine/delete-queue/{entry_id}",
         headers={"x-csrf-token": client.cookies["csrf_token"]},
     )
 
+    # Nothing moves on the click. This used to move the file inside the request
+    # handler, with no plan and nothing in Commit, and the only feedback was a
+    # line appended to the bottom of the page.
     assert response.status_code == 200
+    assert "Nothing is deleted" in response.text
+    assert (settings.quarantine_dir / "2026-07-22/dupe.txt").exists()
+    assert not (settings.quarantine_dir / "_to-delete/2026-07-22/dupe.txt").exists()
+    plan = conn.execute(
+        "SELECT id, status FROM plans WHERE quarantine_entry_id=?", (entry_id,)
+    ).fetchone()
+    assert plan["status"] == "approved"
+
+    # It moves at Commit, and it is still not deleted.
+    execute_plan(conn, plan["id"], settings)
     moved = settings.quarantine_dir / "_to-delete/2026-07-22/dupe.txt"
     assert moved.read_text(encoding="utf-8") == "dupe"
     assert not (settings.quarantine_dir / "2026-07-22/dupe.txt").exists()
     assert conn.execute("SELECT relpath FROM items WHERE root='quarantine'").fetchone()[0] == (
         "_to-delete/2026-07-22/dupe.txt"
     )
-    assert (
-        conn.execute("SELECT action FROM history ORDER BY id DESC LIMIT 1").fetchone()[0]
-        == "mark_for_deletion"
-    )
-    assert "marked for deletion" in client.get("/quarantine").text
+    assert "delete queue" in client.get("/quarantine?view=delete-queue").text.lower()
 
 
 def test_a_file_in_the_delete_pile_can_still_be_put_back(tmp_path: Path) -> None:
@@ -211,10 +235,23 @@ def test_a_file_in_the_delete_pile_can_still_be_put_back(tmp_path: Path) -> None
     entry_id = seed_executed_quarantine(conn, settings)
     csrf = client.cookies["csrf_token"]
 
-    client.post(f"/quarantine/mark-delete/{entry_id}", headers={"x-csrf-token": csrf})
-    restored = client.post(f"/quarantine/restore/{entry_id}", headers={"x-csrf-token": csrf})
+    # Into the delete queue, for real, through Commit.
+    client.post(f"/quarantine/delete-queue/{entry_id}", headers={"x-csrf-token": csrf})
+    plan_id = conn.execute(
+        "SELECT id FROM plans WHERE quarantine_entry_id=?", (entry_id,)
+    ).fetchone()[0]
+    execute_plan(conn, plan_id, settings)
+    assert (settings.quarantine_dir / "_to-delete/2026-07-22/dupe.txt").exists()
 
+    # And back out again: the entry remembers where the file came from, not
+    # where it is sitting now, so the delete queue is not a one-way door.
+    restored = client.post(f"/quarantine/restore/{entry_id}", headers={"x-csrf-token": csrf})
     assert restored.status_code == 200
+    restore_plan = conn.execute(
+        "SELECT id FROM plans WHERE quarantine_entry_id=? AND status='approved'", (entry_id,)
+    ).fetchone()[0]
+    execute_plan(conn, restore_plan, settings)
+
     assert (settings.inbox_dir / "dupe.txt").read_text(encoding="utf-8") == "dupe"
     assert not (settings.quarantine_dir / "_to-delete/2026-07-22/dupe.txt").exists()
 
@@ -310,7 +347,7 @@ def test_a_moved_out_row_leads_with_the_name_and_hides_the_rest(tmp_path: Path) 
 
     body = client.get("/quarantine").text
 
-    assert "<table" not in body.split("Already moved out")[1].split("</section>")[0]
+    assert "<table" not in body.split("qlist")[1].split("</section>")[0]
     assert 'class="qrow' in body
     # The name identifies the row; the path and the plan are behind Details.
     assert "qrow-name" in body
@@ -326,11 +363,9 @@ def test_quarantine_actions_and_delete_pile_semantics_are_unchanged(tmp_path: Pa
     body = client.get("/quarantine").text
 
     assert f"/quarantine/restore/{entry_id}" in body
-    assert f"/quarantine/mark-delete/{entry_id}" in body
+    assert f"/quarantine/delete-queue/{entry_id}" in body
     assert "LibrAIry never deletes anything." in body
     assert "delete them yourself" in body
-    # Marking is still a staging move into one folder, never a deletion.
-    assert "It is still not deleted" in body
 
 
 def test_quarantine_empty_state_says_how_files_get_here(tmp_path: Path) -> None:

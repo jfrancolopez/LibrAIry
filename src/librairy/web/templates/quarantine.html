@@ -17,6 +17,10 @@
     </div>
   </header>
 
+  {# What just happened, at the top, where the eye already is — not appended to
+     a <div> at the foot of the page under an unchanged row. #}
+  {% if notice %}<p class="status ok" role="status">{{ notice }}</p>{% endif %}
+
   <section class="card notice-row">
     <p>
       {% if held %}
@@ -96,7 +100,34 @@
   </section>
 
   <section class="metric wide">
-    <h2>Already moved out</h2>
+    {# One tab per real state, counted in SQL over the whole table rather than
+       by measuring a list. The counts stay true at a million rows because
+       nothing here loads a million rows. Filters live in the URL so reload,
+       Back and Forward all work, and so a link can be shared. #}
+    <nav class="view-tabs" aria-label="Quarantine views">
+      {% for key, label in views.items() %}
+        <a class="view-tab{% if view == key %} is-current{% endif %}"
+           href="/quarantine?view={{ key }}"
+           {% if view == key %}aria-current="page"{% endif %}>
+          {{ label }} <span class="view-count">{{ counts.get(key, 0) }}</span>
+        </a>
+      {% endfor %}
+    </nav>
+
+    <h2>{{ views[view] }}</h2>
+
+    {% if view == 'delete-queue' %}
+      {# The safety invariant, said where the decision is, not in a footnote.
+         "Delete queue" is the user-facing name; `_to-delete` is an
+         implementation detail that belongs in Details. #}
+      <p class="notice-warn">These files are waiting for <strong>you</strong> to
+        delete them. LibrAIry never deletes anything automatically — it only
+        gathers them in one folder so you can empty it yourself.</p>
+    {% elif view == 'waiting' %}
+      <p class="muted">You have decided what happens to these. Nothing moves
+        until you commit.</p>
+    {% endif %}
+
     {% if entries %}
       {# Rows, not a table. The four columns held a full relpath that wrapped to
          four lines on a phone and pushed the actions off the side of the
@@ -115,19 +146,50 @@
                    file, warn is something staged to leave, ok is safe/undone. #}
                 <span class="badge badge-info" title="{{ entry.reason_text }}">{{ entry.reason_tag }}</span>
                 {% if entry.restored_at %}
-                  <span class="badge badge-ok">put back</span>
+                  <span class="badge badge-ok">Put back</span>
+                {% elif entry.request %}
+                  {# The decision is visible on the row that carries it. It used
+                     to be visible only on the Commit page, which is how a
+                     pressed button looked like nothing at all. #}
+                  <span class="badge badge-status-waiting">{{ 'Applying' if entry.request.applying else 'Waiting for Commit' }}</span>
                 {% elif entry.marked %}
-                  <span class="badge badge-warn">marked for deletion</span>
+                  <span class="badge badge-warn">In delete queue</span>
+                {% elif entry.gone %}
+                  <span class="badge badge-warn">Not on disk</span>
                 {% endif %}
                 <span class="muted qrow-when">{{ entry.quarantined_at }}</span>
               </span>
             </header>
 
-            <div class="qrow-line">
-              <p class="qrow-from">
-                <span class="muted">came from</span>
-                <span class="mono">{{ entry.original_root }}/{{ entry.original_relpath }}</span>
+            <p class="qrow-why">{{ entry.reason_text|capitalize }}.</p>
+
+            {# Where it is, where it came from, and — once you have decided —
+               where it is going. The same Current / After Commit shape the
+               Commit page and Library Review use, so one glance answers the
+               same question everywhere. #}
+            <dl class="correction-shape">
+              <div><dt>Current</dt>
+                <dd class="mono">quarantine/{{ entry.item_relpath or '—' }}</dd></div>
+              {% if entry.original_relpath %}
+              <div><dt>Came from</dt>
+                <dd class="mono">{{ entry.original_root }}/{{ entry.original_relpath }}</dd></div>
+              {% endif %}
+              {% if entry.request %}
+              <div><dt>After Commit</dt>
+                <dd class="mono">{{ entry.request.dest_root }}/{{ entry.request.dest_relpath }}</dd></div>
+              {% endif %}
+            </dl>
+
+            {% if entry.request %}
+              <p class="qrow-pending">
+                <strong>{{ entry.request.label }}</strong> —
+                {{ 'Nothing is deleted.' if entry.request.intent == 'delete-queue' else 'It goes back where it came from.' }}
+                Nothing has moved yet.
               </p>
+            {% endif %}
+
+            <div class="qrow-line">
+              <p class="qrow-from"></p>
               <div class="qrow-actions">
                 {# Same preview as Review, and the same reason for it: deciding
                    whether a file goes back is a question about what the file
@@ -138,12 +200,37 @@
                           data-preview-target="qpreview-{{ entry.id }}"
                           aria-expanded="false">Preview</button>
                 {% endif %}
-                {% if not entry.restored_at %}
-                  <button hx-post="/quarantine/restore/{{ entry.id }}" hx-target="#quarantine-result" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>Put it back</button>
+                {# Ordinary form posts, not htmx. The handler re-renders the
+                   whole page, so the row you pressed visibly changes and the
+                   result survives a reload — and none of it depends on
+                   JavaScript. Swapping a full page into <body> is not an
+                   option: it blanks the document, which `test_templates.py`
+                   holds the line on. #}
+                {% if entry.request %}
+                  {# A decision is already waiting. The only things worth
+                     offering now are seeing it and taking it back — and taking
+                     it back is not called Undo, because nothing has moved. #}
+                  <a class="btn" href="/commit?type=quarantine">View in Commit</a>
+                  {% if not entry.request.applying %}
+                    <form method="post" action="/quarantine/cancel/{{ entry.id }}">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                      <button type="submit">Cancel request</button>
+                    </form>
+                  {% endif %}
+                {% elif not entry.restored_at and not entry.gone %}
+                  {% if entry.restorable %}
+                    <form method="post" action="/quarantine/restore/{{ entry.id }}">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                      <button type="submit">Restore</button>
+                    </form>
+                  {% else %}
+                    <span class="muted">Restore location needs review</span>
+                  {% endif %}
                   {% if not entry.marked %}
-                    <button class="btn-danger" hx-post="/quarantine/mark-delete/{{ entry.id }}" hx-target="#quarantine-result"
-                      hx-confirm="Move this into the delete pile? It is still not deleted — it goes to one folder so you can empty that folder yourself."
-                      hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>Mark for deletion</button>
+                    <form method="post" action="/quarantine/delete-queue/{{ entry.id }}">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                      <button type="submit">Delete queue</button>
+                    </form>
                   {% endif %}
                 {% endif %}
               </div>

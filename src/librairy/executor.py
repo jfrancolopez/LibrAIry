@@ -50,8 +50,13 @@ def execute_plan(conn: sqlite3.Connection, plan_id: str, settings: Settings) -> 
     # audit finding is settled here rather than at each caller. It is a no-op
     # for an ordinary inbox plan.
     from librairy.corrections import settle_plan
+    from librairy.quarantine_requests import settle_quarantine_plan
 
     settle_plan(conn, plan_id)
+    # The same reasoning, for the other kind of decision that waits here: one
+    # door, so there is one place to forget rather than two. Both are no-ops
+    # for an ordinary inbox plan.
+    settle_quarantine_plan(conn, plan_id)
     return summary
 
 

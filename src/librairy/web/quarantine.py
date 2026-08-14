@@ -33,25 +33,100 @@ REASON_TAGS = {
 }
 
 
+# One page of rows, whatever the database holds. A quarantine with ten
+# thousand files in it is a real thing — a deduplication run over a photo
+# library produces one — and rendering all of them was never a decision
+# anybody took, it was just what happened when nobody wrote a LIMIT.
+PAGE_SIZE = 50
+
+# What the user can be looking at. Every one maps to a real state; there is no
+# tab here that is a filter over nothing.
+VIEWS = {
+    "held": "Held",
+    "waiting": "Waiting for Commit",
+    "delete-queue": "Delete queue",
+    "restored": "Put back",
+}
+DEFAULT_VIEW = "held"
+
+
 def quarantine_data(
-    conn: sqlite3.Connection, settings: Settings | None = None
+    conn: sqlite3.Connection,
+    settings: Settings | None = None,
+    *,
+    view: str = "",
+    page: int = 1,
 ) -> dict[str, object]:
-    entries = _entries(conn)
+    """One bounded page of quarantine, plus counts for the whole of it.
+
+    The counts come from SQL over the whole table; the rows come from one
+    `LIMIT`-ed query. That split is the entire scalability story for this page:
+    the summary stays true at a million rows and the DOM stays the same size.
+    """
+    view = view if view in VIEWS else DEFAULT_VIEW
+    page = max(1, page)
+    counts = _counts(conn)
+    total = counts.get(view, 0)
+    rows = _entries(conn, view=view, limit=PAGE_SIZE, offset=(page - 1) * PAGE_SIZE)
     host_dir = str(settings.host_quarantine_dir) if settings else ""
-    live = [entry for entry in entries if not entry["restored_at"]]
     return {
         "staged": _staged(conn),
-        "entries": entries,
+        "entries": rows,
         "similar_flags": _similar_flags(conn),
+        "view": view,
+        "views": VIEWS,
+        "counts": counts,
+        "page": page,
+        "page_size": PAGE_SIZE,
+        "total": total,
+        "page_count": max(1, -(-total // PAGE_SIZE)),
+        "has_next": page * PAGE_SIZE < total,
+        "has_prev": page > 1,
+        "range_start": 0 if not total else (page - 1) * PAGE_SIZE + 1,
+        "range_end": min(page * PAGE_SIZE, total),
         # The one thing the page could not answer: where the files actually
         # are, so you can go and delete them yourself. LibrAIry will not.
         "host_quarantine_dir": host_dir,
-        "held": len(live),
+        "held": counts.get("held", 0),
         # The pile you asked for: one folder to point a file manager at, so
         # emptying it is one deliberate gesture rather than two hundred.
-        "for_deletion": sum(1 for entry in live if entry["marked"]),
+        "for_deletion": counts.get("delete-queue", 0),
         "delete_pile_dir": f"{host_dir.rstrip('/')}/{DELETE_PILE}" if host_dir else "",
     }
+
+
+# A held file is in exactly one of these states, and the expressions below are
+# the definition. Written once, in SQL, so the count in the tab and the rows
+# under it cannot drift apart — two hand-written filters agreeing is luck.
+_ACTIVE_PLAN = (
+    "EXISTS (SELECT 1 FROM plans p WHERE p.quarantine_entry_id = qe.id"
+    " AND p.status IN ('approved','executing'))"
+)
+_IN_DELETE_QUEUE = "i.relpath LIKE '_to-delete/%' ESCAPE '\\'"
+_WHERE = {
+    "held": f"qe.restored_at IS NULL AND NOT {_ACTIVE_PLAN} AND NOT ({_IN_DELETE_QUEUE})",
+    "waiting": f"qe.restored_at IS NULL AND {_ACTIVE_PLAN}",
+    "delete-queue": f"qe.restored_at IS NULL AND ({_IN_DELETE_QUEUE})",
+    "restored": "qe.restored_at IS NOT NULL",
+}
+
+
+def _counts(conn: sqlite3.Connection) -> dict[str, int]:
+    """How many are in each view, counted in SQL over the whole table.
+
+    One query, four counts, no rows loaded into Python. `SELECT COUNT(*)` over
+    an indexed table stays fast at sizes where building a list of entry dicts
+    to call `len()` on does not.
+    """
+    parts = ", ".join(
+        f"SUM(CASE WHEN {clause} THEN 1 ELSE 0 END) AS \"{name}\""
+        for name, clause in _WHERE.items()
+    )
+    row = conn.execute(
+        f"SELECT {parts} FROM quarantine_entries qe"  # noqa: S608 — module constants
+        " LEFT JOIN items i ON i.id = qe.item_id"
+    ).fetchone()
+    return {name: int(row[name] or 0) for name in _WHERE}
 
 
 def reason_text(reason: str | None) -> str:
@@ -153,17 +228,43 @@ def _staged(conn: sqlite3.Connection) -> list[dict[str, object]]:
     ]
 
 
-def _entries(conn: sqlite3.Connection) -> list[dict[str, object]]:
+def _entries(
+    conn: sqlite3.Connection,
+    *,
+    view: str = DEFAULT_VIEW,
+    limit: int = PAGE_SIZE,
+    offset: int = 0,
+) -> list[dict[str, object]]:
+    """One page of held files, filtered and ordered in SQL.
+
+    `ORDER BY qe.id DESC` with `LIMIT/OFFSET` over a primary key is a stable,
+    total order, which is what makes paging deterministic: no row appears on
+    two pages and none is skipped between them.
+
+    Nothing here touches the filesystem. Every fact on the row — where it is,
+    where it came from, how big it is, what is waiting on it — is already in
+    the database, and a `stat()` per row is what turns a page into a network
+    round trip per file on a NAS.
+    """
     rows = list(
         conn.execute(
-            """
-            SELECT qe.*, i.relpath AS item_relpath, i.size AS item_size, i.state AS item_state
+            f"""
+            SELECT qe.*, i.relpath AS item_relpath, i.size AS item_size,
+                   i.state AS item_state
             FROM quarantine_entries qe
             LEFT JOIN items i ON i.id = qe.item_id
+            WHERE {_WHERE.get(view, _WHERE[DEFAULT_VIEW])}
             ORDER BY qe.id DESC
-            """
+            LIMIT ? OFFSET ?
+            """,  # noqa: S608 — clause comes from the module's own dict
+            (limit, offset),
         )
     )
+    # One query for the whole page rather than one per row: a request lookup
+    # inside the loop is the N+1 that makes fifty rows fifty-one queries.
+    from librairy.quarantine_requests import pending_requests
+
+    requests = pending_requests(conn)
     return [
         {
             **dict(row),
@@ -174,6 +275,12 @@ def _entries(conn: sqlite3.Connection) -> list[dict[str, object]]:
             # The name is what identifies the row; the path is detail. Both
             # were in one mono blob that wrapped to four lines on a phone.
             "display_name": _basename(row["item_relpath"] or row["original_relpath"]),
+            # What the user already decided, and what Commit will do about it.
+            "request": requests.get(int(row["id"])),
+            # Whether Restore can be offered at all. A control that can only
+            # produce an error is worse than no control.
+            "restorable": bool(row["original_root"] and row["original_relpath"]),
+            "gone": row["item_relpath"] is None or row["item_state"] == "missing",
         }
         for row in rows
     ]

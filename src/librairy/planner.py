@@ -201,9 +201,20 @@ def _plan_status(conn: sqlite3.Connection, plan_id: str) -> str:
     return str(row["status"])
 
 
+# Where a plan is allowed to put a file. `inbox` is here for exactly one
+# reason: putting a quarantined file back where it came from, and a file
+# quarantined by the duplicate finder came from the inbox — it was never filed.
+# Restoring it to the library instead would file something the owner has not
+# reviewed, which is the one thing the inbox exists to prevent.
+#
+# Nothing else may aim at the inbox. Analysis and Commit both move files *out*
+# of it, and a plan that put one back would loop.
+DEST_ROOTS = frozenset({"library", "quarantine", "inbox"})
+
+
 def _validate_dest_root(root: str) -> None:
-    if root not in {"library", "quarantine"}:
-        raise PlanError("destination root must be library or quarantine")
+    if root not in DEST_ROOTS:
+        raise PlanError("destination root must be library, quarantine or inbox")
 
 
 def _root_path(settings: Settings, root: str) -> Path:
