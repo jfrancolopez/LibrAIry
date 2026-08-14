@@ -220,7 +220,7 @@ def test_commit_page_shows_what_would_move_before_anything_moves(tmp_path: Path)
     assert "documents" in page
     # A sample of the actual destinations, not just a total.
     assert "Documents/2026/a.txt" in page
-    assert "See exactly what will move" in page
+    assert "Review moves" in page
     assert "be undone from History" in page
 
 
@@ -237,7 +237,7 @@ def test_commit_page_with_nothing_approved_points_at_review(tmp_path: Path) -> N
     # leaves the reader to work out which one they wanted.
     assert 'href="/review#review-list"' in page
     assert 'href="/review#library-audit"' in page
-    assert "See exactly what will move" not in page, "no button when there is nothing to commit"
+    assert "Review moves" not in page, "no button when there is nothing to commit"
 
 
 def test_commit_page_with_an_empty_system_does_not_send_you_to_review(tmp_path: Path) -> None:

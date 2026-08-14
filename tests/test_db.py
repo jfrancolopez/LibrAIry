@@ -81,6 +81,10 @@ def test_fresh_db_migrates_to_current_schema(tmp_path: Path) -> None:
         # finished plan never blocks correcting the same folder again.
         "idx_plans_one_active_per_finding",
         "idx_plan_withdrawals_finding",
+        # A quarantine decision is a plan too, and gets the same guarantee:
+        # one active decision per held file.
+        "idx_plans_quarantine_entry",
+        "idx_plans_one_active_per_quarantine",
     }
 
     columns = {row[1] for row in conn.execute("PRAGMA table_info(provider_status)")}
@@ -155,8 +159,11 @@ def test_migration_011_closes_proposals_for_files_already_filed(tmp_path: Path) 
         -- indexes on `audit_finding_id` have to go for this to look like a
         -- database from before that column existed.
         DROP INDEX IF EXISTS idx_plans_one_active_per_finding;
+        DROP INDEX IF EXISTS idx_plans_one_active_per_quarantine;
+        DROP INDEX IF EXISTS idx_plans_quarantine_entry;
         DROP INDEX IF EXISTS idx_plan_withdrawals_finding;
         DROP TABLE IF EXISTS plan_withdrawals;
+        ALTER TABLE plans DROP COLUMN quarantine_entry_id;
         ALTER TABLE plans DROP COLUMN audit_finding_id;
         ALTER TABLE plan_ops DROP COLUMN role;
         DROP TABLE IF EXISTS audit_findings;

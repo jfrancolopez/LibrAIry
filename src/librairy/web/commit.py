@@ -24,7 +24,11 @@ class CommitState:
 
 
 def commit_overview(
-    conn: sqlite3.Connection, settings: Settings | None = None
+    conn: sqlite3.Connection,
+    settings: Settings | None = None,
+    *,
+    kind: str = "",
+    page: int = 1,
 ) -> dict[str, Any]:
     """What a commit would actually do, before anyone presses the button.
 
@@ -93,6 +97,48 @@ def commit_overview(
         # thing you just did never occurred. Built from History, which already
         # has all of it — this is a view, not a second record.
         "last_result": _last_result(conn),
+        # What is waiting, by what it will actually do. Counted over the whole
+        # queue in SQL; listed one bounded page at a time.
+        **_queue(conn, settings, kind, page),
+    }
+
+
+def _queue(
+    conn: sqlite3.Connection, settings: Settings | None, kind: str, page: int
+) -> dict[str, Any]:
+    from librairy.web.commit_queue import (
+        PAGE_SIZE,
+        TYPE_LABEL,
+        TYPE_ORDER,
+        queue_rows,
+        queue_summary,
+    )
+
+    summary = queue_summary(conn)
+    kind = kind if kind in TYPE_ORDER else ""
+    shown = [kind] if kind else [g["type"] for g in summary["groups"]]
+    total = 0
+    groups = []
+    for key in shown:
+        group = next((g for g in summary["all_groups"] if g["type"] == key), None)
+        if group is None or not group["decisions"]:
+            continue
+        total = group["decisions"] if kind else total
+        groups.append(
+            {**group, "rows": queue_rows(conn, settings, kind=key, page=page)}
+        )
+    return {
+        "summary": summary,
+        "queue_groups": groups,
+        "queue_type": kind,
+        "queue_types": TYPE_ORDER,
+        "queue_labels": TYPE_LABEL,
+        "queue_page": max(1, page),
+        "queue_page_size": PAGE_SIZE,
+        # Paging only means anything inside one type; across types the page is
+        # a set of bounded groups, which is what keeps the DOM small either way.
+        "queue_has_next": bool(kind) and page * PAGE_SIZE < total,
+        "queue_has_prev": bool(kind) and page > 1,
     }
 
 

@@ -280,8 +280,9 @@ def test_commit_separates_new_files_from_library_corrections(tmp_path: Path) -> 
     # from. "LIBRARY AUDIT" read identically whether it was waiting for you,
     # already running, or unable to run at all.
     assert "Waiting for Commit" in body
-    assert "library correction" in body
-    assert "you already own" in body
+    # The summary now names the type and counts decisions of it.
+    assert "Library corrections" in body
+    assert "Files already in your library" in body
 
 
 def test_commit_lists_every_operation_in_a_correction(tmp_path: Path) -> None:
@@ -292,7 +293,10 @@ def test_commit_lists_every_operation_in_a_correction(tmp_path: Path) -> None:
 
     assert "05 - Song.lrc" in body
     assert "Music/Rock/Queen/Album/05 - Song.lrc" in body
-    assert "Commit this correction" in body
+    # One word. The label used to be "Commit this correction", which is a
+    # sentence wearing a button; the badge above it already says what kind
+    # of change this is.
+    assert ">Commit</button>" in body
 
 
 def test_a_correction_is_not_listed_as_a_forgotten_plan(tmp_path: Path) -> None:

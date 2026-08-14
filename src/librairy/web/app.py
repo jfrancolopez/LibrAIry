@@ -1224,6 +1224,13 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
     def _query(request: Request, name: str, default: str = "") -> str:
         return str(request.query_params.get(name, default) or default)
 
+    def _page(request: Request) -> int:
+        """A page number from a query string is user input, not an integer."""
+        try:
+            return max(1, int(request.query_params.get("page", 1)))
+        except (TypeError, ValueError):
+            return 1
+
     @app.post("/quarantine/restore/{entry_id}", response_class=HTMLResponse)
     def quarantine_restore(request: Request, entry_id: int) -> HTMLResponse:
         """Ask for this file to go back. It goes back at Commit, not now."""
@@ -1302,7 +1309,12 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             request,
             "commit.html",
             {
-                **commit_overview(conn, settings),
+                **commit_overview(
+                    conn,
+                    settings,
+                    kind=_query(request, "type"),
+                    page=_page(request),
+                ),
                 "title": "Commit",
                 "csrf_token": request.state.session["csrf_token"],
             },

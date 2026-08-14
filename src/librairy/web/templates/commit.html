@@ -14,10 +14,114 @@
     </div>
   </header>
 
-  {% if approved_count or corrections %}
-  <p class="commit-split muted">
-    <strong>{{ approved_count }}</strong> new file{{ '' if approved_count == 1 else 's' }} from your inbox{% if corrections %}, and <strong>{{ corrections|length }}</strong> library correction{{ '' if corrections|length == 1 else 's' }} affecting {{ corrections|sum(attribute='op_count') }} file{{ '' if corrections|sum(attribute='op_count') == 1 else 's' }} you already own{% endif %}.
-  </p>
+  {% if summary.decisions %}
+    {# The batch before the rows. With a thousand things waiting, "1,842 rows"
+       is not something anybody reads — but "1,842 decisions, 24 GB, mostly new
+       files" is, and it is the difference between confirming and guessing.
+
+       Decisions, not operations: one correction to a twelve-track album is one
+       choice you made and twelve files that move. Reporting twelve would make
+       a tidy afternoon look like a catastrophe. The operation count is beside
+       it for anyone who wants it. #}
+    <section class="card commit-summary">
+      <h2>Waiting for Commit</h2>
+      <p class="commit-headline">
+        <strong>{{ summary.decisions }}</strong> decision{{ '' if summary.decisions == 1 else 's' }}
+        <span class="muted">· {{ summary.size }} affected</span>
+        {% if summary.operations != summary.decisions %}
+          <span class="muted">· {{ summary.operations }} file{{ '' if summary.operations == 1 else 's' }} in total</span>
+        {% endif %}
+      </p>
+      <ul class="commit-outcomes">
+        {% for group in summary.groups %}
+          <li><strong>{{ group.decisions }}</strong> {{ group.label|lower }}</li>
+        {% endfor %}
+      </ul>
+
+      {# Server-side, in the URL, so reload and Back work and a link can be
+         shared. Nothing here hides rows with CSS. #}
+      <nav class="view-tabs" aria-label="Filter by change type">
+        <a class="view-tab{% if not queue_type %} is-current{% endif %}" href="/commit"
+           {% if not queue_type %}aria-current="page"{% endif %}>All <span class="view-count">{{ summary.decisions }}</span></a>
+        {% for group in summary.groups %}
+          <a class="view-tab{% if queue_type == group.type %} is-current{% endif %}"
+             href="/commit?type={{ group.type }}"
+             {% if queue_type == group.type %}aria-current="page"{% endif %}>
+            {{ group.label }} <span class="view-count">{{ group.decisions }}</span>
+          </a>
+        {% endfor %}
+      </nav>
+    </section>
+
+    {% for group in queue_groups %}
+      {# Collapse is a visual convenience and nothing else: it changes no state,
+         persists nowhere, and every row inside is still in the queue. #}
+      <details class="review-group" open>
+        <summary>
+          <span class="badge badge-op">{{ group.badge }}</span>
+          {{ group.label }} <span class="view-count">{{ group.decisions }}</span>
+        </summary>
+        <p class="muted">{{ group.note }}</p>
+        <ul class="correction-list">
+          {% for row in group.rows %}
+            <li class="correction">
+              <div class="audit-row-head">
+                {# Text, never colour alone. #}
+                <span class="badge badge-op">{{ row.badge }}</span>
+                {% if row.applying %}<span class="badge badge-status-applying">Applying</span>{% endif %}
+                {% if row.stale %}<span class="badge badge-status-approval-outdated">Approval is outdated</span>{% endif %}
+                <span class="muted">{{ row.size }}{% if row.op_count > 1 %} · {{ row.op_count }} files{% endif %}</span>
+              </div>
+              <h3 class="commit-subject">{{ row.subject }}{{ ext_info(row.current) }}</h3>
+              <dl class="correction-shape">
+                <div><dt>Current</dt><dd class="mono">{{ row.current }}</dd></div>
+                <div><dt>After Commit</dt><dd class="mono">{{ row.after }}</dd></div>
+                <div><dt>Affects</dt><dd>{{ row.op_count }} file{{ '' if row.op_count == 1 else 's' }} · {{ row.size }}</dd></div>
+                <div><dt>Reason</dt><dd>{{ row.reason }}</dd></div>
+              </dl>
+              {% if row.files %}
+                {# On demand. Showing every move of every decision by default
+                   is how a page with two hundred waiting becomes unreadable. #}
+                <details>
+                  <summary>Files</summary>
+                  <ul class="sample-moves">
+                    {% for file in row.files %}
+                      <li class="from-to">
+                        <span class="badge">{{ file.role }}</span>
+                        <span class="mono muted">{{ file.src }}</span>
+                        <span aria-hidden="true">→</span>
+                        <span class="mono">{{ file.dest }}</span>{{ ext_info(file.dest) }}
+                      </li>
+                    {% endfor %}
+                  </ul>
+                </details>
+              {% endif %}
+              <div class="button-row">
+                {% if row.plan_id and not row.applying and not row.stale %}
+                  <form method="post" action="/commit/execute/{{ row.plan_id }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <button type="submit" class="btn-primary">Commit</button>
+                  </form>
+                {% endif %}
+                {% if not row.applying %}
+                  <form method="post" action="{{ row.back_url }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <button type="submit">{{ row.back_label or 'Send back' }}</button>
+                  </form>
+                {% endif %}
+              </div>
+            </li>
+          {% endfor %}
+        </ul>
+        {% if queue_has_prev or queue_has_next %}
+          <p class="pager">
+            {% if queue_has_prev %}<a href="/commit?type={{ queue_type }}&amp;page={{ queue_page - 1 }}">Previous</a>{% endif %}
+            <span class="muted">Page {{ queue_page }}</span>
+            {% if queue_has_next %}<a href="/commit?type={{ queue_type }}&amp;page={{ queue_page + 1 }}">Next</a>{% endif %}
+          </p>
+        {% endif %}
+      </details>
+    {% endfor %}
   {% endif %}
 
   {% if approved_count %}
@@ -29,7 +133,7 @@
         <p class="muted">{{ total_bytes }} across {{ by_category|length }} categor{{ 'y' if by_category|length == 1 else 'ies' }}</p>
         <form method="post" action="/commit/create">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-          <button type="submit" class="btn-lg">See exactly what will move</button>
+          <button type="submit" class="btn-lg">Review moves</button>
         </form>
         <p class="muted">Next screen lists every move, one by one. Nothing happens until you confirm there.</p>
         {# Changing your mind before execution is not Undo — nothing has
@@ -110,107 +214,6 @@
   {# Never mixed into the list above. A new file arriving and a file you
      already own being moved are different promises, and the second one
      deserves to be read before it happens. #}
-  {% if corrections %}
-    <h2 class="commit-section">Library corrections</h2>
-    <section class="card audit">
-      <p class="muted">
-        These move files <strong>already in your library</strong> — approved one
-        at a time in Review, each committed on its own, each undoable on its own
-        from History.
-      </p>
-      <ul class="correction-list">
-        {% for correction in corrections %}
-          <li class="correction">
-            <div class="audit-row-head">
-              {# What state this correction is actually in, before its name.
-                 A card headed only "LIBRARY AUDIT" reads the same whether it
-                 is waiting for you, running, or unable to run at all. #}
-              {% if correction.applying %}
-                <span class="badge badge-status-applying">Applying</span>
-              {% elif correction.stale %}
-                <span class="badge badge-status-approval-outdated">Approval is outdated</span>
-              {% else %}
-                <span class="badge badge-status-waiting">Waiting for Commit</span>
-              {% endif %}
-              <span class="muted">{{ correction.op_count }} file{{ '' if correction.op_count == 1 else 's' }}</span>
-            </div>
-            <h3 class="commit-subject">{{ correction.subject }}</h3>
-            <p class="audit-summary">{{ correction.summary }}</p>
-            {% if correction.stale %}
-              <p class="notice-warn">{{ correction.stale_reason }}
-                This correction can no longer be applied as approved.</p>
-            {% endif %}
-            {# Where it is now and where it is going, both, before the button.
-               "Commit this correction" over a summary alone asks somebody to
-               approve a move whose destination is one click away. #}
-            <dl class="correction-shape">
-              <div><dt>Current</dt><dd class="mono">{{ correction.current }}</dd></div>
-              {% if correction.suggested %}
-              <div><dt>After Commit</dt><dd class="mono">{{ correction.suggested }}</dd></div>
-              {% endif %}
-              <div><dt>Affects</dt><dd>{{ correction.op_count }} file{{ '' if correction.op_count == 1 else 's' }} · {{ correction.size }}</dd></div>
-              {% if correction.approved_ago %}
-              <div><dt>Approved</dt><dd>{{ correction.approved_ago }}</dd></div>
-              {% endif %}
-              {% if correction.withdrawals %}
-              {# Approved before and taken back. Worth saying next to the thing
-                 it is about; never in History, where nothing moved. #}
-              <div><dt>Earlier</dt><dd class="muted">approved and withdrawn {{ correction.withdrawals }} time{{ '' if correction.withdrawals == 1 else 's' }} before this</dd></div>
-              {% endif %}
-            </dl>
-            {% if correction.evidence %}
-              <details>
-                <summary>Evidence</summary>
-                <ul class="evidence-list">
-                  {% for item in correction.evidence %}
-                    <li>{{ item.text if item.text is defined else item }}</li>
-                  {% endfor %}
-                </ul>
-              </details>
-            {% endif %}
-            <details>
-              <summary>Every move in this correction</summary>
-              <ul class="sample-moves">
-                {% for file in correction.files %}
-                  <li class="from-to">
-                    <span class="badge">{{ file.role }}</span>
-                    <span class="mono muted">{{ file.src }}</span>
-                    <span aria-hidden="true">→</span>
-                    {# The same shared control as everywhere else. This is the
-                       one screen that moves files somebody already owns, so
-                       "what is a .lrc, and why is it coming along?" is a
-                       question worth answering here of all places. #}
-                    <span class="mono">{{ file.dest }}</span>{{ ext_info(file.dest) }}
-                  </li>
-                {% endfor %}
-              </ul>
-            </details>
-            <div class="button-row">
-              {# No Commit button on a plan that cannot run. The executor stops
-                 a correction whose sources moved on, so offering it here would
-                 be offering a button whose only outcome is a refusal. #}
-              {% if not correction.stale and not correction.applying %}
-                <form method="post" action="/commit/execute/{{ correction.plan_id }}">
-                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                  <button type="submit" class="btn-primary">Commit this correction</button>
-                </form>
-              {% endif %}
-              {# Before execution, not after, and so not called Undo. Nothing
-                 has happened yet; this puts the decision back in Review. #}
-              {% if not correction.applying %}
-                <form method="post" action="/review/audit/{{ correction.finding_id }}/unapprove">
-                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                  <button type="submit"{% if correction.stale %} class="btn-primary"{% endif %}>{{ 'Remove old approval' if correction.stale else 'Send back to Review' }}</button>
-                </form>
-              {% endif %}
-              <a class="btn-link" href="/review#audit">Review details</a>
-            </div>
-          </li>
-        {% endfor %}
-      </ul>
-    </section>
-  {% endif %}
-
   {% if unfinished %}
     <section class="card">
       <h3>Started but never run</h3>

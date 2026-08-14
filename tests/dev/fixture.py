@@ -401,9 +401,13 @@ def _quarantine_entries(conn, settings: Settings) -> None:  # noqa: ANN001
     Present on disk deliberately: Quarantine offers Preview and Restore, and a
     row whose file does not exist exercises neither of them honestly.
     """
+    # Both are indexed files. `.DS_Store` was here and never produced a row:
+    # hidden files are not scanned, so there was no item to point at, and the
+    # fixture quietly had one quarantine entry where it claimed two — which is
+    # how the mixed-Commit scene ended up with no Restore in it.
     entries = [
         ("Photos/2022/Vacation/foo-copy.jpg", "exact_duplicate", JPEG),
-        ("Music/Pop/.DS_Store", "user", b"\x00\x01macos"),
+        ("Movies/The Matrix (1998)/The Matrix (1998).srt", "user", b"1\n00:00:01,000 --> "),
     ]
     for relpath, reason, body in entries:
         row = conn.execute(

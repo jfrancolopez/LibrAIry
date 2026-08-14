@@ -280,7 +280,7 @@ def test_new_files_and_library_corrections_are_never_one_list(tmp_path: Path) ->
 
     body = client.get("/commit").text
 
-    assert body.index(">New files<") < body.index(">Library corrections<")
+    assert body.index("New files") < body.index("Library corrections")
 
 
 def test_a_correction_shows_current_and_proposed_before_the_button(
@@ -329,7 +329,7 @@ def test_the_pre_commit_reversal_is_never_called_undo(tmp_path: Path) -> None:
     client, _, _ = scene(tmp_path, correction=True, inbox=True)
 
     body = client.get("/commit").text
-    waiting = body.split(">Library corrections<", 1)[1].split("commit-last", 1)[0]
+    waiting = body.split("Library corrections", 1)[1].split("commit-last", 1)[0]
 
     assert "Send back to Review" in waiting
     assert ">Undo<" not in waiting
