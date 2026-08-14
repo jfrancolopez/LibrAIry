@@ -31,6 +31,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 from librairy.config import Settings
+from librairy.correction_state import active_plan
 from librairy.fingerprint import blake2b_file
 from librairy.paths import PathValidationError, validate_relpath
 from librairy.planner import OperationSpec, approve_plan, create_plan, utc_now
@@ -336,8 +337,26 @@ def accept_correction(conn: sqlite3.Connection, settings: Settings, finding_id: 
     approved, and cannot recompute any of it — the plan hash sees to that.
     """
     row = load_finding(conn, finding_id)
+    # The plan first, and the status second. Asking the status alone is exactly
+    # how a finding that had already been approved — sitting at `open` because
+    # a later audit rewrote it — was allowed through to build a second plan over
+    # the same files. An approval already exists whenever a plan says so,
+    # whatever the row that points at it currently reads.
+    existing = active_plan(conn, finding_id)
+    if existing is not None:
+        raise CorrectionRefused(
+            "this correction is already waiting for Commit"
+            if not existing.applying
+            else "this correction is already being applied"
+        )
     if row["status"] == "accepted":
-        raise CorrectionRefused("this correction is already waiting for Commit")
+        # No active plan, yet the row claims one. Refusing is the safe half of
+        # a real inconsistency: `librairy db check` reports it and `db repair`
+        # can reopen it, deliberately, rather than this path silently deciding.
+        raise CorrectionRefused(
+            "this row is marked as approved but has no active plan; "
+            "run `librairy db check`"
+        )
     if row["status"] == "corrected":
         raise CorrectionRefused("this correction has already been applied")
     state = finding_state(settings, row)
@@ -364,7 +383,22 @@ def accept_correction(conn: sqlite3.Connection, settings: Settings, finding_id: 
     conn.execute(
         "UPDATE plans SET audit_finding_id=? WHERE id=?", (finding_id, plan_id)
     )
-    approve_plan(conn, plan_id, settings)
+    try:
+        # The check above and this line are not the same guarantee. Between them
+        # another request can approve the same finding, and only the database
+        # sees both. `idx_plans_one_active_per_finding` fires here, on the
+        # transition to `approved`, because that is the moment a second plan
+        # would start claiming files the first one already claims.
+        approve_plan(conn, plan_id, settings)
+    except sqlite3.IntegrityError as exc:
+        # The plan is still a draft — never approved, so nothing may execute it
+        # — but leaving it would litter the table with dead drafts that look
+        # like corrections somebody abandoned.
+        conn.execute("DELETE FROM plan_ops WHERE plan_id=?", (plan_id,))
+        conn.execute("DELETE FROM plans WHERE id=?", (plan_id,))
+        raise CorrectionRefused(
+            "this correction was approved by something else a moment ago"
+        ) from exc
     conn.execute(
         "UPDATE audit_findings SET status='accepted', plan_id=?, updated_at=? WHERE id=?",
         (plan_id, utc_now(), finding_id),
@@ -387,19 +421,17 @@ def withdraw_approval(conn: sqlite3.Connection, finding_id: int) -> None:
     so a half-run commit can never be "unapproved" out of existence.
     """
     row = load_finding(conn, finding_id)
-    if row["status"] != "accepted":
+    # Found by plan, not by status, for the same reason approval is: the row
+    # this most needs to work on is one whose status disagrees with its plan.
+    # Requiring `status='accepted'` first meant the one correction in the live
+    # database that was genuinely stuck could not be sent back at all.
+    plan = active_plan(conn, finding_id)
+    if plan is None:
         raise CorrectionRefused("this is not waiting for Commit")
-    plan_id = row["plan_id"]
-    plan = conn.execute("SELECT status FROM plans WHERE id=?", (plan_id,)).fetchone()
-    if plan is not None:
-        if plan["status"] != "approved":
-            raise CorrectionRefused("this correction has already started and cannot be recalled")
-        executed = conn.execute(
-            "SELECT COUNT(*) AS n FROM plan_ops WHERE plan_id=? AND executed_at IS NOT NULL",
-            (plan_id,),
-        ).fetchone()["n"]
-        if executed:
-            raise CorrectionRefused("part of this correction has already run")
+    if plan.applying:
+        raise CorrectionRefused("this correction has already started and cannot be recalled")
+    plan_id = plan.plan_id
+    _record_withdrawal(conn, row, plan)
     # The row lets go of the plan before the plan is removed. Both directions
     # are foreign keys — `audit_findings.plan_id` and `plans.audit_finding_id`
     # — so the order is not stylistic; the other way round fails outright.
@@ -407,9 +439,46 @@ def withdraw_approval(conn: sqlite3.Connection, finding_id: int) -> None:
         "UPDATE audit_findings SET status='open', plan_id=NULL, updated_at=? WHERE id=?",
         (utc_now(), finding_id),
     )
-    if plan is not None:
-        conn.execute("DELETE FROM plan_ops WHERE plan_id=?", (plan_id,))
-        conn.execute("DELETE FROM plans WHERE id=?", (plan_id,))
+    conn.execute("DELETE FROM plan_ops WHERE plan_id=?", (plan_id,))
+    conn.execute("DELETE FROM plans WHERE id=?", (plan_id,))
+
+
+def _record_withdrawal(conn: sqlite3.Connection, row: sqlite3.Row, plan) -> None:
+    """Keep the fact that this was approved, after the plan is gone.
+
+    Written before the delete, so the hash and the approval time are still
+    readable. It is one row describing one decision — not a journal, not
+    something Undo can reach, and never a claim that files moved.
+    """
+    plan_hash = conn.execute(
+        "SELECT plan_hash FROM plans WHERE id=?", (plan.plan_id,)
+    ).fetchone()
+    conn.execute(
+        "INSERT INTO plan_withdrawals(plan_id, plan_hash, audit_finding_id, relpath,"
+        " dest_relpath, op_count, approved_at, withdrawn_at)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            plan.plan_id,
+            plan_hash["plan_hash"] if plan_hash else None,
+            row["id"],
+            row["relpath"],
+            row["dest_relpath"],
+            plan.op_count,
+            plan.approved_at,
+            utc_now(),
+        ),
+    )
+
+
+def withdrawals_for(conn: sqlite3.Connection, finding_id: int) -> list[sqlite3.Row]:
+    """Approvals taken back on this finding, newest first."""
+    return list(
+        conn.execute(
+            "SELECT * FROM plan_withdrawals WHERE audit_finding_id=?"
+            " ORDER BY withdrawn_at DESC, id DESC",
+            (finding_id,),
+        )
+    )
 
 
 def _refusal(row: sqlite3.Row, state: str) -> str:

@@ -9,7 +9,7 @@ from pathlib import Path
 from librairy.config import Settings
 
 LOGGER = logging.getLogger(__name__)
-SCHEMA_VERSION = 22
+SCHEMA_VERSION = 23
 
 
 class DatabaseVersionError(RuntimeError):
@@ -561,6 +561,58 @@ MIGRATION_022 = """
 ALTER TABLE vision_results ADD COLUMN strategy TEXT NOT NULL DEFAULT 'image';
 """
 
+MIGRATION_023 = """
+-- A finding may have at most one ACTIVE correction plan.
+--
+-- LibrAIry stored the answer to "is this already approved?" twice — the
+-- finding's status and the plan pointing at it — and nothing made them agree.
+-- They did not: the live database held a finding at `open` while an approved,
+-- unexecuted plan named it, so Review offered to approve it again. A second
+-- approval would have built a second plan over the same files and orphaned the
+-- first, with two hashes claiming the same moves.
+--
+-- Partial, so it constrains only what it means to. `draft` is not an approval,
+-- and `done`/`failed` have stopped claiming anything: a finding is free to
+-- carry any number of finished plans, which is what makes a corrected folder
+-- correctable again later. NULL `audit_finding_id` is every ordinary inbox
+-- plan, and those are not per-finding at all.
+--
+-- SQLite checks this on UPDATE as well as INSERT, so it also stops a finished
+-- plan being promoted back to `approved` behind a finding that has since
+-- acquired a new one. The service layer refuses first, with a sentence a
+-- person can read; this is what remains true when the request does not come
+-- from the UI at all.
+CREATE UNIQUE INDEX idx_plans_one_active_per_finding
+  ON plans(audit_finding_id)
+  WHERE audit_finding_id IS NOT NULL AND status IN ('approved', 'executing');
+
+-- Approved, then taken back before anything ran.
+--
+-- Withdrawal removes the plan rather than mutating it, because an approved
+-- plan is immutable and a half-edited one would be neither the thing that was
+-- approved nor a thing anybody approved. That is safe precisely because
+-- nothing executed: no journal entry, no moved file, no partial state. But it
+-- did happen, and a system that cannot say "you approved this on Tuesday and
+-- changed your mind on Wednesday" cannot explain itself later.
+--
+-- Deliberately not the History table. `history` records operations that
+-- touched the filesystem, and a withdrawal touched nothing; putting it there
+-- would mean Undo had something to reverse. This is provenance, one row per
+-- event, and it is never a second reversal path.
+CREATE TABLE plan_withdrawals (
+  id               INTEGER PRIMARY KEY,
+  plan_id          TEXT NOT NULL,
+  plan_hash        TEXT,
+  audit_finding_id INTEGER,
+  relpath          TEXT NOT NULL,
+  dest_relpath     TEXT,
+  op_count         INTEGER NOT NULL DEFAULT 0,
+  approved_at      TEXT,
+  withdrawn_at     TEXT NOT NULL
+);
+CREATE INDEX idx_plan_withdrawals_finding ON plan_withdrawals(audit_finding_id);
+"""
+
 MIGRATIONS = {
     1: MIGRATION_001,
     2: MIGRATION_002,
@@ -584,6 +636,7 @@ MIGRATIONS = {
     20: MIGRATION_020,
     21: MIGRATION_021,
     22: MIGRATION_022,
+    23: MIGRATION_023,
 }
 
 
@@ -750,6 +803,27 @@ def is_locked(exc: Exception) -> bool:
     return "database is locked" in message or "database table is locked" in message
 
 
+def _migration_error(version: int, exc: Exception) -> Exception:
+    """Say what a migration hit, in terms of the data rather than the index.
+
+    Only the constraint migrations get this treatment, and only to point at the
+    command that explains the conflict. A migration that fails because the data
+    already breaks the rule it is about to enforce is not a bug in the
+    migration, and "UNIQUE constraint failed: plans.audit_finding_id" tells
+    nobody which correction to look at. The migration is *not* made to pass by
+    deleting the offending rows: which of two approvals a person meant is not
+    something a startup path may decide.
+    """
+    if version == 23 and isinstance(exc, sqlite3.IntegrityError):
+        return DatabaseVersionError(
+            "This database already has more than one active correction plan for "
+            "a single finding, which is the state this version prevents. Run "
+            "`librairy db check` to see the conflicting plans; nothing was "
+            "changed."
+        )
+    return exc
+
+
 def user_version(conn: sqlite3.Connection) -> int:
     return int(conn.execute("PRAGMA user_version").fetchone()[0])
 
@@ -766,10 +840,10 @@ def migrate(conn: sqlite3.Connection) -> None:
         migration = MIGRATIONS[version]
         try:
             conn.executescript(f"BEGIN;\n{migration}\nPRAGMA user_version={version};\nCOMMIT;")
-        except Exception:
+        except Exception as exc:
             if conn.in_transaction:
                 conn.execute("ROLLBACK")
-            raise
+            raise _migration_error(version, exc) from exc
     if starting_version < 8 <= SCHEMA_VERSION:
         from librairy.search import rebuild_search_index
 
