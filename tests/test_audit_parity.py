@@ -575,26 +575,31 @@ def test_the_bulk_result_is_shown_on_the_page(tmp_path: Path) -> None:
 # --- grouping and affected files ----------------------------------------------
 
 
-def test_a_single_finding_gets_no_folder_heading(tmp_path: Path) -> None:
+def test_a_single_finding_gets_no_extra_heading(tmp_path: Path) -> None:
     """Six headings for six single findings is six lines of furniture."""
     client, *_ = scene(tmp_path, correction())
 
     body = client.get("/review").text
 
-    assert "audit-group" not in body
-    assert body.count('class="audit-list"') == 1
+    assert "audit-related" not in body
+    assert "more check" not in body
 
 
-def test_two_findings_in_one_folder_do_get_a_heading(tmp_path: Path) -> None:
+def test_two_findings_about_two_files_stay_two_decisions(tmp_path: Path) -> None:
+    """Sharing a folder is not being about the same thing.
+
+    Grouping used to be `relpath.rpartition("/")`, so a correction to a track
+    and a correction to its lyrics file arrived under one heading — which would
+    now read as "these are two checks on one subject". They are two files and
+    two independent answers."""
     client, *_ = scene(
         tmp_path, correction(), correction(LYRICS, "Music/Rock/Queen/x.lrc")
     )
 
     body = client.get("/review").text
 
-    assert "audit-group" in body
-    # "items" is the code's word for them, not the reader's.
-    assert "2 findings" in body
+    assert body.count('class="audit-list audit-subject"') == 2
+    assert "more check" not in body
 
 
 def test_the_affected_list_names_the_companions(tmp_path: Path) -> None:

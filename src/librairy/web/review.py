@@ -61,6 +61,8 @@ from librairy.web.evidence import (
     evidence_mix,
     humanize_evidence,
 )
+from librairy.web.subjects import group as group_subjects
+from librairy.web.subjects import subject_key
 
 PAGE_SIZE = 50
 DEFAULT_CATEGORY_FIELDS = {
@@ -879,14 +881,30 @@ def audit_view(conn: sqlite3.Connection, settings: Settings | None = None) -> di
 def _subject_groups(
     conn: sqlite3.Connection, settings: Settings | None, rows: list[sqlite3.Row]
 ) -> list[dict[str, object]]:
-    """One group per folder, as before. Subject consolidation lands separately."""
-    groups: dict[str, list[dict[str, object]]] = {}
-    for row in rows:
-        folder = row["relpath"].rpartition("/")[0] or row["relpath"]
-        groups.setdefault(folder, []).append(_audit_row(conn, settings, row))
+    """One group per real-world thing, not one per folder path.
+
+    Grouping used to be `relpath.rpartition("/")`, which put every finding
+    about `Music/Pop/A Taste Of Honey` under `Music/Pop` alongside every other
+    Pop artist, and rendered each as its own top-level card. Two findings about
+    one album folder therefore arrived as two competing questions with nothing
+    saying they were about the same album. See `web/subjects.py` for what
+    replaced it, and for why the two are *not* merged into one decision.
+    """
+    subjects = group_subjects([_audit_row(conn, settings, row) for row in rows])
     return [
-        {"folder": folder, "count": len(findings), "findings": findings}
-        for folder, findings in sorted(groups.items())
+        {
+            "key": subject.key,
+            "folder": subject.label,
+            "count": subject.count,
+            "primary": subject.primary,
+            "related": subject.related,
+            "subsumed": subject.subsumed,
+            "others": subject.others,
+            # Every row in the group, flat, for the places that just need to
+            # walk them — counts, and the bulk selection scope.
+            "findings": [subject.primary, *subject.others],
+        }
+        for subject in subjects
     ]
 
 
@@ -1044,6 +1062,10 @@ def _audit_row(
     return {
         "id": row["id"],
         "kind": row["kind"],
+        # What this finding is *about*, so two detectors' answers about one
+        # album folder can be shown as one subject with two checks instead of
+        # two cards that look like they contradict each other.
+        "subject_key": subject_key(row),
         "label": KINDS.get(row["kind"], row["kind"]),
         "severity": row["severity"],
         "summary": row["summary"],

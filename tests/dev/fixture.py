@@ -293,6 +293,40 @@ def build_app(root: Path):  # noqa: ANN201
             EvidenceEntry("filesystem", "folder", "Music/Disco/Chic/Road Trip Classics", 0.9),
         ],
     )
+    # 11. a second finding about the *same* folder as the compilation above.
+    #
+    # This is the `A Taste Of Honey` case from the live library, and it is here
+    # because it is the shape that reads worst: two true findings about one
+    # album folder, one with a page of evidence and a destination, one with
+    # only a dismissal. As two top-level cards they looked like two competing
+    # answers to one question. Consolidating a compilation does not put a cover
+    # image beside the tracks, so this stays an independent decision rather
+    # than a symptom — which is exactly the distinction the layout has to make
+    # visible.
+    finding(
+        "Music/Disco/Abba/Road Trip Classics",
+        "artwork-not-on-disk",
+        "'Road Trip Classics' has artwork inside its files but no cover image "
+        "beside them.",
+        None,
+        [
+            EvidenceEntry("filesystem", "album", "Road Trip Classics", 0.8),
+            EvidenceEntry("tags", "artwork", "Front cover in every track", 0.85),
+        ],
+    )
+    # 12. a finding the compilation verdict genuinely does explain, so the
+    #     "answering the suggestion above would address this" path renders too.
+    finding(
+        "Music/Disco/Abba/Road Trip Classics",
+        "album-name-mismatch",
+        "The folder is named 'Road Trip Classics'; the tags say "
+        "'Best Road Trip Disco Fever Classics'.",
+        None,
+        [
+            EvidenceEntry("tags", "album", "Best Road Trip Disco Fever Classics", 0.9),
+            EvidenceEntry("filesystem", "folder", "Road Trip Classics", 0.9),
+        ],
+    )
     finding(
         "Music/Pop/Queen/Hot Space",
         "artist-split",

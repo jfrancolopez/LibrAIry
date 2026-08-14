@@ -440,24 +440,41 @@
   </details>
   {% endif %}
 
+  {# One card per subject, not one per finding.
+
+     `Music/Pop/A Taste Of Honey` produced two top-level cards: an artwork
+     observation with only a dismissal, and a compilation verdict with a
+     destination and a page of evidence. Both true, both about one album
+     folder, and nothing on screen said so — they read as two competing
+     answers to one question.
+
+     So the leading question gets the card, and everything else about the same
+     thing sits behind one line underneath it. Not merged: every finding below
+     keeps its own row, its own evidence and its own answer, because approving
+     one must never quietly resolve another. See `web/subjects.py`. #}
   {% for group in audit_groups %}
-    {% if group.count > 1 %}
-    <details class="review-group audit-group" open>
+  <div class="audit-list audit-subject">
+    {{ audit_row(group.primary, csrf_token) }}
+    {% if group.others %}
+    <details class="audit-related">
       <summary>
-        <span class="audit-folder">{{ group.folder }}</span>
-        {# "items" is what the code calls them. Nobody looking at this page
-           thinks of them as items — they are things the audit noticed. #}
-        <span class="muted">{{ group.count }} finding{{ '' if group.count == 1 else 's' }}</span>
+        {{ group.others | length }} more check{{ '' if group.others|length == 1 else 's' }}
+        about {{ group.folder }}
       </summary>
+      {% if group.subsumed %}
+      <p class="muted audit-group-note">
+        {# Said out loud, because a reader who cannot see why these moved has
+           been given a mystery rather than a simplification. #}
+        Answering the suggestion above would address
+        {{ group.subsumed | length }} of these. They are still yours to decide.
+      </p>
+      {% endif %}
       <div class="audit-list">
-        {% for finding in group.findings %}{{ audit_row(finding, csrf_token) }}{% endfor %}
+        {% for finding in group.others %}{{ audit_row(finding, csrf_token) }}{% endfor %}
       </div>
     </details>
-    {% else %}
-    <div class="audit-list">
-      {% for finding in group.findings %}{{ audit_row(finding, csrf_token) }}{% endfor %}
-    </div>
     {% endif %}
+  </div>
   {% endfor %}
   {% endif %}
 
