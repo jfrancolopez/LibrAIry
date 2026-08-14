@@ -42,7 +42,57 @@
     </section>
   {% endif %}
 
+  {# Where the work is. Five counts, one query each, and every one a link to
+     the page that answers it — this is the "what is happening with my files"
+     question, which is the one Health does not answer. #}
+  <nav class="surface-grid" aria-label="Where the work is">
+    {% for surface in surfaces %}
+      <a class="surface-card" href="{{ surface.href }}">
+        <span class="surface-label">{{ surface.label }}</span>
+        <span class="surface-count">{{ surface.count }}</span>
+        <span class="surface-note muted">{{ surface.note }}</span>
+      </a>
+    {% endfor %}
+  </nav>
+
+  {% if needs_attention %}
+    {# Only things somebody has to act on. A healthy system renders nothing
+       here, on purpose: "everything is fine" repeated in five cards teaches
+       people to stop reading the one card that is not. #}
+    <section class="card needs-attention">
+      <h3>Needs attention</h3>
+      <ul>
+        {% for item in needs_attention %}
+          <li><a href="{{ item.href }}">{{ item.text }}</a></li>
+        {% endfor %}
+      </ul>
+    </section>
+  {% endif %}
+
   <div class="widget-grid">
+    {% if activity %}
+      <article class="widget card">
+        <h3>Current activity</h3>
+        <ul>
+          {% for row in activity %}
+            <li><span>{{ row.what }}</span><span class="muted">{{ row.detail }}</span></li>
+          {% endfor %}
+        </ul>
+      </article>
+    {% endif %}
+
+    {% if recent %}
+      <article class="widget card">
+        <h3>Recently</h3>
+        <ul>
+          {% for row in recent %}
+            <li><span>{{ row.text }}</span><span class="muted">{{ row.when[:10] }}</span></li>
+          {% endfor %}
+        </ul>
+        <a class="btn-link" href="/history">History</a>
+      </article>
+    {% endif %}
+
     <article class="widget card">
       <h3>Worker</h3>
       <p class="big">{{ current_phase }}</p>

@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from librairy.config import Settings
+from librairy.humanize import human_bytes
 from librairy.lifecycle import state_counts, vanished_count
 
 
@@ -94,7 +95,162 @@ def dashboard_data(conn: sqlite3.Connection, settings: Settings) -> dict[str, ob
         # this much and nothing said why. One line, and only when there are
         # any — a nought here would be a card about nothing.
         "vanished_count": vanished_count(conn),
+        # What is happening with your files, which is the question this page
+        # answers. Health answers a different one — is LibrAIry itself well —
+        # and the two were converging.
+        **operations_overview(conn, settings),
     }
+
+
+def operations_overview(
+    conn: sqlite3.Connection, settings: Settings
+) -> dict[str, object]:
+    """Where the work is, what needs a person, and what just happened.
+
+    Every number here is a SQL aggregate over an indexed column. Nothing in
+    this function probes a file, calls a provider, asks a catalog or walks the
+    library — a dashboard that costs a filesystem traversal is a dashboard
+    people stop opening, and this one polls every five seconds.
+    """
+    from librairy.web.commit_queue import queue_summary
+
+    queue = queue_summary(conn)
+    findings = {
+        row["status"]: row["count"]
+        for row in conn.execute(
+            "SELECT status, COUNT(*) AS count FROM audit_findings GROUP BY status"
+        )
+    }
+    quarantine = conn.execute(
+        """
+        SELECT
+          SUM(CASE WHEN qe.restored_at IS NULL THEN 1 ELSE 0 END) AS held,
+          SUM(CASE WHEN qe.restored_at IS NULL
+                    AND i.relpath LIKE '_to-delete/%' ESCAPE '\\' THEN 1 ELSE 0 END)
+            AS delete_queue,
+          COALESCE(SUM(CASE WHEN qe.restored_at IS NULL THEN i.size ELSE 0 END), 0)
+            AS bytes
+        FROM quarantine_entries qe LEFT JOIN items i ON i.id = qe.item_id
+        """
+    ).fetchone()
+    library = conn.execute(
+        "SELECT COUNT(*) AS files, COALESCE(SUM(size), 0) AS bytes FROM items"
+        " WHERE root='library' AND missing_since IS NULL"
+    ).fetchone()
+    inbox_waiting = _count(
+        conn, "SELECT COUNT(*) FROM proposals WHERE status='proposed'"
+    )
+
+    surfaces = [
+        {"label": "Inbox", "count": inbox_waiting, "note": "waiting for review",
+         "href": "/review"},
+        {"label": "Library Review", "count": findings.get("open", 0),
+         "note": f"{findings.get('kept', 0)} dismissed", "href": "/review#audit"},
+        {"label": "Commit", "count": queue["decisions"], "note": queue["size"],
+         "href": "/commit"},
+        {"label": "Quarantine", "count": int(quarantine["held"] or 0),
+         "note": human_bytes(int(quarantine["bytes"] or 0)), "href": "/quarantine"},
+        {"label": "Library", "count": int(library["files"]),
+         "note": human_bytes(int(library["bytes"])), "href": "/browse"},
+    ]
+    return {
+        "surfaces": surfaces,
+        "needs_attention": _needs_attention(conn, queue, findings, quarantine),
+        "activity": _activity(conn),
+        "recent": _recent(conn),
+        "delete_queue_count": int(quarantine["delete_queue"] or 0),
+    }
+
+
+def _needs_attention(
+    conn: sqlite3.Connection, queue, findings, quarantine
+) -> list[dict[str, str]]:
+    """Only things a person has to do something about.
+
+    Deliberately not a status board. "Everything is fine" repeated in five
+    cards teaches people to stop reading the one card that is not, so a healthy
+    system produces an empty list here and the section does not render at all.
+    """
+    items: list[dict[str, str]] = []
+    if queue["decisions"]:
+        items.append({
+            "text": f"{queue['decisions']} change"
+                    f"{'' if queue['decisions'] == 1 else 's'} waiting for Commit",
+            "href": "/commit",
+        })
+    held = int(quarantine["held"] or 0) - int(quarantine["delete_queue"] or 0)
+    if held:
+        items.append({
+            "text": f"{held} quarantined file{'' if held == 1 else 's'} "
+                    "with no decision yet",
+            "href": "/quarantine",
+        })
+    if findings.get("open"):
+        items.append({
+            "text": f"{findings['open']} library finding"
+                    f"{'' if findings['open'] == 1 else 's'} to look at",
+            "href": "/review#audit",
+        })
+    from librairy.search_health import check_search_index
+
+    if not check_search_index(conn).ok:
+        items.append({
+            "text": "Search index needs rebuild — results may be incomplete",
+            "href": "/health",
+        })
+    return items
+
+
+def _activity(conn: sqlite3.Connection) -> list[dict[str, str]]:
+    """What LibrAIry is doing now, from state it already keeps."""
+    from librairy.audit_job import progress as audit_progress
+
+    rows: list[dict[str, str]] = []
+    audit = audit_progress(conn)
+    if audit and audit.get("state") in {"running", "queued"}:
+        done, total = audit.get("done", 0), audit.get("total", 0)
+        rows.append({
+            "what": "Library audit",
+            "detail": f"{audit.get('phase') or 'working'} · {done}/{total}",
+        })
+    running = conn.execute(
+        "SELECT COUNT(*) AS n FROM plans WHERE status='executing'"
+    ).fetchone()["n"]
+    if running:
+        rows.append({"what": "Commit", "detail": f"{running} running"})
+    return rows
+
+
+def _recent(conn: sqlite3.Connection) -> list[dict[str, str]]:
+    """A few lines from the journal. Not a second History page.
+
+    Grouped by what happened rather than listed file by file: "12 files filed"
+    is the sentence, and History is one click away for the other 11 rows.
+    """
+    rows = conn.execute(
+        """
+        SELECT action, outcome, COUNT(*) AS count, MAX(ts) AS ts
+        FROM history
+        GROUP BY action, outcome
+        ORDER BY ts DESC
+        LIMIT 4
+        """
+    ).fetchall()
+    said = {
+        ("move", "ok"): "filed",
+        ("move", "skipped_changed"): "not moved — changed since",
+        ("move", "skipped_missing"): "not moved — missing",
+        ("quarantine", "ok"): "moved to quarantine",
+        ("undo", "ok"): "put back",
+    }
+    return [
+        {
+            "text": f"{row['count']} file{'' if row['count'] == 1 else 's'} "
+                    f"{said.get((row['action'], row['outcome']), row['action'])}",
+            "when": row["ts"],
+        }
+        for row in rows
+    ]
 
 
 def lifecycle_rows(counts: dict[str, int]) -> list[tuple[str, int]]:

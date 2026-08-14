@@ -2949,3 +2949,50 @@ summary.timeline-head::-webkit-details-marker { display: none; }
 @media (max-width: 40rem) {
   .queue-facts { grid-template-columns: 1fr; }
 }
+
+/* Where the work is: five counts, each a link to the page that answers it.
+   The dashboard's job is "what is happening with my files"; Health's is "is
+   LibrAIry itself well". These were converging, and this is the divergence. */
+.surface-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--space-2);
+  margin: var(--space-3) 0;
+}
+.surface-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  text-decoration: none;
+  color: inherit;
+}
+.surface-card:hover { border-color: var(--audit); }
+.surface-label { font-size: var(--text-sm); color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.06em; }
+.surface-count { font-size: 1.8rem; font-weight: 600; line-height: 1; }
+.surface-note { font-size: var(--text-sm); }
+/* Renders only when something actually needs a person. */
+.needs-attention ul { margin: var(--space-1) 0 0; padding-left: var(--space-3); }
+.needs-attention li { margin: var(--space-1) 0; }
+
+/* One tab bar shape for Quarantine's views and Commit's type filters. Both
+   are server-side filters that live in the URL, so both look like links,
+   because that is what they are. */
+.view-tabs { display: flex; flex-wrap: wrap; gap: var(--space-1); margin: var(--space-2) 0; }
+.view-tab {
+  display: inline-flex; align-items: center; gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border); border-radius: var(--radius);
+  text-decoration: none; color: inherit; font-size: var(--text-sm);
+}
+.view-tab.is-current { border-color: var(--audit); color: var(--audit); }
+.view-count { color: var(--text-dim); font-variant-numeric: tabular-nums; }
+/* The operation badge on a Commit row. Text, never colour alone — a reader who
+   cannot see the colour still has to know a delete-queue move from a filing. */
+.badge-op { letter-spacing: 0.08em; font-size: 0.78em; }
+.qrow-why { margin: var(--space-1) 0; color: var(--text-dim); font-size: var(--text-sm); }
+.qrow-pending { margin: var(--space-1) 0; font-size: var(--text-sm); }
+.pager { display: flex; gap: var(--space-2); align-items: center; margin: var(--space-2) 0; }
