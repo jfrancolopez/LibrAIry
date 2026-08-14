@@ -83,19 +83,19 @@
                       aria-expanded="false">Preview</button>
             {% endif %}
             <button class="btn-primary" hx-post="/quarantine/staged/{{ proposal.id }}/approve" hx-target="#quarantine-result" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>Move it out</button>
-            <button hx-post="/quarantine/staged/{{ proposal.id }}/unstage" hx-target="#quarantine-result" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>Keep it — file it normally</button>
+            <button hx-post="/quarantine/staged/{{ proposal.id }}/unstage" hx-target="#quarantine-result" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>Keep it</button>
             {# Straight to the pile: being finished with a duplicate that has
                not moved yet was otherwise two commits. #}
             <button class="btn-danger" hx-post="/quarantine/staged/{{ proposal.id }}/mark-delete" hx-target="#quarantine-result"
               hx-confirm="Send this to the delete pile on the next commit? Nothing is deleted — it gathers in one folder for you to empty yourself."
-              hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>Mark for deletion</button>
+              hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>Delete queue</button>
           </div>
           <div id="spreview-{{ proposal.id }}"></div>
         </article>
       {% endfor %}
       <p class="muted">Approved files move on the next commit, like every other move: hash-verified, journaled, undoable.</p>
     {% else %}
-      <p class="muted">Nothing is waiting. Duplicates show up here after a scan, and so does anything you send here with <em>Quarantine</em> or <em>Mark for deletion</em> in Review.</p>
+      <p class="muted">Nothing is waiting. Duplicates show up here after a scan, and so does anything you send here with <em>Quarantine</em> or <em>Delete queue</em> in Review.</p>
     {% endif %}
   </section>
 

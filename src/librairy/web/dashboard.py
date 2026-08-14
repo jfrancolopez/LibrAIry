@@ -191,9 +191,11 @@ def _needs_attention(
                     f"{'' if findings['open'] == 1 else 's'} to look at",
             "href": "/review#audit",
         })
-    from librairy.search_health import check_search_index
+    from librairy.search_health import recorded_health
 
-    if not check_search_index(conn).ok:
+    # Read, not checked: the dashboard polls every five seconds and rendering
+    # must not write.
+    if not recorded_health(conn).ok:
         items.append({
             "text": "Search index needs rebuild — results may be incomplete",
             "href": "/health",

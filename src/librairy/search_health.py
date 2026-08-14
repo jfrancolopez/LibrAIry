@@ -44,13 +44,18 @@ class IndexHealth:
         return "" if self.ok else WARNING
 
 
+RECORDED_KEY = "search_index_state"
+
+
 def check_search_index(conn: sqlite3.Connection) -> IndexHealth:
     """Ask FTS5 to verify its own index.
 
-    `integrity-check` is FTS5's own command and reads only the index's tables,
-    so it does not walk the library and does not depend on the item rows being
-    correct. Cheap enough to run on a page render; the whole point is that the
-    warning appears where the incomplete results do.
+    **This is a write.** FTS5 expresses `integrity-check` as an INSERT into the
+    table's command column, so SQLite opens a write transaction for it — which
+    means it must not be called while drawing a page. LibrAIry holds a hard
+    rule that rendering never writes, and calling this from Search broke it
+    (`test_web_suite.py::test_drawing_a_page_never_writes_to_the_database`
+    caught it immediately). `recorded_health` is what the render path reads.
 
     Any failure at all is reported rather than classified. A caller wants to
     know "can I trust these results", and every way of answering no has the
@@ -65,6 +70,34 @@ def check_search_index(conn: sqlite3.Connection) -> IndexHealth:
     except sqlite3.Error as exc:  # pragma: no cover - defensive
         return IndexHealth(False, str(exc))
     return IndexHealth(True)
+
+
+def record_health(conn: sqlite3.Connection, health: IndexHealth) -> None:
+    """Remember the verdict, so a page can show it without checking again."""
+    conn.execute(
+        "INSERT INTO worker_state(key, value) VALUES (?, ?)"
+        " ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        (RECORDED_KEY, "ok" if health.ok else "damaged"),
+    )
+
+
+def recorded_health(conn: sqlite3.Connection) -> IndexHealth:
+    """The last verdict, read only.
+
+    Search shows what was last found rather than checking on every keystroke:
+    the check is a write, and a search box that writes to the database on each
+    request is a search box that fights the worker for the writer lock.
+
+    Unknown reads as healthy on purpose. A warning nobody has evidence for is
+    a warning people learn to dismiss, and the check runs on Health, on
+    `librairy db check`, and after every rebuild.
+    """
+    row = conn.execute(
+        "SELECT value FROM worker_state WHERE key=?", (RECORDED_KEY,)
+    ).fetchone()
+    if row is None or row["value"] == "ok":
+        return IndexHealth(True)
+    return IndexHealth(False, "recorded by the last integrity check")
 
 
 def index_counts(conn: sqlite3.Connection) -> dict[str, int]:

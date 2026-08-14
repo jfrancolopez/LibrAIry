@@ -151,7 +151,7 @@ def test_health_screen_rebuilds_search_index(tmp_path: Path) -> None:
     page = client.get("/health")
     response = client.post("/index/rebuild", headers={"x-csrf-token": client.cookies["csrf_token"]})
 
-    assert "Rebuild Search Index" in page.text
+    assert "Rebuild index" in page.text
     assert response.text == (
         '<p id="index-result"><span class="badge badge-ok">Indexed</span> 1 items</p>'
     )

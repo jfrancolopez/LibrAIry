@@ -314,7 +314,7 @@ def test_a_correction_can_be_sent_back_before_it_runs(tmp_path: Path) -> None:
 def test_inbox_approvals_can_be_sent_back_before_they_run(tmp_path: Path) -> None:
     client, conn, settings = scene(tmp_path, inbox=True)
 
-    assert "Send all back to Review" in client.get("/commit").text
+    assert "Send all back" in client.get("/commit").text
 
     client.post("/commit/unapprove", headers=csrf(client))
 

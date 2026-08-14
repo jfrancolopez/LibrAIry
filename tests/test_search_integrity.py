@@ -62,6 +62,18 @@ def scene(tmp_path: Path):
     return TestClient(create_app(settings, conn)), conn, settings
 
 
+def mark_damaged(conn: sqlite3.Connection) -> None:
+    """Record the verdict the way Health and `db check` do.
+
+    Search reads a recorded result rather than checking for itself, because
+    FTS5's integrity-check is an INSERT and drawing a page must never write.
+    """
+    from librairy.search_health import check_search_index, record_health
+
+    record_health(conn, check_search_index(conn))
+    conn.commit()
+
+
 def break_index(conn: sqlite3.Connection) -> None:
     """Corrupt the inverted index the way a bad copy or a truncated WAL does.
 
@@ -94,6 +106,7 @@ def test_search_says_results_may_be_incomplete(tmp_path: Path) -> None:
     """Never present short results as authoritative."""
     _client, conn, settings = scene(tmp_path)
     break_index(conn)
+    mark_damaged(conn)
 
     data = search_data(conn, settings, "heroes")
 
@@ -104,6 +117,7 @@ def test_search_says_results_may_be_incomplete(tmp_path: Path) -> None:
 def test_the_warning_reaches_the_page(tmp_path: Path) -> None:
     client, conn, _settings = scene(tmp_path)
     break_index(conn)
+    mark_damaged(conn)
 
     body = client.get("/browse?q=heroes").text
 

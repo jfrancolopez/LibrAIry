@@ -74,7 +74,7 @@
           <h2>Welcome to LibrAIry</h2>
           <p>Drop files into your inbox, wait for analysis, review the proposals, then commit the moves you approve. LibrAIry never deletes files or rewrites your existing library.</p>
           <p>
-            <a class="btn btn-primary" href="/review">Go to review queue</a>
+            <a class="btn btn-primary" href="/review">Go to Review</a>
             <a class="btn" href="/access">Library access help</a>
             <button class="btn-ghost" hx-post="/welcome/dismiss" hx-target="#welcome-banner" hx-swap="outerHTML" hx-headers='{"x-csrf-token":"{{ request.state.session.csrf_token }}"}'>Dismiss</button>
           </p>

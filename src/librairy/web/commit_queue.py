@@ -53,6 +53,15 @@ TYPE_LABEL = {
     DELETE_QUEUE: "Delete queue",
 }
 
+# The same heading with one thing under it. "1 library corrections" is the kind
+# of small wrongness that makes a page feel unfinished.
+TYPE_LABEL_ONE = {
+    NEW_FILE: "New file",
+    CORRECTION: "Library correction",
+    RESTORE: "Restore",
+    DELETE_QUEUE: "Delete queue",
+}
+
 # The badge on one row. Says what Commit will do to this file, in one word,
 # as text — never colour alone, which is invisible to a colourblind reader and
 # to anyone printing the page.
@@ -131,6 +140,7 @@ def queue_summary(conn: sqlite3.Connection) -> dict[str, Any]:
         {
             "type": key,
             "label": TYPE_LABEL[key],
+            "label_one": TYPE_LABEL_ONE[key],
             "note": TYPE_NOTE[key],
             "badge": TYPE_BADGE[key],
             **types.get(key, {"decisions": 0, "operations": 0, "bytes": 0}),

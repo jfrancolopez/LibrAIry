@@ -500,6 +500,36 @@ provider and model, and the frame strategy, so an unchanged video is never
 looked at twice and changing the strategy correctly invalidates the old answer.
 Local providers only, exactly as for photos.
 
+## Quarantine and the delete queue
+
+Quarantine is not a bin. It is the out-tray: LibrAIry moved these files aside
+because a decision is needed, or because an earlier operation put them there
+safely. They are whole, unchanged, and still yours.
+
+Every held file says four things: **why it is here**, where it is **now**, where
+it **came from**, and — once you have decided — where it is going **after
+Commit**.
+
+Two decisions are available:
+
+- **Restore** puts it back where it came from.
+- **Delete queue** gathers it into one folder so you can empty that folder
+  yourself.
+
+Neither happens when you press it. Both write down a decision that waits for
+Commit, exactly like a library correction, and the row immediately moves to
+**Waiting for Commit** with **Cancel request** beside it. Cancelling is not
+called Undo, because nothing has moved.
+
+**Nothing in the delete queue is deleted.** LibrAIry has never deleted a file
+and does not start here. Committing a delete-queue decision moves the file into
+`quarantine/_to-delete/`, where it sits until you delete it yourself, in your
+own file manager, deliberately. It can be restored from there too.
+
+The tabs across the top — Held, Waiting for Commit, Delete queue, Put back —
+are server-side filters and live in the URL, so reload and Back work, and the
+counts are true however large the quarantine is.
+
 ## Duplicates
 
 Exact duplicates are staged for reversible quarantine review. Similar media flags

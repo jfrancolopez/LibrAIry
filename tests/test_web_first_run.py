@@ -30,7 +30,7 @@ def test_setup_screen_explains_first_run(tmp_path: Path) -> None:
 
     assert response.status_code == 200
     assert "protects the LAN web portal" in response.text
-    assert "Initialize Secure Portal" in response.text
+    assert "Create password" in response.text
 
 
 def test_setup_screen_offers_to_skip_when_password_is_optional(tmp_path: Path) -> None:

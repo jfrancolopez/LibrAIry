@@ -160,6 +160,11 @@ def rebuild_search_index(conn: sqlite3.Connection) -> int:
     item_ids = [row["id"] for row in conn.execute("SELECT id FROM items ORDER BY id")]
     for item_id in item_ids:
         sync_search_item(conn, item_id)
+    # The index is known-good now, and the pages that warn about it read a
+    # recorded verdict rather than checking for themselves.
+    from librairy.search_health import check_search_index, record_health
+
+    record_health(conn, check_search_index(conn))
     return len(item_ids)
 
 
@@ -316,13 +321,12 @@ def search_data(
             (row["root"], row["relpath"]),
         ).fetchone()[0]
         row.update(_result_details(conn, row))
-    from librairy.search_health import check_search_index
+    from librairy.search_health import recorded_health
 
-    # Asked here because this is where incomplete results would appear. A
-    # damaged FTS index does not raise on a query — it silently returns fewer
-    # rows — so a search that comes back short looks like a search that found
-    # nothing, and there is no way to tell the two apart from the outside.
-    health = check_search_index(conn)
+    # Shown here because this is where incomplete results appear. Read, never
+    # checked: FTS5's integrity-check is an INSERT, and drawing a page must not
+    # write. Health and `librairy db check` run the real check and record it.
+    health = recorded_health(conn)
     return {
         "query": query,
         "filters": filters,

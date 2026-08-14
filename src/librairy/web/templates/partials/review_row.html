@@ -163,7 +163,7 @@
         hx-vals='{"action": "mark_delete", "proposal_id": "{{ proposal.id }}", "state": "{{ proposal.status }}", "sort": "{{ filters.sort }}"}'
         hx-target="#review-list" hx-swap="outerHTML"
         hx-confirm="Mark this file for deletion? On the next commit it moves to the delete pile inside quarantine. LibrAIry still never deletes anything — you empty that folder yourself."
-        hx-headers='{"x-csrf-token":"{{ csrf }}"}'>Mark for deletion</button>
+        hx-headers='{"x-csrf-token":"{{ csrf }}"}'>Delete queue</button>
       <span class="muted">Gathers it in <span class="mono">quarantine/_to-delete</span> — one
         folder for you to empty yourself. Nothing is deleted here.</span>
     </div>

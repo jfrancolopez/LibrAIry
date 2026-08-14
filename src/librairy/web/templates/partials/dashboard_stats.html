@@ -178,20 +178,5 @@
       {% endif %}
     </article>
 
-    <article class="widget card widget-wide widget-wide-2">
-      <h3>Recent operations</h3>
-      {% if recent_history %}
-        <ul>
-          {% for row in recent_history %}
-            <li>
-              <span class="badge {{ 'badge-ok' if row.outcome == 'ok' else 'badge-warn' }}">{{ row.action }}</span>
-              <span class="mono muted">{{ row.dest_relpath }}</span>
-            </li>
-          {% endfor %}
-        </ul>
-      {% else %}
-        <p class="muted">No committed operations yet. Approve proposals in Review, then commit them.</p>
-      {% endif %}
-    </article>
   </div>
 </div>

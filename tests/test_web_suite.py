@@ -66,9 +66,16 @@ def _sample_path(path: str) -> str:
     return path.replace("{name}", "missing-provider")
 
 
-def test_commit_is_in_the_nav_only_when_something_is_waiting(tmp_path: Path) -> None:
-    """Commit is a step, not a place. It is somewhere to go exactly when
-    something is approved and waiting, and then it is the whole point."""
+def test_the_dashboard_says_how_much_is_waiting_to_commit(tmp_path: Path) -> None:
+    """Commit is a step *and* a place now.
+
+    This asserted that the word did not appear at all while the queue was
+    empty. That was right when the dashboard was a single hero: an idle Commit
+    was noise. It is wrong for an operations overview, whose whole job is to
+    say where the work is — and "Commit 0" is an answer to that question. The
+    nav keeps Commit at zero too, decided in the pass before this one: a tab
+    that vanishes when idle cannot be navigated to on purpose.
+    """
     client, conn = client_for(tmp_path)
     client.post("/setup", data={"password": "correct horse battery"})
 
@@ -89,7 +96,8 @@ def test_commit_is_in_the_nav_only_when_something_is_waiting(tmp_path: Path) -> 
     )
     waiting = client.get("/dashboard").text
 
-    assert '>Commit' not in quiet
+    assert '<span class="surface-count">0</span>' in quiet
+    assert 'href="/commit"' in quiet
     assert 'href="/commit"' in waiting
     assert "nav-count" in waiting
     # And it is always reachable while you are on it, count or not.

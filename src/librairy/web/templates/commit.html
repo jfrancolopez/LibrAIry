@@ -34,7 +34,7 @@
       </p>
       <ul class="commit-outcomes">
         {% for group in summary.groups %}
-          <li><strong>{{ group.decisions }}</strong> {{ group.label|lower }}</li>
+          <li><strong>{{ group.decisions }}</strong> {{ (group.label_one if group.decisions == 1 else group.label)|lower }}</li>
         {% endfor %}
       </ul>
 
@@ -141,7 +141,7 @@
            thing this card is for. #}
         <form method="post" action="/commit/unapprove">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-          <button type="submit" class="btn-ghost">Send all back to Review</button>
+          <button type="submit" class="btn-ghost">Send all back</button>
         </form>
       </section>
 

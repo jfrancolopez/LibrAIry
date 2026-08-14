@@ -77,7 +77,7 @@
                         hx-post="/history/plans/{{ group.plan_id }}/undo"
                         hx-target="#history-result"
                         hx-confirm="Put all {{ group.entries|length }} file(s) in this plan back where they came from?"
-                        hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>Undo the whole plan</button>
+                        hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>Undo plan</button>
               </p>
               <ul class="timeline-list">
                 {% for entry in group.entries %}

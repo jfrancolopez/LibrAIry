@@ -5,7 +5,7 @@
   <p>Status {{ plan.status }}</p>
   <p>Hash {{ plan.plan_hash or 'no hash' }}</p>
   <form hx-post="/history/plans/{{ plan.id }}/undo" hx-target="#history-result" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>
-    <button type="submit">Undo Whole Plan</button>
+    <button type="submit">Undo plan</button>
   </form>
   <section class="metric wide">
     <h2>Operations</h2>

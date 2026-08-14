@@ -8,7 +8,7 @@
       {# The match count lives in the pager, inside the swapped fragment.
          Repeating it here would go stale the moment you filter. #}
       <p class="muted">Nothing moves until you approve it and commit.
-        <button type="button" class="btn-link" data-panel-toggle="review-help">What do these buttons do?</button>
+        <button type="button" class="btn-link" data-panel-toggle="review-help">What these do</button>
       </p>
     </div>
     <div class="button-row">
@@ -122,7 +122,7 @@
           <td>Stays in the inbox. Filter State to <em>Put off for later</em>.</td>
         </tr>
         <tr>
-          <th><span aria-hidden="true">⋯</span> Mark for deletion</th>
+          <th><span aria-hidden="true">⋯</span> Delete queue</th>
           <td>Done with it. Same move as Quarantine, into one folder inside it —
             <span class="mono">_to-delete</span> — so everything you have finished with
             gathers in one place. <strong>LibrAIry still deletes nothing</strong>: you
@@ -319,7 +319,7 @@
         <button type="submit" name="action" value="discard" class="btn-danger" data-needs-selection
           hx-confirm="Move the selected files to Quarantine on the next commit? Nothing is deleted — you can restore them from the Quarantine page.">Quarantine</button>
         <button type="submit" name="action" value="mark_delete" class="btn-danger" data-needs-selection
-          hx-confirm="Mark the selected files for deletion? On the next commit they move to the delete pile inside quarantine. LibrAIry still never deletes anything — you empty that folder yourself.">Mark for deletion</button>
+          hx-confirm="Mark the selected files for deletion? On the next commit they move to the delete pile inside quarantine. LibrAIry still never deletes anything — you empty that folder yourself.">Delete queue</button>
         <label class="all-matching"><input type="checkbox" name="all_matching" value="true"> all matches, not just this page</label>
       </div>
     </form>

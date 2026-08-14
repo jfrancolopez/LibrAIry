@@ -129,7 +129,7 @@ def test_history_timeline_groups_by_plan_and_deep_links_to_browse(tmp_path: Path
     assert f"/history/plans/{plan_id}" in page
     # Short like a git hash: a full UUID is 414px of button on a phone.
     assert f"Plan {plan_id[:8]}<" in page
-    assert "Undo the whole plan" in page
+    assert "Undo plan" in page
     # The plan says what it did, rather than making you count the rows.
     assert "Filed 2 files" in page
     # Committed destinations deep-link into Browse at the containing folder.

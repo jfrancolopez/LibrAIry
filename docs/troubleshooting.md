@@ -80,9 +80,26 @@ the correction back to Review and approve it again if that happens.
 Nothing repairs itself at startup, deliberately: a database that quietly fixes
 its own history hides the bug that produced it.
 
-## Search Looks Stale
+## Search Looks Stale, Or Incomplete
 
-Run `librairy index rebuild` or use the Health screen rebuild button. The FTS index is derived state and can be rebuilt from SQLite item/proposal metadata.
+Two different problems.
+
+**Files missing from results but visible in Browse** — they have not been
+scanned. Run `librairy scan --root library`.
+
+**Search says the index needs rebuilding** — the FTS index itself is damaged.
+It fails quietly: a corrupt index returns *fewer* rows rather than an error, so
+a short result looks like a genuine miss. Health and `librairy db check` report
+it; Search shows a warning above the results.
+
+```bash
+librairy index rebuild
+```
+
+The rebuild drops and recreates the index from your item records. It reads no
+media, changes no file, and cannot lose anything — every field in the index is
+derived. Browse is unaffected throughout: it reads the filesystem and needs no
+index at all.
 
 ## Logs
 

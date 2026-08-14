@@ -113,8 +113,13 @@ def test_a_quiet_system_needs_no_attention(tmp_path: Path) -> None:
 
 
 def test_a_damaged_search_index_asks_for_attention(tmp_path: Path) -> None:
+    from librairy.search_health import check_search_index, record_health
+
     _client, conn, settings = scene(tmp_path)
     conn.execute("UPDATE search_fts_data SET block = zeroblob(64) WHERE id > 1")
+    # The dashboard reads a recorded verdict rather than checking for itself:
+    # the check is an INSERT, and this page redraws every five seconds.
+    record_health(conn, check_search_index(conn))
 
     data = operations_overview(conn, settings)
 
