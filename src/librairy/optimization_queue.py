@@ -99,6 +99,11 @@ WAIT_TEXT = {
     UNSUPPORTED: "Automatic conversion is not supported for this file yet",
 }
 
+# What `Run now` writes into a job's run policy. Not a state: the job is still
+# queued and still behind every other gate, it has simply stopped waiting for
+# the clock.
+FORCED = "forced"
+
 # One at a time, and not configurable. A single ffmpeg process is already a
 # significant share of a NAS; letting somebody set four before the resource
 # policy has been measured would make the guarantee meaningless.
@@ -415,3 +420,26 @@ def staging_root(settings: Settings) -> Path:
 
 def job_staging_dir(settings: Settings, job_id: int) -> Path:
     return staging_root(settings) / str(int(job_id))
+
+
+def clear_staging(settings: Settings, job_id: int) -> None:
+    """Remove one job's generated output. The only delete this feature performs.
+
+    Deliberately the single place, and it re-derives the path from the job id
+    rather than accepting one: `staging_dir` is a stored column, and a stored
+    path is a path somebody could have edited. The containment check below is
+    therefore about a value this function computed itself, which is the only
+    kind of check worth having.
+
+    `tests/test_adversarial.py::test_safety_invariants_forbid_moves_outside_executor`
+    allows exactly this file to name a delete primitive, so the rule "nothing
+    outside the executor removes anything" survives with one auditable
+    exception rather than three.
+    """
+    import shutil
+
+    target = job_staging_dir(settings, job_id).resolve()
+    root = staging_root(settings).resolve()
+    if root not in target.parents:  # pragma: no cover - unreachable by construction
+        raise ValueError("staging directory is not inside the optimization workspace")
+    shutil.rmtree(target, ignore_errors=True)

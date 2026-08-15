@@ -9,7 +9,7 @@ from pathlib import Path
 from librairy.config import Settings
 
 LOGGER = logging.getLogger(__name__)
-SCHEMA_VERSION = 24
+SCHEMA_VERSION = 25
 
 
 class DatabaseVersionError(RuntimeError):
@@ -638,6 +638,38 @@ CREATE UNIQUE INDEX idx_plans_one_active_per_quarantine
   WHERE quarantine_entry_id IS NOT NULL AND status IN ('approved', 'executing');
 """
 
+MIGRATION_025 = """
+-- What is needed to own a child process across worker restarts, and to tell
+-- the truth about what came out of it.
+--
+-- `owner_token` is the identity of the worker *run* that launched the job, not
+-- a PID. PIDs are reused, and a stored PID that now belongs to somebody else's
+-- ffmpeg is exactly how a media server gets killed by a tidy-up routine. A
+-- token minted once per worker process settles "is this still mine" without
+-- consulting the process table at all; the PID and its kernel start time are
+-- recorded as well, and the two together identify the process precisely enough
+-- to terminate an orphan of our own without ever matching a stranger's.
+ALTER TABLE optimization_jobs ADD COLUMN owner_token TEXT NOT NULL DEFAULT '';
+ALTER TABLE optimization_jobs ADD COLUMN pid INTEGER;
+ALTER TABLE optimization_jobs ADD COLUMN pid_started INTEGER;
+
+-- Progress as FFmpeg reports it, not as a percentage guessed from file size.
+ALTER TABLE optimization_jobs ADD COLUMN progress REAL NOT NULL DEFAULT 0;
+ALTER TABLE optimization_jobs ADD COLUMN out_time_seconds REAL NOT NULL DEFAULT 0;
+ALTER TABLE optimization_jobs ADD COLUMN duration_seconds REAL NOT NULL DEFAULT 0;
+ALTER TABLE optimization_jobs ADD COLUMN progress_at TEXT;
+
+-- The verification verdict, separate from the exit code. An encoder that
+-- returns 0 has proved that it did not crash, which is not the same as having
+-- produced the file that was asked for.
+ALTER TABLE optimization_jobs ADD COLUMN verified TEXT NOT NULL DEFAULT '';
+ALTER TABLE optimization_jobs ADD COLUMN output_relpath TEXT NOT NULL DEFAULT '';
+
+-- A bounded tail, never the whole stderr. The full log lives in the job's
+-- staging directory and is removed with it.
+ALTER TABLE optimization_jobs ADD COLUMN log_tail TEXT NOT NULL DEFAULT '';
+"""
+
 MIGRATIONS = {
     1: MIGRATION_001,
     2: MIGRATION_002,
@@ -663,6 +695,7 @@ MIGRATIONS = {
     22: MIGRATION_022,
     23: MIGRATION_023,
     24: MIGRATION_024,
+    25: MIGRATION_025,
 }
 
 
