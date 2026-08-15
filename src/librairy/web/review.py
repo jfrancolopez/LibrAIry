@@ -1515,17 +1515,23 @@ def queue_data(conn: sqlite3.Connection, settings: Settings | None = None) -> di
     of them blinked.
     """
     from librairy import optimization_queue as queue
+    from librairy.optimization_exec import LOW
 
     rows = [_queue_row(row) for row in queue.jobs(conn)]
     live = [row for row in rows if row["live"]]
     return {
         "jobs": [row for row in rows if row["state"] not in {"cancelled"}],
+        # Kept in its own section. A finished result is a different question
+        # from a job still waiting its turn, and mixing them means the one
+        # thing needing an answer is buried among the ones that do not.
+        "ready_jobs": [row for row in rows if row["state"] == queue.READY],
         "running": sum(1 for row in live if row["state"] == queue.RUNNING),
         "waiting": sum(
             1 for row in live if row["state"] in {queue.QUEUED, queue.WAITING}
         ),
         "ready": sum(1 for row in live if row["state"] == queue.READY),
         "concurrency": queue.MAX_CONCURRENT,
+        "resource_use": LOW.label,
         "window": _window_label(conn),
     }
 
@@ -1535,6 +1541,43 @@ def _window_label(conn: sqlite3.Connection) -> str:
 
     start, end = _window(conn, None)
     return f"{start}–{end}"
+
+
+# Below this, a conversion that worked is still not worth keeping. The encoder
+# did its job; the job was not worth doing, and saying "completed" without
+# saying so would let a 3% result look like a success.
+LOW_PAYOFF_PERCENT = 10
+
+
+def _clock_label(seconds: float) -> str:
+    seconds = int(seconds or 0)
+    if seconds < 60:
+        return f"{seconds}s"
+    return f"{seconds // 60}m {seconds % 60:02d}s"
+
+
+def _saving(row: sqlite3.Row) -> dict[str, object]:
+    """What was actually saved, beside what was predicted. Never instead of it.
+
+    A technically valid encode can still be useless. An estimate of 35% and an
+    actual of 3% is a successful run of the encoder and a failed optimization,
+    and the page has to be able to say the second thing.
+    """
+    source = int(row["source_bytes"] or 0)
+    actual = int(row["actual_bytes"] or 0)
+    if not source or not actual:
+        return {"known": False}
+    saved = source - actual
+    percent = saved / source * 100
+    return {
+        "known": True,
+        "bytes": saved,
+        "label": human_size(abs(saved)),
+        "percent": round(percent),
+        "negative": saved < 0,
+        "low_payoff": percent < LOW_PAYOFF_PERCENT,
+        "estimated_label": human_size(max(0, source - int(row["estimated_bytes"] or 0))),
+    }
 
 
 def _queue_row(row: sqlite3.Row) -> dict[str, object]:
@@ -1558,6 +1601,21 @@ def _queue_row(row: sqlite3.Row) -> dict[str, object]:
         # would destroy the only way to find out whether the advisor is good.
         "actual_label": human_size(row["actual_bytes"]) if row["actual_bytes"] else "",
         "wait_reason": reason,
+        # Progress as FFmpeg reported it. Without a known duration there is no
+        # honest percentage, so the row says elapsed time instead of inventing
+        # one from the output file's size.
+        "progress": round(row["progress"] or 0),
+        "has_progress": bool(row["duration_seconds"]) and bool(row["out_time_seconds"]),
+        "elapsed_label": _clock_label(row["out_time_seconds"] or 0),
+        "runtime_label": _clock_label(row["runtime_seconds"] or 0),
+        "message": row["message"] or "",
+        "verified": row["verified"] or "",
+        "saving": _saving(row),
+        "is_running": row["state"] == queue.RUNNING,
+        "is_verifying": row["state"] == queue.VERIFYING,
+        "is_ready": row["state"] == queue.READY,
+        "is_failed": row["state"] == queue.FAILED,
+        "can_cancel": row["state"] in queue.ACTIVE_STATES,
         # The words, not the token. A stored reason is for the code; a person
         # reading the page needs a sentence.
         "wait_text": queue.WAIT_TEXT.get(reason, ""),
@@ -1570,7 +1628,15 @@ def _queue_row(row: sqlite3.Row) -> dict[str, object]:
     }
 
 
-def apply_queue_action(conn: sqlite3.Connection, action: str, job_ids: list[int]) -> str:
+QUEUE_ROW_ACTIONS = ("run-now", "cancel", "discard")
+
+
+def apply_queue_action(
+    conn: sqlite3.Connection,
+    action: str,
+    job_ids: list[int],
+    settings: Settings | None = None,
+) -> str:
     """Queue-page actions, over `job_id` and nothing else.
 
     A fourth field name for a fourth workflow. See `apply_opportunity_action`
@@ -1578,10 +1644,16 @@ def apply_queue_action(conn: sqlite3.Connection, action: str, job_ids: list[int]
     """
     from librairy import optimization_queue as queue
 
-    if action != "remove":
+    if action not in ("remove", *QUEUE_ROW_ACTIONS):
         raise ValueError(f"unknown queue action: {action}")
     if not job_ids:
         return "Nothing was selected."
+    if action == "run-now":
+        return _run_now(conn, job_ids)
+    if action == "cancel":
+        return _cancel_running(conn, settings, job_ids)
+    if action == "discard":
+        return _discard_results(conn, settings, job_ids)
     removed = sum(1 for job_id in job_ids if queue.cancel(conn, job_id))
     if removed != len(job_ids):
         return (
@@ -1589,6 +1661,97 @@ def apply_queue_action(conn: sqlite3.Connection, action: str, job_ids: list[int]
             f"{len(job_ids) - removed} had already started or finished."
         )
     return f"{removed} removed from the queue."
+
+
+def _run_now(conn: sqlite3.Connection, job_ids: list[int]) -> str:
+    """Ask for a job to skip the clock, and nothing else.
+
+    This does not start an encoder — a request handler starting FFmpeg is the
+    one thing the execution design forbids, because a web process holds no
+    lock, owns no child and cannot be polled. It records that the clock no
+    longer applies to this job, and the worker picks it up on its next idle
+    cycle, still behind every other gate: the fingerprint, protected roots,
+    concurrency, the disk reserve, system load and the resource policy.
+    """
+    from librairy import optimization_queue as queue
+
+    changed = 0
+    for job_id in job_ids:
+        changed += conn.execute(
+            "UPDATE optimization_jobs SET run_policy=?, wait_reason='',"
+            " updated_at=? WHERE id=? AND state IN (?, ?)",
+            (queue.FORCED, utc_now(), job_id, queue.QUEUED, queue.WAITING),
+        ).rowcount
+    if not changed:
+        return "Those jobs are not waiting to start."
+    return f"{changed} will start as soon as the machine is free."
+
+
+def _cancel_running(
+    conn: sqlite3.Connection, settings: Settings | None, job_ids: list[int]
+) -> str:
+    """Stop an encode that has started, and clear what it had written.
+
+    Only reaches a process this application started; see
+    `optimization_process.stop`.
+    """
+    from librairy import optimization_process as procs
+    from librairy import optimization_queue as queue
+
+    if settings is None:  # pragma: no cover - the routes always pass it
+        return "Cancelling needs the application settings."
+    stopped = 0
+    for job_id in job_ids:
+        row = conn.execute(
+            "SELECT state FROM optimization_jobs WHERE id=?", (job_id,)
+        ).fetchone()
+        if row is None or row["state"] not in queue.ACTIVE_STATES:
+            continue
+        procs.stop(
+            conn, settings, job_id,
+            state=queue.CANCELLED,
+            message="Cancelled. The original was never changed.",
+        )
+        stopped += 1
+    if not stopped:
+        return "Nothing selected was running."
+    return f"{stopped} stopped. Nothing on disk was changed."
+
+
+def _discard_results(
+    conn: sqlite3.Connection, settings: Settings | None, job_ids: list[int]
+) -> str:
+    """Throw away a converted file. The original was never touched.
+
+    Deliberately the *only* action offered on a finished result while adoption
+    does not exist. A second button reading "Keep original" would look like a
+    choice and would do nothing at all — the original is already what the
+    library holds.
+    """
+    from librairy import optimization_queue as queue
+
+    if settings is None:  # pragma: no cover - the routes always pass it
+        return "Discarding needs the application settings."
+    discarded = 0
+    for job_id in job_ids:
+        row = conn.execute(
+            "SELECT state FROM optimization_jobs WHERE id=?", (job_id,)
+        ).fetchone()
+        if row is None or row["state"] != queue.READY:
+            continue
+        queue.clear_staging(settings, job_id)
+        conn.execute(
+            "UPDATE optimization_jobs SET state=?, message=?, staging_dir='',"
+            " finished_at=?, updated_at=? WHERE id=?",
+            (
+                queue.CANCELLED, "Result discarded. The original was never changed.",
+                utc_now(), utc_now(), job_id,
+            ),
+        )
+        discarded += 1
+    if not discarded:
+        return "Nothing selected was ready for review."
+    return f"{discarded} discarded. Your original files were never changed."
 
 
 def _queue_selected(conn: sqlite3.Connection, opportunity_ids: list[int]) -> str:

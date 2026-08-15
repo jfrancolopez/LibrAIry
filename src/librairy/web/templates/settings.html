@@ -121,6 +121,56 @@
   <label><input type="checkbox" name="use_czkawka" {% if settings_view.dedup.use_czkawka %}checked{% endif %}> czkawka near-media scan</label>
   <p class="muted">At least one exact duplicate method must remain enabled.</p>
 
+  <h2 id="storage-optimization">Storage Optimization</h2>
+  <p class="muted">
+    Optional maintenance that converts files to smaller formats. It never
+    replaces an original: a converted copy is kept aside for you to look at, and
+    LibrAIry cannot yet put one into your library.
+  </p>
+
+  <label for="optimization_run_policy">Run policy</label>
+  <select id="optimization_run_policy" name="optimization_run_policy">
+    <option value="manual" {% if settings_view.optimization.run_policy == 'manual' %}selected{% endif %}>Manual only</option>
+    <option value="window" {% if settings_view.optimization.run_policy == 'window' %}selected{% endif %}>Maintenance window</option>
+  </select>
+
+  <label for="optimization_window_start">Window</label>
+  <span class="field-row">
+    <input id="optimization_window_start" name="optimization_window_start" type="time"
+           value="{{ settings_view.optimization.window_start }}">
+    <span aria-hidden="true">–</span>
+    <input id="optimization_window_end" name="optimization_window_end" type="time"
+           value="{{ settings_view.optimization.window_end }}">
+  </span>
+  <p class="muted">
+    A window that ends before it begins spans midnight, which is usually what
+    you want. It decides <strong>when a job may start</strong> and nothing else —
+    a job already running at the end of the window carries on rather than being
+    killed half way through.
+  </p>
+
+  {# Shown and not editable, and that is the honest state of the feature. Low
+     is the only resource setting whose cost has been measured; one job at a
+     time is already a significant share of a NAS. #}
+  <dl class="queue-facts">
+    <div><dt>Concurrent jobs</dt><dd>{{ settings_view.optimization.concurrency }}</dd></div>
+    <div><dt>Resource use</dt><dd>{{ settings_view.optimization.resource_use }}</dd></div>
+    <div>
+      <dt>Protected roots</dt>
+      <dd>
+        {% if settings_view.optimization.protected_roots %}
+          {{ settings_view.optimization.protected_roots | join(', ') }}
+        {% else %}None configured{% endif %}
+      </dd>
+    </div>
+  </dl>
+  <p class="muted">
+    Resource use is fixed at Low, and one job at a time. Both are measured
+    rather than guessed — an encoder is held to two cores' worth of work
+    whatever the size of the machine — and neither is worth offering as a dial
+    until a higher setting has been measured too.
+  </p>
+
   <h2 id="content-search">Content Search</h2>
   <label><input type="checkbox" name="content_search_enabled" {% if settings_view.content_search_enabled %}checked{% endif %}> Extract text from committed documents for local-only search</label>
   <p class="muted">Applies on the next worker cycle. Extracted text stays in SQLite and is never sent to AI providers.</p>

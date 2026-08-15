@@ -70,6 +70,7 @@ class RuntimeSettingsView:
     backup: dict[str, object]
     appearance: dict[str, str]
     vision: dict[str, object]
+    optimization: dict[str, object]
 
 
 def settings_page_data(conn: sqlite3.Connection, settings: Settings) -> dict[str, object]:
@@ -355,6 +356,7 @@ def runtime_settings(conn: sqlite3.Connection, settings: Settings) -> RuntimeSet
         },
         appearance=appearance_settings(conn),
         vision=vision_settings(conn, settings),
+        optimization=optimization_settings(conn),
     )
 
 
@@ -383,6 +385,75 @@ def vision_settings(conn: sqlite3.Connection, settings: Settings) -> dict[str, o
         "mode": str(_setting_value(conn, "vision.mode", settings.vision_mode)),
         "model": str(_setting_value(conn, "vision.model", settings.vision_model)),
     }
+
+
+def optimization_settings(conn: sqlite3.Connection) -> dict[str, object]:
+    """Storage Optimization, mostly displayed rather than editable.
+
+    Two of these four are shown and cannot be changed, and that is the honest
+    state of the feature rather than an oversight. **Concurrent jobs** is one
+    because a single encoder is already a significant share of a NAS, and
+    **Resource use** is Low because Low is the only setting whose cost has been
+    measured — a `High` nobody has measured is a promise nobody checked. They
+    appear here so the page answers "how much of my machine can this take?"
+    rather than leaving it to be guessed.
+
+    The two that *are* editable are the two that are genuinely a preference:
+    whether jobs start on their own at all, and when.
+    """
+    from librairy.optimization_exec import LOW
+    from librairy.optimization_queue import MAX_CONCURRENT
+    from librairy.protected import protected_roots
+    from librairy.worker import _window
+
+    start, end = _window(conn, None)
+    return {
+        "run_policy": str(_setting_value(conn, "optimization.run_policy", "window")),
+        "window_start": start,
+        "window_end": end,
+        "concurrency": MAX_CONCURRENT,
+        "resource_use": LOW.label,
+        "protected_roots": list(protected_roots(conn)),
+    }
+
+
+RUN_POLICIES = ("manual", "window")
+
+
+def _save_optimization(conn: sqlite3.Connection, values: dict[str, str]) -> None:
+    """Only the two settings that are genuinely a preference.
+
+    Concurrency and resource use are displayed and not accepted here at all —
+    not disabled in the form and quietly honoured if posted anyway, which is
+    the version of "you cannot change this" that a crafted request walks
+    straight through.
+    """
+    import json
+
+    policy = values.get("run_policy", "")
+    if policy:
+        if policy not in RUN_POLICIES:
+            raise SettingsValidationError("run policy must be manual or window")
+        old = _setting_value(conn, "optimization.run_policy", "window")
+        _set_json(conn, "optimization.run_policy", policy)
+        _journal_if_changed(conn, "optimization.run_policy", old, policy)
+    start, end = values.get("window_start", ""), values.get("window_end", "")
+    if start or end:
+        for value in (start, end):
+            if not _is_clock(value):
+                raise SettingsValidationError("the window needs two times like 01:00")
+        old = _setting_value(conn, "optimization.window", "")
+        # A window that ends before it starts spans midnight and is legal;
+        # 22:00-05:00 is the shape most people actually want.
+        _set_json(conn, "optimization.window", [start, end])
+        _journal_if_changed(conn, "optimization.window", old, json.dumps([start, end]))
+
+
+def _is_clock(value: str) -> bool:
+    hours, _, minutes = str(value).partition(":")
+    if not hours.isdigit() or not minutes.isdigit():
+        return False
+    return 0 <= int(hours) <= 23 and 0 <= int(minutes) <= 59
 
 
 def appearance_settings(conn: sqlite3.Connection) -> dict[str, str]:
@@ -431,6 +502,7 @@ def save_settings(
     backup_values: dict[str, object] | None = None,
     appearance_values: dict[str, str] | None = None,
     catalog_values: dict[str, bool] | None = None,
+    optimization_values: dict[str, str] | None = None,
 ) -> None:
     if confidence_threshold is not None and not 0 <= confidence_threshold <= 1:
         raise SettingsValidationError("confidence threshold must be between 0 and 1")
@@ -473,6 +545,8 @@ def save_settings(
             old = catalog_enabled(conn, slug)
             _set_json(conn, setting_key, enabled)
             _journal_if_changed(conn, setting_key, old, enabled)
+    if optimization_values:
+        _save_optimization(conn, optimization_values)
     if appearance_values:
         for key, raw in appearance_values.items():
             if key == "theme":

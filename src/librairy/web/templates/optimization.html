@@ -37,19 +37,102 @@
   </dl>
   <p class="muted queue-policy">
     Concurrent optimization jobs: <strong>{{ concurrency }}</strong> ·
+    Resource use: <strong>{{ resource_use }}</strong> ·
     Maintenance window: <strong>{{ window }}</strong>.
     {# Said here because it is the thing most easily assumed otherwise. #}
     The window decides when a job may start; it does not change how much of the
     machine a job may use.
   </p>
 
+  {# Finished results, first and separate. This is the only part of the page
+     that is waiting on a person; everything below it is waiting on a clock or
+     on a machine, and burying the one among the others is how a completed
+     conversion sits unnoticed for a fortnight. #}
+  {% if ready_jobs %}
+  <section class="queue-ready">
+    <h2>Ready for review</h2>
+    <p class="muted">
+      Converted copies, checked and kept aside. <strong>Your original files were
+      never changed</strong> — LibrAIry cannot replace an original yet, so
+      nothing here is in your library.
+    </p>
+    {% for job in ready_jobs %}
+    <article id="ready-{{ job.id }}" class="row-shell queue-row queue-is-ready">
+      <div class="row-body">
+        <header class="row-head">
+          <h3 class="row-name" title="{{ job.relpath }}"><span class="name-text">{{ job.name }}</span>{{ ext_info(job.relpath) }}</h3>
+          <span class="row-meta">
+            <span class="badge badge-quality badge-{{ job.quality }}">{{ job.quality_label }}</span>
+            <span class="badge badge-ok">READY FOR REVIEW</span>
+          </span>
+        </header>
+        <p class="queue-change mono">{{ job.change }}</p>
+        <dl class="queue-facts">
+          <div><dt>Original</dt><dd>{{ job.size_label }}</dd></div>
+          <div><dt>Converted</dt><dd>{{ job.actual_label }}</dd></div>
+          <div><dt>Estimated saving</dt><dd>~{{ job.saving.estimated_label }}</dd></div>
+          {% if job.saving.known %}
+          <div>
+            <dt>Actual saving</dt>
+            <dd>{% if job.saving.negative %}none — it came out
+                  {{ job.saving.label }} larger{% else %}{{ job.saving.label }} ·
+                  {{ job.saving.percent }}%{% endif %}</dd>
+          </div>
+          {% endif %}
+          <div><dt>Verification</dt><dd>Passed</dd></div>
+          <div><dt>Runtime</dt><dd>{{ job.runtime_label }}</dd></div>
+        </dl>
+
+        {# A successful run of the encoder is not the same thing as a
+           worthwhile optimization, and the page has to be able to say so. #}
+        {% if job.saving.known and job.saving.low_payoff %}
+        <p class="notice-warn queue-payoff">
+          Conversion completed, but it saved little.
+          <strong>Recommendation: keep the original.</strong>
+        </p>
+        {% endif %}
+
+        <div class="button-row">
+          {# One action, because there is only one. "Keep original" beside it
+             would look like a choice and would do nothing: the original is
+             already what your library holds. #}
+          <form method="post" action="/maintenance/optimization/bulk">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="job_id" value="{{ job.id }}">
+            <button type="submit" name="action" value="discard">Discard result</button>
+          </form>
+          <details class="why">
+            <summary>Details</summary>
+            <dl class="queue-facts">
+              <div><dt>Source</dt><dd class="mono">{{ job.relpath }}</dd></div>
+              <div><dt>Operation</dt><dd>{{ job.change }}</dd></div>
+              <div><dt>Queued</dt><dd>{{ job.queued_at }}</dd></div>
+            </dl>
+            <p class="muted">
+              The converted copy is held outside your library and is not
+              indexed, previewed or searchable. Discarding it removes that copy
+              and nothing else.
+            </p>
+          </details>
+        </div>
+      </div>
+    </article>
+    {% endfor %}
+  </section>
+  {% endif %}
+
+  {# The bulk form holds only its own controls. Each row's checkbox joins it by
+     `form=` rather than by being inside it, so the per-row actions below can be
+     forms of their own -- a form inside a form is not a thing browsers have. #}
   <form method="post" action="/maintenance/optimization/bulk" id="queue-actions">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <div class="queue-list">
+  </form>
+
+  <div class="queue-list">
       {% for job in jobs %}
       <article id="job-{{ job.id }}" class="row-shell queue-row queue-is-{{ job.state }}">
         <label class="row-pick">
-          <input type="checkbox" name="job_id" value="{{ job.id }}"
+          <input type="checkbox" form="queue-actions" name="job_id" value="{{ job.id }}"
                  {% if not job.can_remove %}disabled{% endif %}
                  aria-label="Select optimization job for {{ job.name }}">
         </label>
@@ -79,6 +162,26 @@
           </p>
           {% endif %}
 
+          {% if job.is_running %}
+          {# Read from FFmpeg's own progress output, never guessed from the
+             size of a half-written file. When the source duration is unknown
+             there is no honest percentage, so it says elapsed instead. #}
+          <p class="queue-progress">
+            {% if job.has_progress %}
+              <progress value="{{ job.progress }}" max="100">{{ job.progress }}%</progress>
+              {{ job.progress }}% · {{ job.elapsed_label }} converted
+            {% else %}
+              Converting · {{ job.elapsed_label }} so far
+            {% endif %}
+          </p>
+          {% elif job.is_verifying %}
+          <p class="muted">Checking the converted file against the original.</p>
+          {% endif %}
+
+          {% if job.is_failed and job.message %}
+          <p class="notice-warn">{{ job.message }} Your original file was not changed.</p>
+          {% endif %}
+
           <dl class="queue-facts">
             <div><dt>Estimated result</dt><dd>~{{ job.estimated_label }}</dd></div>
             {% if job.actual_label %}
@@ -87,20 +190,41 @@
             <div><dt>Actual result</dt><dd>{{ job.actual_label }}</dd></div>
             {% endif %}
           </dl>
+
+          {% if job.can_run_now or job.can_cancel %}
+          <div class="button-row">
+            {% if job.can_run_now %}
+            {# Lifts the clock and nothing else: the fingerprint, protected
+               roots, concurrency, the disk reserve, system load and the
+               resource policy all still apply. #}
+            <form method="post" action="/maintenance/optimization/bulk">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="hidden" name="job_id" value="{{ job.id }}">
+              <button type="submit" name="action" value="run-now">Run now</button>
+            </form>
+            {% endif %}
+            {% if job.can_cancel %}
+            <form method="post" action="/maintenance/optimization/bulk">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="hidden" name="job_id" value="{{ job.id }}">
+              <button type="submit" name="action" value="cancel">Cancel</button>
+            </form>
+            {% endif %}
+          </div>
+          {% endif %}
         </div>
       </article>
       {% endfor %}
-    </div>
+  </div>
 
-    <div class="queue-toolbar">
-      <button type="submit" name="action" value="remove" class="btn-ghost">
-        Remove from queue
-      </button>
-      <span class="muted">
-        Removing a queued job changes nothing on disk.
-      </span>
-    </div>
-  </form>
+  <div class="queue-toolbar">
+    <button type="submit" form="queue-actions" name="action" value="remove" class="btn-ghost">
+      Remove from queue
+    </button>
+    <span class="muted">
+      Removing a queued job changes nothing on disk.
+    </span>
+  </div>
   {% endif %}
 </section>
 {% endblock %}

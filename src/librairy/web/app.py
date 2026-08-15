@@ -461,6 +461,14 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
                 batch_size=int(str(form.get("batch_size", "50"))),
                 dedup_values=dedup_values,
                 content_search_enabled="content_search_enabled" in form,
+                # Only the two that are a preference. Concurrency and resource
+                # use are displayed on the page and not read from the form at
+                # all, so posting them by hand changes nothing.
+                optimization_values={
+                    "run_policy": str(form.get("optimization_run_policy", "")),
+                    "window_start": str(form.get("optimization_window_start", "")),
+                    "window_end": str(form.get("optimization_window_end", "")),
+                },
                 appearance_values={
                     "theme": str(form.get("appearance_theme", "")),
                     # <input type="color"> always posts a value, so an untouched
@@ -1159,6 +1167,7 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             "optimization.html",
             {
                 "title": "Optimization Queue",
+                "csrf_token": request.state.session["csrf_token"],
                 **queue_data(conn, settings),
             },
         )
@@ -1176,7 +1185,7 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         only thing keeping one workflow's small integers out of another's.
         """
         try:
-            result = apply_queue_action(conn, action, job_id)
+            result = apply_queue_action(conn, action, job_id, settings)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         return TEMPLATES.TemplateResponse(
@@ -1184,6 +1193,7 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             "optimization.html",
             {
                 "title": "Optimization Queue",
+                "csrf_token": request.state.session["csrf_token"],
                 **queue_data(conn, settings),
                 "notice": result,
             },
