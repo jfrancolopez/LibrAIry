@@ -622,3 +622,89 @@ def test_a_broken_governor_does_not_stop_the_worker(tmp_path: Path) -> None:
         queue.decide = original
 
     assert summary is not None
+
+
+# --- Run now, end to end through the worker ----------------------------------------
+
+
+def test_run_now_records_a_forced_policy_rather_than_starting_anything(
+    tmp_path: Path,
+) -> None:
+    """A request handler cannot own a child process, so `Run now` does not
+    start one. It records that the clock no longer applies and the worker
+    picks the job up on its next idle cycle."""
+    from librairy.web.review import apply_queue_action
+
+    conn, settings = scene(tmp_path)
+    job_id = queue.enqueue(conn, opportunity(conn))
+
+    result = apply_queue_action(conn, "run-now", [job_id], settings)
+
+    assert "will start" in result
+    assert job_row(conn, job_id)["run_policy"] == queue.FORCED
+    assert job_row(conn, job_id)["state"] == queue.QUEUED
+    assert job_row(conn, job_id)["pid"] is None
+
+
+def test_a_forced_job_still_waits_for_everything_that_is_not_the_clock(
+    tmp_path: Path,
+) -> None:
+    conn, _ = scene(tmp_path)
+    job = job_row(conn, queue.enqueue(conn, opportunity(conn), run_policy=queue.FORCED))
+
+    # Afternoon: the clock alone would have refused this.
+    assert queue.decide(job, state(now=AFTERNOON), forced=True).eligible is True
+    blocked = queue.decide(job, state(now=AFTERNOON, running_jobs=1), forced=True)
+
+    assert blocked.eligible is False
+    assert blocked.reason == queue.ANOTHER_RUNNING
+
+
+def test_run_now_does_nothing_to_a_job_that_is_not_waiting(tmp_path: Path) -> None:
+    from librairy.web.review import apply_queue_action
+
+    conn, settings = scene(tmp_path)
+    job_id = queue.enqueue(conn, opportunity(conn))
+    conn.execute(
+        "UPDATE optimization_jobs SET state=? WHERE id=?", (queue.RUNNING, job_id)
+    )
+
+    result = apply_queue_action(conn, "run-now", [job_id], settings)
+
+    assert "not waiting" in result
+    assert job_row(conn, job_id)["run_policy"] == "window"
+
+
+# --- the window closes; the job does not stop --------------------------------------
+
+
+def test_a_job_that_started_in_the_window_is_not_killed_when_it_closes(
+    tmp_path: Path,
+) -> None:
+    """A transcode begun at 05:55 runs past 06:00. Killing it at the boundary
+    would throw away an hour of work and leave a half-written file, and the
+    window was never a statement about how much machine a job may use — only
+    about when one may begin.
+
+    Asserted structurally as well as behaviourally: nothing in the eligibility
+    module reaches a process at all, so there is no code that *could* stop one
+    on a clock.
+    """
+    import inspect
+
+    conn, _ = scene(tmp_path)
+    job_id = queue.enqueue(conn, opportunity(conn))
+    conn.execute(
+        "UPDATE optimization_jobs SET state=? WHERE id=?", (queue.RUNNING, job_id)
+    )
+
+    # Long past the end of the window, `decide` is not even asked about it:
+    # `next_job` only ever returns something still waiting to start.
+    assert queue.next_job(conn) is None
+    assert job_row(conn, job_id)["state"] == queue.RUNNING
+
+    source = inspect.getsource(queue)
+    assert "import signal" not in source
+    assert ".terminate()" not in source
+    assert ".kill()" not in source
+    assert "os.kill" not in source
