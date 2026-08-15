@@ -118,6 +118,13 @@ class Worker:
     def run_once(self) -> WorkerSummary:
         with acquire_lock(self.settings):
             settings = effective_settings(self.conn, self.settings)
+            # Before anything else, and on *every* cycle including busy ones.
+            # Starting an optimization is gated behind an idle cycle; noticing
+            # that one has finished is not, or a job that completed during a
+            # busy hour would sit in `running` until the inbox went quiet — and
+            # the encoder's own progress would stop advancing on screen while
+            # the encoder was in fact still going.
+            self._optimization_poll(settings)
             _set_worker_state(self.conn, "current_phase", "scan")
             scan = scan_root(self.conn, "inbox", settings.inbox_dir, settings)
             _set_worker_state(self.conn, "current_phase", "dedup")
@@ -206,6 +213,20 @@ class Worker:
                 _set_worker_state(self.conn, "last_audit_stage", audit_stage)
             return summary
 
+    def _optimization_poll(self, settings: Settings) -> str:
+        """Advance a running encode by reading what it has reported. Never waits.
+
+        Wrapped like every other maintenance call: the inbox is the job, and a
+        broken encoder must not be the thing that stops files being filed.
+        """
+        from librairy import optimization_process as procs
+
+        try:
+            return procs.poll(self.conn, settings)
+        except Exception:  # noqa: BLE001 - maintenance must never break the worker
+            LOGGER.warning("optimization poll skipped", exc_info=True)
+            return ""
+
     def _optimization_slice(self, settings: Settings) -> str:
         """Evaluate the next queued optimization, and record what it is waiting for.
 
@@ -229,18 +250,22 @@ class Worker:
                 return ""
             state = queue.system_snapshot(self.conn, settings)
             state = _with_source_facts(self.conn, settings, job, state)
+            # `Run now` writes `forced` into the job's run policy rather than
+            # starting anything: a request handler cannot own a child process.
+            # It lifts the clock here and nothing else — `decide` still applies
+            # the fingerprint, protected roots, concurrency, the disk reserve
+            # and the load ceiling, and the encoder still runs under the same
+            # resource policy.
+            forced = job["run_policy"] == queue.FORCED
             decision = queue.decide(
                 job,
                 state,
                 run_policy=job["run_policy"],
                 window=_window(self.conn, settings),
+                forced=forced,
             )
             if decision.eligible:
-                # Encoding lands in a later change. Until then an eligible job
-                # stays queued rather than being marked started, because a
-                # `running` row with no process behind it is a lie the UI
-                # would repeat.
-                return "eligible"
+                return self._launch(settings, job)
             if decision.reason == queue.SOURCE_CHANGED:
                 queue.mark_stale(self.conn, job["id"])
             else:
@@ -249,6 +274,31 @@ class Worker:
         except Exception:  # noqa: BLE001 - maintenance must never break the worker
             LOGGER.warning("optimization slice skipped", exc_info=True)
             return ""
+
+    def _launch(self, settings: Settings, job) -> str:
+        """Start the encoder and come straight back.
+
+        The whole architecture in four lines: nothing here waits for the child.
+        `run_once` returns, the next cycle files whatever landed in the inbox
+        meanwhile, and `_optimization_poll` picks the encode up again.
+        """
+        from librairy import optimization_process as procs
+        from librairy import optimization_queue as queue
+        from librairy.optimization_exec import ExecutionRefused
+
+        try:
+            started = procs.launch(self.conn, settings, job)
+        except ExecutionRefused as exc:
+            # The advisor may still be right that this file is worth
+            # converting. It is the conversion that cannot be done safely, and
+            # saying so is more use than leaving it queued forever.
+            queue.set_waiting(self.conn, job["id"], queue.UNSUPPORTED)
+            self.conn.execute(
+                "UPDATE optimization_jobs SET message=?, updated_at=? WHERE id=?",
+                (str(exc), utc_now(), job["id"]),
+            )
+            return queue.UNSUPPORTED
+        return "started" if started else "eligible"
 
     def _audit_slice(self, settings: Settings) -> str:
         """One slice of a requested audit, if one is waiting.
@@ -264,7 +314,28 @@ class Worker:
             LOGGER.exception("audit slice failed")
             return ""
 
+    def reconcile_optimizations(self) -> int:
+        """Settle anything a previous worker left `running`. Never resumes it.
+
+        A row claiming to be running with no worker behind it is the state that
+        makes the queue page lie. Resuming is not the fix: nothing knows how
+        much of a half-written output is valid, and spending another hour of
+        CPU because a container was updated is not a decision to take on the
+        user's behalf.
+        """
+        from librairy import optimization_process as procs
+
+        try:
+            settled = procs.reconcile(self.conn, self.settings)
+        except Exception:  # noqa: BLE001 - never let it stop the worker starting
+            LOGGER.warning("optimization reconcile skipped", exc_info=True)
+            return 0
+        if settled:
+            LOGGER.warning("%s interrupted optimization job(s) settled", settled)
+        return settled
+
     def run_forever(self) -> None:
+        self.reconcile_optimizations()
         sleep_seconds = BUSY_SLEEP_SECONDS
         while not self.stop_requested:
             summary = self.run_once()

@@ -178,7 +178,15 @@ def test_safety_invariants_forbid_moves_outside_executor() -> None:
         r"\b(shutil\.move|os\.rename|os\.replace|Path\.rename|Path\.replace)\b"
     )
     delete_pattern = re.compile(r"\b(os\.unlink|shutil\.rmtree|Path\.unlink|send2trash)\b")
-    allowed = {Path("src/librairy/executor.py")}
+    # `optimization_queue.clear_staging` is the one other place, and it removes
+    # only a directory it derives itself from a job id, under
+    # `appdata/optimization/jobs/`, having checked that is where it landed. One
+    # auditable exception beats the three that the launch, failure and
+    # cancellation paths would each have wanted.
+    allowed = {
+        Path("src/librairy/executor.py"),
+        Path("src/librairy/optimization_queue.py"),
+    }
 
     violations: list[str] = []
     for path in package_root.rglob("*.py"):
