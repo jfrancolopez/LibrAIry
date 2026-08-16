@@ -1520,7 +1520,11 @@ def queue_data(conn: sqlite3.Connection, settings: Settings | None = None) -> di
     rows = [_queue_row(row) for row in queue.jobs(conn)]
     live = [row for row in rows if row["live"]]
     return {
-        "jobs": [row for row in rows if row["state"] not in {"cancelled"}],
+        # `ready` is excluded here because it has its own section above, and a
+        # row in both places is the same job asking to be answered twice.
+        "jobs": [
+            row for row in rows if row["state"] not in {queue.CANCELLED, queue.READY}
+        ],
         # Kept in its own section. A finished result is a different question
         # from a job still waiting its turn, and mixing them means the one
         # thing needing an answer is buried among the ones that do not.
@@ -1622,7 +1626,14 @@ def _queue_row(row: sqlite3.Row) -> dict[str, object]:
         # Waiting is normal, so it is never styled as a failure.
         "is_waiting": row["state"] in {queue.QUEUED, queue.WAITING},
         "is_stale": row["state"] == queue.STALE,
-        "can_run_now": row["state"] in {queue.QUEUED, queue.WAITING},
+        # Pressing `Run now` changes nothing a person can see otherwise: the
+        # job stays queued, because nothing starts until the worker's next idle
+        # cycle. Without this the button reads as having done nothing at all.
+        "forced": row["run_policy"] == queue.FORCED,
+        "can_run_now": (
+            row["state"] in {queue.QUEUED, queue.WAITING}
+            and row["run_policy"] != queue.FORCED
+        ),
         "can_remove": row["state"] in {queue.QUEUED, queue.WAITING, queue.STALE},
         "queued_at": row["queued_at"],
     }

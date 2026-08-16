@@ -476,6 +476,59 @@ def _optimization_jobs(conn) -> None:  # noqa: ANN001
             (relpath, kind, quality, source, target, size, estimated, state,
              reason, utc_now(), utc_now()),
         )
+    _optimization_results(conn)
+
+
+def _optimization_results(conn) -> None:  # noqa: ANN001
+    """The states that only exist once an encoder has run.
+
+    Two Ready rows on purpose. One is what a good result looks like; the other
+    saved 3% against an estimate of 35%, which is a successful run of the
+    encoder and a failed optimization — and the page has to be able to tell
+    them apart on sight, which is only checkable if both are on it.
+    """
+    from librairy.optimization import LOSSLESS, LOSSY
+    from librairy.optimization_queue import FAILED, READY, RUNNING, VERIFYING
+    from librairy.planner import utc_now
+
+    mb = 1024 * 1024
+    rows = [
+        # relpath, kind, quality, from, to, source, estimated, actual, state,
+        # verified, progress, out_time, duration, runtime, message
+        ("Music/Live/encore.wav", "audio-to-flac", LOSSLESS, "WAV", "FLAC",
+         842 * mb, 512 * mb, 504 * mb, READY, "passed", 100, 0, 0, 374, ""),
+        ("Movies/Solaris (1972)/Solaris.mkv", "video-transcode", LOSSY,
+         "H264", "HEVC", 6200 * mb, 4030 * mb, 6014 * mb, READY, "passed",
+         100, 0, 0, 5312, ""),
+        ("Movies/Ran (1985)/Ran.mkv", "video-transcode", LOSSY, "H264", "HEVC",
+         8400 * mb, 5460 * mb, None, RUNNING, "", 41, 2870, 7020, None, ""),
+        ("Music/Sessions/mixdown.wav", "audio-to-flac", LOSSLESS, "WAV", "FLAC",
+         410 * mb, 250 * mb, None, VERIFYING, "", 100, 0, 0, None, ""),
+        ("Movies/Stalker (1979)/Stalker.mkv", "video-transcode", LOSSY,
+         "H264", "HEVC", 7100 * mb, 4615 * mb, None, FAILED, "failed", 0, 0, 0,
+         None, "The running time does not match the original."),
+    ]
+    for (
+        relpath, kind, quality, source, target, size, estimated, actual, state,
+        verified, progress, out_time, duration, runtime, message,
+    ) in rows:
+        conn.execute(
+            """
+            INSERT INTO optimization_jobs(
+              opportunity_id, item_id, root, relpath, fingerprint, kind, quality,
+              from_label, to_label, preset, preset_version, rule_version,
+              source_bytes, estimated_bytes, actual_bytes, runtime_seconds,
+              run_policy, state, wait_reason, verified, progress,
+              out_time_seconds, duration_seconds, message, staging_dir,
+              output_relpath, queued_at, updated_at
+            ) VALUES (NULL, NULL, 'library', ?, 'fixture', ?, ?, ?, ?,
+                      'fixture-preset', 1, 1, ?, ?, ?, ?, 'window', ?, '', ?, ?,
+                      ?, ?, ?, '', 'output.mp4', ?, ?)
+            """,
+            (relpath, kind, quality, source, target, size, estimated, actual,
+             runtime, state, verified, progress, out_time, duration, message,
+             utc_now(), utc_now()),
+        )
 
 
 def _storage_opportunities(conn) -> None:  # noqa: ANN001

@@ -404,12 +404,19 @@ def test_the_estimate_survives_alongside_any_actual(tmp_path: Path) -> None:
         (498 * MB, queue.READY, job_id),
     )
 
+    # A finished job lives in the Ready section now, which words the same two
+    # figures for a reader rather than for a queue: `Estimated saving` beside
+    # `Actual saving`. Both are still there, and still separately stored.
     shown = text_of(client.get("/maintenance/optimization").text)
 
-    assert "Estimated result" in shown
-    assert "510.0 MB" in shown
-    assert "Actual result" in shown
+    assert "Estimated saving" in shown
+    assert "Actual saving" in shown
     assert "498.0 MB" in shown
+    row = conn.execute(
+        "SELECT estimated_bytes, actual_bytes FROM optimization_jobs WHERE id=?",
+        (job_id,),
+    ).fetchone()
+    assert (row["estimated_bytes"], row["actual_bytes"]) == (510 * MB, 498 * MB)
 
 
 def test_a_stale_row_explains_itself_once(tmp_path: Path) -> None:

@@ -23,7 +23,10 @@
 
   {% if notice %}<p class="status">{{ notice }}</p>{% endif %}
 
-  {% if not jobs %}
+  {# `jobs` alone is the wrong test: a finished result lives in `ready_jobs`,
+     so a queue holding nothing but converted files ready to look at announced
+     "Nothing is queued" and hid every one of them. #}
+  {% if not jobs and not ready_jobs %}
   <p class="muted queue-empty">Nothing is queued.</p>
   <p class="muted">
     Storage opportunities appear in <a href="/review#storage-opportunities">Review</a>.
@@ -149,7 +152,14 @@
 
           <p class="queue-change mono">{{ job.change }}</p>
 
-          {% if job.wait_text and not job.is_stale %}
+          {% if job.forced and job.is_waiting %}
+          {# Otherwise pressing `Run now` looks like it did nothing: the job
+             stays queued, because nothing starts until the worker's next idle
+             cycle. This is the difference between "waiting for 01:00" and
+             "waiting only for the machine to be free". #}
+          <p class="muted queue-reason">Set to start as soon as the machine is
+            free. The maintenance window no longer applies to this one.</p>
+          {% elif job.wait_text and not job.is_stale %}
           {# The stored reason in words. A queue that says "waiting" and not
              what for is a queue people restart at random. #}
           <p class="muted queue-reason">{{ job.wait_text }}.</p>
