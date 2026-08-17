@@ -6,9 +6,11 @@ from dataclasses import dataclass
 from librairy.config import Settings
 from librairy.executor import _move_verified, _root_path
 from librairy.fingerprint import blake2b_file
+from librairy.lifecycle import assert_transition
 from librairy.locks import acquire_lock
 from librairy.paths import resolve_collision, validate_dest, validate_relpath
 from librairy.planner import utc_now
+from librairy.search import sync_search_item
 
 
 class UndoError(RuntimeError):
@@ -193,9 +195,23 @@ def _update_item_after_undo(
     final_dest,
 ) -> None:
     stat = final_dest.stat()
+    # The state has to come back too. Undoing a quarantine moved the file to
+    # the inbox and left the item reading `quarantined`, which is not a
+    # cosmetic disagreement: `quarantined` may legally only become
+    # `discovered`, so the row was very nearly frozen, and every count that
+    # asks "what is in quarantine" was answering yes about a file in the
+    # inbox. A file that has been put back is an ordinary undecided file.
+    state = "quarantined" if entry["src_root"] == "quarantine" else "discovered"
+    current = conn.execute(
+        "SELECT id, state FROM items WHERE root=? AND relpath=?",
+        (entry["dest_root"], entry["dest_relpath"]),
+    ).fetchone()
+    if current is not None:
+        assert_transition(current["state"], state)
     conn.execute(
         """
-        UPDATE items SET root=?, relpath=?, size=?, mtime_ns=?, last_seen_at=?, missing_since=NULL
+        UPDATE items SET root=?, relpath=?, size=?, mtime_ns=?, state=?,
+          last_seen_at=?, missing_since=NULL
         WHERE root=? AND relpath=?
         """,
         (
@@ -203,8 +219,14 @@ def _update_item_after_undo(
             final_relpath,
             stat.st_size,
             stat.st_mtime_ns,
+            state,
             utc_now(),
             entry["dest_root"],
             entry["dest_relpath"],
         ),
     )
+    # The index copies the item's root and path, so it has to be told as well:
+    # without this, a file put back in the inbox went on appearing in Search as
+    # a quarantined one.
+    if current is not None:
+        sync_search_item(conn, int(current["id"]))

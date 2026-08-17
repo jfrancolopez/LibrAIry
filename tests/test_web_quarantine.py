@@ -534,3 +534,57 @@ def test_a_staged_quarantine_can_be_previewed_before_you_decide(tmp_path: Path) 
 
     assert f'data-preview-url="/preview/items/{item_id}"' in body
     assert f'id="spreview-{proposal_id}"' in body
+
+
+# --- what Undo leaves behind ---------------------------------------------------
+#
+# Found while proving the optimization-adoption architecture, and nothing to do
+# with optimization: undoing any quarantine put the file back and left the item
+# row reading `quarantined`. Not cosmetic — `quarantined` may legally only
+# become `discovered`, so the row was nearly frozen, and the index went on
+# describing an inbox file as a quarantined one.
+
+
+def test_undoing_a_quarantine_puts_the_item_back_too(tmp_path: Path) -> None:
+    from librairy.history import undo_plan
+    from librairy.quarantine import quarantine_operation
+
+    _client, conn, settings = client_for(tmp_path)
+    (settings.inbox_dir / "dupe.txt").write_text("dupe", encoding="utf-8")
+    scan_root(conn, "inbox", settings.inbox_dir, settings)
+    plan_id = create_plan(
+        conn, [quarantine_operation("dupe.txt", date="2026-08-15")], settings
+    )
+    approve_plan(conn, plan_id, settings)
+    execute_plan(conn, plan_id, settings)
+    assert conn.execute("SELECT state FROM items").fetchone()[0] == "quarantined"
+
+    undo_plan(conn, plan_id, settings)
+
+    row = conn.execute("SELECT root, relpath, state FROM items").fetchone()
+    assert (row["root"], row["relpath"], row["state"]) == (
+        "inbox",
+        "dupe.txt",
+        "discovered",
+    )
+    assert (settings.inbox_dir / "dupe.txt").exists()
+
+
+def test_undoing_a_quarantine_reindexes_the_file(tmp_path: Path) -> None:
+    """The index copies the item's root, so it had to be told as well."""
+    from librairy.history import undo_plan
+    from librairy.quarantine import quarantine_operation
+
+    _client, conn, settings = client_for(tmp_path)
+    (settings.inbox_dir / "dupe.txt").write_text("dupe", encoding="utf-8")
+    scan_root(conn, "inbox", settings.inbox_dir, settings)
+    plan_id = create_plan(
+        conn, [quarantine_operation("dupe.txt", date="2026-08-15")], settings
+    )
+    approve_plan(conn, plan_id, settings)
+    execute_plan(conn, plan_id, settings)
+    assert conn.execute("SELECT root FROM search_fts").fetchone()[0] == "quarantine"
+
+    undo_plan(conn, plan_id, settings)
+
+    assert conn.execute("SELECT root FROM search_fts").fetchone()[0] == "inbox"
