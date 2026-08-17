@@ -63,7 +63,7 @@ def snapshot() -> dict[str, object]:
         "fts_integrity": "ok" if integrity.ok else f"FAILED: {integrity.detail}",
         "recorded_health": "ok" if recorded_health(conn).ok else "damaged",
         "sqlite_integrity_check": quick,
-        "index_counts": counts,
+        "index_counts": counts,  # current + missing_retained = total
         "items_searchable": searchable,
         "items_missing_since": missing,
         "items_by_root": by_root,

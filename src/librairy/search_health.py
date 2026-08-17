@@ -101,14 +101,53 @@ def recorded_health(conn: sqlite3.Connection) -> IndexHealth:
 
 
 def index_counts(conn: sqlite3.Connection) -> dict[str, int]:
-    """How many rows the index holds against how many it should.
+    """What the index holds, split so the numbers add up on sight.
 
-    A count mismatch is a weaker signal than the integrity check — an item with
-    nothing worth indexing legitimately has no row — so this is reported as
-    context beside the check rather than used as a verdict on its own.
+    This used to return `indexed` beside `items`, where `indexed` counted every
+    row in the index and `items` counted only the ones whose file is still on
+    disk. On the author's library that read:
+
+        indexed 243 · items 235
+
+    which looks like eight lost records and is nothing of the kind: a file that
+    has gone missing keeps its index row on purpose, so a share that comes back
+    online is searchable immediately rather than after a rescan. The eight are
+    deliberate, and the presentation made them look like damage.
+
+    So the split is explicit now, and `unindexed` is the only one of these that
+    is ever a problem worth reporting.
     """
-    indexed = conn.execute("SELECT COUNT(*) FROM search_fts").fetchone()[0]
-    items = conn.execute(
-        "SELECT COUNT(*) FROM items WHERE missing_since IS NULL"
-    ).fetchone()[0]
-    return {"indexed": int(indexed), "items": int(items)}
+    total = int(conn.execute("SELECT COUNT(*) FROM search_fts").fetchone()[0])
+    current = int(
+        conn.execute(
+            """
+            SELECT COUNT(*) FROM search_fts s JOIN items i ON i.id = s.item_id
+            WHERE i.missing_since IS NULL
+            """
+        ).fetchone()[0]
+    )
+    missing = int(
+        conn.execute(
+            """
+            SELECT COUNT(*) FROM search_fts s JOIN items i ON i.id = s.item_id
+            WHERE i.missing_since IS NOT NULL
+            """
+        ).fetchone()[0]
+    )
+    unindexed = int(
+        conn.execute(
+            """
+            SELECT COUNT(*) FROM items i
+            WHERE i.missing_since IS NULL
+              AND NOT EXISTS (SELECT 1 FROM search_fts s WHERE s.item_id = i.id)
+            """
+        ).fetchone()[0]
+    )
+    return {
+        "current": current,
+        "missing_retained": missing,
+        "total": total,
+        # A present file with no index row. Unlike the others, this one means
+        # something is actually wrong.
+        "unindexed": unindexed,
+    }

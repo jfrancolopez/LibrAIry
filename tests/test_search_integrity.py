@@ -245,8 +245,10 @@ def test_counts_are_reported_beside_the_check(tmp_path: Path) -> None:
 
     counts = index_counts(conn)
 
-    assert counts["indexed"] == len(FILES)
-    assert counts["items"] == len(FILES)
+    assert counts["current"] == len(FILES)
+    assert counts["total"] == len(FILES)
+    assert counts["missing_retained"] == 0
+    assert counts["unindexed"] == 0
 
 
 def test_db_check_reports_the_index(tmp_path: Path, monkeypatch) -> None:
@@ -283,3 +285,64 @@ def test_every_indexed_file_is_findable_after_a_rebuild(tmp_path: Path, query) -
     rebuild_search_index(conn)
 
     assert search_data(conn, settings, query)["results"]
+
+
+# --- the numbers a person reads -------------------------------------------------
+
+
+def test_the_index_counts_split_current_from_retained(tmp_path: Path) -> None:
+    """`indexed 243 · items 235` looked like eight lost records. The eight are
+    retained on purpose: a file that goes missing keeps its index row so a share
+    coming back online is searchable at once, without a rescan."""
+    _client, conn, _settings = scene(tmp_path)
+    item_id = conn.execute("SELECT id FROM items LIMIT 1").fetchone()[0]
+    conn.execute("UPDATE items SET missing_since='now' WHERE id=?", (item_id,))
+
+    counts = index_counts(conn)
+
+    assert counts["total"] == counts["current"] + counts["missing_retained"]
+    assert counts["missing_retained"] == 1
+    # The only one of these that is ever a problem.
+    assert counts["unindexed"] == 0
+
+
+def test_a_present_file_with_no_index_row_is_the_one_real_problem(
+    tmp_path: Path,
+) -> None:
+    _client, conn, _settings = scene(tmp_path)
+    item_id = conn.execute("SELECT id FROM items LIMIT 1").fetchone()[0]
+    conn.execute("DELETE FROM search_fts WHERE item_id=?", (item_id,))
+
+    assert index_counts(conn)["unindexed"] == 1
+
+
+def test_health_explains_the_retained_records_rather_than_hiding_them(
+    tmp_path: Path,
+) -> None:
+    client, conn, _settings = scene(tmp_path)
+    item_id = conn.execute("SELECT id FROM items LIMIT 1").fetchone()[0]
+    conn.execute("UPDATE items SET missing_since='now' WHERE id=?", (item_id,))
+
+    body = client.get("/health").text
+
+    assert "Search index" in body
+    assert "Missing files, records kept" in body
+    assert "Total indexed records" in body
+    # Not faked into agreeing, and not presented as damage.
+    assert "not on disk right now" in body
+
+
+def test_the_health_panel_writes_nothing(tmp_path: Path) -> None:
+    client, conn, _settings = scene(tmp_path)
+    writes: list[str] = []
+    conn.set_trace_callback(
+        lambda sql: writes.append(sql)
+        if sql.lstrip()[:6].upper() in {"INSERT", "UPDATE", "DELETE"}
+        else None
+    )
+    try:
+        client.get("/health")
+    finally:
+        conn.set_trace_callback(None)
+
+    assert [sql for sql in writes if "sessions" not in sql.lower()] == []

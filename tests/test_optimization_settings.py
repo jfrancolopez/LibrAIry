@@ -286,3 +286,56 @@ def test_a_queue_of_only_finished_results_is_not_called_empty(tmp_path: Path) ->
     assert "Nothing is queued" not in body
     assert "only.wav" in body
     assert "Discard result" in body
+
+
+# --- refusals a person can read -------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("payload", "expected"),
+    [
+        ({}, "Choose an action first."),
+        ({"action": ""}, "Choose an action first."),
+        ({"action": "obliterate"}, "That is not something this page can do."),
+    ],
+    ids=["missing", "empty", "unknown"],
+)
+def test_a_bulk_post_without_a_real_action_says_so(
+    tmp_path: Path, payload: dict, expected: str
+) -> None:
+    """It answered "unknown queue action: " — a trailing colon and nothing
+    after it. Structurally safe and useless to read."""
+    client, conn, _settings = queue_scene(tmp_path)
+    before = conn.execute(
+        "SELECT id, state, run_policy FROM optimization_jobs ORDER BY id"
+    ).fetchall()
+
+    response = client.post(
+        "/maintenance/optimization/bulk",
+        data={"csrf_token": client.cookies["csrf_token"], "job_id": "1", **payload},
+    )
+
+    assert response.status_code == 422
+    assert expected in response.text
+    assert conn.execute(
+        "SELECT id, state, run_policy FROM optimization_jobs ORDER BY id"
+    ).fetchall() == before
+
+
+def test_a_real_bulk_action_still_works(tmp_path: Path) -> None:
+    client, conn, _settings = queue_scene(tmp_path)
+    job_id = conn.execute(
+        "SELECT id FROM optimization_jobs WHERE state=?", (queue.QUEUED,)
+    ).fetchone()[0]
+
+    response = client.post(
+        "/maintenance/optimization/bulk",
+        data={
+            "csrf_token": client.cookies["csrf_token"],
+            "action": "remove",
+            "job_id": str(job_id),
+        },
+    )
+
+    assert response.status_code == 200
+    assert "removed from the queue" in response.text

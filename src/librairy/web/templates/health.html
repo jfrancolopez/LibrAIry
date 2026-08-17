@@ -74,6 +74,46 @@
       {% endfor %}
     </section>
 
+    <section class="widget card">
+      {# The docs promised Health reported on the search index and it did not.
+         Split into three numbers that add up on sight: `243 indexed` beside
+         `235 items` looked like eight lost records, and the eight are retained
+         on purpose so a share that comes back online is searchable at once. #}
+      <h3>Search index</h3>
+      <dl class="queue-facts">
+        <div><dt>Current items</dt><dd>{{ search_index.current }}</dd></div>
+        <div>
+          <dt>Missing files, records kept</dt>
+          <dd>{{ search_index.missing_retained }}</dd>
+        </div>
+        <div><dt>Total indexed records</dt><dd>{{ search_index.total }}</dd></div>
+      </dl>
+      {% if search_index.integrity_ok %}
+        <p class="muted">
+          Verified readable.
+          {% if search_index.missing_retained %}
+            The {{ search_index.missing_retained }} kept record{{ 's' if search_index.missing_retained != 1 else '' }}
+            belong{{ '' if search_index.missing_retained != 1 else 's' }} to
+            file{{ 's' if search_index.missing_retained != 1 else '' }} that are
+            not on disk right now — an unmounted share looks exactly like this,
+            and everything comes back searchable the moment it returns. They are
+            filtered out of results meanwhile.
+          {% endif %}
+        </p>
+      {% else %}
+        <p class="notice-warn">
+          {{ search_index.warning }} {{ search_index.remedy }}
+        </p>
+      {% endif %}
+      {% if search_index.unindexed %}
+        {# The only one of these numbers that is ever a problem. #}
+        <p class="notice-warn">
+          {{ search_index.unindexed }} file{{ 's' if search_index.unindexed != 1 else '' }}
+          on disk with no index entry. Run <span class="mono">librairy scan</span>.
+        </p>
+      {% endif %}
+    </section>
+
     <section class="widget card widget-wide">
       <h3>Files committed — last {{ growth|length }} days</h3>
       <div class="spark" role="img" aria-label="Files committed per day over the last {{ growth|length }} days">

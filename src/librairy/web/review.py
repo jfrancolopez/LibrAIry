@@ -1655,8 +1655,13 @@ def apply_queue_action(
     """
     from librairy import optimization_queue as queue
 
+    # A refusal a person can read. A form posted without its submit button —
+    # scripted, or `Enter` in an odd place — arrived here as `action=""` and got
+    # back "unknown queue action: " with a trailing colon and nothing after it.
+    if not action:
+        raise ValueError("Choose an action first.")
     if action not in ("remove", *QUEUE_ROW_ACTIONS):
-        raise ValueError(f"unknown queue action: {action}")
+        raise ValueError("That is not something this page can do.")
     if not job_ids:
         return "Nothing was selected."
     if action == "run-now":

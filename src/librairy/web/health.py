@@ -111,7 +111,27 @@ def health_data(conn: sqlite3.Connection, settings: Settings) -> dict[str, objec
             worker=worker,
             backup=backup,
         ),
+        "search_index": search_index_panel(conn),
         **health_metrics(conn, settings),
+    }
+
+
+def search_index_panel(conn: sqlite3.Connection) -> dict[str, object]:
+    """What the index holds, read only.
+
+    `recorded_health` rather than `check_search_index`: FTS5 expresses
+    `integrity-check` as an INSERT, and drawing a page must never write. The
+    verdict shown here is the one the last check recorded — on Health's own
+    rebuild button, `librairy db check`, or after a rebuild.
+    """
+    from librairy.search_health import REMEDY, index_counts, recorded_health
+
+    health = recorded_health(conn)
+    return {
+        **index_counts(conn),
+        "integrity_ok": health.ok,
+        "warning": health.warning,
+        "remedy": "" if health.ok else REMEDY,
     }
 
 
