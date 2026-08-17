@@ -9,7 +9,7 @@ from pathlib import Path
 from librairy.config import Settings
 
 LOGGER = logging.getLogger(__name__)
-SCHEMA_VERSION = 25
+SCHEMA_VERSION = 26
 
 
 class DatabaseVersionError(RuntimeError):
@@ -670,6 +670,50 @@ ALTER TABLE optimization_jobs ADD COLUMN output_relpath TEXT NOT NULL DEFAULT ''
 ALTER TABLE optimization_jobs ADD COLUMN log_tail TEXT NOT NULL DEFAULT '';
 """
 
+MIGRATION_026 = """
+-- Adoption provenance: which job produced a library file, and which plan
+-- adopted it.
+--
+-- Deliberately not overloaded onto `audit_finding_id`. A correction and an
+-- optimization are different kinds of claim about a file, and one column
+-- holding either would make every query about provenance ask "which sort of
+-- id is this" before it could answer anything.
+--
+-- The hash on the operation is an *integrity* check: it proves the bytes are
+-- the ones the plan expected. It does not prove they are the verified output
+-- of this job -- a different file with identical bytes satisfies it, and so
+-- does a stale output left in a job directory by an interrupted run. That is
+-- what this column is for: the executor resolves the generated source through
+-- the job, so the chain plan -> job -> recorded output path -> recorded output
+-- fingerprint -> op fingerprint -> bytes on disk must agree at every link.
+ALTER TABLE plans ADD COLUMN optimization_job_id INTEGER
+  REFERENCES optimization_jobs(id);
+CREATE INDEX idx_plans_optimization_job ON plans(optimization_job_id);
+
+-- One active adoption per job, enforced here rather than by drawing or not
+-- drawing a button -- the same rule, and the same reason, as one active
+-- correction per finding.
+CREATE UNIQUE INDEX idx_plans_one_active_per_optimization
+  ON plans(optimization_job_id)
+  WHERE optimization_job_id IS NOT NULL AND status IN ('approved', 'executing');
+
+-- The library item the job's output became, once adopted. Nullable because it
+-- does not exist until then, and it survives an Undo: the row is marked
+-- missing rather than deleted, so re-adoption reuses it and the link holds.
+ALTER TABLE optimization_jobs ADD COLUMN result_item_id INTEGER
+  REFERENCES items(id);
+
+-- Why a preserved original is in quarantine. `quarantine_entries.reason` is
+-- CHECK-constrained to ('exact_duplicate','similar_media','user'), and SQLite
+-- cannot widen a CHECK -- so a preserved original would otherwise have to read
+-- "you said you did not want it", which is the opposite of what happened.
+-- Provenance rather than a fourth reason string.
+ALTER TABLE quarantine_entries ADD COLUMN optimization_job_id INTEGER
+  REFERENCES optimization_jobs(id);
+CREATE INDEX idx_quarantine_optimization_job
+  ON quarantine_entries(optimization_job_id);
+"""
+
 MIGRATIONS = {
     1: MIGRATION_001,
     2: MIGRATION_002,
@@ -696,6 +740,7 @@ MIGRATIONS = {
     23: MIGRATION_023,
     24: MIGRATION_024,
     25: MIGRATION_025,
+    26: MIGRATION_026,
 }
 
 

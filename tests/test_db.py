@@ -85,6 +85,9 @@ def test_fresh_db_migrates_to_current_schema(tmp_path: Path) -> None:
         # one active decision per held file.
         "idx_plans_quarantine_entry",
         "idx_plans_one_active_per_quarantine",
+        "idx_plans_one_active_per_optimization",
+        "idx_plans_optimization_job",
+        "idx_quarantine_optimization_job",
     }
 
     columns = {row[1] for row in conn.execute("PRAGMA table_info(provider_status)")}
@@ -160,9 +163,14 @@ def test_migration_011_closes_proposals_for_files_already_filed(tmp_path: Path) 
         -- database from before that column existed.
         DROP INDEX IF EXISTS idx_plans_one_active_per_finding;
         DROP INDEX IF EXISTS idx_plans_one_active_per_quarantine;
+        DROP INDEX IF EXISTS idx_plans_one_active_per_optimization;
+        DROP INDEX IF EXISTS idx_plans_optimization_job;
+        DROP INDEX IF EXISTS idx_quarantine_optimization_job;
         DROP INDEX IF EXISTS idx_plans_quarantine_entry;
         DROP INDEX IF EXISTS idx_plan_withdrawals_finding;
         DROP TABLE IF EXISTS plan_withdrawals;
+        ALTER TABLE plans DROP COLUMN optimization_job_id;
+        ALTER TABLE quarantine_entries DROP COLUMN optimization_job_id;
         ALTER TABLE plans DROP COLUMN quarantine_entry_id;
         ALTER TABLE plans DROP COLUMN audit_finding_id;
         ALTER TABLE plan_ops DROP COLUMN role;
