@@ -70,17 +70,21 @@
           </span>
         </header>
         <p class="queue-change mono">{{ job.change }}</p>
+        {# Every quantity named exactly. `Saving` is not one of them while both
+           files are on the disk: see `optimization_storage`, which is the only
+           place these are computed. #}
         <dl class="queue-facts">
           <div><dt>Original</dt><dd>{{ job.size_label }}</dd></div>
-          <div><dt>Converted</dt><dd>{{ job.actual_label }}</dd></div>
-          <div><dt>Estimated saving</dt><dd>~{{ job.saving.estimated_label }}</dd></div>
-          {% if job.saving.known %}
+          <div><dt>Converted copy</dt><dd>{{ job.actual_label }}</dd></div>
+          {% if job.storage.known %}
           <div>
-            <dt>Actual saving</dt>
-            <dd>{% if job.saving.negative %}none — it came out
-                  {{ job.saving.label }} larger{% else %}{{ job.saving.label }} ·
-                  {{ job.saving.percent }}%{% endif %}</dd>
+            <dt>Optimized version is smaller by</dt>
+            <dd>{% if job.storage.negative %}nothing — it came out
+                  {{ job.storage.reduction_label }} larger{% else %}{{ job.storage.reduction_label }} ·
+                  {{ job.storage.percent }}%{% endif %}</dd>
           </div>
+          <div><dt>Extra storage used right now</dt><dd>{{ job.storage.extra_label }}</dd></div>
+          <div><dt>Space reclaimed so far</dt><dd>{{ job.storage.reclaimed_label }}</dd></div>
           {% endif %}
           <div><dt>Verification</dt><dd>Passed</dd></div>
           <div><dt>Runtime</dt><dd>{{ job.runtime_label }}</dd></div>
@@ -88,9 +92,9 @@
 
         {# A successful run of the encoder is not the same thing as a
            worthwhile optimization, and the page has to be able to say so. #}
-        {% if job.saving.known and job.saving.low_payoff %}
+        {% if job.storage.known and job.storage.low_payoff %}
         <p class="notice-warn queue-payoff">
-          Conversion completed, but it saved little.
+          Conversion completed, but the new file is barely smaller.
           <strong>Recommendation: keep the original.</strong>
         </p>
         {% endif %}

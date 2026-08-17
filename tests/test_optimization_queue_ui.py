@@ -409,8 +409,11 @@ def test_the_estimate_survives_alongside_any_actual(tmp_path: Path) -> None:
     # `Actual saving`. Both are still there, and still separately stored.
     shown = text_of(client.get("/maintenance/optimization").text)
 
-    assert "Estimated saving" in shown
-    assert "Actual saving" in shown
+    # Named exactly now: `saving` is not a word this page may use while both
+    # files are on the disk. See `optimization_storage`.
+    assert "Optimized version is smaller by" in shown
+    assert "Extra storage used right now" in shown
+    assert "Space reclaimed so far" in shown
     assert "498.0 MB" in shown
     row = conn.execute(
         "SELECT estimated_bytes, actual_bytes FROM optimization_jobs WHERE id=?",

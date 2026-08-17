@@ -1560,26 +1560,41 @@ def _clock_label(seconds: float) -> str:
     return f"{seconds // 60}m {seconds % 60:02d}s"
 
 
-def _saving(row: sqlite3.Row) -> dict[str, object]:
-    """What was actually saved, beside what was predicted. Never instead of it.
+def _storage(row: sqlite3.Row) -> dict[str, object]:
+    """The storage quantities, from the one helper that knows what they mean.
 
-    A technically valid encode can still be useless. An estimate of 35% and an
-    actual of 3% is a successful run of the encoder and a failed optimization,
-    and the page has to be able to say the second thing.
+    Never computed here. `optimization_storage` exists because these numbers
+    appear in six places, and recomputing them locally is exactly how "saved
+    338 MB" ends up on a screen while 842 MB of original sits in Quarantine.
+
+    A technically valid encode can also still be useless: an estimate of 35%
+    against an actual of 3% is a successful run of the encoder and a failed
+    optimization, and the page has to be able to say the second thing.
     """
+    from librairy.optimization_storage import ADOPTED, READY, storage_effect
+
     source = int(row["source_bytes"] or 0)
     actual = int(row["actual_bytes"] or 0)
     if not source or not actual:
         return {"known": False}
-    saved = source - actual
-    percent = saved / source * 100
+    # Both copies exist either way; which one is *active* is what differs, and
+    # it changes none of these numbers.
+    state = ADOPTED if row["state"] == "adopted" else READY
+    effect = storage_effect(source, actual, state)
+    reduction = effect.representation_reduction_bytes
     return {
         "known": True,
-        "bytes": saved,
-        "label": human_size(abs(saved)),
-        "percent": round(percent),
-        "negative": saved < 0,
-        "low_payoff": percent < LOW_PAYOFF_PERCENT,
+        "reduction_bytes": reduction,
+        "reduction_label": human_size(abs(reduction)),
+        "percent": round(reduction / source * 100) if source else 0,
+        "negative": reduction < 0,
+        "extra_label": human_size(effect.current_extra_storage_bytes),
+        # Zero for the life of this feature, and shown anyway: a person
+        # deserves to see that the answer is nothing rather than infer it.
+        "reclaimed_label": human_size(effect.reclaimed_now_bytes) or "0 B",
+        "freed_if_removed_label": human_size(effect.bytes_freed_if_original_removed),
+        "final_reduction_label": human_size(abs(effect.final_net_reduction_bytes)),
+        "low_payoff": not effect.worth_it,
         "estimated_label": human_size(max(0, source - int(row["estimated_bytes"] or 0))),
     }
 
@@ -1614,7 +1629,7 @@ def _queue_row(row: sqlite3.Row) -> dict[str, object]:
         "runtime_label": _clock_label(row["runtime_seconds"] or 0),
         "message": row["message"] or "",
         "verified": row["verified"] or "",
-        "saving": _saving(row),
+        "storage": _storage(row),
         "is_running": row["state"] == queue.RUNNING,
         "is_verifying": row["state"] == queue.VERIFYING,
         "is_ready": row["state"] == queue.READY,

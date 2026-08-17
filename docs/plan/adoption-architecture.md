@@ -34,6 +34,29 @@ There is no first move, so there is nothing to journal separately, nothing to
 be interrupted half way, and no window in which a generated file exists
 somewhere a user can see it but no plan describes it.
 
+### The hash is integrity, not provenance
+
+An earlier draft of this document said "the existing per-op hash check *is* the
+provenance check". That was wrong, and the distinction matters.
+
+`src_fingerprint` proves one thing: **these bytes are the bytes the operation
+expected**. It does not prove they are the verified output of *this* job. A
+different file with identical bytes satisfies the hash and is still not an
+authorised source — and neither is a stale output left in a job directory by an
+interrupted run, nor another job's output that happens to match.
+
+Complete provenance needs the whole chain to agree:
+
+    plan.optimization_job_id
+      -> the job
+      -> that job's recorded verified output path
+      -> that job's recorded verified output fingerprint
+      -> op.src_fingerprint
+      -> the bytes actually on disk
+
+The resolver must check every link. Hash equality is the last of six
+conditions, not a substitute for the other five.
+
 ## Why the earlier recommendation was wrong
 
 The previous pass recommended **B**, generated output under quarantine
@@ -142,21 +165,62 @@ that state already has a name: it is exactly the state that existed before
 adoption, and the user can adopt again or discard. Staging is only cleared by
 cancel, failure and discard — all explicit — so the file is not at risk there.
 
-## The three questions C leaves open
+## The result item's lifecycle — decided and proven
 
-Found by running it. All are shortcomings of the *proof*, not of the choice.
+The subtlest part, because it can make Search wrong while every filesystem
+operation succeeds.
 
-1. **The adopted file has no `items` row.** `item_id` is NULL, so
-   `_move_item_row` does nothing and the optimized FLAC is unindexed —
-   after adoption, Search still returns the *quarantined original* and knows
-   nothing of the active file. Adoption must create the library item row,
-   carrying the original's identity forward (a representation change is not a
-   new identity).
-2. **Collision must refuse, not renumber.** `resolve_collision` auto-numbers,
+Adoption creates a second `items` row for the generated file. Undo sends that
+file back to internal staging, and **the row cannot follow it**:
+
+    items.root TEXT NOT NULL CHECK (root IN ('inbox','library','quarantine'))
+
+The schema catches this rather than allowing it. Undoing op 2 without a rule
+raises, from the real undo path:
+
+    CHECK constraint failed: root IN ('inbox','library','quarantine')
+
+**Deleting the row is not available either.** Measured:
+
+    DELETE FROM items WHERE id=<result>   ->  REFUSED: FOREIGN KEY constraint failed
+
+Fourteen tables hold foreign keys into `items`, seven of those columns NOT NULL
+(`proposals`, `similar_media_flags` twice, `quarantine_entries`, `backup_queue`,
+`duplicate_reports` twice). A library file acquires a `backup_queue` row on
+commit, so by the time Undo runs the result item is already referenced.
+
+**Chosen: the row stays where it is and is marked missing.** Not a new
+invention — `missing_since` already means "recorded, not at that path right
+now" everywhere else here (an unmounted share produces exactly this), and
+Search already filters on it via `LIVE_ONLY`.
+
+Proven across adoption, Undo and re-adoption, with the real executor and the
+real index:
+
+    before adoption   items  1:library:concert.wav
+                      search library:concert.wav
+
+    adopted           items  1:quarantine:concert.wav · 2:library:concert.flac
+                      search library:concert.flac · quarantine:concert.wav
+
+    undone            items  1:library:concert.wav · 2:library:concert.flac:MISSING
+                      search library:concert.wav          <- no ghost
+
+    re-adopted        items  1:quarantine:concert.wav · 2:library:concert.flac
+                      search library:concert.flac · quarantine:concert.wav
+
+    result item count stayed 1 throughout
+
+Re-adoption reuses the same row rather than creating a second, so lineage
+survives and no foreign key churns. `scripts/prove_result_item_lifecycle.py`
+reproduces it.
+
+## The two questions C still leaves open
+1. **Collision must refuse, not renumber.** `resolve_collision` auto-numbers,
    which is right for an unrelated import and wrong here: `concert-2.flac`
    beside `concert.wav` is not what anybody asked for. Refusal belongs in
    preflight, before the plan is approved, and again before execution.
-3. **`quarantine_entries.reason` is CHECK-constrained** to
+2. **`quarantine_entries.reason` is CHECK-constrained** to
    `('exact_duplicate','similar_media','user')`, so a preserved original reads
    "you said you did not want it" — the opposite of the truth. The
    "PRESERVED ORIGINAL" label has to be derived from the linked optimization
@@ -172,7 +236,28 @@ nearly frozen, and every count of "what is in quarantine" answered yes about a
 file sitting in the inbox. Nothing to do with optimization; fixed and tested in
 this pass.
 
+## Storage vocabulary
+
+Recorded here because it is part of the design, not decoration. With an 842 MB
+original and a 504 MB optimized copy, there is no single honest number called
+"reclaimable": deleting the preserved original frees **842 MB at that moment**,
+and the library ends up **338 MB smaller than it started**. Those differ by more
+than a factor of two.
+
+`librairy.optimization_storage` is the only place these are computed:
+
+    representation_reduction_bytes    338 MB   the new file is this much smaller
+    current_extra_storage_bytes       504 MB   what the second copy costs today
+    reclaimed_now_bytes                 0 B    freed so far — zero, always, until
+                                               somebody removes the original
+    bytes_freed_if_original_removed   842 MB   what that removal frees
+    final_net_reduction_bytes         338 MB   where storage lands afterwards
+
+`reclaimed_now_bytes` is the only quantity that may be described as saved or
+reclaimed, and it is 0 for the entire life of this feature because LibrAIry
+deletes nothing.
+
 ## Decision
 
-Implement **C**. The gate on `Use optimized` existing at all is the three open
-questions above, in that order.
+Implement **C**. The gate on `Use optimized` existing at all is the two open
+questions above, plus the partial-failure compensation proof.
