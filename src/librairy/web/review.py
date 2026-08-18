@@ -1517,7 +1517,7 @@ def queue_data(conn: sqlite3.Connection, settings: Settings | None = None) -> di
     from librairy import optimization_queue as queue
     from librairy.optimization_exec import LOW
 
-    rows = [_queue_row(row) for row in queue.jobs(conn)]
+    rows = [_queue_row(row, conn) for row in queue.jobs(conn)]
     live = [row for row in rows if row["live"]]
     return {
         # `ready` is excluded here because it has its own section above, and a
@@ -1599,12 +1599,45 @@ def _storage(row: sqlite3.Row) -> dict[str, object]:
     }
 
 
-def _queue_row(row: sqlite3.Row) -> dict[str, object]:
+def _queue_row(
+    row: sqlite3.Row, conn: sqlite3.Connection | None = None
+) -> dict[str, object]:
     from librairy import optimization_queue as queue
     from librairy.optimization import CLASS_LABEL
+    from librairy.optimization_adopt import (
+        ADOPTED,
+        APPLYING,
+        WAITING_FOR_COMMIT,
+        active_adoption,
+        adoption_state,
+    )
 
     reason = row["wait_reason"] or ""
+    #  The plan outranks the column. A verified result whose adoption is
+    #  approved is not "ready for review" any more — the decision has been
+    #  taken and is waiting for Commit — and `optimization_jobs.state` has no
+    #  way to say so.
+    effective = adoption_state(conn, row["id"]) if conn is not None else ""
+    plan = active_adoption(conn, row["id"]) if conn is not None else None
+    #  Cheap facts only. Whether adoption would actually succeed depends on
+    #  hashing an 842 MB original and its copy, which is not something to do on
+    #  every page render — `adoption_preflight` runs on the POST and returns a
+    #  refusal a person can read.
+    can_adopt = (
+        row["state"] == queue.READY
+        and row["verified"] == "passed"
+        and bool((row["output_fingerprint"] or "").strip())
+        and effective == ""
+    )
     return {
+        "effective_state": effective,
+        "waiting_for_commit": effective == WAITING_FOR_COMMIT,
+        "applying": effective == APPLYING,
+        "adopted": effective == ADOPTED,
+        "adoption_plan_id": plan["id"] if plan is not None else "",
+        "can_adopt": can_adopt,
+        #  Cancelling is only for a decision that has not started moving files.
+        "can_cancel_request": effective == WAITING_FOR_COMMIT,
         "id": row["id"],
         "name": PurePosixPath(row["relpath"]).name,
         "relpath": row["relpath"],
@@ -1654,7 +1687,14 @@ def _queue_row(row: sqlite3.Row) -> dict[str, object]:
     }
 
 
-QUEUE_ROW_ACTIONS = ("run-now", "cancel", "discard")
+QUEUE_ROW_ACTIONS = (
+    "run-now",
+    "cancel",
+    "discard",
+    #  Approval only. Neither of these touches a file.
+    "use-optimized",
+    "cancel-request",
+)
 
 
 def apply_queue_action(
@@ -1685,6 +1725,10 @@ def apply_queue_action(
         return _cancel_running(conn, settings, job_ids)
     if action == "discard":
         return _discard_results(conn, settings, job_ids)
+    if action == "use-optimized":
+        return _use_optimized(conn, settings, job_ids)
+    if action == "cancel-request":
+        return _cancel_adoption_requests(conn, job_ids)
     removed = sum(1 for job_id in job_ids if queue.cancel(conn, job_id))
     if removed != len(job_ids):
         return (
@@ -1692,6 +1736,66 @@ def apply_queue_action(
             f"{len(job_ids) - removed} had already started or finished."
         )
     return f"{removed} removed from the queue."
+
+
+def _use_optimized(
+    conn: sqlite3.Connection, settings: Settings | None, job_ids: list[int]
+) -> str:
+    """Approve an adoption. Moves nothing.
+
+    The whole of the work is `plan_adoption`, which writes two operations and
+    approves them. No file is touched here and none could be: this process
+    holds no lock, and the executor is the only thing in the application that
+    moves a user's file.
+
+    Refusals come back as sentences because they are all things a person can
+    act on — the original changed, something is already at the destination, the
+    result is no longer the one that was verified.
+    """
+    from librairy.optimization_adopt import plan_adoption
+    from librairy.optimization_preflight import Refusal
+
+    if settings is None:  # pragma: no cover - the routes always pass it
+        return "Approving needs the application settings."
+    approved, refused = 0, []
+    for job_id in job_ids:
+        outcome = plan_adoption(conn, settings, job_id)
+        if isinstance(outcome, Refusal):
+            refused.append(outcome.message)
+        else:
+            approved += 1
+    if approved and not refused:
+        return (
+            "Approved. Nothing has moved yet — it happens when you commit."
+            if approved == 1
+            else f"{approved} approved. Nothing has moved yet."
+        )
+    if approved:
+        return f"{approved} approved. {len(refused)} refused: {refused[0]}"
+    return refused[0] if refused else "Nothing was selected."
+
+
+def _cancel_adoption_requests(conn: sqlite3.Connection, job_ids: list[int]) -> str:
+    """Take back an approval before Commit. Deliberately not called Undo.
+
+    Undo reverses files that moved; this reverses a decision about files that
+    did not. The same withdrawal machinery a correction uses, so there is one
+    implementation and one `plan_withdrawals` record.
+    """
+    from librairy.optimization_adopt import active_adoption, cancel_adoption
+
+    cancelled = 0
+    for job_id in job_ids:
+        plan = active_adoption(conn, job_id)
+        if plan is not None and cancel_adoption(conn, plan["id"]):
+            cancelled += 1
+    if not cancelled:
+        return "Those results are not waiting for Commit."
+    return (
+        "Request cancelled. Nothing was moved."
+        if cancelled == 1
+        else f"{cancelled} requests cancelled. Nothing was moved."
+    )
 
 
 def _run_now(conn: sqlite3.Connection, job_ids: list[int]) -> str:

@@ -78,6 +78,7 @@ def _days(entries: list[dict[str, object]], plans: dict) -> list[dict[str, objec
         group["time"] = str(group.get("ts") or "")[11:16]
         group["summary"] = _plan_summary(group["entries"])
         group["correction"] = _is_correction(group["entries"])
+        group["adoption"] = _is_adoption(group["entries"])
         bucket["plans"].append(group)
         bucket["files"] = int(bucket["files"]) + len(group["entries"])
     return days
@@ -111,10 +112,33 @@ def _is_correction(entries: list[dict[str, object]]) -> bool:
     )
 
 
+def _is_adoption(entries: list[dict[str, object]]) -> bool:
+    """One of the two operations reads from the encoder's workspace.
+
+    Read off the journal, like `_is_correction`, rather than from a new column.
+    The forward direction has a source in `optimization`; the reverse has a
+    destination there.
+    """
+    return any(
+        "optimization" in {entry.get("src_root"), entry.get("dest_root")}
+        for entry in entries
+    )
+
+
 def _plan_summary(entries: list[dict[str, object]]) -> str:
     """What this plan did, in the words the buttons that caused it used."""
     count = len(entries)
     files = "file" if count == 1 else "files"
+    if _is_adoption(entries):
+        #  Named before the generic branches below, which would otherwise call
+        #  it "Filed 1 file, quarantined 1" — two true halves that together
+        #  describe nothing a person did.
+        undone = any(entry.get("dest_root") == "optimization" for entry in entries)
+        return (
+            "Optimization undone · original restored"
+            if undone
+            else "Optimized version adopted · original preserved"
+        )
     if all(entry.get("action") == "undo_move" for entry in entries):
         return f"Put {count} {files} back"
     if _is_correction(entries):
@@ -133,9 +157,27 @@ def _journal_size(conn: sqlite3.Connection) -> int:
     return int(conn.execute("SELECT COUNT(*) FROM history").fetchone()[0])
 
 
+#  What the encoder's workspace is called when a person reads about it. The
+#  real path is `appdata/optimization/jobs/<id>/output.flac`, which is a fact
+#  about LibrAIry's internals and not about the reader's library — and it is
+#  inside the container, so it would not even help them find anything.
+INTERNAL_LABEL = "LibrAIry's optimization workspace"
+
+
 def _augment(entry: dict[str, object]) -> dict[str, object]:
     entry["browse_href"] = _browse_href(entry.get("dest_root"), entry.get("dest_relpath"))
+    #  One place, so no template has to remember. The journal keeps the real
+    #  path — Undo needs it — and the page says where it is in words.
+    entry["src_label"] = _path_label(entry.get("src_root"), entry.get("src_relpath"))
+    entry["dest_label"] = _path_label(entry.get("dest_root"), entry.get("dest_relpath"))
+    entry["internal"] = "optimization" in {entry.get("src_root"), entry.get("dest_root")}
     return entry
+
+
+def _path_label(root: object, relpath: object) -> str:
+    if root == "optimization":
+        return INTERNAL_LABEL
+    return f"{root}/{relpath}"
 
 
 def _browse_href(dest_root: object, dest_relpath: object) -> str | None:

@@ -83,9 +83,9 @@
                 {% for entry in group.entries %}
                   <li>
                     <span class="badge {{ 'badge-ok' if entry.outcome == 'ok' else 'badge-fail' }}">{{ entry.action }}</span>
-                    <span class="mono muted">{{ entry.src_root }}/{{ entry.src_relpath }}</span>
+                    <span class="mono muted">{{ entry.src_label }}</span>
                     <span aria-hidden="true">→</span>
-                    {% if entry.browse_href %}<a class="mono" href="{{ entry.browse_href }}">{{ entry.dest_root }}/{{ entry.dest_relpath }}</a>{% else %}<span class="mono">{{ entry.dest_root }}/{{ entry.dest_relpath }}</span>{% endif %}{{ ext_info(entry.dest_relpath) }}
+                    {% if entry.browse_href %}<a class="mono" href="{{ entry.browse_href }}">{{ entry.dest_label }}</a>{% else %}<span class="mono">{{ entry.dest_label }}</span>{% endif %}{% if not entry.internal %}{{ ext_info(entry.dest_relpath) }}{% endif %}
                     {% if entry.outcome == 'ok' %}
                       <button class="btn-ghost" hx-post="/history/undo/{{ entry.id }}" hx-target="#history-result" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>Undo</button>
                     {% endif %}

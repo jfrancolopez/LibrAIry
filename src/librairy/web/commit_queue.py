@@ -14,6 +14,7 @@ the plan actually is rather than from where the row happened to be rendered:
     correction    an approved audit finding         library   -> library
     restore       a quarantine restore request      quarantine-> wherever it came from
     delete-queue  a quarantine delete request       quarantine-> quarantine/_to-delete
+    optimization  an adopted optimized version      two ops: preserve, then admit
 
 Two numbers matter and they are not the same number. A *decision* is one thing
 the owner chose; an *operation* is one file being moved. One correction to a
@@ -40,10 +41,11 @@ NEW_FILE = "new-file"
 CORRECTION = "correction"
 RESTORE = "restore"
 DELETE_QUEUE = "delete-queue"
+OPTIMIZATION = "optimization"
 
 # The order the page reads in: what arrives, what is being tidied, what is
 # going back, what you are finished with.
-TYPE_ORDER = (NEW_FILE, CORRECTION, RESTORE, DELETE_QUEUE)
+TYPE_ORDER = (NEW_FILE, CORRECTION, OPTIMIZATION, RESTORE, DELETE_QUEUE)
 
 # The heading for a group of them.
 TYPE_LABEL = {
@@ -51,6 +53,7 @@ TYPE_LABEL = {
     CORRECTION: "Library corrections",
     RESTORE: "Restores",
     DELETE_QUEUE: "Delete queue",
+    OPTIMIZATION: "Optimizations",
 }
 
 # The same heading with one thing under it. "1 library corrections" is the kind
@@ -60,6 +63,7 @@ TYPE_LABEL_ONE = {
     CORRECTION: "Library correction",
     RESTORE: "Restore",
     DELETE_QUEUE: "Delete queue",
+    OPTIMIZATION: "Optimization",
 }
 
 # The badge on one row. Says what Commit will do to this file, in one word,
@@ -70,6 +74,7 @@ TYPE_BADGE = {
     CORRECTION: "MOVE",
     RESTORE: "RESTORE",
     DELETE_QUEUE: "DELETE QUEUE",
+    OPTIMIZATION: "OPTIMIZE",
 }
 
 # What the group means, under its heading. The delete-queue sentence is the
@@ -80,6 +85,8 @@ TYPE_NOTE = {
     RESTORE: "Held files going back where they came from.",
     DELETE_QUEUE: "Moved into one folder for you to empty yourself. "
     "LibrAIry never deletes anything.",
+    OPTIMIZATION: "Smaller versions replacing what is in your library. "
+    "The original is preserved in Quarantine, not deleted.",
 }
 
 # One page of rows, whatever is waiting.
@@ -105,6 +112,7 @@ def queue_summary(conn: sqlite3.Connection) -> dict[str, Any]:
         """
         SELECT
           CASE
+            WHEN p.optimization_job_id IS NOT NULL THEN 'optimization'
             WHEN p.audit_finding_id IS NOT NULL THEN 'correction'
             WHEN o.dest_root='quarantine' AND o.dest_relpath LIKE '_to-delete/%'
               THEN 'delete-queue'
@@ -117,7 +125,8 @@ def queue_summary(conn: sqlite3.Connection) -> dict[str, Any]:
         JOIN plan_ops o ON o.plan_id = p.id
         LEFT JOIN items i ON i.id = o.item_id
         WHERE p.status IN ('approved','executing')
-          AND (p.audit_finding_id IS NOT NULL OR p.quarantine_entry_id IS NOT NULL)
+          AND (p.audit_finding_id IS NOT NULL OR p.quarantine_entry_id IS NOT NULL
+               OR p.optimization_job_id IS NOT NULL)
         GROUP BY kind
         """
     ).fetchall()
@@ -226,11 +235,12 @@ def _plan_rows(
             "p.quarantine_entry_id IS NOT NULL AND NOT (o.dest_root='quarantine'"
             " AND o.dest_relpath LIKE '_to-delete/%')"
         ),
+        OPTIMIZATION: "p.optimization_job_id IS NOT NULL",
     }[kind]
     rows = conn.execute(
         f"""
         SELECT p.id AS plan_id, p.status, p.approved_at,
-               p.audit_finding_id, p.quarantine_entry_id,
+               p.audit_finding_id, p.quarantine_entry_id, p.optimization_job_id,
                o.src_root, o.src_relpath, o.dest_root, o.dest_relpath,
                (SELECT COUNT(*) FROM plan_ops WHERE plan_id=p.id) AS op_count,
                (SELECT COALESCE(SUM(i2.size), 0) FROM plan_ops o2
@@ -262,12 +272,25 @@ def _plan_row(
         from librairy.correction_state import plan_drift
 
         stale = plan_drift(conn, settings, row["plan_id"])
+    extra = (
+        _optimization_fields(conn, row)
+        if kind == OPTIMIZATION
+        else {"optimization": None}
+    )
     return {
+        **extra,
         "type": kind,
         "badge": TYPE_BADGE[kind],
         "subject": subject,
+        #  For an optimization the first operation preserves the original, so
+        #  its destination is the quarantine path rather than what the library
+        #  will hold. `_optimization_fields` supplies the real After.
         "current": f"{row['src_root']}/{row['src_relpath']}",
-        "after": f"{row['dest_root']}/{row['dest_relpath']}",
+        "after": (
+            f"library/{extra['optimization']['target_relpath']}"
+            if kind == OPTIMIZATION
+            else f"{row['dest_root']}/{row['dest_relpath']}"
+        ),
         "size": human_bytes(row["bytes"]),
         "reason": reason,
         "op_count": int(row["op_count"]),
@@ -281,14 +304,24 @@ def _plan_row(
         "back_url": (
             f"/review/audit/{row['audit_finding_id']}/unapprove"
             if kind == CORRECTION
-            else f"/quarantine/cancel/{row['quarantine_entry_id']}"
+            else (
+                #  The same withdrawal the optimization page's Cancel request
+                #  calls. One implementation, one `plan_withdrawals` record.
+                f"/maintenance/optimization/{row['optimization_job_id']}/send-back"
+                if kind == OPTIMIZATION
+                else f"/quarantine/cancel/{row['quarantine_entry_id']}"
+            )
         ),
         # A stale approval is not sent back to be reconsidered — it can no
         # longer run at all, so the honest offer is to remove it.
         "back_label": (
             "Remove old approval"
             if stale
-            else ("Send back to Review" if kind == CORRECTION else "Cancel request")
+            else (
+                "Send back to Review"
+                if kind == CORRECTION
+                else ("Send back" if kind == OPTIMIZATION else "Cancel request")
+            )
         ),
         # Every file this decision touches, on demand. A correction to an album
         # is one decision and twelve moves, and "twelve files" is a number
@@ -297,15 +330,102 @@ def _plan_row(
     }
 
 
+def _optimization_fields(
+    conn: sqlite3.Connection, row: sqlite3.Row
+) -> dict[str, Any]:
+    """What an OPTIMIZE card needs that no other kind does.
+
+    Three things, and the third is the one that is easy to get wrong. An HEVC
+    re-encode of an MP4 produces an MP4 in the same folder, so `Current` and
+    `After Commit` are the *same path* — rendering only those two makes the card
+    say that nothing changes. The codec change is what changed, so it is shown
+    beside the paths rather than instead of them.
+
+    Storage comes from `optimization_storage` and is computed nowhere else. The
+    card carries the two lines a person needs at the moment of deciding; the
+    rest of the accounting is under Details.
+    """
+    from librairy.optimization import CLASS_LABEL
+    from librairy.optimization_storage import READY, storage_effect
+
+    job = conn.execute(
+        "SELECT * FROM optimization_jobs WHERE id=?", (row["optimization_job_id"],)
+    ).fetchone()
+    if job is None:  # pragma: no cover - the FK makes this unreachable
+        return {"optimization": None}
+    adopt = conn.execute(
+        "SELECT dest_relpath FROM plan_ops WHERE plan_id=? AND src_root='optimization'",
+        (row["plan_id"],),
+    ).fetchone()
+    target = adopt["dest_relpath"] if adopt is not None else job["relpath"]
+    source_bytes = int(job["source_bytes"] or 0)
+    optimized_bytes = int(job["actual_bytes"] or 0)
+    effect = (
+        storage_effect(source_bytes, optimized_bytes, READY)
+        if source_bytes and optimized_bytes
+        else None
+    )
+    return {
+        "optimization": {
+            "job_id": int(job["id"]),
+            "target_relpath": target,
+            "preserved_relpath": row["dest_relpath"],
+            "quality": job["quality"],
+            "quality_label": CLASS_LABEL.get(job["quality"], job["quality"].upper()),
+            "change": f"{job['from_label']} → {job['to_label']}",
+            #  True when the filename does not change, which is exactly when the
+            #  paths alone would be misleading.
+            "same_path": target == row["src_relpath"],
+            "original_label": human_bytes(source_bytes),
+            "optimized_label": human_bytes(optimized_bytes),
+            "reduction_label": (
+                human_bytes(abs(effect.representation_reduction_bytes))
+                if effect
+                else ""
+            ),
+            "reduction_negative": bool(
+                effect and effect.representation_reduction_bytes < 0
+            ),
+            #  Zero, and shown anyway. Adoption frees nothing: both copies are
+            #  on the disk until somebody removes the preserved original.
+            "reclaimed_label": human_bytes(effect.reclaimed_now_bytes) if effect else "0 B",
+            "extra_label": (
+                human_bytes(effect.current_extra_storage_bytes) if effect else ""
+            ),
+            "freed_if_removed_label": (
+                human_bytes(effect.bytes_freed_if_original_removed) if effect else ""
+            ),
+            "final_reduction_label": (
+                human_bytes(abs(effect.final_net_reduction_bytes)) if effect else ""
+            ),
+            #  A remux re-encodes nothing, so it saves nothing and is offered
+            #  for compatibility. Counting it as storage reduction would be the
+            #  same dishonesty as calling it an optimization.
+            "compatibility_only": job["quality"] == "remux",
+        }
+    }
+
+
+#  What the encoder's workspace is called when a person reads about it. The real
+#  path is inside the container and would not help anybody find anything, so the
+#  journal keeps it — Undo needs it — and the page says where it is in words.
+INTERNAL_LABEL = "LibrAIry's optimization workspace"
+
+
 def _files(conn: sqlite3.Connection, plan_id: str) -> list[dict[str, str]]:
     return [
         {
             "role": op["role"],
-            "src": op["src_relpath"],
+            "src": (
+                INTERNAL_LABEL
+                if op["src_root"] == "optimization"
+                else op["src_relpath"]
+            ),
             "dest": op["dest_relpath"],
+            "internal": op["src_root"] == "optimization",
         }
         for op in conn.execute(
-            "SELECT role, src_relpath, dest_relpath FROM plan_ops"
+            "SELECT role, src_root, src_relpath, dest_relpath FROM plan_ops"
             " WHERE plan_id=? ORDER BY seq",
             (plan_id,),
         )
@@ -321,4 +441,6 @@ def _reason(conn: sqlite3.Connection, row: sqlite3.Row, kind: str) -> str:
         return found["summary"] if found else "Approved in Library Review."
     if kind == DELETE_QUEUE:
         return "You chose Delete queue. Nothing is deleted."
+    if kind == OPTIMIZATION:
+        return "You chose the optimized version. The original is preserved."
     return "You asked for this to go back."

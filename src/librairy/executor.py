@@ -224,11 +224,16 @@ def _compensate_adoption(
     The lock is already held by `execute_plan`, so the unlocked form is called
     directly; `undo_op` would deadlock.
     """
-    from librairy.history import _undo_op_unlocked
+    from librairy.history import FORWARD_ACTIONS, _undo_op_unlocked
 
     done = conn.execute(
-        "SELECT * FROM history WHERE plan_id=? AND outcome='ok' ORDER BY id DESC",
-        (plan_id,),
+        f"""
+        SELECT * FROM history
+        WHERE plan_id=? AND outcome='ok'
+          AND action IN ({",".join("?" * len(FORWARD_ACTIONS))})
+        ORDER BY id DESC
+        """,  # noqa: S608 - placeholders only
+        (plan_id, *FORWARD_ACTIONS),
     ).fetchall()
     for entry in done:
         try:

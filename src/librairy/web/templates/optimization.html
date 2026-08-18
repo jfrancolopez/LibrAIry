@@ -55,9 +55,10 @@
   <section class="queue-ready">
     <h2>Ready for review</h2>
     <p class="muted">
-      Converted copies, checked and kept aside. <strong>Your original files were
-      never changed</strong> — LibrAIry cannot replace an original yet, so
-      nothing here is in your library.
+      Converted copies, checked and kept aside.
+      <strong>Your original files have not changed.</strong>
+      Using one files it in your library and keeps the original in Quarantine —
+      nothing is deleted, and nothing moves until you commit.
     </p>
     {% for job in ready_jobs %}
     <article id="ready-{{ job.id }}" class="row-shell queue-row queue-is-ready">
@@ -66,7 +67,15 @@
           <h3 class="row-name" title="{{ job.relpath }}"><span class="name-text">{{ job.name }}</span>{{ ext_info(job.relpath) }}</h3>
           <span class="row-meta">
             <span class="badge badge-quality badge-{{ job.quality }}">{{ job.quality_label }}</span>
-            <span class="badge badge-ok">READY FOR REVIEW</span>
+            {# The plan outranks the column: a result whose adoption is approved
+               is not waiting to be reviewed, it is waiting for Commit. #}
+            {% if job.applying %}
+              <span class="badge badge-status-waiting">APPLYING</span>
+            {% elif job.waiting_for_commit %}
+              <span class="badge badge-status-waiting">WAITING FOR COMMIT</span>
+            {% else %}
+              <span class="badge badge-ok">READY FOR REVIEW</span>
+            {% endif %}
           </span>
         </header>
         <p class="queue-change mono">{{ job.change }}</p>
@@ -99,21 +108,66 @@
         </p>
         {% endif %}
 
+        {% if job.waiting_for_commit %}
+        {# Said plainly, because the one thing a person doubts after pressing a
+           button is whether it did anything. #}
+        <p class="notice-ok queue-approved">
+          Optimized version approved. <strong>Nothing has moved yet.</strong>
+        </p>
+        {% endif %}
+
         <div class="button-row">
-          {# One action, because there is only one. "Keep original" beside it
-             would look like a choice and would do nothing: the original is
-             already what your library holds. #}
+          {% if job.can_adopt %}
+            {# Approval only. This posts to the same handler every other queue
+               decision posts to, and that handler calls the adoption planner —
+               no request in this application moves a file. #}
+            <form method="post" action="/maintenance/optimization/bulk">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="hidden" name="job_id" value="{{ job.id }}">
+              <button type="submit" name="action" value="use-optimized"
+                      class="btn-primary">Use optimized</button>
+            </form>
+          {% elif job.waiting_for_commit %}
+            <a class="btn" href="/commit?type=optimization">View in Commit</a>
+            <form method="post" action="/maintenance/optimization/bulk">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="hidden" name="job_id" value="{{ job.id }}">
+              <button type="submit" name="action" value="cancel-request">Cancel request</button>
+            </form>
+          {% endif %}
+          {% if not job.waiting_for_commit and not job.applying %}
           <form method="post" action="/maintenance/optimization/bulk">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <input type="hidden" name="job_id" value="{{ job.id }}">
             <button type="submit" name="action" value="discard">Discard result</button>
           </form>
+          {% endif %}
           <details class="why">
             <summary>Details</summary>
             <dl class="queue-facts">
               <div><dt>Source</dt><dd class="mono">{{ job.relpath }}</dd></div>
               <div><dt>Operation</dt><dd>{{ job.change }}</dd></div>
               <div><dt>Queued</dt><dd>{{ job.queued_at }}</dd></div>
+              {% if job.storage.known %}
+              {# The full accounting lives here rather than on the card. Every
+                 quantity is named for exactly what it is; none of them is
+                 called "saved" or "reclaimable", because with both copies on
+                 the disk those words could mean either of two numbers that
+                 differ by more than a factor of two. #}
+              <div><dt>Original baseline</dt><dd>{{ job.size_label }}</dd></div>
+              <div><dt>Optimized representation</dt><dd>{{ job.actual_label }}</dd></div>
+              <div><dt>Representation reduction</dt>
+                   <dd>{{ job.storage.reduction_label }}</dd></div>
+              <div><dt>Extra storage while the original is retained</dt>
+                   <dd>{{ job.storage.extra_label }}</dd></div>
+              <div><dt>Space reclaimed so far</dt>
+                   <dd>{{ job.storage.reclaimed_label }}</dd></div>
+              <div><dt>If the preserved original is eventually removed</dt>
+                   <dd>{{ job.storage.freed_if_removed_label }} would be freed
+                       at that moment</dd></div>
+              <div><dt>Final net reduction against the original baseline</dt>
+                   <dd>{{ job.storage.final_reduction_label }}</dd></div>
+              {% endif %}
             </dl>
             <p class="muted">
               The converted copy is held outside your library and is not

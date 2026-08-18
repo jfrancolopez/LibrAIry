@@ -112,10 +112,31 @@ def list_history(
     )
 
 
+#  The journal records both directions. `move` and `quarantine` are things a
+#  plan did; `undo_move` and `undo_quarantine` are things that were done *to* a
+#  plan, and they carry `outcome='ok'` as well.
+FORWARD_ACTIONS = ("move", "quarantine")
+
+
 def undo_plan(conn: sqlite3.Connection, plan_id: str, settings: Settings) -> list[UndoResult]:
+    """Reverse everything this plan did, newest operation first.
+
+    Restricted to the plan's own operations. Without that, undoing a plan a
+    second time reads its *undo* entries as things to undo — reversing a
+    reversal — and for an adoption that fails outright, because the reverse of
+    "back to the workspace" has `optimization` as a destination and
+    `_root_path` does not resolve it. Reached by adopting, restoring the
+    original, and adopting again: two done plans for one job, and the older
+    one's journal now has four `ok` rows in it.
+    """
     rows = conn.execute(
-        "SELECT id FROM history WHERE plan_id=? AND outcome='ok' ORDER BY id DESC",
-        (plan_id,),
+        f"""
+        SELECT id FROM history
+        WHERE plan_id=? AND outcome='ok'
+          AND action IN ({",".join("?" * len(FORWARD_ACTIONS))})
+        ORDER BY id DESC
+        """,  # noqa: S608 - placeholders only
+        (plan_id, *FORWARD_ACTIONS),
     ).fetchall()
     return [undo_op(conn, row["id"], settings) for row in rows]
 

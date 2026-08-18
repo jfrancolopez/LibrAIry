@@ -100,6 +100,7 @@ from librairy.web.commit import (
     start_execution,
 )
 from librairy.web.commit import progress_data as commit_progress_data
+from librairy.web.commit_queue import OPTIMIZATION
 from librairy.web.dashboard import dashboard_data
 from librairy.web.evidence import humanize_evidence
 from librairy.web.health import health_data, test_provider
@@ -1199,6 +1200,31 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             },
         )
 
+    @app.post(
+        "/maintenance/optimization/{job_id}/send-back", include_in_schema=False
+    )
+    def optimization_send_back(request: Request, job_id: int) -> HTMLResponse:
+        """Send an approved adoption back from Commit. Moves nothing.
+
+        The same words and the same code as `Cancel request` on the optimization
+        page — `apply_queue_action` with `cancel-request` — because they are the
+        same act seen from two pages, and a second withdrawal implementation
+        would be a second set of rules about what a withdrawal leaves behind.
+        """
+        result = apply_queue_action(conn, "cancel-request", [job_id], settings)
+        return TEMPLATES.TemplateResponse(
+            request,
+            "commit.html",
+            {
+                **commit_overview(
+                    conn, settings, kind=OPTIMIZATION, page=1
+                ),
+                "title": "Commit",
+                "csrf_token": request.state.session["csrf_token"],
+                "notice": result,
+            },
+        )
+
     @app.get("/quarantine", response_class=HTMLResponse)
     def quarantine(request: Request) -> HTMLResponse:
         return TEMPLATES.TemplateResponse(
@@ -1305,18 +1331,19 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             return _quarantine_page(
                 request, "That is not a preserved original.", status_code=409
             )
-        plan_id = conn.execute(
-            "SELECT id FROM plans WHERE optimization_job_id=? AND status='done'"
-            " ORDER BY finished_at DESC LIMIT 1",
-            (int(entry["optimization_job_id"]),),
-        ).fetchone()
-        if plan_id is None:
+        # The entry records the plan that quarantined it. Guessing by "the most
+        # recent done plan for this job" looked equivalent and was not: after a
+        # second adoption there are two, `finished_at` has second resolution,
+        # and picking the wrong one reverses a plan whose files have already
+        # been reversed.
+        plan_id = entry["plan_id"]
+        if not plan_id:
             return _quarantine_page(
                 request,
                 "LibrAIry cannot find the optimization that preserved this file.",
                 status_code=409,
             )
-        results = undo_plan(conn, plan_id["id"], settings)
+        results = undo_plan(conn, plan_id, settings)
         if any(result.outcome != "ok" for result in results):
             return _quarantine_page(
                 request,

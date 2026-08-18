@@ -230,15 +230,19 @@ def test_only_a_running_job_offers_cancel(tmp_path: Path) -> None:
     assert body.count('value="discard"') == 1
 
 
-def test_the_page_never_offers_to_use_the_result(tmp_path: Path) -> None:
+def test_the_page_never_implies_the_original_is_replaced(tmp_path: Path) -> None:
+    """Adoption exists now, and the wording still has to be true: the original
+    is preserved in Quarantine, not replaced and not deleted."""
     client, _conn, _settings = queue_scene(tmp_path)
 
     body = client.get("/maintenance/optimization").text
 
-    for phrase in ("Use result", "Replace original", "Use optimized", "Apply result"):
+    for phrase in ("Use result", "Replace original", "Apply result", "Overwrite"):
         assert phrase not in body
     assert "Discard result" in body
-    assert "never changed" in body
+    assert "have not changed" in body
+    assert "keeps the original in Quarantine" in body
+    assert "nothing is deleted" in body
 
 
 def test_run_now_leaves_a_visible_mark_on_the_row(tmp_path: Path) -> None:

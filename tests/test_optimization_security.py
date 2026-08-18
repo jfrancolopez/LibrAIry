@@ -234,24 +234,29 @@ def test_no_optimized_file_can_reach_the_library() -> None:
 # --- the labels a finished result may carry --------------------------------------------------
 
 
-def test_no_template_offers_to_use_the_optimized_file() -> None:
-    """Adoption is not implemented. No button may imply that it is."""
+def test_no_template_implies_the_original_is_gone() -> None:
+    """Adoption exists now. `Use optimized` is allowed; these are not.
+
+    Every one of them says, or lets a reader believe, that the file they had is
+    being replaced or thrown away. It is not: it goes to Quarantine and stays
+    there until they do something about it themselves.
+    """
     banned = (
         "Use result",
-        "Use optimized",
         "Replace original",
         "Apply result",
         "Use this instead",
+        "Overwrite",
     )
     for page in Path("src/librairy/web/templates").rglob("*.html"):
         text = page.read_text(encoding="utf-8")
         for phrase in banned:
-            assert phrase not in text, f"{page.name} offers adoption: {phrase}"
+            assert phrase not in text, f"{page.name} implies replacement: {phrase}"
 
 
-def test_a_finished_result_offers_one_action_and_not_two() -> None:
-    """"Keep original" beside "Discard result" would look like a choice and do
-    nothing: the original is already what the library holds."""
+def test_a_finished_result_offers_the_two_real_choices() -> None:
+    """"Keep original" is still not one of them: the original is kept either
+    way, so a button saying so would look like a choice and do nothing."""
     text = (Path("src/librairy/web/templates") / "optimization.html").read_text(
         encoding="utf-8"
     )
@@ -259,6 +264,7 @@ def test_a_finished_result_offers_one_action_and_not_two() -> None:
     labels = re.findall(r"<button[^>]*>(.*?)</button>", text, re.S)
     labels = [" ".join(re.sub(r"<[^>]+>", "", label).split()) for label in labels]
 
+    assert "Use optimized" in labels
     assert "Discard result" in labels
     assert not [label for label in labels if label.lower().startswith("keep original")]
 

@@ -14,6 +14,8 @@
     </div>
   </header>
 
+  {% if notice %}<p class="status ok" role="status">{{ notice }}</p>{% endif %}
+
   {% if summary.decisions %}
     {# The batch before the rows. With a thousand things waiting, "1,842 rows"
        is not something anybody reads — but "1,842 decisions, 24 GB, mostly new
@@ -73,12 +75,59 @@
                 <span class="muted">{{ row.size }}{% if row.op_count > 1 %} · {{ row.op_count }} files{% endif %}</span>
               </div>
               <h3 class="commit-subject">{{ row.subject }}{{ ext_info(row.current) }}</h3>
+              {% if row.optimization %}
+              {% set opt = row.optimization %}
+              <dl class="correction-shape">
+                <div><dt>Current</dt><dd class="mono">{{ row.current }}</dd></div>
+                <div><dt>After Commit</dt><dd class="mono">{{ row.after }}</dd></div>
+                {# The path is the same for an HEVC re-encode of an MP4, so the
+                   two lines above would read as "nothing changes". What changed
+                   is the encoding, and it is named right here rather than left
+                   for the reader to infer. #}
+                {% if opt.same_path %}
+                <div><dt>Same filename</dt>
+                     <dd>the file keeps its name; what changes is inside it</dd></div>
+                {% endif %}
+                <div><dt>Encoding</dt><dd>{{ opt.change }}</dd></div>
+                <div><dt>Quality</dt><dd>{{ opt.quality_label }}{% if opt.compatibility_only %} · no re-encode, for compatibility{% endif %}</dd></div>
+                <div><dt>Original preserved</dt>
+                     <dd class="mono">quarantine/{{ opt.preserved_relpath }}</dd></div>
+                <div><dt>Original</dt><dd>{{ opt.original_label }}</dd></div>
+                <div><dt>Optimized</dt><dd>{{ opt.optimized_label }}</dd></div>
+                {% if opt.reduction_label %}
+                {# Two lines, deliberately. "Smaller by" is what the new file
+                   is; "reclaimed" is what the disk got back, which is nothing
+                   while both copies are on it. Collapsing them into one number
+                   called "saved" is the claim this whole feature avoids. #}
+                <div><dt>Optimized version is</dt>
+                     <dd>{% if opt.reduction_negative %}{{ opt.reduction_label }} larger{% else %}{{ opt.reduction_label }} smaller{% endif %}</dd></div>
+                <div><dt>Space reclaimed</dt><dd>{{ opt.reclaimed_label }}</dd></div>
+                {% endif %}
+                <div><dt>Reason</dt><dd>{{ row.reason }}</dd></div>
+              </dl>
+              <details class="why">
+                <summary>Details</summary>
+                <dl class="correction-shape">
+                  <div><dt>Original baseline</dt><dd>{{ opt.original_label }}</dd></div>
+                  <div><dt>Optimized representation</dt><dd>{{ opt.optimized_label }}</dd></div>
+                  <div><dt>Representation reduction</dt><dd>{{ opt.reduction_label }}</dd></div>
+                  <div><dt>Extra storage while the original is retained</dt>
+                       <dd>{{ opt.extra_label }}</dd></div>
+                  <div><dt>Space reclaimed now</dt><dd>{{ opt.reclaimed_label }}</dd></div>
+                  <div><dt>If the preserved original is eventually removed</dt>
+                       <dd>{{ opt.freed_if_removed_label }} would be freed at that moment</dd></div>
+                  <div><dt>Final net reduction against the original baseline</dt>
+                       <dd>{{ opt.final_reduction_label }}</dd></div>
+                </dl>
+              </details>
+              {% else %}
               <dl class="correction-shape">
                 <div><dt>Current</dt><dd class="mono">{{ row.current }}</dd></div>
                 <div><dt>After Commit</dt><dd class="mono">{{ row.after }}</dd></div>
                 <div><dt>Affects</dt><dd>{{ row.op_count }} file{{ '' if row.op_count == 1 else 's' }} · {{ row.size }}</dd></div>
                 <div><dt>Reason</dt><dd>{{ row.reason }}</dd></div>
               </dl>
+              {% endif %}
               {% if row.files %}
                 {# On demand. Showing every move of every decision by default
                    is how a page with two hundred waiting becomes unreadable. #}

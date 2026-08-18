@@ -354,6 +354,7 @@ def _entries(
             #  Undo rather than around it.
             "preserved_original": is_preserved_original(row),
             "active_version": _active_version(conn, row),
+            "preserved_storage": _preserved_storage(conn, row),
             "marked": marked_for_deletion(row["item_relpath"]),
             "size_label": human_size(row["item_size"]),
             # The name is what identifies the row; the path is detail. Both
@@ -385,6 +386,40 @@ def _active_version(conn: sqlite3.Connection, row) -> str:
         (int(row["optimization_job_id"]),),
     ).fetchone()
     return str(result["relpath"]) if result else ""
+
+
+def _preserved_storage(conn: sqlite3.Connection, row) -> dict[str, str]:
+    """What keeping this original costs, and what removing it would do.
+
+    From `optimization_storage` and nowhere else. This is the one card where a
+    reader is most likely to be weighing exactly that trade, so the number that
+    matters here is `bytes_freed_if_original_removed` — what deleting *this
+    file* frees at the moment they delete it — beside the net position
+    afterwards. Those differ by more than a factor of two on the worked example,
+    which is why neither is ever called "reclaimable".
+    """
+    if not is_preserved_original(row):
+        return {}
+    from librairy.optimization_storage import ADOPTED, storage_effect
+
+    job = conn.execute(
+        "SELECT source_bytes, actual_bytes FROM optimization_jobs WHERE id=?",
+        (int(row["optimization_job_id"]),),
+    ).fetchone()
+    if job is None:
+        return {}
+    original = int(job["source_bytes"] or 0)
+    optimized = int(job["actual_bytes"] or 0)
+    if not original or not optimized:
+        return {}
+    effect = storage_effect(original, optimized, ADOPTED)
+    return {
+        "original": human_size(original),
+        "active": human_size(optimized),
+        "freed_if_removed": human_size(effect.bytes_freed_if_original_removed),
+        "final_reduction": human_size(abs(effect.final_net_reduction_bytes)),
+        "reclaimed": human_size(effect.reclaimed_now_bytes) or "0 B",
+    }
 
 
 def _basename(relpath: object) -> str:

@@ -387,3 +387,43 @@ def cancel_adoption(conn: sqlite3.Connection, plan_id: str) -> bool:
         conn.execute("DELETE FROM plan_ops WHERE plan_id=?", (plan_id,))
         conn.execute("DELETE FROM plans WHERE id=?", (plan_id,))
     return True
+
+
+# --- effective state -------------------------------------------------------------
+#
+# `optimization_jobs.state` says `ready` for a verified result whether or not a
+# person has decided anything about it. Once an adoption plan exists, the job is
+# *waiting for Commit* — and the plan is the immutable record, so it outranks
+# the cheaper column, exactly as an active correction plan outranks a finding's
+# status.
+
+WAITING_FOR_COMMIT = "waiting-for-commit"
+APPLYING = "applying"
+ADOPTED = "adopted"
+
+
+def active_adoption(conn: sqlite3.Connection, job_id: int):
+    """The approved-or-executing adoption plan for this job, if there is one.
+
+    One at most: `idx_plans_one_active_per_optimization` is a partial unique
+    index over exactly this predicate, so this cannot quietly return the first
+    of several.
+    """
+    return conn.execute(
+        "SELECT * FROM plans WHERE optimization_job_id=?"
+        " AND status IN ('approved','executing')",
+        (int(job_id),),
+    ).fetchone()
+
+
+def adoption_state(conn: sqlite3.Connection, job_id: int) -> str:
+    """What this job is effectively doing, plan first and column second."""
+    plan = active_adoption(conn, job_id)
+    if plan is not None:
+        return APPLYING if plan["status"] == "executing" else WAITING_FOR_COMMIT
+    adopted = conn.execute(
+        "SELECT i.id FROM optimization_jobs j JOIN items i ON i.id = j.result_item_id"
+        " WHERE j.id=? AND i.missing_since IS NULL",
+        (int(job_id),),
+    ).fetchone()
+    return ADOPTED if adopted is not None else ""

@@ -173,11 +173,32 @@
 
             <p class="qrow-why">{{ entry.reason_text|capitalize }}.</p>
 
-            {% if entry.preserved_original and entry.active_version %}
+            {% if entry.preserved_original %}
               {# The question a person actually has in front of this row: then
                  what am I listening to now. #}
+              {% if entry.active_version %}
               <p class="qrow-why muted">Active version
                 <span class="mono">{{ entry.active_version }}</span></p>
+              {% endif %}
+              {% if entry.preserved_storage %}
+              {# The trade this card exists to let somebody weigh. Two numbers,
+                 because they are two different questions and they differ here
+                 by more than a factor of two: what deleting this file frees at
+                 that moment, and where storage ends up afterwards. #}
+              <dl class="correction-shape">
+                <div><dt>This original</dt>
+                     <dd>{{ entry.preserved_storage.original }}</dd></div>
+                <div><dt>Active version</dt>
+                     <dd>{{ entry.preserved_storage.active }}</dd></div>
+                <div><dt>Space reclaimed so far</dt>
+                     <dd>{{ entry.preserved_storage.reclaimed }}</dd></div>
+                <div><dt>If you remove this original</dt>
+                     <dd>{{ entry.preserved_storage.freed_if_removed }} freed at that
+                         moment · library ends up
+                         {{ entry.preserved_storage.final_reduction }} smaller than
+                         it started</dd></div>
+              </dl>
+              {% endif %}
             {% endif %}
 
             {# Where it is, where it came from, and — once you have decided —
