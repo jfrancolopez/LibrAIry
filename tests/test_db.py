@@ -169,6 +169,9 @@ def test_migration_011_closes_proposals_for_files_already_filed(tmp_path: Path) 
         DROP INDEX IF EXISTS idx_plans_quarantine_entry;
         DROP INDEX IF EXISTS idx_plan_withdrawals_finding;
         DROP TABLE IF EXISTS plan_withdrawals;
+        -- On a table migration 010 created, so it outlives the drops above
+        -- and has to come off by name.
+        ALTER TABLE backup_queue DROP COLUMN verified;
         ALTER TABLE plans DROP COLUMN optimization_job_id;
         ALTER TABLE quarantine_entries DROP COLUMN optimization_job_id;
         ALTER TABLE plans DROP COLUMN quarantine_entry_id;

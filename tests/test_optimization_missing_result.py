@@ -409,7 +409,8 @@ def test_every_count_that_names_the_library_excludes_missing_rows() -> None:
             re.S,
         ):
             tail = match.group(0)
-            if "missing_since" not in tail and "{LIVE}" not in tail and LIVE not in tail:
+            sanctioned = ("missing_since", "{LIVE}", "{live()}", LIVE)
+            if not any(form in tail for form in sanctioned):
                 offenders.append(f"{path}: {tail[:90]}")
 
     assert not offenders, offenders

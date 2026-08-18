@@ -114,6 +114,32 @@
       {% endif %}
     </section>
 
+    <section class="widget card">
+      {# Counts and integrity together: how much is waiting, and how much of
+         what is already recorded can be believed. A `done` row asserts that
+         one specific set of bytes reached the remote, so anything that makes
+         that assertion doubtful belongs beside the number it inflates. #}
+      <h3>Backup queue</h3>
+      <dl class="queue-facts">
+        <div><dt>Backed up</dt><dd>{{ backup_queue.done }}</dd></div>
+        <div><dt>Waiting</dt><dd>{{ backup_queue.waiting }}</dd></div>
+        <div><dt>Copying now</dt><dd>{{ backup_queue.copying }}</dd></div>
+      </dl>
+      {% if backup_queue.issues %}
+        {% for issue in backup_queue.issues %}
+          <p class="notice-warn">
+            {{ issue.count }} backup record{{ 's' if issue.count != 1 else '' }}
+            {{ issue.detail }}.
+          </p>
+        {% endfor %}
+      {% else %}
+        <p class="muted">
+          Every completed backup records which bytes it copied, and was checked
+          against them.
+        </p>
+      {% endif %}
+    </section>
+
     <section class="widget card widget-wide">
       <h3>Files committed — last {{ growth|length }} days</h3>
       <div class="spark" role="img" aria-label="Files committed per day over the last {{ growth|length }} days">

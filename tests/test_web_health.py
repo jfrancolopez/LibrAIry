@@ -166,3 +166,39 @@ def test_db_status_checks_actual_database_path(tmp_path: Path) -> None:
     assert database_path(settings).exists()
     assert row.status == "OK"
     assert "quick_check=ok" in row.detail
+
+
+def test_health_reports_the_backup_queue_and_what_it_can_be_believed_about(
+    tmp_path: Path,
+) -> None:
+    """Counts and integrity in one card, because they answer the same question
+    from two sides: how much is waiting, and how much of what is already
+    recorded is true."""
+    client, conn, _settings = client_for(tmp_path)
+    conn.execute(
+        """
+        INSERT INTO items(id, root, relpath, size, mtime_ns, fingerprint,
+                          first_seen_at, last_seen_at)
+        VALUES (1, 'library', 'Music/a.flac', 1, 1, 'now-different', 'now', 'now')
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO backup_queue(item_id, relpath, fingerprint, state, attempts,
+                                 created_at, updated_at)
+        VALUES (1, 'Music/a.flac', 'older', 'queued', 0, 'now', 'now')
+        """
+    )
+
+    body = client.get("/health").text
+
+    assert "Backup queue" in body
+    assert "no longer at that path" in body
+
+
+def test_a_healthy_backup_queue_says_what_done_actually_means(tmp_path: Path) -> None:
+    client, _conn, _settings = client_for(tmp_path)
+
+    body = client.get("/health").text
+
+    assert "records which bytes it copied" in body

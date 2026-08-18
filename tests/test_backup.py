@@ -14,6 +14,7 @@ from librairy.backup import (
 )
 from librairy.config import Settings
 from librairy.db import SCHEMA_VERSION, connect, user_version
+from librairy.fingerprint import blake2b_file
 from librairy.locks import acquire_lock
 from librairy.proposals import EvidenceEntry, upsert_proposal
 from librairy.search import sync_search_item
@@ -144,16 +145,20 @@ def test_backup_runner_copies_verifies_and_marks_done(tmp_path: Path, monkeypatc
     source = settings.library_dir / "Documents/a.txt"
     source.parent.mkdir(parents=True)
     source.write_text("a", encoding="utf-8")
+    fingerprint = blake2b_file(source)
     conn = connect(settings)
     conn.execute(
         """
         INSERT INTO items(
           id, root, relpath, size, mtime_ns, fingerprint, first_seen_at, last_seen_at
         )
-        VALUES (1, 'library', 'Documents/a.txt', 1, 1, 'fp', 'now', 'now')
-        """
+        VALUES (1, 'library', 'Documents/a.txt', 1, 1, ?, 'now', 'now')
+        """,
+        (fingerprint,),
     )
-    enqueue_backup_item(conn, settings, item_id=1, relpath="Documents/a.txt", fingerprint="fp")
+    enqueue_backup_item(
+        conn, settings, item_id=1, relpath="Documents/a.txt", fingerprint=fingerprint
+    )
     commands: list[list[str]] = []
 
     monkeypatch.setattr("librairy.backup.rclone_status", lambda path: AvailableStatus())
@@ -183,16 +188,20 @@ def test_backup_runner_retries_then_stops_after_failures(tmp_path: Path, monkeyp
     source = settings.library_dir / "Documents/a.txt"
     source.parent.mkdir(parents=True)
     source.write_text("a", encoding="utf-8")
+    fingerprint = blake2b_file(source)
     conn = connect(settings)
     conn.execute(
         """
         INSERT INTO items(
           id, root, relpath, size, mtime_ns, fingerprint, first_seen_at, last_seen_at
         )
-        VALUES (1, 'library', 'Documents/a.txt', 1, 1, 'fp', 'now', 'now')
-        """
+        VALUES (1, 'library', 'Documents/a.txt', 1, 1, ?, 'now', 'now')
+        """,
+        (fingerprint,),
     )
-    enqueue_backup_item(conn, settings, item_id=1, relpath="Documents/a.txt", fingerprint="fp")
+    enqueue_backup_item(
+        conn, settings, item_id=1, relpath="Documents/a.txt", fingerprint=fingerprint
+    )
     monkeypatch.setattr("librairy.backup.rclone_status", lambda path: AvailableStatus())
     monkeypatch.setattr(
         "librairy.backup.run",
@@ -216,16 +225,20 @@ def test_backup_runner_does_not_hold_executor_lock(tmp_path: Path, monkeypatch) 
     source = settings.library_dir / "Documents/a.txt"
     source.parent.mkdir(parents=True)
     source.write_text("a", encoding="utf-8")
+    fingerprint = blake2b_file(source)
     conn = connect(settings)
     conn.execute(
         """
         INSERT INTO items(
           id, root, relpath, size, mtime_ns, fingerprint, first_seen_at, last_seen_at
         )
-        VALUES (1, 'library', 'Documents/a.txt', 1, 1, 'fp', 'now', 'now')
-        """
+        VALUES (1, 'library', 'Documents/a.txt', 1, 1, ?, 'now', 'now')
+        """,
+        (fingerprint,),
     )
-    enqueue_backup_item(conn, settings, item_id=1, relpath="Documents/a.txt", fingerprint="fp")
+    enqueue_backup_item(
+        conn, settings, item_id=1, relpath="Documents/a.txt", fingerprint=fingerprint
+    )
     monkeypatch.setattr("librairy.backup.rclone_status", lambda path: AvailableStatus())
     monkeypatch.setattr(
         "librairy.backup.run",
@@ -346,16 +359,20 @@ def _queued_backup(tmp_path: Path, **overrides):
     source = settings.library_dir / "Documents/a.txt"
     source.parent.mkdir(parents=True, exist_ok=True)
     source.write_text("a", encoding="utf-8")
+    fingerprint = blake2b_file(source)
     conn = connect(settings)
     conn.execute(
         """
         INSERT INTO items(
           id, root, relpath, size, mtime_ns, fingerprint, first_seen_at, last_seen_at
         )
-        VALUES (1, 'library', 'Documents/a.txt', 1, 1, 'fp', 'now', 'now')
-        """
+        VALUES (1, 'library', 'Documents/a.txt', 1, 1, ?, 'now', 'now')
+        """,
+        (fingerprint,),
     )
-    enqueue_backup_item(conn, settings, item_id=1, relpath="Documents/a.txt", fingerprint="fp")
+    enqueue_backup_item(
+        conn, settings, item_id=1, relpath="Documents/a.txt", fingerprint=fingerprint
+    )
     return conn, settings
 
 

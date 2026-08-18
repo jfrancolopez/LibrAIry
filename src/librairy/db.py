@@ -9,7 +9,7 @@ from pathlib import Path
 from librairy.config import Settings
 
 LOGGER = logging.getLogger(__name__)
-SCHEMA_VERSION = 27
+SCHEMA_VERSION = 28
 
 
 class DatabaseVersionError(RuntimeError):
@@ -737,6 +737,27 @@ ALTER TABLE optimization_jobs ADD COLUMN output_fingerprint TEXT NOT NULL
   DEFAULT '';
 """
 
+MIGRATION_028 = """
+-- How the remote copy was actually compared, recorded when it was compared.
+--
+-- A `done` row asserts that the bytes named by its own `fingerprint` are on
+-- the remote. That assertion is now established locally -- the source is
+-- hashed against the request before the copy and again after it -- but the
+-- remaining link, remote-vs-local, belongs to `rclone check`, and how strong
+-- that link is depends entirely on the backend: a common hash where both sides
+-- can produce one, size alone where they cannot.
+--
+-- LibrAIry's fingerprint is blake2b and no rclone backend offers blake2b, so
+-- the recorded fingerprint can never be compared against a remote hash
+-- directly. Pretending otherwise would be the same category of untruth this
+-- migration exists to prevent, so the strength of each row's verification is
+-- read from rclone's own report and written down.
+--
+-- Empty is what every pre-existing row honestly is: copied before anything
+-- recorded this, so unknown rather than assumed good.
+ALTER TABLE backup_queue ADD COLUMN verified TEXT NOT NULL DEFAULT '';
+"""
+
 MIGRATIONS = {
     1: MIGRATION_001,
     2: MIGRATION_002,
@@ -765,6 +786,7 @@ MIGRATIONS = {
     25: MIGRATION_025,
     26: MIGRATION_026,
     27: MIGRATION_027,
+    28: MIGRATION_028,
 }
 
 

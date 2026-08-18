@@ -113,7 +113,37 @@ def health_data(conn: sqlite3.Connection, settings: Settings) -> dict[str, objec
             backup=backup,
         ),
         "search_index": search_index_panel(conn),
+        "backup_queue": backup_queue_panel(conn),
         **health_metrics(conn, settings),
+    }
+
+
+def backup_queue_panel(conn: sqlite3.Connection) -> dict[str, object]:
+    """What the backup queue holds, and anything about it that looks untrue.
+
+    Counts and integrity in one place, because they answer the same question
+    from two directions: how much is waiting, and how much of what is already
+    recorded can be believed.
+
+    Index-only, like everything else on this page. Confirming that a `done` row
+    is really on the remote would mean hashing files and reaching a remote on a
+    page load, and Health is loaded to find out whether things are all right,
+    not to spend a NAS's morning proving it.
+    """
+    from librairy.backup import backup_queue_issues
+
+    states = {
+        str(row["state"]): int(row["count"])
+        for row in conn.execute("SELECT state, COUNT(*) AS count FROM backup_queue GROUP BY state")
+    }
+    return {
+        "done": states.get("done", 0),
+        "waiting": states.get("queued", 0) + states.get("failed", 0),
+        "copying": states.get("copying", 0),
+        "issues": [
+            {"code": issue.code, "count": issue.count, "detail": issue.detail}
+            for issue in backup_queue_issues(conn)
+        ],
     }
 
 

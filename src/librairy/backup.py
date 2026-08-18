@@ -10,7 +10,8 @@ from pathlib import Path
 
 from librairy.config import Settings
 from librairy.db import database_path
-from librairy.live import live
+from librairy.fingerprint import blake2b_file
+from librairy.live import LIVE, live
 from librairy.paths import validate_relpath
 from librairy.planner import utc_now
 from librairy.taxonomy import CATEGORIES
@@ -29,6 +30,10 @@ class BackupRunSummary:
     warning: str = ""
     #  Whether the index went up with the files this time.
     snapshot: bool = False
+    #  Requests that were discarded because the bytes they name are no longer
+    #  at that path. Not failures: nothing went wrong with the backup, the
+    #  request simply became impossible to satisfy honestly.
+    superseded: int = 0
 
 
 # The schedule was stored and never read: the worker drained the queue on
@@ -266,8 +271,17 @@ def enqueue_backup_item(
     is a backup record asserting something untrue, which is worse than a
     failure. Those rows are discarded.
 
-    `done` and `copying` are left alone: one is a fact about a copy that exists
-    on the remote, the other is in flight.
+    `done` is left alone because it is a fact: those bytes are on the remote,
+    and they still are whatever happens at that path afterwards.
+
+    `copying` is left alone for a different reason. It is one synchronous
+    `rclone copy` inside the worker's own loop — there is no process to cancel
+    and no manager that owns it — and interfering with a transfer that is
+    already running to make a bookkeeping row tidier trades a real risk for a
+    cosmetic one. It is also no longer necessary: `_copy_and_verify` re-hashes
+    the source against this row's own fingerprint after the copy, so a request
+    whose file changed mid-flight can no longer end in `done`. The copy is
+    allowed to finish and is then judged honestly.
     """
     if not settings.backup_enabled:
         return False
@@ -330,15 +344,12 @@ def run_backup_once(
     if not status.available:
         return BackupRunSummary(paused=True, warning=status.detail)
     rows = _due_backups(conn, batch_size=batch_size)
-    copied = failed = 0
-    for row in rows:
-        if _copy_and_verify(conn, settings, row):
-            copied += 1
-        else:
-            failed += 1
+    outcomes = [_copy_and_verify(conn, settings, row) for row in rows]
+    copied = outcomes.count(COPIED)
     return BackupRunSummary(
         copied=copied,
-        failed=failed,
+        failed=outcomes.count(FAILED),
+        superseded=outcomes.count(SUPERSEDED),
         snapshot=_copy_snapshot(conn, settings) if copied else False,
     )
 
@@ -389,13 +400,79 @@ def _copy_snapshot(conn: sqlite3.Connection, settings: Settings) -> bool:
     return True
 
 
-def _copy_and_verify(conn: sqlite3.Connection, settings: Settings, row: sqlite3.Row) -> bool:
+#  What one run did with one request. Three outcomes, not two: a request that
+#  can no longer be satisfied is not a failure of the backup — nothing went
+#  wrong with the copy, the bytes it names simply are not at that path any
+#  more.
+COPIED = "copied"
+FAILED = "failed"
+SUPERSEDED = "superseded"
+
+#  rclone says so itself when it could not compare hashes, which is the only
+#  honest source for whether a `done` row rests on a checksum or on a size.
+HASHES_UNCHECKED = "hashes could not be checked"
+
+
+def _copy_and_verify(conn: sqlite3.Connection, settings: Settings, row: sqlite3.Row) -> str:
+    """Copy these exact bytes off-site, or do not mark this request done.
+
+    A queue row records a `fingerprint`, and marking it `done` is LibrAIry
+    asserting that *those bytes* are on the remote. That is a much stronger
+    claim than "the file at this path is on the remote", and until now the code
+    only ever established the weaker one: it ran `rclone check <source>
+    <remote>` after the copy and never read `row["fingerprint"]` at all.
+
+        row says fingerprint A
+        copy starts
+        the file at that path becomes B
+        the copy sends B; check compares B against B and they agree
+        the A row is marked done
+
+    The database then asserts that A was backed up when A was never sent
+    anywhere. A failed backup is visible and recoverable; a backup record that
+    is quietly untrue is neither, and this is the one table whose whole purpose
+    is to be believed when the original is gone.
+
+    So the expectation comes from the request and never from the live file:
+
+        1. hash the source and require it to equal `row["fingerprint"]`
+           — the bytes about to be sent are the bytes that were asked for
+        2. copy
+        3. `rclone check` — the remote's content matches that local file
+        4. hash the source again and require it to equal `row["fingerprint"]`
+           — the file check compared is still the file step 1 approved, so
+           nothing swapped underneath the window
+
+    Steps 1 and 4 are the new ones, and step 4 is what closes the race: it is
+    entirely possible for the copy to succeed, the check to pass, and the bytes
+    involved to be the wrong ones.
+
+    Together they give: the remote holds the bytes recorded on this row, to the
+    strength of what `rclone check` can actually compare — see
+    `_verification_kind`, which records which of the two it was rather than
+    assuming the better one.
+    """
+    expected = str(row["fingerprint"])
     source = validate_relpath(settings.library_dir, row["relpath"], kind="source")
-    remote = _remote_path(settings.backup_remote, row["relpath"])
+    if not expected:
+        _fail(conn, row, "this backup request records no fingerprint to verify against")
+        return FAILED
+
+    before = _read_fingerprint(source)
+    if before is None:
+        #  Retryable, and deliberately so: an unreadable source is usually an
+        #  unmounted share, not a wrong request.
+        _fail(conn, row, f"source could not be read: {row['relpath']}")
+        return FAILED
+    if before != expected:
+        _discard(conn, settings, row, before, "the file changed before the copy began")
+        return SUPERSEDED
+
     conn.execute(
         "UPDATE backup_queue SET state='copying', updated_at=? WHERE id=?",
         (utc_now(), row["id"]),
     )
+    remote = _remote_path(settings.backup_remote, row["relpath"])
     copy = run(
         copy_command(
             rclone_config_path(settings),
@@ -407,28 +484,131 @@ def _copy_and_verify(conn: sqlite3.Connection, settings: Settings, row: sqlite3.
     check = None
     if copy.returncode == 0:
         check = run(check_command(rclone_config_path(settings), source, remote))
+        #  Only on this path, because it is the only path that could end in
+        #  `done`. A copy that already failed needs no second opinion, and
+        #  re-reading the whole file to produce one costs real I/O on a
+        #  NAS-backed library.
+        after = _read_fingerprint(source)
+        if after is None:
+            _fail(conn, row, "the source disappeared or stopped being readable during the copy")
+            return FAILED
+        if after != expected:
+            #  Whatever reached the remote, it cannot be proven to be the bytes
+            #  this row names — and it very likely is not.
+            _discard(conn, settings, row, after, "the file changed while the copy was running")
+            return SUPERSEDED
+
     if copy.returncode == 0 and check is not None and check.returncode == 0:
         conn.execute(
             """
             UPDATE backup_queue
-            SET state='done', last_error=NULL, updated_at=?
+            SET state='done', verified=?, last_error=NULL, updated_at=?
             WHERE id=?
             """,
-            (utc_now(), row["id"]),
+            (_verification_kind(check), utc_now(), row["id"]),
         )
-        return True
-    error = _process_error(copy, check)
-    attempts = int(row["attempts"]) + 1
-    state = "failed"
+        return COPIED
+    _fail(conn, row, _process_error(copy, check))
+    return FAILED
+
+
+def _read_fingerprint(source: Path) -> str | None:
+    """The hash of what is at that path right now, or None if that is unknowable."""
+    try:
+        return blake2b_file(source)
+    except OSError:
+        return None
+
+
+def _fail(conn: sqlite3.Connection, row: sqlite3.Row, error: str) -> None:
     conn.execute(
         """
         UPDATE backup_queue
-        SET state=?, attempts=?, last_error=?, updated_at=?
+        SET state='failed', attempts=?, last_error=?, updated_at=?
         WHERE id=?
         """,
-        (state, attempts, error[:500], utc_now(), row["id"]),
+        (int(row["attempts"]) + 1, error[:500], utc_now(), row["id"]),
     )
-    return False
+
+
+def _discard(
+    conn: sqlite3.Connection,
+    settings: Settings,
+    row: sqlite3.Row,
+    actual: str,
+    reason: str,
+) -> None:
+    """Drop a request whose bytes are no longer at its path, and ask for what is.
+
+    Not `failed`: failure means try again, and there is nothing here that
+    retrying could ever fix — the file this row describes is gone from this
+    path, so no number of attempts will put those bytes on the remote. Leaving
+    it to burn its three attempts would also mean three more uploads of the
+    *wrong* file before the queue gave up.
+
+    Deleting it is the same thing `enqueue_backup_item` already does when it
+    notices the same condition from the other side, so a request superseded by
+    a commit and a request superseded by the disk end up in the same state.
+    """
+    conn.execute("DELETE FROM backup_queue WHERE id=?", (row["id"],))
+    LOGGER.warning(
+        "backup request for %s (%s) discarded: %s", row["relpath"], row["fingerprint"][:12], reason
+    )
+    _requeue_current_bytes(conn, settings, row, actual)
+
+
+def _requeue_current_bytes(
+    conn: sqlite3.Connection,
+    settings: Settings,
+    row: sqlite3.Row,
+    fingerprint: str,
+) -> None:
+    """Ask for whatever is at that path now — but only where nothing is a guess.
+
+    The discarded request's `item_id` cannot be reused as the owner of these
+    bytes. A path changes hands: adoption puts the optimized version at the
+    original's own path under a *different* item id, so attributing the new
+    bytes to the old id would file a backup against the wrong item and make the
+    record wrong in a second way while fixing the first.
+
+    `UNIQUE (root, relpath)` means at most one live row can claim that path. If
+    that row's fingerprint is the hash just measured, then the index and the
+    disk agree about both the owner and the bytes and there is nothing left to
+    infer. If they disagree the scanner has not caught up yet, and waiting for
+    it is more honest than inventing a request; `backup_queue_issues` reports
+    the gap in the meantime.
+    """
+    owner = conn.execute(
+        f"SELECT id, fingerprint FROM items WHERE root='library' AND relpath=? AND {LIVE}",  # noqa: S608
+        (row["relpath"],),
+    ).fetchone()
+    if owner is None or str(owner["fingerprint"]) != fingerprint:
+        return
+    enqueue_backup_item(
+        conn,
+        settings,
+        item_id=int(owner["id"]),
+        relpath=str(row["relpath"]),
+        fingerprint=fingerprint,
+    )
+
+
+def _verification_kind(check) -> str:  # noqa: ANN001 - CompletedProcess[str]
+    """Which comparison the remote was actually able to make.
+
+    LibrAIry's own fingerprint is blake2b, and no rclone backend offers blake2b,
+    so `backup_queue.fingerprint` can never be compared against a remote hash
+    directly — that link is closed locally instead, by hashing the source on
+    both sides of the copy. What `rclone check` adds is remote-vs-local, and how
+    strong *that* is depends on the backend: hashes when both sides can produce
+    a common one, size when they cannot.
+
+    rclone reports the difference itself rather than making the caller guess, so
+    the answer is read from its output instead of being assumed to be the better
+    of the two.
+    """
+    output = f"{check.stdout or ''}\n{check.stderr or ''}".lower()
+    return "size" if HASHES_UNCHECKED in output else "hash"
 
 
 def snapshot_database(settings: Settings, destination: Path) -> Path:
@@ -450,3 +630,98 @@ def _remote_path(remote: str, relpath: str) -> str:
 def _process_error(copy, check) -> str:  # noqa: ANN001
     failed = check if check is not None and check.returncode != 0 else copy
     return failed.stderr.strip() or failed.stdout.strip() or f"rclone exited {failed.returncode}"
+
+
+#  A `copying` row is only ever written by a run that is in flight, in the one
+#  worker process, and `_due_backups` never picks one up. So a row that has sat
+#  in `copying` for hours is not a slow copy, it is a worker that died holding
+#  one — and those bytes will never be retried until somebody looks.
+STALLED_COPY_HOURS = 6
+
+
+@dataclass(frozen=True)
+class BackupIssue:
+    """One suspicious thing about the queue, in terms a person can act on."""
+
+    code: str
+    count: int
+    detail: str
+
+
+def backup_queue_issues(conn: sqlite3.Connection) -> list[BackupIssue]:
+    """What is wrong, or looks wrong, about what the queue claims.
+
+    Read-only and index-only. Health is a page somebody loads, so nothing here
+    hashes a file, reaches a remote, or walks a directory; every question is
+    answered by SQL against rows that already exist.
+
+    Deliberately not a repair. Two of these have no single correct fix — which
+    of a stalled copy's bytes reached the remote is not knowable from here — and
+    a page that quietly rewrites rows as a side effect of being read destroys
+    the evidence of the thing that made them wrong.
+    """
+    cutoff = (datetime.now(UTC) - timedelta(hours=STALLED_COPY_HOURS)).isoformat()
+    issues = [
+        BackupIssue(
+            "done-without-fingerprint",
+            _count(
+                conn,
+                "SELECT COUNT(*) FROM backup_queue WHERE state='done' AND fingerprint=''",
+            ),
+            "backed up, with no record of which bytes",
+        ),
+        BackupIssue(
+            "stalled-copy",
+            _count(
+                conn,
+                "SELECT COUNT(*) FROM backup_queue WHERE state='copying' AND updated_at < ?",
+                (cutoff,),
+            ),
+            f"copying for more than {STALLED_COPY_HOURS} hours, so not retried",
+        ),
+        BackupIssue(
+            "shadowed-request",
+            _count(
+                conn,
+                f"""
+                SELECT COUNT(*) FROM backup_queue q JOIN items i ON i.id = q.item_id
+                WHERE q.state IN ('queued','failed') AND i.relpath = q.relpath
+                  AND i.fingerprint != q.fingerprint AND {live()}
+                """,  # noqa: S608 - a module constant
+            ),
+            "waiting to copy bytes that are no longer at that path",
+        ),
+        BackupIssue(
+            "backed-up-under-older-bytes",
+            _count(
+                conn,
+                f"""
+                SELECT COUNT(*) FROM items i
+                WHERE i.root = 'library' AND {live()}
+                  AND EXISTS (
+                    SELECT 1 FROM backup_queue q
+                    WHERE q.item_id = i.id AND q.relpath = i.relpath
+                      AND q.state = 'done' AND q.fingerprint != i.fingerprint)
+                  AND NOT EXISTS (
+                    SELECT 1 FROM backup_queue q
+                    WHERE q.item_id = i.id AND q.relpath = i.relpath
+                      AND q.fingerprint = i.fingerprint)
+                """,  # noqa: S608 - a module constant
+            ),
+            "changed since their backup, with nothing queued for the new bytes",
+        ),
+        BackupIssue(
+            "verified-by-size-only",
+            _count(
+                conn,
+                "SELECT COUNT(*) FROM backup_queue WHERE state='done' AND verified='size'",
+            ),
+            "compared by size, because this remote cannot produce a hash",
+        ),
+    ]
+    return [issue for issue in issues if issue.count]
+
+
+def _count(conn: sqlite3.Connection, sql: str, params: tuple = ()) -> int:
+    return int(conn.execute(sql, params).fetchone()[0])
+
