@@ -56,6 +56,7 @@ from librairy.config import Settings
 from librairy.fingerprint import blake2b_file
 from librairy.optimization_source import OPTIMIZATION_ROOT
 from librairy.planner import utc_now
+from librairy.reserved import dormant_optimization_relpath
 from librairy.search import sync_search_item
 
 # The optimized file arrives already decided: it is in the library because a
@@ -185,7 +186,7 @@ def record_result_item(
     return item_id
 
 
-def parked_relpath(job_id: int, relpath: str) -> str:
+def parked_relpath(job_id: int, item_id: int) -> str:
     """Where a dormant result row's `relpath` points while its file is away.
 
     The architecture record said the row would keep the library path it used to
@@ -207,11 +208,19 @@ def parked_relpath(job_id: int, relpath: str) -> str:
     `Music/Live/concert.flac` while the copy is in staging, and a row saying
     there is was the thing this whole audit set out to prevent.
 
-    The former path is kept inside the parked one rather than thrown away, so
-    lineage still reads. The `_` prefix is the convention the delete pile and
-    the backup snapshot already use for names that are not user media.
+    The address is **reserved** rather than conventional. An earlier version
+    parked at `_optimization/<job>/<former path>`, which is a plausible folder
+    for somebody to make in their own library — and the moment they did, this
+    bookkeeping address would collide with real media through the same UNIQUE
+    constraint. `librairy.reserved` owns the namespace and the rules that keep
+    real files out of it.
+
+    The former path is deliberately *not* encoded. `optimization_jobs`,
+    `plan_ops` and `history` all record where the file was and where it went;
+    spelling it a fourth time would be a fourth thing to keep in agreement, and
+    this string is never read as a path by anything.
     """
-    return f"_optimization/{int(job_id)}/{relpath}"
+    return dormant_optimization_relpath(job_id, item_id)
 
 
 def retire_result_item(
@@ -239,7 +248,7 @@ def retire_result_item(
     item_id = int(row["id"])
     conn.execute(
         "UPDATE items SET relpath=?, missing_since=?, last_seen_at=? WHERE id=?",
-        (parked_relpath(job_id, relpath), utc_now(), utc_now(), item_id),
+        (parked_relpath(job_id, item_id), utc_now(), utc_now(), item_id),
     )
     conn.execute(
         "UPDATE optimization_jobs SET updated_at=? WHERE id=?", (utc_now(), job_id)

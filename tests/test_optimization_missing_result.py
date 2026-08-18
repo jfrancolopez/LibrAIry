@@ -127,18 +127,25 @@ def test_the_row_is_marked_missing_and_parked_off_the_library_path(undone) -> No
     `items` has `UNIQUE (root, relpath)` as a table constraint and an HEVC
     re-encode of an MP4 lands the optimized copy on the original's own path.
     On Undo the original comes back to that path while the dormant row is still
-    claiming it. The former path is kept inside the parked one, so lineage
-    still reads.
+    claiming it.
+
+    The address it parks at is reserved rather than conventional, and carries
+    no former path: `optimization_jobs`, `plan_ops` and `history` already
+    record where the file was.
     """
     from librairy.optimization_adopt import parked_relpath
+    from librairy.reserved import RESERVED_TOP, is_dormant_optimization
 
     conn, settings, _, result_id, job_id = undone
     row = conn.execute("SELECT * FROM items WHERE id=?", (result_id,)).fetchone()
 
     assert row["root"] == "library"
     assert row["missing_since"] is not None
-    assert row["relpath"] == parked_relpath(job_id, RESULT) != RESULT
-    assert RESULT in row["relpath"]
+    assert row["relpath"] == parked_relpath(job_id, result_id) != RESULT
+    assert row["relpath"].startswith(f"{RESERVED_TOP}/")
+    assert is_dormant_optimization(row["relpath"])
+    # No former path spelled a fourth time.
+    assert RESULT not in row["relpath"]
     # And the library path is free for the original to come back to.
     assert conn.execute(
         "SELECT COUNT(*) FROM items WHERE root='library' AND relpath=?", (RESULT,)

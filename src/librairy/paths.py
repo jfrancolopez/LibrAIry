@@ -3,6 +3,8 @@ from __future__ import annotations
 import re
 from pathlib import Path, PurePosixPath
 
+from librairy.reserved import refuse_reserved
+
 CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
 
 
@@ -40,6 +42,14 @@ def validate_relpath(root: Path, relpath: str, *, kind: str = "path") -> Path:
 
 
 def validate_dest(root: Path, relpath: str) -> Path:
+    """Every destination in the application goes through here.
+
+    Which is why the reserved-namespace refusal lives here rather than in each
+    planner: a plan operation, a correction, an import, a quarantine restore and
+    a manually typed destination all arrive at this one function, and one of
+    them forgetting the rule would be enough.
+    """
+    refuse_reserved(relpath, kind="destination")
     return validate_relpath(root, relpath, kind="destination")
 
 

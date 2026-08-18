@@ -11,6 +11,7 @@ from librairy.config import Settings
 from librairy.fingerprint import blake2b_file
 from librairy.lifecycle import should_reset_for_fingerprint_change
 from librairy.proposals import supersede_proposal
+from librairy.reserved import is_reserved
 from librairy.search import sync_search_item
 
 VALID_ROOTS = {"inbox", "library", "quarantine"}
@@ -25,6 +26,10 @@ class ScanSummary:
     unstable: int = 0
     missing: int = 0
     symlinks_skipped: int = 0
+    #  Files found inside the namespace LibrAIry reserves for its own
+    #  bookkeeping. Never indexed, never overwritten, and reported by the
+    #  Browse consistency panel rather than swallowed here.
+    reserved_skipped: int = 0
 
 
 def utc_now() -> str:
@@ -47,6 +52,7 @@ def scan_root(
     now_ns = datetime.now(UTC).timestamp() * 1_000_000_000
     seen: set[str] = set()
     discovered = hashed = skipped_unchanged = unstable = symlinks_skipped = 0
+    reserved_skipped = 0
 
     for dirpath, dirnames, filenames in os.walk(root_path, followlinks=False):
         current_dir = Path(dirpath)
@@ -61,6 +67,19 @@ def scan_root(
             path = current_dir / name
             relpath = _posix_rel(path, root_path)
             if _is_hidden(name) or _ignored(relpath, settings.ignore_patterns):
+                continue
+            if is_reserved(relpath):
+                # LibrAIry keeps this name for its own bookkeeping, and one
+                # `items` row already lives there — the dormant result of an
+                # un-adopted optimization. Indexing a physical file found here
+                # would either collide with that row through
+                # UNIQUE(root, relpath) or quietly take its address.
+                #
+                # Not hidden, though: `library_consistency` gives files here
+                # their own bucket and their own remedy, because "scan the
+                # library" would not fix it and reporting it as ordinary drift
+                # would be untrue.
+                reserved_skipped += 1
                 continue
             if path.is_symlink():
                 symlinks_skipped += 1
@@ -139,6 +158,7 @@ def scan_root(
         unstable,
         missing,
         symlinks_skipped,
+        reserved_skipped,
     )
 
 

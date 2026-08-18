@@ -20,6 +20,7 @@ from pathlib import PurePosixPath
 
 from librairy.config import Settings
 from librairy.live import dormant_optimization_result
+from librairy.reserved import RESERVED_TOP, is_reserved
 from librairy.scanner import visible_files
 
 # Enough to recognise which files are meant without turning a status line into
@@ -37,10 +38,20 @@ class LibraryConsistency:
     missing_files: int
     unindexed_sample: tuple[str, ...] = ()
     missing_sample: tuple[str, ...] = ()
+    #  Physical files inside the namespace LibrAIry reserves for its own
+    #  bookkeeping. Their own bucket, because they are neither drift nor
+    #  ordinary media: scanning would not index them and telling somebody to
+    #  scan would waste their time.
+    reserved_files: int = 0
+    reserved_sample: tuple[str, ...] = ()
 
     @property
     def matches(self) -> bool:
-        return not self.unindexed_files and not self.missing_files
+        return (
+            not self.unindexed_files
+            and not self.missing_files
+            and not self.reserved_files
+        )
 
 
 def library_consistency(
@@ -63,7 +74,11 @@ def library_consistency(
     """
     if on_disk is None:
         on_disk = visible_files(settings.library_dir, settings.ignore_patterns)
-    present = set(on_disk)
+    #  Pulled out before either comparison. A file here is a real conflict with
+    #  a name LibrAIry needs, and counting it as unindexed would attach the
+    #  remedy "scan the library", which would not index it either.
+    reserved = sorted(path for path in on_disk if is_reserved(path))
+    present = {path for path in on_disk if not is_reserved(path)}
     # Missing rows are included on purpose: a row describing a file that is not
     # there is exactly the drift this panel exists to report, and the note below
     # explains it rather than offering a command that would not help.
@@ -88,6 +103,8 @@ def library_consistency(
         missing_files=len(missing),
         unindexed_sample=tuple(unindexed[:sample]),
         missing_sample=tuple(missing[:sample]),
+        reserved_files=len(reserved),
+        reserved_sample=tuple(reserved[:sample]),
     )
 
 
@@ -141,6 +158,22 @@ def consistency_view(state: LibraryConsistency) -> dict[str, object]:
                 "remedy": None,
             }
         )
+    if state.reserved_files:
+        count = state.reserved_files
+        notes.append(
+            {
+                "text": (
+                    f"{count} {_files(count)} {'sits' if count == 1 else 'sit'} inside "
+                    f"{RESERVED_TOP}, a name LibrAIry keeps for its own bookkeeping. "
+                    f"{'It has' if count == 1 else 'They have'} been left exactly "
+                    "where they are and will not be indexed, moved or deleted — "
+                    "rename that folder and they will be picked up on the next scan."
+                ),
+                # No command. Scanning will not index them, and offering one that
+                # does nothing is worse than explaining the state.
+                "remedy": None,
+            }
+        )
     return {
         "matches": state.matches,
         # The headline, short enough to sit under the page title.
@@ -153,6 +186,9 @@ def consistency_view(state: LibraryConsistency) -> dict[str, object]:
                 for part in (
                     f"{state.unindexed_files} not indexed" if state.unindexed_files else "",
                     f"{state.missing_files} missing on disk" if state.missing_files else "",
+                    f"{state.reserved_files} in a reserved folder"
+                    if state.reserved_files
+                    else "",
                 )
                 if part
             )
@@ -161,9 +197,11 @@ def consistency_view(state: LibraryConsistency) -> dict[str, object]:
         "examples": [
             *({"label": "Not indexed", "path": path} for path in state.unindexed_sample),
             *({"label": "Missing on disk", "path": path} for path in state.missing_sample),
+            *({"label": "Reserved name", "path": path} for path in state.reserved_sample),
         ],
         "more": max(state.unindexed_files - len(state.unindexed_sample), 0)
-        + max(state.missing_files - len(state.missing_sample), 0),
+        + max(state.missing_files - len(state.missing_sample), 0)
+        + max(state.reserved_files - len(state.reserved_sample), 0),
     }
 
 
