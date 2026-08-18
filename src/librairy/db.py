@@ -9,7 +9,7 @@ from pathlib import Path
 from librairy.config import Settings
 
 LOGGER = logging.getLogger(__name__)
-SCHEMA_VERSION = 26
+SCHEMA_VERSION = 27
 
 
 class DatabaseVersionError(RuntimeError):
@@ -714,6 +714,29 @@ CREATE INDEX idx_quarantine_optimization_job
   ON quarantine_entries(optimization_job_id);
 """
 
+MIGRATION_027 = """
+-- The hash of the verified output, recorded at the moment it was verified.
+--
+-- Migration 026 says the resolver must bind
+--
+--     plan -> job -> recorded output path -> recorded output fingerprint
+--          -> op fingerprint -> bytes on disk
+--
+-- and the fourth link did not exist: verification recorded `verified='passed'`
+-- and a byte count, and nothing that identifies *which bytes* passed. Without
+-- it the strongest available check is "the op's hash matches the file in the
+-- job directory", which a stale output from an interrupted run satisfies
+-- trivially -- it is in the right directory under the right name.
+--
+-- Empty means "no verified output", which is what every pre-existing row
+-- honestly is: those jobs were verified before this column existed, so there
+-- is no recorded hash for them and the resolver refuses them rather than
+-- inventing one by hashing whatever is there now. Re-running the job records
+-- one.
+ALTER TABLE optimization_jobs ADD COLUMN output_fingerprint TEXT NOT NULL
+  DEFAULT '';
+"""
+
 MIGRATIONS = {
     1: MIGRATION_001,
     2: MIGRATION_002,
@@ -741,6 +764,7 @@ MIGRATIONS = {
     24: MIGRATION_024,
     25: MIGRATION_025,
     26: MIGRATION_026,
+    27: MIGRATION_027,
 }
 
 

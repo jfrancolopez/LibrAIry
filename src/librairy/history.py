@@ -8,6 +8,12 @@ from librairy.executor import _move_verified, _root_path
 from librairy.fingerprint import blake2b_file
 from librairy.lifecycle import assert_transition
 from librairy.locks import acquire_lock
+from librairy.optimization_adopt import retire_result_item
+from librairy.optimization_source import (
+    SourceRefused,
+    is_optimization_source,
+    undo_destination,
+)
 from librairy.paths import resolve_collision, validate_dest, validate_relpath
 from librairy.planner import utc_now
 from librairy.search import sync_search_item
@@ -142,6 +148,9 @@ def _undo_op_unlocked(
             f"undo_refused_changed expected={entry['fingerprint']} actual={current_fingerprint}",
         )
 
+    if is_optimization_source(entry["src_root"]):
+        return _undo_adoption(conn, entry, settings, src, current_fingerprint)
+
     dest = validate_dest(_root_path(settings, entry["src_root"]), entry["src_relpath"])
     final_dest = resolve_collision(dest)
     final_dest.parent.mkdir(parents=True, exist_ok=True)
@@ -151,6 +160,50 @@ def _undo_op_unlocked(
     _record_undo(conn, entry, final_relpath, current_fingerprint, "ok")
     _update_item_after_undo(conn, entry, final_relpath, final_dest)
     return UndoResult(history_id, "ok", final_relpath)
+
+
+def _undo_adoption(
+    conn: sqlite3.Connection,
+    entry: sqlite3.Row,
+    settings: Settings,
+    src,
+    fingerprint: str,
+) -> UndoResult:
+    """Put an adopted file back where its job made it. The one write there.
+
+    `optimization` is a source namespace, not a destination: `_root_path` above
+    does not resolve it, so no generic plan and no generic undo can put a file
+    into the encoder's workspace. This is the single exception, and it is not
+    general — the path is *derived from the plan's job*, exactly as the forward
+    direction derives it, so there is no `src_relpath` a caller could put in a
+    history row that would land a file somewhere else in the workspace.
+
+    No collision resolution either. The destination is one specific file in one
+    specific job directory; if something is already there, that is a fact worth
+    stopping on rather than routing around.
+    """
+    try:
+        dest = undo_destination(conn, settings, entry)
+    except SourceRefused as exc:
+        return _record_refused(conn, entry, f"undo_refused_source {exc.code}")
+    if dest.exists():
+        return _record_refused(conn, entry, "undo_refused_occupied")
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    _move_verified(src, dest, fingerprint, f"undo-{entry['id']}")
+    final_relpath = entry["src_relpath"]
+    _record_undo(conn, entry, final_relpath, fingerprint, "ok")
+    # The row cannot follow the file — `items.root` has no name for where it
+    # has gone — so it stays at the library path it held and is marked missing.
+    retire_result_item(
+        conn,
+        relpath=entry["dest_relpath"],
+        job_id=int(
+            conn.execute(
+                "SELECT optimization_job_id FROM plans WHERE id=?", (entry["plan_id"],)
+            ).fetchone()["optimization_job_id"]
+        ),
+    )
+    return UndoResult(entry["id"], "ok", final_relpath)
 
 
 def _record_refused(conn: sqlite3.Connection, entry: sqlite3.Row, outcome: str) -> UndoResult:

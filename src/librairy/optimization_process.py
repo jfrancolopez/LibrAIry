@@ -40,6 +40,7 @@ from pathlib import Path
 
 from librairy.config import Settings
 from librairy.db import transaction
+from librairy.fingerprint import blake2b_file
 from librairy.optimization_exec import (
     LOW,
     ExecutionRefused,
@@ -349,14 +350,20 @@ def _verify(conn: sqlite3.Connection, settings: Settings, job_id: int, handle: O
     if not verdict.ok:
         return _fail(conn, settings, job_id, handle, verdict.detail)
     actual = handle.output.stat().st_size
+    # Recorded here and nowhere else, at the one moment the bytes are known to
+    # have passed. Adoption's resolver binds the plan to *these* bytes, so a
+    # stale output left by an interrupted run cannot pass for a verified one
+    # just by sitting in the right directory under the right name.
+    output_fingerprint = blake2b_file(handle.output)
     conn.execute(
         """
         UPDATE optimization_jobs
         SET state=?, verified='passed', actual_bytes=?, runtime_seconds=?,
-            finished_at=?, updated_at=?, message=''
+            output_fingerprint=?, finished_at=?, updated_at=?, message=''
         WHERE id=?
         """,
-        (READY, actual, time.monotonic() - handle.started_at, utc_now(), utc_now(), job_id),
+        (READY, actual, time.monotonic() - handle.started_at, output_fingerprint,
+         utc_now(), utc_now(), job_id),
     )
     LOGGER.info("optimization job %s ready for review", job_id)
     return "ready"

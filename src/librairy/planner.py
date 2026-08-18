@@ -8,6 +8,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from librairy.config import Settings
+from librairy.optimization_source import (
+    SourceRefused,
+    is_optimization_source,
+    resolve_optimization_source,
+)
 from librairy.paths import PathValidationError, validate_dest
 
 
@@ -28,6 +33,13 @@ class OperationSpec:
     dest_root: str
     dest_relpath: str
     src_root: str = "inbox"
+    # Only for a source in the `optimization` namespace, which has no `items`
+    # row to read a fingerprint from and could not have one — `items.root` is
+    # CHECK-constrained to the three user roots. The caller supplies the hash
+    # recorded when the output was verified, and `optimization_source` refuses
+    # the operation at approval and again at execution unless it is exactly
+    # that hash, on exactly that job's output.
+    src_fingerprint: str = ""
 
 
 def utc_now() -> str:
@@ -61,15 +73,25 @@ def add_plan_op(
         raise PlanError(f"plan {plan_id} is immutable because status is {status}")
     if spec.op_type not in {"move", "quarantine"}:
         raise PlanError(f"unsupported op_type: {spec.op_type}")
-    item = conn.execute(
-        """
-        SELECT id, fingerprint FROM items
-        WHERE root=? AND relpath=? AND missing_since IS NULL AND fingerprint IS NOT NULL
-        """,
-        (spec.src_root, spec.src_relpath),
-    ).fetchone()
-    if item is None:
-        raise PlanError(f"source not ready: {spec.src_root}:{spec.src_relpath}")
+    if is_optimization_source(spec.src_root):
+        # A generated file has no item row, so there is nothing to look up and
+        # nothing to be missing. Its authorization is the job, checked in full
+        # by `_approval_errors` before this plan can be approved.
+        if not spec.src_fingerprint:
+            raise PlanError("an optimization source must carry its own fingerprint")
+        item_id, fingerprint = None, spec.src_fingerprint
+    else:
+        item = conn.execute(
+            """
+            SELECT id, fingerprint FROM items
+            WHERE root=? AND relpath=? AND missing_since IS NULL
+              AND fingerprint IS NOT NULL
+            """,
+            (spec.src_root, spec.src_relpath),
+        ).fetchone()
+        if item is None:
+            raise PlanError(f"source not ready: {spec.src_root}:{spec.src_relpath}")
+        item_id, fingerprint = item["id"], item["fingerprint"]
     _validate_dest_root(spec.dest_root)
     validate_dest(_root_path(settings, spec.dest_root), spec.dest_relpath)
     cursor = conn.execute(
@@ -83,10 +105,10 @@ def add_plan_op(
             plan_id,
             seq,
             spec.op_type,
-            item["id"],
+            item_id,
             spec.src_root,
             spec.src_relpath,
-            item["fingerprint"],
+            fingerprint,
             spec.dest_root,
             spec.dest_relpath,
         ),
@@ -172,12 +194,29 @@ def _approval_errors(conn: sqlite3.Connection, plan_id: str, settings: Settings)
         source = (row["src_root"], row["src_relpath"])
         dest = (row["dest_root"], row["dest_relpath"])
         prefix = f"op {row['seq']}:"
-        item = conn.execute(
-            "SELECT id FROM items WHERE root=? AND relpath=? AND missing_since IS NULL",
-            source,
-        ).fetchone()
-        if item is None:
-            errors.append(f"{prefix} source is missing: {source[0]}:{source[1]}")
+        if is_optimization_source(row["src_root"]):
+            # No item row, by construction. The whole authorization chain runs
+            # instead — plan -> job -> canonical output -> recorded hash ->
+            # this operation -> the bytes on disk — and it runs here, at
+            # approval, so a plan that could never execute is never approved.
+            try:
+                resolve_optimization_source(
+                    conn,
+                    settings,
+                    plan_id=plan_id,
+                    src_relpath=row["src_relpath"],
+                    src_fingerprint=row["src_fingerprint"],
+                    dest_root=row["dest_root"],
+                )
+            except SourceRefused as exc:
+                errors.append(f"{prefix} {exc}")
+        else:
+            item = conn.execute(
+                "SELECT id FROM items WHERE root=? AND relpath=? AND missing_since IS NULL",
+                source,
+            ).fetchone()
+            if item is None:
+                errors.append(f"{prefix} source is missing: {source[0]}:{source[1]}")
         if source in seen_sources:
             errors.append(f"{prefix} duplicate source: {source[0]}:{source[1]}")
         seen_sources.add(source)

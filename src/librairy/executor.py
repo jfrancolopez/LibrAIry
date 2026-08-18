@@ -16,6 +16,12 @@ from librairy.config import Settings
 from librairy.fingerprint import blake2b_file
 from librairy.lifecycle import assert_transition
 from librairy.locks import acquire_lock
+from librairy.optimization_adopt import record_result_item
+from librairy.optimization_source import (
+    SourceRefused,
+    is_optimization_source,
+    resolve_optimization_source,
+)
 from librairy.paths import resolve_collision, validate_dest, validate_relpath
 from librairy.planner import compute_plan_hash, utc_now
 from librairy.quarantine import record_quarantine_entry
@@ -170,6 +176,8 @@ def _incoherent_ops(rows: list[sqlite3.Row], settings: Settings) -> dict[int, st
 
 
 def _execute_op(conn: sqlite3.Connection, row: sqlite3.Row, settings: Settings) -> str:
+    if is_optimization_source(row["src_root"]):
+        return _execute_adoption_op(conn, row, settings)
     src = validate_relpath(_root_path(settings, row["src_root"]), row["src_relpath"], kind="source")
     if not src.exists():
         _finish_op(conn, row["id"], "skipped_missing", None)
@@ -182,6 +190,13 @@ def _execute_op(conn: sqlite3.Connection, row: sqlite3.Row, settings: Settings) 
         return "skipped_changed"
 
     dest = validate_dest(_root_path(settings, row["dest_root"]), row["dest_relpath"])
+    if _is_adoption_plan(conn, row["plan_id"]) and dest.exists():
+        # An adoption never renumbers. See `_execute_adoption_op` for why; the
+        # preserved original is held to the same rule, because a preserved
+        # `concert (2).wav` is not what the person approved either.
+        _finish_op(conn, row["id"], "refused_collision", None)
+        _journal(conn, row, row["dest_relpath"], row["src_fingerprint"], "refused_collision")
+        return "refused_collision"
     final_dest = resolve_collision(dest)
     final_dest.parent.mkdir(parents=True, exist_ok=True)
     _move_verified(src, final_dest, row["src_fingerprint"], row["plan_id"])
@@ -212,6 +227,94 @@ def _execute_op(conn: sqlite3.Connection, row: sqlite3.Row, settings: Settings) 
     if row["op_type"] == "quarantine":
         record_quarantine_entry(conn, row)
     return result
+
+
+# --- adoption: the one source that is not a root -----------------------------------
+
+
+def _is_adoption_plan(conn: sqlite3.Connection, plan_id: str) -> bool:
+    row = conn.execute(
+        "SELECT optimization_job_id FROM plans WHERE id=?", (plan_id,)
+    ).fetchone()
+    return row is not None and row["optimization_job_id"] is not None
+
+
+def _execute_adoption_op(
+    conn: sqlite3.Connection, row: sqlite3.Row, settings: Settings
+) -> str:
+    """Move a verified encoder output into the library.
+
+    Deliberately not the generic path. `_root_path` does not know the
+    `optimization` namespace and must not learn it — resolving it there would
+    make it a destination too, and then any plan could move any file into the
+    encoder's workspace. Instead the source is resolved by the job that
+    produced it, through every check in `optimization_source`.
+
+    Two other differences from an ordinary move, both of which are the point:
+
+    - **no collision resolution.** `resolve_collision` renumbering an import to
+      `photo (2).jpg` is right; `concert (2).flac` sitting beside the
+      `concert.wav` it was supposed to replace is not. An occupied destination
+      means a fact changed since the plan was approved, and the honest answer
+      is to stop.
+    - **the item row is created here**, because there is not one to move. The
+      generated file has no `items` row while it is in staging, and could not
+      have one: `items.root` is CHECK-constrained to the three user roots.
+    """
+    try:
+        resolved = resolve_optimization_source(
+            conn,
+            settings,
+            plan_id=row["plan_id"],
+            src_relpath=row["src_relpath"],
+            src_fingerprint=row["src_fingerprint"],
+            dest_root=row["dest_root"],
+        )
+    except SourceRefused as exc:
+        _finish_op(conn, row["id"], "refused_source", None)
+        _journal(
+            conn, row, row["dest_relpath"], row["src_fingerprint"],
+            f"refused_source {exc.code}",
+        )
+        return "refused_source"
+
+    dest = validate_dest(_root_path(settings, row["dest_root"]), row["dest_relpath"])
+    if dest.exists():
+        _finish_op(conn, row["id"], "refused_collision", None)
+        _journal(
+            conn, row, row["dest_relpath"], row["src_fingerprint"], "refused_collision"
+        )
+        return "refused_collision"
+
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    _move_verified(resolved.path, dest, resolved.fingerprint, row["plan_id"])
+    if settings.normalize_attributes:
+        normalize_placed_file(
+            dest,
+            file_mode=parse_mode(settings.file_mode),
+            dir_mode=parse_mode(settings.dir_mode),
+        )
+    dest_root = _root_path(settings, row["dest_root"]).resolve()
+    final_relpath = dest.relative_to(dest_root).as_posix()
+    _finish_op(conn, row["id"], "done", final_relpath)
+    _journal(conn, row, final_relpath, resolved.fingerprint, "ok")
+
+    # Settlement, through the one helper that owns result items. Everything it
+    # records is read from the file that is actually there.
+    item_id = record_result_item(
+        conn, settings, relpath=final_relpath, job_id=resolved.job_id
+    )
+    conn.execute(
+        "UPDATE plan_ops SET item_id=? WHERE id=?", (item_id, row["id"])
+    )
+    enqueue_backup_item(
+        conn,
+        settings,
+        item_id=item_id,
+        relpath=final_relpath,
+        fingerprint=resolved.fingerprint,
+    )
+    return "done"
 
 
 def _move_verified(src: Path, dest: Path, fingerprint: str, plan_id: str) -> None:
