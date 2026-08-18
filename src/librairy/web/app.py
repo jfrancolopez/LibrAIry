@@ -1279,6 +1279,55 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             view="waiting",
         )
 
+    @app.post("/quarantine/restore-original/{entry_id}", response_class=HTMLResponse)
+    def quarantine_restore_original(request: Request, entry_id: int) -> HTMLResponse:
+        """Put back a file that was preserved when an optimized version was
+        adopted — by undoing that adoption, which is what it actually means.
+
+        Not generic Restore. Generic Restore moves one file and leaves the
+        other where it is, so the library would end up with both the original
+        and the optimized copy and a job still believing it had been adopted.
+        Undo moves both, in the order that keeps the same-path case safe, with
+        hashes checked on the way.
+
+        Unlike the other quarantine actions this happens now rather than at
+        Commit: it is a reversal of something already committed, which is what
+        History's Undo is, and routing it through Commit would mean approving a
+        plan to undo a plan.
+        """
+        from librairy.history import undo_plan
+        from librairy.quarantine import is_preserved_original
+
+        entry = conn.execute(
+            "SELECT * FROM quarantine_entries WHERE id=?", (entry_id,)
+        ).fetchone()
+        if entry is None or not is_preserved_original(entry):
+            return _quarantine_page(
+                request, "That is not a preserved original.", status_code=409
+            )
+        plan_id = conn.execute(
+            "SELECT id FROM plans WHERE optimization_job_id=? AND status='done'"
+            " ORDER BY finished_at DESC LIMIT 1",
+            (int(entry["optimization_job_id"]),),
+        ).fetchone()
+        if plan_id is None:
+            return _quarantine_page(
+                request,
+                "LibrAIry cannot find the optimization that preserved this file.",
+                status_code=409,
+            )
+        results = undo_plan(conn, plan_id["id"], settings)
+        if any(result.outcome != "ok" for result in results):
+            return _quarantine_page(
+                request,
+                "The original could not be put back. See History for what happened.",
+                status_code=409,
+            )
+        return _quarantine_page(
+            request, "The original is back in the library, and the optimized copy "
+            "is waiting for review again.", view="held",
+        )
+
     @app.post("/quarantine/cancel/{entry_id}", response_class=HTMLResponse)
     def quarantine_cancel(request: Request, entry_id: int) -> HTMLResponse:
         """Take the decision back. Not called Undo: nothing has moved."""

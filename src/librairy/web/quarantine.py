@@ -9,9 +9,12 @@ from librairy.lifecycle import LifecycleError, assert_transition, transition_ite
 from librairy.planner import utc_now
 from librairy.quarantine import (
     DELETE_PILE,
+    PRESERVED_ORIGINAL,
     QuarantineError,
+    is_preserved_original,
     mark_entry_for_deletion,
     marked_for_deletion,
+    quarantine_effective_reason,
     restore_entry,
 )
 from librairy.web.evidence import humanize_evidence
@@ -24,6 +27,11 @@ REASONS = {
     "exact_duplicate": "byte-for-byte copy of a file you already have",
     "similar_media": "close enough to something you already have to be worth a look",
     "user": "you said you did not want it",
+    #  Not a value the column can hold — its CHECK allows the three above and
+    #  SQLite cannot widen a CHECK. `quarantine_effective_reason` derives it
+    #  from the optimization job the entry is linked to, so the page and every
+    #  non-UI consumer read the same answer from the same function.
+    PRESERVED_ORIGINAL: "preserved when an optimized version was adopted",
 }
 UNWANTED = "you sent it here from Review"
 
@@ -32,6 +40,7 @@ REASON_TAGS = {
     "exact_duplicate": "duplicate",
     "similar_media": "similar",
     "user": "you sent it here",
+    PRESERVED_ORIGINAL: "preserved original",
 }
 
 
@@ -335,8 +344,16 @@ def _entries(
     return [
         {
             **dict(row),
-            "reason_text": reason_text(row["reason"]),
-            "reason_tag": REASON_TAGS.get(str(row["reason"] or ""), "set aside"),
+            "reason_text": reason_text(quarantine_effective_reason(row)),
+            "reason_tag": REASON_TAGS.get(
+                quarantine_effective_reason(row), "set aside"
+            ),
+            #  A preserved original is not a rejection, and the two controls it
+            #  gets are not the generic ones. Restore means undo the adoption;
+            #  the delete queue is withheld until disposal is designed against
+            #  Undo rather than around it.
+            "preserved_original": is_preserved_original(row),
+            "active_version": _active_version(conn, row),
             "marked": marked_for_deletion(row["item_relpath"]),
             "size_label": human_size(row["item_size"]),
             # The name is what identifies the row; the path is detail. Both
@@ -346,11 +363,28 @@ def _entries(
             "request": requests.get(int(row["id"])),
             # Whether Restore can be offered at all. A control that can only
             # produce an error is worse than no control.
-            "restorable": bool(row["original_root"] and row["original_relpath"]),
+            "restorable": bool(row["original_root"] and row["original_relpath"])
+            and not is_preserved_original(row),
             "gone": row["item_relpath"] is None or row["item_state"] == "missing",
         }
         for row in rows
     ]
+
+
+def _active_version(conn: sqlite3.Connection, row) -> str:
+    """Which file replaced this one, for a preserved original. Empty otherwise.
+
+    The question a person actually has in front of a preserved original is
+    "then what am I listening to now", and the answer is one join away.
+    """
+    if not is_preserved_original(row):
+        return ""
+    result = conn.execute(
+        "SELECT i.relpath FROM optimization_jobs j JOIN items i ON i.id = j.result_item_id"
+        " WHERE j.id=? AND i.missing_since IS NULL",
+        (int(row["optimization_job_id"]),),
+    ).fetchone()
+    return str(result["relpath"]) if result else ""
 
 
 def _basename(relpath: object) -> str:

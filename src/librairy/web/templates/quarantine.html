@@ -173,6 +173,13 @@
 
             <p class="qrow-why">{{ entry.reason_text|capitalize }}.</p>
 
+            {% if entry.preserved_original and entry.active_version %}
+              {# The question a person actually has in front of this row: then
+                 what am I listening to now. #}
+              <p class="qrow-why muted">Active version
+                <span class="mono">{{ entry.active_version }}</span></p>
+            {% endif %}
+
             {# Where it is, where it came from, and — once you have decided —
                where it is going. The same Current / After Commit shape the
                Commit page and Library Review use, so one glance answers the
@@ -227,6 +234,20 @@
                       <button type="submit">Cancel request</button>
                     </form>
                   {% endif %}
+                {% elif entry.preserved_original %}
+                  {# Not a rejection, so not the rejection controls. Restoring
+                     this means undoing the optimization that replaced it —
+                     the same two files, in the right order, hashes checked —
+                     so the button goes there rather than to generic Restore,
+                     which would put the original back beside the copy and
+                     leave the job believing it had been adopted.
+
+                     No Delete queue. Moving this file changes the exact path
+                     that Undo expects to find it at. #}
+                  <form method="post" action="/quarantine/restore-original/{{ entry.id }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <button type="submit">Restore original</button>
+                  </form>
                 {% elif not entry.restored_at and not entry.gone %}
                   {% if entry.restorable %}
                     <form method="post" action="/quarantine/restore/{{ entry.id }}">

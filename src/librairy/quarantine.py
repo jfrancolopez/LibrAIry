@@ -67,12 +67,25 @@ def quarantine_reason(conn: sqlite3.Connection, item_id: int) -> str:
     return "exact_duplicate" if "exact duplicate of" in evidence else "user"
 
 
+#  What a preserved original is, said as a value rather than as a `reason`.
+#  `quarantine_entries.reason` is CHECK-constrained to three strings and SQLite
+#  cannot widen a CHECK, so the fourth kind is carried by the job link instead.
+PRESERVED_ORIGINAL = "preserved_original"
+
+
 def record_quarantine_entry(conn: sqlite3.Connection, op: sqlite3.Row) -> None:
+    #  An adoption's first operation preserves an original; it is not a
+    #  rejection. The link is what says so — see `quarantine_effective_reason`.
+    plan = conn.execute(
+        "SELECT optimization_job_id FROM plans WHERE id=?", (op["plan_id"],)
+    ).fetchone()
+    job_id = plan["optimization_job_id"] if plan is not None else None
     conn.execute(
         """
         INSERT INTO quarantine_entries(
-          item_id, reason, duplicate_of, original_root, original_relpath, quarantined_at, plan_id
-        ) VALUES (?, ?, NULL, ?, ?, ?, ?)
+          item_id, reason, duplicate_of, original_root, original_relpath,
+          quarantined_at, plan_id, optimization_job_id
+        ) VALUES (?, ?, NULL, ?, ?, ?, ?, ?)
         """,
         (
             op["item_id"],
@@ -81,8 +94,36 @@ def record_quarantine_entry(conn: sqlite3.Connection, op: sqlite3.Row) -> None:
             op["src_relpath"],
             utc_now(),
             op["plan_id"],
+            job_id,
         ),
     )
+
+
+def quarantine_effective_reason(entry) -> str:
+    """Why this file is really here, which is not always what `reason` says.
+
+    A file preserved by an adoption has no proposal behind it, so
+    `quarantine_reason` falls through to `user` — and `user` is rendered
+    everywhere as "you said you did not want it", which is the exact opposite
+    of what happened. The person asked for a smaller copy and LibrAIry kept the
+    original for them.
+
+    The stored column cannot say so: its CHECK allows three values and SQLite
+    cannot widen a CHECK. So the truth lives in the job link, and this is the
+    one place that reads it — for the badge, for the sentence, for restore
+    eligibility and for the delete queue alike, so none of them can disagree.
+    """
+    try:
+        job_id = entry["optimization_job_id"]
+    except (KeyError, IndexError):
+        job_id = None
+    if job_id is not None:
+        return PRESERVED_ORIGINAL
+    return str(entry["reason"] or "")
+
+
+def is_preserved_original(entry) -> bool:
+    return quarantine_effective_reason(entry) == PRESERVED_ORIGINAL
 
 
 def list_quarantine_entries(conn: sqlite3.Connection) -> list[sqlite3.Row]:
@@ -104,6 +145,17 @@ def _restore_entry_unlocked(
     entry = conn.execute("SELECT * FROM quarantine_entries WHERE id=?", (entry_id,)).fetchone()
     if entry is None:
         raise QuarantineError(f"quarantine entry not found: {entry_id}")
+    if is_preserved_original(entry):
+        # Generic Restore would put the original back beside the optimized copy
+        # and leave the job believing it was adopted — two files where the
+        # person asked for one, and a result item claiming to be the live
+        # version of a recording that is no longer being replaced. Restoring a
+        # preserved original means undoing the adoption, and Undo already knows
+        # how to do that in the right order, with hashes checked.
+        raise QuarantineError(
+            "this is a preserved original; restore it by undoing the "
+            "optimization that replaced it"
+        )
     if entry["restored_at"] is not None:
         return RestoreResult(entry_id, "already_restored")
     item = conn.execute("SELECT * FROM items WHERE id=?", (entry["item_id"],)).fetchone()
@@ -183,6 +235,16 @@ def _mark_entry_unlocked(
     entry = conn.execute("SELECT * FROM quarantine_entries WHERE id=?", (entry_id,)).fetchone()
     if entry is None:
         raise QuarantineError(f"quarantine entry not found: {entry_id}")
+    if is_preserved_original(entry):
+        # Withheld deliberately for now. Moving a preserved original into the
+        # delete pile changes the exact quarantine path the adoption's Undo
+        # expects to find it at, so Undo would afterwards either refuse or
+        # restore from a location nothing recorded. Restore-through-Undo ships
+        # first; disposal gets designed after it rather than around it.
+        raise QuarantineError(
+            "a preserved original cannot be queued for deletion yet; undo the "
+            "optimization first if you no longer want it"
+        )
     if entry["restored_at"] is not None:
         return RestoreResult(entry_id, "already_restored")
     item = conn.execute("SELECT * FROM items WHERE id=?", (entry["item_id"],)).fetchone()

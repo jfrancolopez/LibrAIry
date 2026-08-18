@@ -38,7 +38,12 @@ from librairy.correction_state import ACTIVE_PLAN_STATUSES
 from librairy.fingerprint import blake2b_file
 from librairy.paths import validate_relpath
 from librairy.planner import OperationSpec, approve_plan, create_plan, utc_now
-from librairy.quarantine import DELETE_PILE, QuarantineError, marked_for_deletion
+from librairy.quarantine import (
+    DELETE_PILE,
+    QuarantineError,
+    is_preserved_original,
+    marked_for_deletion,
+)
 
 # What the user chose, derived from where the plan points rather than stored a
 # second time. Two columns that both claim to say what a decision was can
@@ -172,6 +177,16 @@ def _request(
     guarantee, and the same request can arrive from a stale page or from curl.
     """
     entry, item = _entry_and_item(conn, entry_id)
+    if is_preserved_original(entry):
+        # One door, checked here rather than only where the button is drawn: a
+        # button that is not drawn is not a safety guarantee, and this request
+        # can arrive from a stale page or from curl. A preserved original is
+        # not restored and not queued for deletion — it is un-adopted, which
+        # moves two files in an order only Undo knows.
+        raise QuarantineError(
+            "this is a preserved original; use Restore original, which undoes "
+            "the optimization that replaced it"
+        )
     if pending_request(conn, entry_id) is not None:
         raise QuarantineError("a decision on this file is already waiting for Commit")
     source = validate_relpath(settings.quarantine_dir, item["relpath"], kind="source")
