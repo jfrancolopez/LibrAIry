@@ -347,7 +347,12 @@ def test_the_module_writes_to_no_byte_specific_table(scene) -> None:
     written = {table.lower() for _, table in statements}
 
     assert written & set(NEVER_CARRIED) == set(), written & set(NEVER_CARRIED)
-    assert written <= {"items", "optimization_jobs"}, written
+    assert written <= {
+        "items", "optimization_jobs",
+        # The planner half: a plan, its operations, and the record kept when
+        # an approval is taken back. None of them carry anything forward.
+        "plans", "plan_ops", "plan_withdrawals",
+    }, written
 
 
 def test_there_is_no_bulk_carry_forward_anywhere_in_adoption() -> None:
@@ -356,4 +361,6 @@ def test_there_is_no_bulk_carry_forward_anywhere_in_adoption() -> None:
     source = Path("src/librairy/optimization_adopt.py").read_text(encoding="utf-8")
 
     assert not re.search(r"INSERT\s+INTO\s+\w+\s*(\([^)]*\))?\s*SELECT", source, re.I)
-    assert "SELECT *" not in source
+    # `SELECT * FROM plans` is a lookup, not a carry-forward. The shape that
+    # would start copying an unclassified table is one that reads `items`.
+    assert not re.search(r"SELECT\s+\*\s+FROM\s+items", source, re.I)

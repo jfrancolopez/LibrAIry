@@ -280,6 +280,46 @@ across a re-run safe: every byte-specific fact is either absent or re-derived.
 module's own SQL to prove it writes to nothing but `items` and
 `optimization_jobs`.
 
+## The revision the same-path case forced
+
+This document said the dormant result row would keep the library path it used
+to hold. Writing the HEVC case proved that cannot be true for all three shapes,
+and the reason is a constraint rather than a preference.
+
+`PRESET_SUFFIX` decides which shape an optimization is:
+
+    flac-lossless    .flac
+    mp4-stream-copy  .mp4
+    hevc-1080p-low   .mp4
+
+So an H.264 **MP4** re-encoded to HEVC comes back as an MP4 and lands on its
+own path — `Movies/film.mp4` -> `Movies/film.mp4`. (An MKV source does not:
+it comes out `.mp4`, an ordinary extension change. The same-path case is real,
+and it is narrower than it first looks.)
+
+On Undo the original returns to that path while the dormant result row is still
+claiming it:
+
+    UNIQUE constraint failed: items.root, items.relpath
+
+`UNIQUE (root, relpath)` is a **table constraint** on `items`, so SQLite cannot
+alter it, and rebuilding `items` means dropping a table fifteen foreign keys
+point into — the third time this wall has decided a design here.
+
+**The row yields the path.** `root` stays `library`, `missing_since` is set as
+before, and `relpath` is parked at `_optimization/<job-id>/<former relpath>` —
+the former path kept inside the parked one, so lineage still reads, and the
+`_` prefix following the convention `_to-delete` and `_librairy` already use.
+
+It is the more honest record anyway. There is no file at
+`Music/Live/concert.flac` while the copy is in staging, and a row saying there
+is one is exactly what this pass set out to prevent.
+
+One consequence, and it is an improvement: `record_result_item` and
+`retire_result_item` now find the row through `optimization_jobs.result_item_id`
+rather than by path. The job is what knows which row its output became; a path
+lookup agreed with it only by coincidence.
+
 ## The two questions C still leaves open
 1. **Collision must refuse, not renumber.** `resolve_collision` auto-numbers,
    which is right for an unrelated import and wrong here: `concert-2.flac`

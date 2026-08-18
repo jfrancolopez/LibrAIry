@@ -17,6 +17,7 @@ from librairy.fingerprint import blake2b_file
 from librairy.lifecycle import assert_transition
 from librairy.locks import acquire_lock
 from librairy.optimization_adopt import record_result_item
+from librairy.optimization_preflight import target_is_clear
 from librairy.optimization_source import (
     SourceRefused,
     is_optimization_source,
@@ -27,7 +28,18 @@ from librairy.planner import compute_plan_hash, utc_now
 from librairy.quarantine import record_quarantine_entry
 from librairy.search import sync_search_item
 
-TERMINAL_RESULTS = {"done", "skipped_changed", "skipped_missing", "renamed_collision", "failed"}
+TERMINAL_RESULTS = {
+    "done",
+    "skipped_changed",
+    "skipped_missing",
+    "renamed_collision",
+    "failed",
+    # An adoption that was refused stays refused. Re-running the same
+    # plan cannot help: the plan is immutable and the fact that changed
+    # under it has not changed back.
+    "refused_source",
+    "refused_collision",
+}
 LOGGER = logging.getLogger(__name__)
 
 
@@ -43,10 +55,23 @@ class ExecutionSummary:
     skipped_missing: int = 0
     renamed_collision: int = 0
     failed: int = 0
+    #  Adoption only. An operation that was stopped before it touched anything,
+    #  because a fact it depended on had changed since approval.
+    refused_source: int = 0
+    refused_collision: int = 0
+
+    @property
+    def refused(self) -> int:
+        return self.refused_source + self.refused_collision
 
     @property
     def partial(self) -> bool:
-        return self.skipped_changed > 0 or self.skipped_missing > 0 or self.failed > 0
+        return (
+            self.skipped_changed > 0
+            or self.skipped_missing > 0
+            or self.failed > 0
+            or self.refused > 0
+        )
 
 
 def execute_plan(conn: sqlite3.Connection, plan_id: str, settings: Settings) -> ExecutionSummary:
@@ -88,6 +113,13 @@ def _execute_plan_unlocked(
         "skipped_missing": 0,
         "renamed_collision": 0,
         "failed": 0,
+        # Adoption's two refusals. Both mean "a fact changed since this plan
+        # was approved", and both are failures rather than skips: an adoption
+        # that placed the original in quarantine and then could not file the
+        # optimized copy has left a gap, and calling that a skip would be a
+        # cheerful word for a library with a hole in it.
+        "refused_source": 0,
+        "refused_collision": 0,
     }
     rows = conn.execute(
         "SELECT * FROM plan_ops WHERE plan_id=? ORDER BY seq",
@@ -105,6 +137,25 @@ def _execute_plan_unlocked(
                 _finish_op(conn, row["id"], blocked[row["id"]], None)
                 _journal(conn, row, row["dest_relpath"], row["src_fingerprint"], blocked[row["id"]])
                 counts[blocked[row["id"]]] += 1
+            conn.execute(
+                "UPDATE plans SET status='failed', finished_at=? WHERE id=?",
+                (utc_now(), plan_id),
+            )
+            return ExecutionSummary(plan_id, **counts)
+    if plan["optimization_job_id"] is not None:
+        # Asked before the first operation, so the ordinary answer to "somebody
+        # dropped a file at the destination since approval" is that nothing
+        # moved at all, rather than that the original went to quarantine and
+        # came back.
+        occupied = target_is_clear(conn, settings, plan_id)
+        if occupied is not None:
+            for row in rows:
+                _finish_op(conn, row["id"], "refused_collision", None)
+                _journal(
+                    conn, row, row["dest_relpath"], row["src_fingerprint"],
+                    f"refused_collision {occupied.code}",
+                )
+                counts["refused_collision"] += 1
             conn.execute(
                 "UPDATE plans SET status='failed', finished_at=? WHERE id=?",
                 (utc_now(), plan_id),
@@ -132,10 +183,20 @@ def _execute_plan_unlocked(
         )
         counts[result] += 1
         _test_pause_after_op()
+        if result != "done" and plan["optimization_job_id"] is not None:
+            # An adoption is one decision, not two independent moves. If the
+            # second half cannot happen, the first half must not stand — and
+            # nothing after it may run either.
+            _compensate_adoption(conn, plan_id, settings)
+            break
 
     final_status = (
         "failed"
-        if counts["failed"] or counts["skipped_changed"] or counts["skipped_missing"]
+        if counts["failed"]
+        or counts["skipped_changed"]
+        or counts["skipped_missing"]
+        or counts["refused_source"]
+        or counts["refused_collision"]
         else "done"
     )
     conn.execute(
@@ -143,6 +204,69 @@ def _execute_plan_unlocked(
         (final_status, utc_now(), plan_id),
     )
     return ExecutionSummary(plan_id, **counts)
+
+
+def _compensate_adoption(
+    conn: sqlite3.Connection, plan_id: str, settings: Settings
+) -> None:
+    """Put back whatever this adoption already moved. Here, not in History.
+
+    Reuses `undo_op` rather than growing a second reversal routine: it is
+    hash-verified, it journals what it did, and it already knows how to put an
+    adopted file back in its job's staging directory. Reversing in `id DESC`
+    order is what makes the same-path case safe — the optimized copy leaves the
+    library slot before the original comes back into it.
+
+    "Go to History and undo the half-finished plan" is not a recovery
+    mechanism. It is a thing to tell somebody after their library already has a
+    gap in it, and by then they have to know a gap exists.
+
+    The lock is already held by `execute_plan`, so the unlocked form is called
+    directly; `undo_op` would deadlock.
+    """
+    from librairy.history import _undo_op_unlocked
+
+    done = conn.execute(
+        "SELECT * FROM history WHERE plan_id=? AND outcome='ok' ORDER BY id DESC",
+        (plan_id,),
+    ).fetchall()
+    for entry in done:
+        try:
+            result = _undo_op_unlocked(conn, entry["id"], settings)
+            outcome = result.outcome
+        except Exception as exc:  # noqa: BLE001 - reported, never swallowed
+            outcome = f"error {exc}"
+        if outcome == "ok":
+            continue
+        # Rare, and the application must not hide it. Recorded where History
+        # already looks, in relative terms, with the hash somebody would need
+        # to check the file by hand.
+        LOGGER.error(
+            "adoption compensation failed plan=%s entry=%s outcome=%s",
+            plan_id, entry["id"], outcome,
+        )
+        conn.execute(
+            """
+            INSERT INTO history(
+              ts, plan_id, op_id, action, src_root, src_relpath, dest_root,
+              dest_relpath, fingerprint, outcome
+            ) VALUES (?, ?, ?, 'adoption_recovery', ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                utc_now(),
+                plan_id,
+                entry["op_id"],
+                entry["dest_root"],
+                entry["dest_relpath"],
+                entry["src_root"],
+                entry["src_relpath"],
+                entry["fingerprint"],
+                f"recovery_required {outcome}",
+            ),
+        )
+        # Nothing further is attempted. Another reversal on top of a failed one
+        # is how a bad situation becomes an unreadable one.
+        return
 
 
 def _incoherent_ops(rows: list[sqlite3.Row], settings: Settings) -> dict[int, str]:

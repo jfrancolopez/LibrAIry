@@ -54,6 +54,7 @@ from pathlib import Path
 
 from librairy.config import Settings
 from librairy.fingerprint import blake2b_file
+from librairy.optimization_source import OPTIMIZATION_ROOT
 from librairy.planner import utc_now
 from librairy.search import sync_search_item
 
@@ -140,19 +141,24 @@ def record_result_item(
     fingerprint = blake2b_file(path)
     now = utc_now()
 
+    # Found through the job, not through the path. The job is what knows which
+    # row its output became; a path lookup would only agree with it by
+    # coincidence, and in the same-path case the path is briefly the original's.
     existing = conn.execute(
-        "SELECT id FROM items WHERE root='library' AND relpath=?", (relpath,)
+        "SELECT i.id FROM optimization_jobs j JOIN items i ON i.id = j.result_item_id"
+        " WHERE j.id=?",
+        (int(job_id),),
     ).fetchone()
     if existing is not None:
         conn.execute(
             """
             UPDATE items
-            SET size=?, mtime_ns=?, fingerprint=?, state=?, last_seen_at=?,
-                missing_since=NULL
+            SET relpath=?, size=?, mtime_ns=?, fingerprint=?, state=?,
+                last_seen_at=?, missing_since=NULL
             WHERE id=?
             """,
-            (stat.st_size, stat.st_mtime_ns, fingerprint, RESULT_STATE, now,
-             existing["id"]),
+            (relpath, stat.st_size, stat.st_mtime_ns, fingerprint, RESULT_STATE,
+             now, existing["id"]),
         )
         item_id = int(existing["id"])
     else:
@@ -179,24 +185,61 @@ def record_result_item(
     return item_id
 
 
+def parked_relpath(job_id: int, relpath: str) -> str:
+    """Where a dormant result row's `relpath` points while its file is away.
+
+    The architecture record said the row would keep the library path it used to
+    hold. Writing the same-path case proved that cannot be true for all three
+    shapes, and the reason is a constraint, not a preference:
+
+        CREATE TABLE items (... UNIQUE (root, relpath));
+
+    An HEVC re-encode of an MP4 produces an MP4, so the optimized copy lands on
+    the original's own path. On Undo the original comes back to that path while
+    the dormant row is still claiming it, and SQLite says so:
+
+        UNIQUE constraint failed: items.root, items.relpath
+
+    It is a table constraint, which SQLite cannot alter, and rebuilding `items`
+    means dropping a table fifteen foreign keys point into — the same wall that
+    blocked a fourth root and a `withdrawn` plan status. So the row yields the
+    path, which is the honest answer anyway: there is no file at
+    `Music/Live/concert.flac` while the copy is in staging, and a row saying
+    there is was the thing this whole audit set out to prevent.
+
+    The former path is kept inside the parked one rather than thrown away, so
+    lineage still reads. The `_` prefix is the convention the delete pile and
+    the backup snapshot already use for names that are not user media.
+    """
+    return f"_optimization/{int(job_id)}/{relpath}"
+
+
 def retire_result_item(
     conn: sqlite3.Connection, *, relpath: str, job_id: int
 ) -> int | None:
     """Undo has taken the optimized file back to staging. The row cannot follow.
 
-    Marked missing, never deleted and never moved — see the module docstring
-    for why neither is available. Search excludes it immediately, so there is
-    no phantom library file left behind claiming to be the live one.
+    Marked missing, never deleted and never moved to another root — see the
+    module docstring for why neither is available — and parked off the library
+    path it was holding, for the reason `parked_relpath` records. Search
+    excludes it immediately, so there is no phantom library file claiming to be
+    the live one.
     """
     row = conn.execute(
-        "SELECT id FROM items WHERE root='library' AND relpath=?", (relpath,)
+        "SELECT i.id FROM optimization_jobs j JOIN items i ON i.id = j.result_item_id"
+        " WHERE j.id=?",
+        (int(job_id),),
     ).fetchone()
+    if row is None:
+        row = conn.execute(
+            "SELECT id FROM items WHERE root='library' AND relpath=?", (relpath,)
+        ).fetchone()
     if row is None:
         return None
     item_id = int(row["id"])
     conn.execute(
-        "UPDATE items SET missing_since=?, last_seen_at=? WHERE id=?",
-        (utc_now(), utc_now(), item_id),
+        "UPDATE items SET relpath=?, missing_since=?, last_seen_at=? WHERE id=?",
+        (parked_relpath(job_id, relpath), utc_now(), utc_now(), item_id),
     )
     conn.execute(
         "UPDATE optimization_jobs SET updated_at=? WHERE id=?", (utc_now(), job_id)
@@ -218,3 +261,120 @@ def target_relpath(original_relpath: str, output_name: str) -> str:
     if not suffix:
         raise AdoptionError("the optimized output has no file extension")
     return original.with_suffix(suffix).as_posix()
+
+
+def plan_adoption(
+    conn: sqlite3.Connection, settings: Settings, job_id: int
+) -> str | object:
+    """One decision, two operations, no filesystem move.
+
+    Returns the approved plan's id, or the preflight `Refusal` that stopped it.
+    Nothing here computes a path: every value comes from `adoption_preflight`,
+    so what was checked and what the plan does cannot drift apart.
+
+        op 1  library/<original>      -> quarantine/<same relpath>   preserve
+        op 2  optimization/<job>/<out> -> library/<target>            adopt
+
+    The order is the whole reason the same-path HEVC case works. Operation 1
+    takes `Movies/film.mkv` out of the library before operation 2 puts the new
+    `Movies/film.mkv` in, and `undo_plan` reverses in `id DESC`, which is
+    exactly the inverse — so neither direction ever has two files wanting one
+    path.
+
+    The plan is approved here rather than left as a draft. Approval is what
+    runs the closed resolver over operation 2, and a draft adoption nobody
+    approved would be a second waiting state beside "waiting for Commit".
+    """
+    from librairy.db import transaction
+    from librairy.optimization_preflight import Refusal, adoption_preflight
+    from librairy.planner import OperationSpec, approve_plan, create_plan
+
+    checked = adoption_preflight(conn, settings, job_id)
+    if isinstance(checked, Refusal):
+        return checked
+
+    with transaction(conn):
+        plan_id = create_plan(
+            conn,
+            [
+                OperationSpec(
+                    "quarantine",
+                    checked.original_relpath,
+                    "quarantine",
+                    checked.preserved_relpath,
+                    src_root="library",
+                ),
+                OperationSpec(
+                    "move",
+                    checked.generated_relpath,
+                    "library",
+                    checked.target_relpath,
+                    src_root=OPTIMIZATION_ROOT,
+                    src_fingerprint=checked.generated_fingerprint,
+                ),
+            ],
+            settings,
+        )
+        conn.execute(
+            "UPDATE plans SET optimization_job_id=? WHERE id=?", (int(job_id), plan_id)
+        )
+        conn.execute(
+            "UPDATE plan_ops SET role='preserve' WHERE plan_id=? AND seq=1", (plan_id,)
+        )
+        conn.execute(
+            "UPDATE plan_ops SET role='adopt' WHERE plan_id=? AND seq=2", (plan_id,)
+        )
+        approve_plan(conn, plan_id, settings)
+    return plan_id
+
+
+def cancel_adoption(conn: sqlite3.Connection, plan_id: str) -> bool:
+    """Withdraw an approved adoption before Commit. Moves nothing.
+
+    Deliberately the same shape as `corrections.withdraw_approval`, and
+    deliberately not called Undo: Undo reverses files that moved, this reverses
+    a decision about files that did not. An approved plan is immutable, so it
+    is not mutated — it is withdrawn whole, which is safe precisely because
+    nothing executed. A plan with any executed operation is refused, so a
+    half-run commit can never be cancelled out of existence.
+
+    Removing the plan is what releases the job: the partial unique index, the
+    resolver and preflight all key off `status IN ('approved','executing')`, so
+    the moment the row is gone the optimization is offerable again.
+    """
+    from librairy.db import transaction
+
+    plan = conn.execute(
+        "SELECT * FROM plans WHERE id=?", (plan_id,)
+    ).fetchone()
+    if plan is None or plan["optimization_job_id"] is None:
+        return False
+    if plan["status"] != "approved":
+        return False
+    ops = conn.execute(
+        "SELECT * FROM plan_ops WHERE plan_id=? ORDER BY seq", (plan_id,)
+    ).fetchall()
+    if any(op["result"] is not None for op in ops):
+        return False
+
+    with transaction(conn):
+        # Written before the delete, while the hash and the approval time are
+        # still readable. One row describing one decision — never a claim that
+        # files moved.
+        conn.execute(
+            "INSERT INTO plan_withdrawals(plan_id, plan_hash, audit_finding_id,"
+            " relpath, dest_relpath, op_count, approved_at, withdrawn_at)"
+            " VALUES (?, ?, NULL, ?, ?, ?, ?, ?)",
+            (
+                plan_id,
+                plan["plan_hash"],
+                ops[0]["src_relpath"] if ops else "",
+                ops[-1]["dest_relpath"] if ops else None,
+                len(ops),
+                plan["approved_at"],
+                utc_now(),
+            ),
+        )
+        conn.execute("DELETE FROM plan_ops WHERE plan_id=?", (plan_id,))
+        conn.execute("DELETE FROM plans WHERE id=?", (plan_id,))
+    return True

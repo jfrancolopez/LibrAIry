@@ -119,13 +119,30 @@ def undone(scene):
 # --- the row is where the architecture says it is ---------------------------------
 
 
-def test_the_row_stays_at_the_library_path_and_is_marked_missing(undone) -> None:
+def test_the_row_is_marked_missing_and_parked_off_the_library_path(undone) -> None:
+    """The model as the same-path case forced it to be.
+
+    The row keeps `root='library'` — there is no other root it could hold — and
+    is marked missing. What it does not keep is the library path, because
+    `items` has `UNIQUE (root, relpath)` as a table constraint and an HEVC
+    re-encode of an MP4 lands the optimized copy on the original's own path.
+    On Undo the original comes back to that path while the dormant row is still
+    claiming it. The former path is kept inside the parked one, so lineage
+    still reads.
+    """
+    from librairy.optimization_adopt import parked_relpath
+
     conn, settings, _, result_id, job_id = undone
     row = conn.execute("SELECT * FROM items WHERE id=?", (result_id,)).fetchone()
 
     assert row["root"] == "library"
-    assert row["relpath"] == RESULT
     assert row["missing_since"] is not None
+    assert row["relpath"] == parked_relpath(job_id, RESULT) != RESULT
+    assert RESULT in row["relpath"]
+    # And the library path is free for the original to come back to.
+    assert conn.execute(
+        "SELECT COUNT(*) FROM items WHERE root='library' AND relpath=?", (RESULT,)
+    ).fetchone()[0] == 0
     # And the bytes are exactly where the job can find them again.
     staging = settings.appdata_dir / "optimization" / "jobs" / str(job_id)
     assert (staging / "output.flac").is_file()

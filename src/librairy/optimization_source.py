@@ -96,9 +96,6 @@ def resolve_optimization_source(
     before the expensive one — hashing the file is last, and only reached once
     the path is known to be the right one.
     """
-    from librairy.optimization_exec import PRESET_SUFFIX
-    from librairy.optimization_queue import job_staging_dir, staging_root
-
     # 1. This source form is only legal on a plan that names a job.
     plan = conn.execute("SELECT * FROM plans WHERE id=?", (plan_id,)).fetchone()
     if plan is None:
@@ -119,6 +116,59 @@ def resolve_optimization_source(
     ).fetchone()
     if job is None:
         raise SourceRefused("no_job", "the optimization job this plan names is gone")
+
+    resolved = job_output(conn, settings, int(job["id"]))
+
+    # 6. The operation must name that exact output, and carry that exact hash.
+    expected_relpath = f"{int(job['id'])}/{resolved.path.name}"
+    if src_relpath != expected_relpath:
+        raise SourceRefused(
+            "not_this_jobs_output",
+            "that is not the file this optimization produced",
+        )
+    if src_fingerprint != resolved.fingerprint:
+        raise SourceRefused(
+            "fingerprint_not_the_verified_one",
+            "this operation does not describe the verified output",
+        )
+
+    # 7. The destination has to be one adoption is allowed to write to.
+    if dest_root not in ADOPTION_DESTINATIONS:
+        raise SourceRefused(
+            "illegal_destination",
+            f"an optimized file may not be filed into {dest_root}",
+        )
+
+    # 8. Nobody else is already adopting this job's output.
+    other = conn.execute(
+        "SELECT id FROM plans WHERE optimization_job_id=? AND id != ?"
+        " AND status IN ('approved','executing')",
+        (int(job["id"]), plan_id),
+    ).fetchone()
+    if other is not None:
+        raise SourceRefused(
+            "already_being_adopted",
+            "another approved plan is already adopting this optimization",
+        )
+    return resolved
+
+
+def job_output(
+    conn: sqlite3.Connection, settings: Settings, job_id: int
+) -> ResolvedSource:
+    """The verified output of one job, or a refusal. No plan involved.
+
+    Everything here is about the job and its bytes, which is why preflight can
+    ask the same question before a plan exists and get the same answer.
+    """
+    from librairy.optimization_exec import PRESET_SUFFIX
+    from librairy.optimization_queue import job_staging_dir, staging_root
+
+    job = conn.execute(
+        "SELECT * FROM optimization_jobs WHERE id=?", (int(job_id),)
+    ).fetchone()
+    if job is None:
+        raise SourceRefused("no_job", "that optimization job is gone")
 
     # 3. It finished and it passed.
     if job["state"] not in ADOPTABLE_STATES:
@@ -151,38 +201,6 @@ def resolve_optimization_source(
         raise SourceRefused(
             "no_recorded_output_fingerprint",
             "that optimization has no recorded output fingerprint; run it again",
-        )
-
-    # 6. The operation must name that exact output, and carry that exact hash.
-    expected_relpath = f"{int(job['id'])}/{canonical_name}"
-    if src_relpath != expected_relpath:
-        raise SourceRefused(
-            "not_this_jobs_output",
-            "that is not the file this optimization produced",
-        )
-    if src_fingerprint != recorded:
-        raise SourceRefused(
-            "fingerprint_not_the_verified_one",
-            "this operation does not describe the verified output",
-        )
-
-    # 7. The destination has to be one adoption is allowed to write to.
-    if dest_root not in ADOPTION_DESTINATIONS:
-        raise SourceRefused(
-            "illegal_destination",
-            f"an optimized file may not be filed into {dest_root}",
-        )
-
-    # 8. Nobody else is already adopting this job's output.
-    other = conn.execute(
-        "SELECT id FROM plans WHERE optimization_job_id=? AND id != ?"
-        " AND status IN ('approved','executing')",
-        (int(job["id"]), plan_id),
-    ).fetchone()
-    if other is not None:
-        raise SourceRefused(
-            "already_being_adopted",
-            "another approved plan is already adopting this optimization",
         )
 
     # 9. The path, built from the job. Containment is not checked afterwards —
