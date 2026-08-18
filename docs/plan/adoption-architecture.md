@@ -215,6 +215,71 @@ Re-adoption reuses the same row rather than creating a second, so lineage
 survives and no foreign key churns. `scripts/prove_result_item_lifecycle.py`
 reproduces it.
 
+## What the result item inherits — every table, not a sample
+
+The previous pass answered "nothing" from a partial list. Checked against every
+table actually tied to an item, the answer is still nothing, and now it is a
+finding rather than a shortcut. `scripts/inventory_item_tables.py` derives the
+list from three sources, because no one of them is complete:
+
+1. declared foreign keys into `items.id` — twelve tables, fifteen columns
+2. tables created lazily at first use, which a PRAGMA on a fresh database does
+   not show — **`item_metadata`** and `library_patterns`
+3. `item_id` by convention with no FK possible — the two FTS shadows
+
+| Table | Kind | Carry | Why |
+|---|---|---|---|
+| `vision_results` | byte | no | Keyed by fingerprint. A caption computed from the WAV's bytes attached to the FLAC's bytes asserts something looked at bytes nothing looked at. |
+| `content_extractions` | byte | no | Keyed by fingerprint, same argument. |
+| `content_fts` | byte | no | The shadow of the above. |
+| `item_metadata` | byte | no | The ffprobe cache — codec, bitrate, duration, channels, sample format. Every field is a property of the encoding that just changed. |
+| `audit_findings` | byte | no | Statements about a specific file at a specific path. |
+| `duplicate_reports` | byte | no | A claim that two specific files are byte copies. |
+| `similar_media_flags` | byte | no | A scored claim about a pair of files. |
+| `optimization_opportunities` | byte | no | An offer to optimize specific bytes. The result is the output of one, not a candidate for another. |
+| `backup_queue` | byte | no | A request to copy specific bytes. The executor makes one for whatever lands in the library. |
+| `proposals` | neither | no | An inbox-review decision. The result is already filed at the destination it produced. |
+| `groups` | neither | no | Reached only through `proposals.group_id`. |
+| `plan_ops` | neither | historic | The journal. Adoption writes its own two rows. |
+| `quarantine_entries` | neither | historic | Belongs to the original, which is what gets preserved. |
+| `history` | neither | historic | Keyed by plan and op, not by item. |
+| `review_undo` | neither | historic | A Review snapshot. |
+| `optimization_jobs` | neither | **link** | Not inherited — created. `result_item_id` is the lineage Undo and re-adoption follow. |
+| `search_fts` | derived | **recompute** | Rebuilt by `sync_search_item`. Category comes from the path. |
+| `catalog_identity` | **identity** | automatic | See below. |
+| `library_patterns` | identity | automatic | Keyed by artist or show name. Unaffected. |
+
+### The identity that is not lost, and not copied either
+
+A trusted TMDB or MusicBrainz answer *should* survive MKV -> MP4, and throwing
+one away because the container changed would be a real loss. It does survive,
+for a reason worth stating exactly:
+
+```sql
+CREATE TABLE catalog_identity (
+  scope_kind TEXT NOT NULL,   -- 'album' | 'movie' | 'show'
+  scope_key  TEXT NOT NULL,   -- the library-relative FOLDER
+  ...
+  UNIQUE(scope_kind, scope_key, provider)
+);
+```
+
+There is no `item_id` and no foreign key to `items` at all — measured, not
+inferred from the name. Identity belongs to the album or movie folder, not to
+each of its forty tracks. And `target_relpath` changes only the suffix, so the
+optimized file lands in the same folder. `Movies/Fight Club (1999)` is still
+TMDB 550 afterwards, without a line of carry-forward code.
+
+`item_metadata` is the table that looks like it might hold identity and does
+not. Despite the name it is one tool's cache of ffprobe output, and it is read
+only on a fingerprint match — so it self-invalidates across a re-encode even
+if some future change did copy it. That is what makes reusing `result_item_id`
+across a re-run safe: every byte-specific fact is either absent or re-derived.
+
+`CARRIED` is an empty tuple in `optimization_adopt`, and a test reads the
+module's own SQL to prove it writes to nothing but `items` and
+`optimization_jobs`.
+
 ## The two questions C still leaves open
 1. **Collision must refuse, not renumber.** `resolve_collision` auto-numbers,
    which is right for an unrelated import and wrong here: `concert-2.flac`

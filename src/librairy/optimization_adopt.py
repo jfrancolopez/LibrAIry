@@ -63,16 +63,53 @@ from librairy.search import sync_search_item
 # asks for an opinion.
 RESULT_STATE = "discovered"
 
-# What must never be copied from the original's record onto the result's.
-# Asserted by `tests/test_optimization_adopt.py` reading this module, so that
-# adding a carry-forward later is a deliberate act rather than an accident.
+# What must never be copied from the original's record onto the result's: every
+# table whose rows are statements about specific bytes. Asserted by
+# `tests/test_optimization_adopt.py` reading this module's own SQL, so adding a
+# carry-forward later is a deliberate act rather than an accident.
+#
+# `scripts/inventory_item_tables.py` derives the full list from the schema, the
+# lazily created tables and the FTS shadows, and fails if anything here is
+# unclassified.
 NEVER_CARRIED = (
     "vision_results",
     "content_extractions",
+    # The ffprobe cache: codec, bitrate, duration, channels, sample format.
+    # Created lazily by `tools.common.ensure_metadata_cache`, so it is absent
+    # from a fresh schema and easy to miss. Every field in it is a property of
+    # the encoding that just changed.
+    "item_metadata",
     "audit_findings",
     "duplicate_reports",
     "similar_media_flags",
+    # An offer to optimize specific bytes. The result is the output of one, not
+    # a candidate for another.
+    "optimization_opportunities",
+    "backup_queue",
+    "proposals",
 )
+
+# What *is* carried, and it is empty on purpose.
+#
+# The tempting candidate is logical identity — a trusted TMDB or MusicBrainz
+# answer should survive MKV -> MP4, and throwing it away because the container
+# changed would be a real loss. Measured rather than assumed:
+#
+#     catalog_identity(scope_kind, scope_key, provider)  UNIQUE
+#     scope_key = the library-relative FOLDER
+#
+# It has no `item_id` and no foreign key to `items` at all. Identity belongs to
+# the album or movie folder, not to each of its forty tracks — and adoption
+# keeps the file in its folder by construction (`target_relpath` changes only
+# the suffix). So the identity is not carried and not lost: it was never
+# attached to the item, and it still describes the same folder afterwards.
+# `library_patterns` is keyed by artist or show name and unaffected for the
+# same reason.
+#
+# `item_metadata` is the one that looks like it might hold identity and does
+# not: despite the name it is a single tool cache, read only on a fingerprint
+# match, holding ffprobe output.
+CARRIED: tuple[str, ...] = ()
 
 
 class AdoptionError(RuntimeError):
