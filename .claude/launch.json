@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "librairy-fixture",
+      "runtimeExecutable": ".venv/bin/python",
+      "runtimeArgs": ["scripts/ui_serve.py", "--port", "8791"],
+      "port": 8791
+    }
+  ]
+}

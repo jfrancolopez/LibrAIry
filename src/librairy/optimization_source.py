@@ -162,7 +162,7 @@ def job_output(
     ask the same question before a plan exists and get the same answer.
     """
     from librairy.optimization_exec import PRESET_SUFFIX
-    from librairy.optimization_queue import job_staging_dir, staging_root
+    from librairy.optimization_queue import staging_root
 
     job = conn.execute(
         "SELECT * FROM optimization_jobs WHERE id=?", (int(job_id),)
@@ -203,11 +203,18 @@ def job_output(
             "that optimization has no recorded output fingerprint; run it again",
         )
 
-    # 9. The path, built from the job. Containment is not checked afterwards —
-    #    it is a property of how the path was made.
+    # 9. The path, built from the *resolved* workspace root and the job id.
+    #
+    #    Resolving the root rather than the whole path is the distinction that
+    #    matters. Symlinks *above* the workspace are the operator's own mount
+    #    layout — `/var` is a link to `/private/var` on macOS, and a bind mount
+    #    or a moved appdata volume produces the same thing — and refusing those
+    #    would refuse every adoption on such a host. Found exactly that way: the
+    #    first browser click returned "that path is not in the workspace".
+    #
+    #    Symlinks *below* it are the attack, and they are still refused.
     staging = staging_root(settings).resolve()
-    directory = job_staging_dir(settings, int(job["id"]))
-    path = directory / canonical_name
+    path = staging / str(int(job["id"])) / canonical_name
 
     # 10. No symlink anywhere from the workspace down to the file — checked
     #     *before* containment, because `resolve()` follows links silently and
@@ -249,7 +256,7 @@ def undo_destination(
     which does not know this namespace at all.
     """
     from librairy.optimization_exec import PRESET_SUFFIX
-    from librairy.optimization_queue import job_staging_dir, staging_root
+    from librairy.optimization_queue import staging_root
 
     if entry["src_root"] != OPTIMIZATION_ROOT:
         raise SourceRefused("not_an_adoption", "that operation did not come from a job")
@@ -270,13 +277,13 @@ def undo_destination(
     if suffix is None:
         raise SourceRefused("unknown_preset", "that optimization used an unknown preset")
 
-    directory = job_staging_dir(settings, int(job["id"]))
-    path = directory / f"output{suffix}"
-    if not path.resolve(strict=False).is_relative_to(staging_root(settings).resolve()):
+    staging = staging_root(settings).resolve()
+    path = staging / str(int(job["id"])) / f"output{suffix}"
+    if not path.resolve(strict=False).is_relative_to(staging):
         raise SourceRefused(
             "outside_the_workspace", "that path is not inside the encoder's workspace"
         )
-    _refuse_symlinks(staging_root(settings).resolve(), path, allow_missing=True)
+    _refuse_symlinks(staging, path, allow_missing=True)
     return path
 
 

@@ -188,16 +188,25 @@ def _last_result(conn: sqlite3.Connection) -> dict[str, Any] | None:
 def _unfinished_plans(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     """Plans created but never executed — otherwise they are invisible forever.
 
-    Correction plans are excluded: they are approved on purpose and listed in
-    their own section, so calling them "started but never run" would be both
-    wrong and alarming.
+    Every plan that has a section of its own is excluded, because calling a
+    deliberate approval "started but never run" is both wrong and alarming. That
+    was true of corrections from the start; adoptions joined them, and a browser
+    found it immediately — the same plan appeared once as an OPTIMIZE card and
+    again as an orphan two screens down, with a shortened UUID for a name.
+
+    Quarantine requests turned out to be in it too — they have had their own
+    RESTORE and DELETE QUEUE sections since the taxonomy landed, and nothing
+    took them out of here. Excluded now, for the same reason.
     """
     return list(
         conn.execute(
             """
             SELECT p.*, (SELECT COUNT(*) FROM plan_ops WHERE plan_id = p.id) AS op_count
             FROM plans p
-            WHERE p.status IN ('draft', 'approved') AND p.audit_finding_id IS NULL
+            WHERE p.status IN ('draft', 'approved')
+              AND p.audit_finding_id IS NULL
+              AND p.optimization_job_id IS NULL
+              AND p.quarantine_entry_id IS NULL
             ORDER BY p.created_at DESC LIMIT 5
             """
         )

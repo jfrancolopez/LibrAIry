@@ -180,6 +180,7 @@ def _undo_op_unlocked(
     final_relpath = final_dest.relative_to(src_root).as_posix()
     _record_undo(conn, entry, final_relpath, current_fingerprint, "ok")
     _update_item_after_undo(conn, entry, final_relpath, final_dest)
+    _settle_quarantine_after_undo(conn, entry)
     return UndoResult(history_id, "ok", final_relpath)
 
 
@@ -225,6 +226,32 @@ def _undo_adoption(
         ),
     )
     return UndoResult(entry["id"], "ok", final_relpath)
+
+
+def _settle_quarantine_after_undo(conn: sqlite3.Connection, entry: sqlite3.Row) -> None:
+    """A quarantine that has been undone is not a file in quarantine any more.
+
+    The item row was already being restored; the `quarantine_entries` row was
+    not, so the file sat back in the library while Quarantine went on listing it
+    under `Held` with a Restore button that could only fail. Found by pressing
+    `Restore original` in a browser and watching the row stay.
+
+    `restored_at` is what every Quarantine view already keys off, so setting it
+    is the whole fix: the row moves to `Put back`, the counts drop, and the
+    preserved-original card stops offering an action it has already carried out.
+    Nothing about this is optimization-specific — an ordinary undone quarantine
+    was equally wrong.
+    """
+    if entry["action"] != "quarantine":
+        return
+    conn.execute(
+        """
+        UPDATE quarantine_entries SET restored_at=?
+        WHERE restored_at IS NULL AND plan_id=?
+          AND item_id = (SELECT id FROM items WHERE root=? AND relpath=?)
+        """,
+        (utc_now(), entry["plan_id"], entry["src_root"], entry["src_relpath"]),
+    )
 
 
 def _record_refused(conn: sqlite3.Connection, entry: sqlite3.Row, outcome: str) -> UndoResult:

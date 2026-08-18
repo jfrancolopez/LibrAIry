@@ -670,3 +670,79 @@ def test_commit_stays_bounded_with_an_optimization_among_many_decisions(
     assert next(
         g["decisions"] for g in summary["groups"] if g["type"] == "new-file"
     ) == 120
+
+
+def test_undoing_an_adoption_settles_its_quarantine_entry(ready) -> None:
+    """Found by pressing Restore original in a browser and watching the row
+    stay under `Held`, offering a Restore that could only fail from then on."""
+    client, conn, settings, job_id, relpath, _target = ready
+    use_optimized(client, job_id)
+    plan_id = conn.execute(
+        "SELECT id FROM plans WHERE optimization_job_id=?", (job_id,)
+    ).fetchone()[0]
+    commit(client, conn, plan_id)
+    entry_id = conn.execute(
+        "SELECT id FROM quarantine_entries ORDER BY id DESC LIMIT 1"
+    ).fetchone()[0]
+
+    post(client, f"/quarantine/restore-original/{entry_id}")
+
+    assert conn.execute(
+        "SELECT restored_at FROM quarantine_entries WHERE id=?", (entry_id,)
+    ).fetchone()[0] is not None
+    body = client.get("/quarantine").text
+    assert "preserved original" not in body
+    assert "Restore original" not in body
+
+
+def test_undoing_an_ordinary_quarantine_settles_its_entry_too(tmp_path: Path) -> None:
+    """The same defect, and it was never optimization-specific."""
+    from librairy import executor
+    from librairy.history import undo_plan
+    from librairy.planner import approve_plan, create_plan
+    from librairy.quarantine import quarantine_operation
+    from tests.test_web_quarantine import client_for
+
+    client, conn, settings = client_for(tmp_path)
+    (settings.inbox_dir / "dupe.txt").write_text("dupe", encoding="utf-8")
+    scan_root(conn, "inbox", settings.inbox_dir, settings)
+    plan_id = create_plan(
+        conn, [quarantine_operation("dupe.txt", date="2026-08-15")], settings
+    )
+    approve_plan(conn, plan_id, settings)
+    executor.execute_plan(conn, plan_id, settings)
+    entry_id = conn.execute("SELECT id FROM quarantine_entries").fetchone()[0]
+
+    undo_plan(conn, plan_id, settings)
+
+    assert conn.execute(
+        "SELECT restored_at FROM quarantine_entries WHERE id=?", (entry_id,)
+    ).fetchone()[0] is not None
+    assert (settings.inbox_dir / "dupe.txt").is_file()
+
+
+def test_a_disclosure_panel_cannot_stretch_its_card(ready) -> None:
+    """A `<details>` among buttons is a flex item, and a flex item's default
+    `min-width: auto` sizes it to its content rather than its container. The
+    optimization page's Details did exactly that once its labels grew long: at
+    375px the document went to 951px wide and the whole card scrolled sideways.
+
+    Invisible to every DOM assertion in the suite, because nothing was wrong
+    until somebody opened it. This holds the rule that fixed it.
+    """
+    css = Path("src/librairy/web/static/pipboy.css").read_text(encoding="utf-8")
+
+    assert ".button-row > details { min-width: 0; max-width: 100%; }" in css
+    #  And the accounting stacks rather than sizing a label column to
+    #  "Final net reduction against the original baseline".
+    assert ".storage-accounting { grid-template-columns: minmax(0, 1fr)" in css
+    assert css.index(".storage-accounting {") > css.index(".queue-facts {"), (
+        "the override must come after the rules it overrides"
+    )
+
+
+def test_the_long_labels_are_only_used_where_the_panel_stacks(ready) -> None:
+    for page in ("commit.html", "quarantine.html", "optimization.html"):
+        text = Path(f"src/librairy/web/templates/{page}").read_text(encoding="utf-8")
+        if "Final net reduction" in text or "If you remove this original" in text:
+            assert "storage-accounting" in text, page

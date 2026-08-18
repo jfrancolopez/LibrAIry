@@ -513,3 +513,29 @@ def test_nothing_moved_during_any_of_this(scene) -> None:
 
 def _plan(conn, settings, job_id: int, fingerprint: str) -> str:
     return adoption_plan(conn, settings, job_id, fingerprint)
+
+
+def test_a_symlink_above_the_workspace_does_not_refuse_everything(
+    scene, tmp_path: Path
+) -> None:
+    """The one a browser found on the first click.
+
+    `/var` is a symlink to `/private/var` on macOS, and a bind mount or a moved
+    appdata volume produces the same shape on a NAS. Resolving the *whole* path
+    and comparing it against an unresolved root — or the reverse — refuses every
+    adoption on such a host, which is a refusal about the operator's mount
+    layout rather than about the file.
+
+    Symlinks below the workspace are still refused; that is the test above.
+    """
+    conn, settings, _, job_id, fingerprint = scene
+    real = tmp_path / "real-appdata"
+    settings.appdata_dir.rename(real)
+    settings.appdata_dir.symlink_to(real, target_is_directory=True)
+
+    resolved = resolve(conn, settings, _plan(conn, settings, job_id, fingerprint))
+
+    assert resolved.fingerprint == fingerprint
+    assert resolved.path.is_file()
+    assert resolved.path.read_bytes() == (real / "optimization" / "jobs"
+                                          / str(job_id) / "output.flac").read_bytes()

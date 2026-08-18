@@ -2996,3 +2996,34 @@ summary.timeline-head::-webkit-details-marker { display: none; }
 .qrow-why { margin: var(--space-1) 0; color: var(--text-dim); font-size: var(--text-sm); }
 .qrow-pending { margin: var(--space-1) 0; font-size: var(--text-sm); }
 .pager { display: flex; gap: var(--space-2); align-items: center; margin: var(--space-2) 0; }
+
+/* --- storage accounting ---------------------------------------------------
+   Last on purpose. It overrides `.correction-shape` and `.queue-facts`, which
+   are the same specificity, so cascade order is what decides — and both of
+   those are defined above.
+
+   A `max-content` label column sizes itself to the longest label, which is
+   right for `Current` and `After Commit` and wrong for the storage accounting,
+   whose longest label is "Final net reduction against the original baseline".
+   At 375px that one column was wider than the phone and the whole card
+   scrolled sideways; `.queue-facts` had the same problem through its
+   `space-between` flex rows, which cannot shrink a long label.
+
+   Stacking is the honest answer for a disclosure panel: nothing is being
+   compared across rows, so nothing needs to line up. Found by opening Details
+   at 375px, where the document scrolled to 951px. */
+.storage-accounting { grid-template-columns: minmax(0, 1fr); gap: 0 0; }
+.storage-accounting > div {
+  display: block;
+  margin-bottom: var(--space-2);
+}
+.storage-accounting dt { margin-bottom: 2px; }
+.storage-accounting dd { word-break: break-word; }
+
+/* A disclosure panel that sits among buttons is a flex item, and a flex item's
+   default `min-width: auto` lets it grow to fit its content instead of its
+   container. So `<details>` inside a `.button-row` sized itself to its longest
+   line: at 375px the optimization page's Details made the document 951px wide
+   and the whole card scrolled sideways. Nothing about it was visible until it
+   was opened, which is why every DOM assertion in the suite missed it. */
+.button-row > details { min-width: 0; max-width: 100%; }

@@ -360,6 +360,7 @@ def build_app(root: Path):  # noqa: ANN201
     _running_audit(conn)
     _storage_opportunities(conn)
     _optimization_jobs(conn)
+    _adoptable_optimizations(conn, settings)
     _history_entries(conn)
     _quarantine_entries(conn, settings)
 
@@ -528,6 +529,86 @@ def _optimization_results(conn) -> None:  # noqa: ANN001
             (relpath, kind, quality, source, target, size, estimated, actual,
              runtime, state, verified, progress, out_time, duration, message,
              utc_now(), utc_now()),
+        )
+
+
+def _adoptable_optimizations(conn, settings: Settings) -> None:  # noqa: ANN001
+    """Results a person can actually adopt, and one they cannot.
+
+    The rows above are for photographing states; these are for *pressing*. That
+    needs what the closed resolver needs and nothing less: a real source item, a
+    real file in the job's staging directory, and the hash recorded when it was
+    verified. A fixture that skips any of those produces a `Use optimized`
+    button whose only possible outcome is a refusal, which teaches nothing.
+
+    Three shapes, because each fails differently:
+
+        WAV  -> FLAC   the extension changes
+        MP4  -> MP4    an HEVC re-encode lands on the original's own path
+        MKV  -> MP4    a remux, saving nothing, offered for compatibility
+
+    Plus one with its destination already taken, so the collision refusal can be
+    seen rather than described.
+    """
+    from librairy.fingerprint import blake2b_file
+    from librairy.optimization import LOSSLESS, LOSSY, REMUX
+    from librairy.optimization_queue import READY
+    from librairy.planner import utc_now
+
+    mb = 1024 * 1024
+    rows = [
+        # relpath, target suffix, kind, quality, from, to, preset, occupied
+        ("Music/Live/concert.wav", ".flac", "audio-to-flac", LOSSLESS,
+         "WAV", "FLAC", "flac-lossless", False),
+        ("Movies/Chinatown (1974)/Chinatown.mp4", ".mp4", "video-to-hevc", LOSSY,
+         "H264", "HEVC", "hevc-1080p-low", False),
+        ("Movies/Le Samourai (1967)/Le Samourai.mkv", ".mp4", "remux", REMUX,
+         "MKV", "MP4", "mp4-stream-copy", False),
+        ("Music/Live/soundcheck.wav", ".flac", "audio-to-flac", LOSSLESS,
+         "WAV", "FLAC", "flac-lossless", True),
+    ]
+    for relpath, suffix, kind, quality, source, target, preset, occupied in rows:
+        original = settings.library_dir / relpath
+        original.parent.mkdir(parents=True, exist_ok=True)
+        original.write_bytes(b"the original recording, at its original size" * 9000)
+        if occupied:
+            #  Something is already where the optimized copy would go. Nothing
+            #  put it there on purpose; that is the point.
+            occupant = original.with_suffix(suffix)
+            occupant.write_bytes(b"a file that was already here" * 200)
+        scan_root(conn, "library", settings.library_dir, settings)
+        item = conn.execute(
+            "SELECT id, fingerprint FROM items WHERE relpath=?", (relpath,)
+        ).fetchone()
+        job_id = int(
+            conn.execute(
+                """
+                INSERT INTO optimization_jobs(
+                  item_id, root, relpath, fingerprint, kind, quality, from_label,
+                  to_label, preset, preset_version, rule_version, source_bytes,
+                  estimated_bytes, actual_bytes, runtime_seconds, run_policy,
+                  state, wait_reason, verified, progress, message, staging_dir,
+                  output_relpath, queued_at, updated_at
+                ) VALUES (?, 'library', ?, ?, ?, ?, ?, ?, ?, 1, 1, ?, ?, ?, ?,
+                          'window', ?, '', 'passed', 100, '', '', ?, ?, ?)
+                """,
+                (item["id"], relpath, item["fingerprint"], kind, quality, source,
+                 target, preset, original.stat().st_size, 512 * mb, 504 * mb,
+                 289, READY, f"output{suffix}", utc_now(), utc_now()),
+            ).lastrowid
+        )
+        staging = settings.appdata_dir / "optimization" / "jobs" / str(job_id)
+        staging.mkdir(parents=True, exist_ok=True)
+        output = staging / f"output{suffix}"
+        output.write_bytes(
+            b"the original recording, at its original size" * 9000
+            if quality == REMUX
+            else b"the optimized copy" * 12000
+        )
+        conn.execute(
+            "UPDATE optimization_jobs SET output_fingerprint=?, actual_bytes=?"
+            " WHERE id=?",
+            (blake2b_file(output), output.stat().st_size, job_id),
         )
 
 
