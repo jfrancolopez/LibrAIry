@@ -218,14 +218,26 @@ def test_the_restore_request_path_refuses_too(adopted) -> None:
     ).fetchone()[0] == 0
 
 
-def test_the_delete_queue_is_withheld(adopted) -> None:
+def test_the_immediate_delete_queue_move_is_still_refused(adopted) -> None:
+    """The *request* is available now; the shortcut that moves the file inside
+    the handler is not, and never was for anything else either. A preserved
+    original's Undo depends on where the file is, so that move has to be
+    journalled and reversible, which is what going through Commit buys."""
     conn, settings, entry_id, _, _ = adopted
 
-    with pytest.raises(QuarantineError, match="cannot be queued for deletion"):
+    with pytest.raises(QuarantineError, match="goes through Commit"):
         mark_entry_for_deletion(conn, entry_id, settings)
-    with pytest.raises(QuarantineError, match="preserved original"):
-        request_delete_queue(conn, settings, entry_id)
 
+    assert (settings.quarantine_dir / ORIGINAL).is_file()
+    assert not (settings.quarantine_dir / "_to-delete").exists()
+
+
+def test_the_delete_queue_request_is_accepted_and_moves_nothing(adopted) -> None:
+    conn, settings, entry_id, _, _ = adopted
+
+    plan_id = request_delete_queue(conn, settings, entry_id)
+
+    assert plan_id
     assert (settings.quarantine_dir / ORIGINAL).is_file()
     assert not (settings.quarantine_dir / "_to-delete").exists()
 

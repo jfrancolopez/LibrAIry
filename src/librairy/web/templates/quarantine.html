@@ -136,6 +136,22 @@
     {% elif view == 'waiting' %}
       <p class="muted">You have decided what happens to these. Nothing moves
         until you commit.</p>
+    {% elif view == 'removed' %}
+      {# Not an error. Emptying the delete queue yourself is the intended way to
+         arrive here, and the record is kept because it is how an optimization
+         explains where its original went. #}
+      <p class="muted">LibrAIry can no longer see these files. Emptying the
+        delete queue looks exactly like this, and so does a share that is not
+        mounted. The records are kept either way.</p>
+    {% endif %}
+
+    {% if preserved_here %}
+      {# A subset of the count above, said as a subset. One physical file is
+         never in two of these views. #}
+      <p class="muted">{{ preserved_here }} of these
+        {{ 'is an' if preserved_here == 1 else 'are' }} optimization
+        original{{ '' if preserved_here == 1 else 's' }} LibrAIry preserved for
+        you.</p>
     {% endif %}
 
     {% if entries %}
@@ -162,6 +178,11 @@
                      to be visible only on the Commit page, which is how a
                      pressed button looked like nothing at all. #}
                   <span class="badge badge-status-waiting">{{ 'Applying' if entry.request.applying else 'Waiting for Commit' }}</span>
+                {% elif entry.disposal_state == 'removed' %}
+                  {# Said as what happened rather than as a fault. The owner put
+                     it in the delete queue and then emptied it, which is the
+                     whole point of the delete queue. #}
+                  <span class="badge badge-warn">Original removed</span>
                 {% elif entry.marked %}
                   <span class="badge badge-warn">In delete queue</span>
                 {% elif entry.gone %}
@@ -180,6 +201,15 @@
               <p class="qrow-why muted">Active version
                 <span class="mono">{{ entry.active_version }}</span></p>
               {% endif %}
+              {% if entry.disposal_state == 'in-delete-queue' %}
+                <p class="qrow-why">In the delete queue, and still exactly as it
+                  was. LibrAIry will not delete it — empty that folder yourself
+                  when you are ready.</p>
+              {% elif entry.disposal_state == 'removed' %}
+                <p class="qrow-why">You removed this original yourself. The
+                  optimized version is still the one in your library, and this
+                  optimization can no longer be undone.</p>
+              {% endif %}
               {% if entry.preserved_storage %}
               {# The trade this card exists to let somebody weigh. Two numbers,
                  because they are two different questions and they differ here
@@ -190,13 +220,25 @@
                      <dd>{{ entry.preserved_storage.original }}</dd></div>
                 <div><dt>Active version</dt>
                      <dd>{{ entry.preserved_storage.active }}</dd></div>
-                <div><dt>Space reclaimed so far</dt>
-                     <dd>{{ entry.preserved_storage.reclaimed }}</dd></div>
-                <div><dt>If you remove this original</dt>
-                     <dd>{{ entry.preserved_storage.freed_if_removed }} freed at that
-                         moment · library ends up
-                         {{ entry.preserved_storage.final_reduction }} smaller than
-                         it started</dd></div>
+                {% if entry.disposal_state == 'removed' %}
+                  {# The first and only state where a number here may be called
+                     a saving — and even now it is two numbers, because what the
+                     deletion freed at that moment and where the library ended up
+                     are not the same quantity. #}
+                  <div><dt>Freed when you removed it</dt>
+                       <dd>{{ entry.preserved_storage.original }}</dd></div>
+                  <div><dt>Net storage reduction</dt>
+                       <dd>{{ entry.preserved_storage.final_reduction }} smaller
+                           than before this optimization</dd></div>
+                {% else %}
+                  <div><dt>Space reclaimed so far</dt>
+                       <dd>{{ entry.preserved_storage.reclaimed }}</dd></div>
+                  <div><dt>If you remove this original</dt>
+                       <dd>{{ entry.preserved_storage.freed_if_removed }} freed at that
+                           moment · library ends up
+                           {{ entry.preserved_storage.final_reduction }} smaller than
+                           it started</dd></div>
+                {% endif %}
               </dl>
               {% endif %}
             {% endif %}
@@ -220,7 +262,7 @@
 
             {% if entry.request %}
               <p class="qrow-pending">
-                <strong>{{ entry.request.label }}</strong> —
+                <strong>{% if entry.preserved_original %}Move original to delete queue{% else %}{{ entry.request.label }}{% endif %}</strong> —
                 {{ 'Nothing is deleted.' if entry.request.intent == 'delete-queue' else 'It goes back where it came from.' }}
                 Nothing has moved yet.
               </p>
@@ -263,12 +305,34 @@
                      which would put the original back beside the copy and
                      leave the job believing it had been adopted.
 
-                     No Delete queue. Moving this file changes the exact path
-                     that Undo expects to find it at. #}
-                  <form method="post" action="/quarantine/restore-original/{{ entry.id }}">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                    <button type="submit">Restore original</button>
-                  </form>
+                     Delete queue is here now, and it is a request like every
+                     other: it moves nothing until you commit, and reversing it
+                     is what `Restore original` does first when the file is
+                     already there. #}
+                  {% if entry.disposal_state == 'removed' %}
+                    {# No Undo, because there is nothing to undo with. A button
+                       that can only produce an error is worse than no button. #}
+                    <span class="muted">Original no longer retained</span>
+                  {% else %}
+                    <form method="post" action="/quarantine/restore-original/{{ entry.id }}">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                      <button type="submit">Restore original</button>
+                    </form>
+                    {% if entry.disposal_state == 'in-delete-queue' %}
+                      {# A different decision from Restore original, and worth
+                         its own button: keeping the original is not the same as
+                         wanting it back as the live file. #}
+                      <form method="post" action="/quarantine/keep-original/{{ entry.id }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                        <button type="submit">Keep original</button>
+                      </form>
+                    {% else %}
+                      <form method="post" action="/quarantine/delete-queue/{{ entry.id }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                        <button type="submit">Delete queue</button>
+                      </form>
+                    {% endif %}
+                  {% endif %}
                 {% elif not entry.restored_at and not entry.gone %}
                   {% if entry.restorable %}
                     <form method="post" action="/quarantine/restore/{{ entry.id }}">

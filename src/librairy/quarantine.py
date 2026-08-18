@@ -236,14 +236,15 @@ def _mark_entry_unlocked(
     if entry is None:
         raise QuarantineError(f"quarantine entry not found: {entry_id}")
     if is_preserved_original(entry):
-        # Withheld deliberately for now. Moving a preserved original into the
-        # delete pile changes the exact quarantine path the adoption's Undo
-        # expects to find it at, so Undo would afterwards either refuse or
-        # restore from a location nothing recorded. Restore-through-Undo ships
-        # first; disposal gets designed after it rather than around it.
+        # Not withheld any more — but not available *here*. This helper moves
+        # the file inside the request handler, with no plan and nothing in
+        # Commit, and a preserved original's Undo depends on exactly where its
+        # file is. That move has to be journalled and reversible, which is what
+        # `quarantine_requests.request_delete_queue` and Commit provide, and
+        # what `optimization_disposal` reverses in order afterwards.
         raise QuarantineError(
-            "a preserved original cannot be queued for deletion yet; undo the "
-            "optimization first if you no longer want it"
+            "a preserved original goes through Commit; use Delete queue on the "
+            "Quarantine page"
         )
     if entry["restored_at"] is not None:
         return RestoreResult(entry_id, "already_restored")

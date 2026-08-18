@@ -1316,44 +1316,43 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         Undo moves both, in the order that keeps the same-path case safe, with
         hashes checked on the way.
 
+        From the delete queue it is two reversals rather than one, and the
+        person still presses one button — see `optimization_disposal`, which
+        checks both before moving anything.
+
         Unlike the other quarantine actions this happens now rather than at
         Commit: it is a reversal of something already committed, which is what
         History's Undo is, and routing it through Commit would mean approving a
         plan to undo a plan.
         """
-        from librairy.history import undo_plan
-        from librairy.quarantine import is_preserved_original
+        from librairy.optimization_disposal import restore_original
 
-        entry = conn.execute(
-            "SELECT * FROM quarantine_entries WHERE id=?", (entry_id,)
-        ).fetchone()
-        if entry is None or not is_preserved_original(entry):
-            return _quarantine_page(
-                request, "That is not a preserved original.", status_code=409
-            )
-        # The entry records the plan that quarantined it. Guessing by "the most
-        # recent done plan for this job" looked equivalent and was not: after a
-        # second adoption there are two, `finished_at` has second resolution,
-        # and picking the wrong one reverses a plan whose files have already
-        # been reversed.
-        plan_id = entry["plan_id"]
-        if not plan_id:
-            return _quarantine_page(
-                request,
-                "LibrAIry cannot find the optimization that preserved this file.",
-                status_code=409,
-            )
-        results = undo_plan(conn, plan_id, settings)
-        if any(result.outcome != "ok" for result in results):
-            return _quarantine_page(
-                request,
-                "The original could not be put back. See History for what happened.",
-                status_code=409,
-            )
-        return _quarantine_page(
-            request, "The original is back in the library, and the optimized copy "
-            "is waiting for review again.", view="held",
-        )
+        try:
+            outcome = restore_original(conn, settings, entry_id)
+        except QuarantineError as exc:
+            return _quarantine_page(request, str(exc), status_code=409)
+        if not outcome.ok:
+            return _quarantine_page(request, outcome.message, status_code=409)
+        return _quarantine_page(request, outcome.message, view="held")
+
+    @app.post("/quarantine/keep-original/{entry_id}", response_class=HTMLResponse)
+    def quarantine_keep_original(request: Request, entry_id: int) -> HTMLResponse:
+        """"I have changed my mind about deleting this."
+
+        A different decision from Restore original, which is why it is a
+        different button: the optimized version stays live and only the
+        disposal is reversed. Immediate for the same reason — it takes back
+        something that has already been committed.
+        """
+        from librairy.optimization_disposal import keep_original
+
+        try:
+            outcome = keep_original(conn, settings, entry_id)
+        except QuarantineError as exc:
+            return _quarantine_page(request, str(exc), status_code=409)
+        if not outcome.ok:
+            return _quarantine_page(request, outcome.message, status_code=409)
+        return _quarantine_page(request, outcome.message, view="held")
 
     @app.post("/quarantine/cancel/{entry_id}", response_class=HTMLResponse)
     def quarantine_cancel(request: Request, entry_id: int) -> HTMLResponse:

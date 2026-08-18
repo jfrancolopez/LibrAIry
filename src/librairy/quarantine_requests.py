@@ -177,12 +177,13 @@ def _request(
     guarantee, and the same request can arrive from a stale page or from curl.
     """
     entry, item = _entry_and_item(conn, entry_id)
-    if is_preserved_original(entry):
+    if intent == RESTORE and is_preserved_original(entry):
         # One door, checked here rather than only where the button is drawn: a
         # button that is not drawn is not a safety guarantee, and this request
-        # can arrive from a stale page or from curl. A preserved original is
-        # not restored and not queued for deletion — it is un-adopted, which
-        # moves two files in an order only Undo knows.
+        # can arrive from a stale page or from curl. Generic Restore would put
+        # the original back beside the optimized copy and leave the job
+        # believing it had been adopted; un-adopting moves two files in an
+        # order only Undo knows.
         raise QuarantineError(
             "this is a preserved original; use Restore original, which undoes "
             "the optimization that replaced it"
@@ -227,6 +228,13 @@ def request_delete_queue(
     It gathers in one folder so you can empty that folder yourself, in one
     gesture, when you choose to. Nothing is deleted by this, by Commit, or by
     anything else LibrAIry does.
+
+    Preserved optimization originals may come this way too, which is the whole
+    point of Storage Optimization finally reaching an end. Their Undo depends on
+    the exact path this move changes, so the reversal reverses this plan first
+    and the adoption second — see `optimization_disposal`. Nothing about that
+    is guessed: this plan records the quarantine entry, and the entry records
+    the adoption.
     """
     _entry, item = _entry_and_item(conn, entry_id)
     if marked_for_deletion(item["relpath"]):

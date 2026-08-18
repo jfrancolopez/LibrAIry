@@ -8,6 +8,87 @@ from librairy.config import Settings
 from librairy.history import HISTORY_KINDS, kind_counts, list_history, undo_op, undo_plan
 
 
+#  What an adoption's reversal is called and whether it can happen at all,
+#  derived from where the preserved original is right now rather than from the
+#  fact that a plan once ran. A journal row is permanent; the ability to undo it
+#  is not, and rendering a button that can only fail is the thing this replaces.
+def _adoption_undo(conn: sqlite3.Connection, plan_id: object) -> dict[str, object]:
+    from librairy.optimization_disposal import (
+        IN_DELETE_QUEUE,
+        REMOVED,
+        RESTORED,
+        WAITING,
+        preserved_state,
+    )
+
+    if not plan_id:
+        return {}
+    entry = conn.execute(
+        "SELECT * FROM quarantine_entries"
+        " WHERE plan_id=? AND optimization_job_id IS NOT NULL"
+        " ORDER BY id DESC LIMIT 1",
+        (plan_id,),
+    ).fetchone()
+    if entry is None:
+        return {}
+    state = preserved_state(conn, entry)
+    if state == REMOVED:
+        return {
+            "available": False,
+            "note": "Original removed from storage. This optimization can no "
+            "longer restore the original automatically.",
+        }
+    if state == RESTORED:
+        return {"available": False, "note": "The original is already back in the library."}
+    if state == WAITING:
+        return {
+            "available": False,
+            "note": "A decision about the original is waiting for Commit.",
+        }
+    return {
+        "available": True,
+        "label": "Restore original",
+        "url": f"/quarantine/restore-original/{int(entry['id'])}",
+        "note": (
+            "The original is in the delete queue. This takes it back out first."
+            if state == IN_DELETE_QUEUE
+            else ""
+        ),
+    }
+
+
+def _plan_undo(
+    conn: sqlite3.Connection, plan_id: object, *, adoption: bool
+) -> dict[str, object]:
+    """Whether this plan can still be reversed. Empty means "ask the usual way".
+
+    Index-only, deliberately. Answering it in general would mean hashing every
+    file on the page, and History is a page somebody scrolls. The two cases that
+    can be answered from rows already in the database are the ones where the
+    answer is most often no: an adoption whose preserved original has been
+    removed, and a quarantine decision whose file is no longer there.
+    """
+    if adoption:
+        return _adoption_undo(conn, plan_id)
+    row = conn.execute(
+        """
+        SELECT i.id AS item_id, i.missing_since
+        FROM plans p JOIN quarantine_entries qe ON qe.id = p.quarantine_entry_id
+        LEFT JOIN items i ON i.id = qe.item_id
+        WHERE p.id = ?
+        """,
+        (plan_id,),
+    ).fetchone()
+    if row is None:
+        return {}
+    if row["item_id"] is None or row["missing_since"] is not None:
+        return {
+            "available": False,
+            "note": "That file is no longer on disk, so this cannot be put back.",
+        }
+    return {}
+
+
 def history_data(
     conn: sqlite3.Connection,
     limit: int = 50,
@@ -42,7 +123,7 @@ def history_data(
         "settings_changes": changes,
         "plans": list(plans.values()),
         "timeline": _timeline(entries, plans),
-        "days": _days(entries, plans),
+        "days": _days(conn, entries, plans),
         "query": query,
         "kind": kind,
         "kinds": [
@@ -58,7 +139,9 @@ def history_data(
     }
 
 
-def _days(entries: list[dict[str, object]], plans: dict) -> list[dict[str, object]]:
+def _days(
+    conn: sqlite3.Connection, entries: list[dict[str, object]], plans: dict
+) -> list[dict[str, object]]:
     """Plans, bucketed by the day they ran.
 
     Presentation only — no journal row is merged, dropped or rewritten. A day
@@ -79,6 +162,9 @@ def _days(entries: list[dict[str, object]], plans: dict) -> list[dict[str, objec
         group["summary"] = _plan_summary(group["entries"])
         group["correction"] = _is_correction(group["entries"])
         group["adoption"] = _is_adoption(group["entries"])
+        group["undo"] = _plan_undo(
+            conn, group["plan_id"], adoption=bool(group["adoption"])
+        )
         bucket["plans"].append(group)
         bucket["files"] = int(bucket["files"]) + len(group["entries"])
     return days

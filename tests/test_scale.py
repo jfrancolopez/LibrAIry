@@ -261,3 +261,148 @@ def test_commit_page_is_quick_enough_to_be_worth_measuring(big) -> None:
     started = time.monotonic()
     commit_overview(conn, settings)
     assert time.monotonic() - started < 10
+
+
+# --- Quarantine with optimization originals in it ------------------------------
+
+
+#  Four populations in one table, because the interesting failure is not "many
+#  rows" but "many rows of different kinds": a preserved original needs a job
+#  and a storage calculation, and doing either per row is how a bounded page
+#  becomes a hundred and fifty queries.
+EACH = 2_000
+
+
+@pytest.fixture(scope="module")
+def mixed(tmp_path_factory: pytest.TempPathFactory):
+    """Held files, preserved originals, pending disposals and a delete queue."""
+    tmp_path = tmp_path_factory.mktemp("scale-mixed")
+    settings = settings_for(tmp_path)
+    conn = connect(settings)
+    now = "2026-08-14T00:00:00+00:00"
+
+    rows = []
+    for kind, base in (("held", 0), ("preserved", 1), ("waiting", 2), ("queued", 3)):
+        for n in range(EACH):
+            item_id = base * EACH + n + 1
+            relpath = (
+                f"_to-delete/2026-08-14/{kind}-{n:06d}.wav"
+                if kind == "queued"
+                else f"2026-08-14/{kind}-{n:06d}.wav"
+            )
+            rows.append((kind, item_id, relpath))
+
+    conn.executemany(
+        "INSERT INTO items(id, root, relpath, size, mtime_ns, fingerprint, state,"
+        " first_seen_at, last_seen_at) VALUES (?, 'quarantine', ?, 1000, 0, ?,"
+        " 'discovered', ?, ?)",
+        [(item_id, relpath, f"fp{item_id:06d}", now, now) for _, item_id, relpath in rows],
+    )
+    conn.executemany(
+        "INSERT INTO optimization_jobs(id, item_id, root, relpath, fingerprint, kind,"
+        " quality, from_label, to_label, preset, source_bytes, estimated_bytes,"
+        " actual_bytes, state, queued_at, updated_at)"
+        " VALUES (?, NULL, 'library', ?, ?, 'audio-to-flac', 'lossless', 'WAV', 'FLAC',"
+        " 'flac-lossless', 1000, 600, 600, 'adopted', ?, ?)",
+        [
+            (item_id, f"Music/{kind}-{item_id}.wav", f"fp{item_id:06d}", now, now)
+            for kind, item_id, _ in rows
+            if kind != "held"
+        ],
+    )
+    conn.executemany(
+        "INSERT INTO quarantine_entries(id, item_id, reason, original_root,"
+        " original_relpath, quarantined_at, optimization_job_id)"
+        " VALUES (?, ?, 'user', 'library', ?, ?, ?)",
+        [
+            (item_id, item_id, f"Music/{kind}-{item_id}.wav", now,
+             None if kind == "held" else item_id)
+            for kind, item_id, _ in rows
+        ],
+    )
+    #  The pending disposals: an approved plan each, exactly as the button makes.
+    conn.executemany(
+        "INSERT INTO plans(id, status, created_at, plan_hash, quarantine_entry_id)"
+        " VALUES (?, 'approved', ?, ?, ?)",
+        [
+            (f"plan-{item_id}", now, f"hash{item_id}", item_id)
+            for kind, item_id, _ in rows
+            if kind == "waiting"
+        ],
+    )
+    conn.executemany(
+        "INSERT INTO plan_ops(plan_id, seq, op_type, src_root, src_relpath,"
+        " dest_root, dest_relpath, src_fingerprint)"
+        " VALUES (?, 1, 'move', 'quarantine', ?, 'quarantine', ?, ?)",
+        [
+            (f"plan-{item_id}", relpath, f"_to-delete/{relpath}", f"fp{item_id:06d}")
+            for kind, item_id, relpath in rows
+            if kind == "waiting"
+        ],
+    )
+    conn.commit()
+    return conn, settings
+
+
+def test_every_view_stays_one_page_with_originals_mixed_in(mixed) -> None:
+    conn, settings = mixed
+
+    #  Held holds both kinds: an ordinary rejected file and a preserved original
+    #  with nothing pending are both simply *held*, which is why the preserved
+    #  ones are identified by a subcount rather than by a bucket of their own.
+    expected = {"held": 2 * EACH, "waiting": EACH, "delete-queue": EACH}
+    for view, total in expected.items():
+        data = quarantine_data(conn, settings, view=view)
+        assert data["total"] == total, view
+        assert len(data["entries"]) == QUARANTINE_PAGE_SIZE, view
+
+
+def test_one_original_is_counted_in_exactly_one_view(mixed) -> None:
+    """The counts partition the table. A preserved original waiting for Commit
+    is not also Held, and one in the delete queue is not also both."""
+    conn, settings = mixed
+    counts = quarantine_data(conn, settings)["counts"]
+
+    partitioned = sum(counts[view] for view in ("held", "waiting", "delete-queue",
+                                                "removed", "restored"))
+    assert partitioned == 4 * EACH
+    assert counts["preserved:held"] == EACH, "preserved originals with nothing pending"
+    assert counts["preserved:waiting"] == EACH
+    assert counts["preserved:delete-queue"] == EACH
+
+
+def test_the_preserved_subcount_is_a_subset_not_a_sixth_bucket(mixed) -> None:
+    conn, settings = mixed
+    counts = quarantine_data(conn, settings)["counts"]
+
+    for view in ("held", "waiting", "delete-queue"):
+        assert counts[f"preserved:{view}"] <= counts[view]
+
+
+def test_queries_do_not_grow_with_preserved_originals_on_the_page(mixed) -> None:
+    """A storage calculation and a state lookup per row would be fifty of each.
+    The rule is the same one the rest of this file holds: the number of queries
+    is a property of the page, not of the table."""
+    conn, settings = mixed
+    counting = CountingConnection(conn)
+
+    quarantine_data(counting, settings, view="delete-queue")
+    with_page = len(counting.queries)
+    counting.queries.clear()
+    quarantine_data(counting, settings, view="delete-queue", page=2)
+
+    assert len(counting.queries) == with_page
+
+
+def test_the_realized_total_is_one_query_whatever_the_population(mixed) -> None:
+    from librairy.optimization_disposal import outcomes
+
+    conn, _settings = mixed
+    counting = CountingConnection(conn)
+
+    counts = outcomes(counting)
+
+    assert len(counting.queries) == 1
+    assert counts["adopted"] == 3 * EACH
+    #  Nothing has been removed, so nothing has been reclaimed — at any scale.
+    assert counts["realized_bytes"] == 0

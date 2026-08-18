@@ -122,10 +122,28 @@
               </details>
               {% else %}
               <dl class="correction-shape">
+                {# Every other row in the Delete queue group is a file the owner
+                   rejected. This one is a file they deliberately kept, and the
+                   version that replaced it is still in the library — reading
+                   "concert.wav → delete queue" without that is how somebody
+                   talks themselves into thinking a recording is about to go. #}
+                {% if row.preserved %}
+                <div><dt>What this is</dt>
+                     <dd>the preserved original of an optimized file</dd></div>
+                {% endif %}
                 <div><dt>Current</dt><dd class="mono">{{ row.current }}</dd></div>
                 <div><dt>After Commit</dt><dd class="mono">{{ row.after }}</dd></div>
+                {% if row.preserved and row.preserved.active_relpath %}
+                <div><dt>Active optimized version</dt>
+                     <dd class="mono">library/{{ row.preserved.active_relpath }}</dd></div>
+                {% endif %}
                 <div><dt>Affects</dt><dd>{{ row.op_count }} file{{ '' if row.op_count == 1 else 's' }} · {{ row.size }}</dd></div>
                 <div><dt>Reason</dt><dd>{{ row.reason }}</dd></div>
+                {% if row.preserved %}
+                <div><dt>Nothing is deleted</dt>
+                     <dd>it moves into the delete queue folder and stays there
+                         until you empty it yourself</dd></div>
+                {% endif %}
               </dl>
               {% endif %}
               {% if row.files %}

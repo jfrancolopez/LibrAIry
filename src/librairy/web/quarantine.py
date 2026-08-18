@@ -6,6 +6,21 @@ from dataclasses import asdict
 from librairy.config import Settings
 from librairy.db import transaction
 from librairy.lifecycle import LifecycleError, assert_transition, transition_item
+from librairy.optimization_disposal import (
+    IN_DELETE_QUEUE,
+    PRESERVED,
+    REMOVED,
+    RESTORED,
+    STATE_LABEL,
+    WAITING,
+    preserved_state,
+)
+from librairy.optimization_storage import (
+    ADOPTED,
+    ORIGINAL_IN_DELETE_QUEUE,
+    ORIGINAL_REMOVED,
+    UNDONE,
+)
 from librairy.planner import utc_now
 from librairy.quarantine import (
     DELETE_PILE,
@@ -18,6 +33,19 @@ from librairy.quarantine import (
     restore_entry,
 )
 from librairy.web.evidence import humanize_evidence
+
+#  Two vocabularies for one situation, mapped in one place. Where the file is
+#  decides what the arithmetic is, and the delete queue changes the first
+#  without changing the second — which is exactly the confusion this mapping
+#  exists to make impossible to introduce by hand in a template.
+STORAGE_STATE = {
+    PRESERVED: ADOPTED,
+    WAITING: ADOPTED,
+    IN_DELETE_QUEUE: ORIGINAL_IN_DELETE_QUEUE,
+    REMOVED: ORIGINAL_REMOVED,
+    RESTORED: UNDONE,
+    "": ADOPTED,
+}
 
 #  What the reason column holds, said the way a person would say it. The keys
 #  are the three the schema's CHECK allows — `user_discard` was here instead of
@@ -56,6 +84,11 @@ VIEWS = {
     "held": "Held",
     "waiting": "Waiting for Commit",
     "delete-queue": "Delete queue",
+    #  Files LibrAIry can no longer see. Emptying the delete queue is the
+    #  intended way to arrive here, and until this view existed those rows
+    #  stayed under Delete queue for ever — so the count of "files waiting for
+    #  you to delete" only ever went up, including the ones you had deleted.
+    "removed": "Removed",
     "restored": "Put back",
 }
 DEFAULT_VIEW = "held"
@@ -99,6 +132,11 @@ def quarantine_data(
         # are, so you can go and delete them yourself. LibrAIry will not.
         "host_quarantine_dir": host_dir,
         "held": counts.get("held", 0),
+        #  Which of the files in this view are optimization originals. A subset
+        #  of the count above, said as a subset — they are not a sixth bucket,
+        #  and one physical file is never in two.
+        "preserved_here": counts.get(f"preserved:{view}", 0),
+        "removed": counts.get("removed", 0),
         # The pile you asked for: one folder to point a file manager at, so
         # emptying it is one deliberate gesture rather than two hundred.
         "for_deletion": counts.get("delete-queue", 0),
@@ -114,12 +152,26 @@ _ACTIVE_PLAN = (
     " AND p.status IN ('approved','executing'))"
 )
 _IN_DELETE_QUEUE = "i.relpath LIKE '_to-delete/%' ESCAPE '\\'"
+#  The same predicate `live.py` owns, phrased for this join: no row at all, or a
+#  row whose file is not at that path right now. An unmounted share and an
+#  emptied delete queue look identical from here, and both mean the same thing
+#  for what may be offered.
+_GONE = "(i.id IS NULL OR i.missing_since IS NOT NULL)"
 _WHERE = {
-    "held": f"qe.restored_at IS NULL AND NOT {_ACTIVE_PLAN} AND NOT ({_IN_DELETE_QUEUE})",
-    "waiting": f"qe.restored_at IS NULL AND {_ACTIVE_PLAN}",
-    "delete-queue": f"qe.restored_at IS NULL AND ({_IN_DELETE_QUEUE})",
+    "held": (
+        f"qe.restored_at IS NULL AND NOT {_GONE} AND NOT {_ACTIVE_PLAN}"
+        f" AND NOT ({_IN_DELETE_QUEUE})"
+    ),
+    "waiting": f"qe.restored_at IS NULL AND NOT {_GONE} AND {_ACTIVE_PLAN}",
+    "delete-queue": f"qe.restored_at IS NULL AND NOT {_GONE} AND ({_IN_DELETE_QUEUE})",
+    "removed": f"qe.restored_at IS NULL AND {_GONE}",
     "restored": "qe.restored_at IS NOT NULL",
 }
+
+#  A subset of the buckets above, never a bucket of its own: one physical file
+#  belongs to exactly one view, and a sixth tab that overlapped the others would
+#  count the same original twice. Reported as a caption instead.
+_PRESERVED = "qe.optimization_job_id IS NOT NULL"
 
 
 def _counts(conn: sqlite3.Connection) -> dict[str, int]:
@@ -130,14 +182,25 @@ def _counts(conn: sqlite3.Connection) -> dict[str, int]:
     to call `len()` on does not.
     """
     parts = ", ".join(
-        f"SUM(CASE WHEN {clause} THEN 1 ELSE 0 END) AS \"{name}\""
-        for name, clause in _WHERE.items()
+        [
+            f"SUM(CASE WHEN {clause} THEN 1 ELSE 0 END) AS \"{name}\""
+            for name, clause in _WHERE.items()
+        ]
+        + [
+            f"SUM(CASE WHEN {_PRESERVED} AND ({clause}) THEN 1 ELSE 0 END)"
+            f" AS \"preserved:{name}\""
+            for name, clause in _WHERE.items()
+        ]
     )
     row = conn.execute(
         f"SELECT {parts} FROM quarantine_entries qe"  # noqa: S608 — module constants
         " LEFT JOIN items i ON i.id = qe.item_id"
     ).fetchone()
-    return {name: int(row[name] or 0) for name in _WHERE}
+    counts = {name: int(row[name] or 0) for name in _WHERE}
+    counts.update(
+        {f"preserved:{name}": int(row[f"preserved:{name}"] or 0) for name in _WHERE}
+    )
+    return counts
 
 
 def reason_text(reason: str | None) -> str:
@@ -326,7 +389,7 @@ def _entries(
         conn.execute(
             f"""
             SELECT qe.*, i.relpath AS item_relpath, i.size AS item_size,
-                   i.state AS item_state
+                   i.state AS item_state, i.missing_since AS item_missing_since
             FROM quarantine_entries qe
             LEFT JOIN items i ON i.id = qe.item_id
             WHERE {_WHERE.get(view, _WHERE[DEFAULT_VIEW])}
@@ -348,11 +411,14 @@ def _entries(
             "reason_tag": REASON_TAGS.get(
                 quarantine_effective_reason(row), "set aside"
             ),
-            #  A preserved original is not a rejection, and the two controls it
-            #  gets are not the generic ones. Restore means undo the adoption;
-            #  the delete queue is withheld until disposal is designed against
-            #  Undo rather than around it.
+            #  A preserved original is not a rejection, and its controls are not
+            #  the generic ones. Restore means undo the adoption, and the delete
+            #  queue is a two-plan dependency rather than a move — which is why
+            #  the state comes from `optimization_disposal` and not from a
+            #  column here.
             "preserved_original": is_preserved_original(row),
+            "disposal_state": _disposal_state(conn, row),
+            "state_label": STATE_LABEL.get(_disposal_state(conn, row), ""),
             "active_version": _active_version(conn, row),
             "preserved_storage": _preserved_storage(conn, row),
             "marked": marked_for_deletion(row["item_relpath"]),
@@ -366,10 +432,24 @@ def _entries(
             # produce an error is worse than no control.
             "restorable": bool(row["original_root"] and row["original_relpath"])
             and not is_preserved_original(row),
-            "gone": row["item_relpath"] is None or row["item_state"] == "missing",
+            #  `missing_since` is the one definition of "not at that path
+            #  right now" — the same predicate `live.py` owns and Search,
+            #  Browse and the backup queue all use. Asking `state == 'missing'`
+            #  instead was a second answer to the same question, and the
+            #  scanner writes the first one.
+            "gone": row["item_relpath"] is None
+            or row["item_missing_since"] is not None
+            or row["item_state"] == "missing",
         }
         for row in rows
     ]
+
+
+def _disposal_state(conn: sqlite3.Connection, row) -> str:
+    """Where a preserved original stands. Empty for every other held file."""
+    if not is_preserved_original(row):
+        return ""
+    return preserved_state(conn, row)
 
 
 def _active_version(conn: sqlite3.Connection, row) -> str:
@@ -400,7 +480,7 @@ def _preserved_storage(conn: sqlite3.Connection, row) -> dict[str, str]:
     """
     if not is_preserved_original(row):
         return {}
-    from librairy.optimization_storage import ADOPTED, storage_effect
+    from librairy.optimization_storage import storage_effect
 
     job = conn.execute(
         "SELECT source_bytes, actual_bytes FROM optimization_jobs WHERE id=?",
@@ -412,13 +492,18 @@ def _preserved_storage(conn: sqlite3.Connection, row) -> dict[str, str]:
     optimized = int(job["actual_bytes"] or 0)
     if not original or not optimized:
         return {}
-    effect = storage_effect(original, optimized, ADOPTED)
+    effect = storage_effect(original, optimized, STORAGE_STATE[_disposal_state(conn, row)])
     return {
         "original": human_size(original),
         "active": human_size(optimized),
         "freed_if_removed": human_size(effect.bytes_freed_if_original_removed),
         "final_reduction": human_size(abs(effect.final_net_reduction_bytes)),
         "reclaimed": human_size(effect.reclaimed_now_bytes) or "0 B",
+        "stored_now": human_size(effect.physical_bytes_now),
+        "extra_now": human_size(effect.current_extra_storage_bytes) or "0 B",
+        "note": effect.notes[0] if effect.notes else "",
+        #  The one number that may ever be called a saving, and only here.
+        "realized": human_size(effect.reclaimed_now_bytes) if effect.reclaimed_now_bytes else "",
     }
 
 

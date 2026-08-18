@@ -407,7 +407,11 @@ def test_committing_activates_the_optimized_version_everywhere(ready) -> None:
     assert "preserved original" in quarantine
     assert "you said you did not want it" not in quarantine
     assert "Restore original" in quarantine
-    assert "Delete queue" not in quarantine.split("Restore original")[1][:400]
+    #  Delete queue is offered here now, and it is a request: the file has not
+    #  moved and nothing on this page says it has.
+    assert "Delete queue" in quarantine.split("Restore original")[1][:600]
+    assert "Space reclaimed so far" in quarantine
+    assert "0 B" in quarantine
     #  History
     history = client.get("/history").text
     assert "Optimized version adopted" in history
@@ -746,3 +750,199 @@ def test_the_long_labels_are_only_used_where_the_panel_stacks(ready) -> None:
         text = Path(f"src/librairy/web/templates/{page}").read_text(encoding="utf-8")
         if "Final net reduction" in text or "If you remove this original" in text:
             assert "storage-accounting" in text, page
+
+
+# --- and letting the original go, one page at a time ---------------------------------
+
+
+def adopt(client: TestClient, conn, settings, job_id: int) -> int:
+    """Through the buttons: Use optimized, then Commit. Returns the entry id."""
+    use_optimized(client, job_id)
+    plan_id = conn.execute(
+        "SELECT id FROM plans WHERE optimization_job_id=? AND status='approved'",
+        (job_id,),
+    ).fetchone()["id"]
+    commit(client, conn, plan_id)
+    return int(
+        conn.execute(
+            "SELECT id FROM quarantine_entries ORDER BY id DESC LIMIT 1"
+        ).fetchone()["id"]
+    )
+
+
+def test_the_preserved_card_offers_the_delete_queue_and_says_what_it_is_not(
+    ready,
+) -> None:
+    client, conn, settings, job_id, _relpath, _target = ready
+    adopt(client, conn, settings, job_id)
+
+    body = client.get("/quarantine").text
+
+    assert "Restore original" in body
+    assert "Delete queue" in body
+    #  And the number that is still zero is on the same card as the button.
+    assert "Space reclaimed so far" in body
+    assert "0 B" in body
+
+
+def test_asking_for_the_delete_queue_moves_nothing_and_says_so(ready) -> None:
+    client, conn, settings, job_id, relpath, _target = ready
+    entry_id = adopt(client, conn, settings, job_id)
+
+    body = post(client, f"/quarantine/delete-queue/{entry_id}").text
+
+    assert (settings.quarantine_dir / relpath).is_file()
+    assert not (settings.quarantine_dir / "_to-delete").exists()
+    assert "Nothing is deleted" in body
+    assert "Waiting for Commit" in body
+
+
+def test_the_commit_card_says_which_optimization_it_belongs_to(ready) -> None:
+    client, conn, settings, job_id, _relpath, target = ready
+    entry_id = adopt(client, conn, settings, job_id)
+    post(client, f"/quarantine/delete-queue/{entry_id}")
+
+    body = client.get("/commit?type=delete-queue").text
+
+    assert "the preserved original of an optimized file" in body
+    assert f"library/{target}" in body
+    assert "until you empty it yourself" in body
+
+
+def test_cancelling_puts_the_card_back_the_way_it_was(ready) -> None:
+    client, conn, settings, job_id, relpath, _target = ready
+    entry_id = adopt(client, conn, settings, job_id)
+    post(client, f"/quarantine/delete-queue/{entry_id}")
+
+    post(client, f"/quarantine/cancel/{entry_id}")
+    body = client.get("/quarantine").text
+
+    assert "Delete queue" in body
+    assert (settings.quarantine_dir / relpath).is_file()
+    assert not (settings.quarantine_dir / "_to-delete").exists()
+
+
+def test_committing_it_moves_the_original_and_nothing_else(ready) -> None:
+    client, conn, settings, job_id, relpath, target = ready
+    entry_id = adopt(client, conn, settings, job_id)
+    before = (settings.quarantine_dir / relpath).read_bytes()
+    post(client, f"/quarantine/delete-queue/{entry_id}")
+    plan_id = conn.execute(
+        "SELECT id FROM plans WHERE quarantine_entry_id=? AND status='approved'",
+        (entry_id,),
+    ).fetchone()["id"]
+
+    commit(client, conn, plan_id)
+
+    assert (settings.quarantine_dir / "_to-delete" / relpath).read_bytes() == before
+    assert (settings.library_dir / target).is_file()
+    body = client.get("/quarantine?view=delete-queue").text
+    assert "Keep original" in body
+    assert "will not delete it" in body
+
+
+def test_keeping_it_takes_it_back_out_without_touching_the_optimized_version(
+    ready,
+) -> None:
+    client, conn, settings, job_id, relpath, target = ready
+    entry_id = adopt(client, conn, settings, job_id)
+    post(client, f"/quarantine/delete-queue/{entry_id}")
+    plan_id = conn.execute(
+        "SELECT id FROM plans WHERE quarantine_entry_id=? AND status='approved'",
+        (entry_id,),
+    ).fetchone()["id"]
+    commit(client, conn, plan_id)
+
+    body = post(client, f"/quarantine/keep-original/{entry_id}").text
+
+    assert (settings.quarantine_dir / relpath).is_file()
+    assert (settings.library_dir / target).is_file()
+    assert "still the one in your library" in body
+
+
+def test_restoring_from_the_delete_queue_reverses_both(ready) -> None:
+    client, conn, settings, job_id, relpath, target = ready
+    entry_id = adopt(client, conn, settings, job_id)
+    post(client, f"/quarantine/delete-queue/{entry_id}")
+    plan_id = conn.execute(
+        "SELECT id FROM plans WHERE quarantine_entry_id=? AND status='approved'",
+        (entry_id,),
+    ).fetchone()["id"]
+    commit(client, conn, plan_id)
+
+    body = post(client, f"/quarantine/restore-original/{entry_id}").text
+
+    assert (settings.library_dir / relpath).is_file()
+    assert not (settings.library_dir / target).exists()
+    assert not (settings.quarantine_dir / "_to-delete" / relpath).exists()
+    assert "back in the library" in body
+
+
+def test_a_removed_original_is_explained_rather_than_offered(ready) -> None:
+    client, conn, settings, job_id, relpath, target = ready
+    entry_id = adopt(client, conn, settings, job_id)
+    post(client, f"/quarantine/delete-queue/{entry_id}")
+    plan_id = conn.execute(
+        "SELECT id FROM plans WHERE quarantine_entry_id=? AND status='approved'",
+        (entry_id,),
+    ).fetchone()["id"]
+    commit(client, conn, plan_id)
+    #  What the owner does in their own file manager.
+    (settings.quarantine_dir / "_to-delete" / relpath).unlink()
+    scan_root(conn, "quarantine", settings.quarantine_dir, settings)
+
+    body = client.get("/quarantine?view=removed").text
+
+    assert "Original removed" in body
+    assert "Original no longer retained" in body
+    assert "Restore original" not in body
+    #  And the optimized version is still there.
+    assert (settings.library_dir / target).is_file()
+
+
+def test_history_stops_offering_an_undo_it_cannot_do(ready) -> None:
+    client, conn, settings, job_id, relpath, _target = ready
+    entry_id = adopt(client, conn, settings, job_id)
+    before = client.get("/history").text
+    assert "Restore original" in before
+
+    post(client, f"/quarantine/delete-queue/{entry_id}")
+    plan_id = conn.execute(
+        "SELECT id FROM plans WHERE quarantine_entry_id=? AND status='approved'",
+        (entry_id,),
+    ).fetchone()["id"]
+    commit(client, conn, plan_id)
+    (settings.quarantine_dir / "_to-delete" / relpath).unlink()
+    scan_root(conn, "quarantine", settings.quarantine_dir, settings)
+
+    body = client.get("/history").text
+
+    assert "Original removed from storage" in body
+    assert "Restore original" not in body
+    assert "Undo plan" not in body
+
+
+def test_the_optimization_page_reports_a_realized_reduction_only_then(ready) -> None:
+    client, conn, settings, job_id, relpath, _target = ready
+    entry_id = adopt(client, conn, settings, job_id)
+
+    assert "No storage has come back yet" in client.get("/maintenance/optimization").text
+
+    post(client, f"/quarantine/delete-queue/{entry_id}")
+    plan_id = conn.execute(
+        "SELECT id FROM plans WHERE quarantine_entry_id=? AND status='approved'",
+        (entry_id,),
+    ).fetchone()["id"]
+    commit(client, conn, plan_id)
+    #  Still nothing: the file is in the delete queue and every byte is there.
+    assert "No storage has come back yet" in client.get("/maintenance/optimization").text
+
+    (settings.quarantine_dir / "_to-delete" / relpath).unlink()
+    scan_root(conn, "quarantine", settings.quarantine_dir, settings)
+
+    body = client.get("/maintenance/optimization").text
+    assert "Net storage reduction realized" in body
+    #  842 KB original, 504 KB optimized: the library ends up 338 KB smaller,
+    #  which is not the 842 KB the deletion freed at that moment.
+    assert "338.0 KB" in body
+    assert "842" not in body.split("Net storage reduction realized")[1][:200]

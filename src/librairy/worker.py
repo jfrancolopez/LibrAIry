@@ -65,6 +65,9 @@ class WorkerSummary:
     content_failed: int = 0
     backup_copied: int = 0
     backup_failed: int = 0
+    #  Files that left quarantine without LibrAIry moving them — which is what
+    #  emptying the delete queue looks like from here, and is not work.
+    quarantine_vanished: int = 0
 
     @property
     def work_found(self) -> bool:
@@ -127,6 +130,19 @@ class Worker:
             self._optimization_poll(settings)
             _set_worker_state(self.conn, "current_phase", "scan")
             scan = scan_root(self.conn, "inbox", settings.inbox_dir, settings)
+            # Quarantine too, and for a reason the inbox does not have: the
+            # delete queue is a folder LibrAIry explicitly asks people to empty
+            # themselves. It is the one root guaranteed to change behind its
+            # back, and until this ran, emptying it changed nothing LibrAIry
+            # knew — the page went on listing files that were gone, offering to
+            # restore them, and counting them in the queue you had just cleared.
+            #
+            # A walk, not a stat per row: readdir returns the whole directory in
+            # one round trip, and unchanged files are matched on size and mtime
+            # without being re-read.
+            quarantine_scan = scan_root(
+                self.conn, "quarantine", settings.quarantine_dir, settings
+            )
             _set_worker_state(self.conn, "current_phase", "dedup")
             library_hashed = hash_size_colliding_library_files(self.conn, settings)
             candidates = detect_exact_duplicates(self.conn, settings)
@@ -172,6 +188,7 @@ class Worker:
                 content_failed=content.failed,
                 backup_copied=backup.copied,
                 backup_failed=backup.failed,
+                quarantine_vanished=quarantine_scan.missing,
             )
             # Everything above is inbox work, and it has already happened.
             # A library audit is asked for, not needed, so it gets a bounded

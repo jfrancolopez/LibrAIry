@@ -129,16 +129,94 @@ def undo_plan(conn: sqlite3.Connection, plan_id: str, settings: Settings) -> lis
     original, and adopting again: two done plans for one job, and the older
     one's journal now has four `ok` rows in it.
     """
-    rows = conn.execute(
-        f"""
-        SELECT id FROM history
-        WHERE plan_id=? AND outcome='ok'
-          AND action IN ({",".join("?" * len(FORWARD_ACTIONS))})
-        ORDER BY id DESC
-        """,  # noqa: S608 - placeholders only
-        (plan_id, *FORWARD_ACTIONS),
-    ).fetchall()
-    return [undo_op(conn, row["id"], settings) for row in rows]
+    return [undo_op(conn, row["id"], settings) for row in plan_journal(conn, plan_id)]
+
+
+@dataclass(frozen=True)
+class UndoBlocker:
+    """One reason a reversal would refuse, found without moving anything."""
+
+    history_id: int
+    code: str
+    relpath: str
+
+
+#  Said to a person. The codes are what the tests and the journal use.
+BLOCKER_TEXT = {
+    "missing": "the file is not where LibrAIry last put it",
+    "changed": "the file has been edited since",
+    "occupied": "something is already at the place it would go back to",
+    "source": "the optimization workspace will not accept it back",
+}
+
+
+def undo_preflight(
+    conn: sqlite3.Connection,
+    settings: Settings,
+    plan_id: str,
+    *,
+    skip: frozenset[int] = frozenset(),
+) -> list[UndoBlocker]:
+    """Could this plan be reversed right now? Asked without reversing it.
+
+    The same three questions `_undo_op_unlocked` asks before it moves anything,
+    in the same order, against the same rows — so a clean preflight and a
+    refusal a moment later can only disagree because something changed in
+    between, which no amount of checking can prevent.
+
+    It exists because a reversal can involve two plans. Reversing the second
+    after the first has already moved a file leaves a half-undone state that
+    nobody asked for, and "check everything, then start" is the only ordering
+    that cannot produce one. `skip` is for the ops whose file another plan is
+    about to put back: their journalled destination is legitimately empty until
+    that runs.
+
+    Read-only, and it does hash files — which is why it belongs behind a button
+    somebody pressed and not on a page load.
+    """
+    blockers: list[UndoBlocker] = []
+    for entry in plan_journal(conn, plan_id):
+        if entry["id"] in skip:
+            continue
+        try:
+            src = validate_relpath(
+                _root_path(settings, entry["dest_root"]),
+                entry["dest_relpath"],
+                kind="source",
+            )
+        except Exception:  # noqa: BLE001 - any refusal is the same answer here
+            blockers.append(UndoBlocker(entry["id"], "missing", entry["dest_relpath"]))
+            continue
+        if not src.exists():
+            blockers.append(UndoBlocker(entry["id"], "missing", entry["dest_relpath"]))
+            continue
+        if entry["fingerprint"] and blake2b_file(src) != entry["fingerprint"]:
+            blockers.append(UndoBlocker(entry["id"], "changed", entry["dest_relpath"]))
+            continue
+        if is_optimization_source(entry["src_root"]):
+            try:
+                dest = undo_destination(conn, settings, entry)
+            except SourceRefused:
+                blockers.append(UndoBlocker(entry["id"], "source", entry["dest_relpath"]))
+                continue
+            if dest.exists():
+                blockers.append(UndoBlocker(entry["id"], "occupied", entry["dest_relpath"]))
+    return blockers
+
+
+def plan_journal(conn: sqlite3.Connection, plan_id: str) -> list[sqlite3.Row]:
+    """The forward operations this plan actually carried out."""
+    return list(
+        conn.execute(
+            f"""
+            SELECT * FROM history
+            WHERE plan_id=? AND outcome='ok'
+              AND action IN ({",".join("?" * len(FORWARD_ACTIONS))})
+            ORDER BY id DESC
+            """,  # noqa: S608 - placeholders only
+            (plan_id, *FORWARD_ACTIONS),
+        )
+    )
 
 
 def undo_op(conn: sqlite3.Connection, history_id: int, settings: Settings) -> UndoResult:

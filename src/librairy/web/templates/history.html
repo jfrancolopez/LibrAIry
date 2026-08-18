@@ -73,11 +73,30 @@
                    title="Plan {{ group.plan_id }}">Plan {{ group.plan_id[:8] }}</a>
                 {# Not a <form>: this section is inside no form, and a nested
                    one would be invalid. hx-post carries the token itself. #}
+                {% if group.undo %}
+                  {# Whether a plan can be reversed depends on where its files
+                     are *now*, not on the fact that it once ran. An adoption is
+                     two files in an order, and once the owner has removed the
+                     preserved original there is nothing to put back; a
+                     quarantine decision whose file is gone is the same story
+                     with one file. A button that can only fail is worse than a
+                     sentence saying why. #}
+                  {% if group.undo.available %}
+                    <form method="post" action="{{ group.undo.url }}">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                      <button type="submit" class="btn-ghost">{{ group.undo.label }}</button>
+                    </form>
+                  {% endif %}
+                  {% if group.undo.note %}
+                    <span class="muted">{{ group.undo.note }}</span>
+                  {% endif %}
+                {% else %}
                 <button type="button" class="btn-ghost"
                         hx-post="/history/plans/{{ group.plan_id }}/undo"
                         hx-target="#history-result"
                         hx-confirm="Put all {{ group.entries|length }} file(s) in this plan back where they came from?"
                         hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>Undo plan</button>
+                {% endif %}
               </p>
               <ul class="timeline-list">
                 {% for entry in group.entries %}
@@ -86,7 +105,11 @@
                     <span class="mono muted">{{ entry.src_label }}</span>
                     <span aria-hidden="true">→</span>
                     {% if entry.browse_href %}<a class="mono" href="{{ entry.browse_href }}">{{ entry.dest_label }}</a>{% else %}<span class="mono">{{ entry.dest_label }}</span>{% endif %}{% if not entry.internal %}{{ ext_info(entry.dest_relpath) }}{% endif %}
-                    {% if entry.outcome == 'ok' %}
+                    {# Not offered inside an adoption: reversing one of its two
+                       operations on its own leaves the library holding both
+                       versions or neither, which is precisely what the ordered
+                       reversal above exists to prevent. #}
+                    {% if entry.outcome == 'ok' and not group.undo %}
                       <button class="btn-ghost" hx-post="/history/undo/{{ entry.id }}" hx-target="#history-result" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>Undo</button>
                     {% endif %}
                   </li>

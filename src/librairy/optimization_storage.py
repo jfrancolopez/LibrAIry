@@ -42,9 +42,18 @@ NOT_STARTED = "not-started"
 READY = "ready"
 # The optimized file is the active representation; the original is preserved.
 ADOPTED = "adopted"
+# The original has been moved into `quarantine/_to-delete`. Both files are
+# still on the disk and the numbers are identical to ADOPTED — which is the
+# point of having the state at all, because this is exactly the moment somebody
+# is most likely to believe the space has come back.
+ORIGINAL_IN_DELETE_QUEUE = "original-in-delete-queue"
 # The preserved original is gone. Only reachable when LibrAIry can see that it
 # is: nothing here ever removes it.
 ORIGINAL_REMOVED = "original-removed"
+# The adoption was reversed. The original is the live file again and the
+# optimized copy is back in the encoder's workspace, so the disk holds the same
+# two files it held before anything was decided.
+UNDONE = "undone"
 
 
 @dataclass(frozen=True)
@@ -120,13 +129,25 @@ def storage_effect(
             notes=("The original is no longer stored.",),
         )
 
-    # READY and ADOPTED hold the same bytes. What differs is which copy is the
-    # active representation, not how much disk is in use — and that is the
-    # whole point of separating these numbers.
-    note = (
-        "Both files are stored. Nothing has been freed."
-        if state == ADOPTED
-        else "The converted copy is kept beside the original. Nothing has been freed."
+    # READY, ADOPTED, ORIGINAL_IN_DELETE_QUEUE and UNDONE all hold the same
+    # bytes. What differs between them is which copy is the active
+    # representation and what somebody has decided about the other one — not
+    # how much disk is in use. Keeping them separate states with identical
+    # arithmetic is the whole point: the delete queue is the moment a reader is
+    # most likely to assume the space has come back, and it has not.
+    note = {
+        ADOPTED: "Both files are stored. Nothing has been freed.",
+        ORIGINAL_IN_DELETE_QUEUE: (
+            "Both files are stored. The original is in the delete queue and "
+            "nothing has been freed until you empty it yourself."
+        ),
+        UNDONE: (
+            "The original is the live file again, and the converted copy is back "
+            "in the workspace. Nothing has been freed."
+        ),
+    }.get(
+        state,
+        "The converted copy is kept beside the original. Nothing has been freed.",
     )
     return StorageEffect(
         state=state,

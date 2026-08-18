@@ -1537,6 +1537,33 @@ def queue_data(conn: sqlite3.Connection, settings: Settings | None = None) -> di
         "concurrency": queue.MAX_CONCURRENT,
         "resource_use": LOW.label,
         "window": _window_label(conn),
+        #  What has actually come of the optimizations already decided. Counts
+        #  first, because they are always true; the byte total only ever
+        #  describes originals LibrAIry can see are gone.
+        "outcomes": _outcome_summary(conn),
+    }
+
+
+def _outcome_summary(conn: sqlite3.Connection) -> dict[str, object]:
+    """Adopted, preserved, queued, removed — and one number, carefully named.
+
+    "Net reduction realized" is the only total on this page that describes disk
+    space that actually came back. It is deliberately not summed with the
+    estimates or with the representation reductions above it: three numbers
+    that mean three things, added together, produce a fourth that means
+    nothing.
+    """
+    from librairy.optimization_disposal import outcomes
+
+    counts = outcomes(conn)
+    realized = counts["realized_bytes"]
+    return {
+        **counts,
+        "realized_label": human_size(abs(realized)),
+        "realized_negative": realized < 0,
+        #  Nothing removed means nothing realized, and the page says so rather
+        #  than showing "0 B" beside three encouraging numbers.
+        "has_realized": bool(counts["removed"]),
     }
 
 

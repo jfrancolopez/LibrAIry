@@ -23,6 +23,34 @@
 
   {% if notice %}<p class="status">{{ notice }}</p>{% endif %}
 
+  {% if outcomes.adopted %}
+    {# What has come of the optimizations already decided. Counts first,
+       because they are always true. The byte total appears only once an
+       original is genuinely gone, and it is the one number on this page that
+       describes disk space that came back — deliberately not added to the
+       estimates or the representation reductions elsewhere, because three
+       numbers meaning three things sum to a fourth meaning nothing. #}
+    <dl class="queue-summary">
+      <div><dt>Optimized versions active</dt><dd>{{ outcomes.adopted }}</dd></div>
+      <div><dt>Originals preserved</dt><dd>{{ outcomes.preserved }}</dd></div>
+      {% if outcomes.in_delete_queue %}
+      <div><dt>Originals in delete queue</dt><dd>{{ outcomes.in_delete_queue }}</dd></div>
+      {% endif %}
+      <div><dt>Originals you removed</dt><dd>{{ outcomes.removed }}</dd></div>
+    </dl>
+    <p class="muted">
+      {% if outcomes.has_realized %}
+        Net storage reduction realized:
+        <strong>{{ outcomes.realized_label }}{% if outcomes.realized_negative %} larger{% endif %}</strong>
+        — measured against what those files took before, and counted only for
+        originals that are actually gone.
+      {% else %}
+        No storage has come back yet. Both copies of every optimized file are
+        still on the disk until you empty the delete queue yourself.
+      {% endif %}
+    </p>
+  {% endif %}
+
   {# `jobs` alone is the wrong test: a finished result lives in `ready_jobs`,
      so a queue holding nothing but converted files ready to look at announced
      "Nothing is queued" and hid every one of them. #}

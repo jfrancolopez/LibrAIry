@@ -277,6 +277,8 @@ def _plan_row(
         if kind == OPTIMIZATION
         else {"optimization": None}
     )
+    if kind == DELETE_QUEUE:
+        extra = {**extra, "preserved": _preserved_original_fields(conn, row)}
     return {
         **extra,
         "type": kind,
@@ -406,6 +408,40 @@ def _optimization_fields(
     }
 
 
+def _preserved_original_fields(
+    conn: sqlite3.Connection, row: sqlite3.Row
+) -> dict[str, Any] | None:
+    """Whether this delete-queue move is disposing of an optimization original.
+
+    It matters on this card more than anywhere else. Every other row in this
+    group is a file the owner rejected; this one is a file they *kept* on
+    purpose, and the version that replaced it is still in the library. Reading
+    "concert.wav → delete queue" without that context is how somebody talks
+    themselves into thinking they are about to lose a recording.
+
+    Nothing new is stored to answer this. The plan names the quarantine entry,
+    and the entry has named its optimization job since adoption wrote it.
+    """
+    from librairy.quarantine import is_preserved_original
+
+    if not row["quarantine_entry_id"]:
+        return None
+    entry = conn.execute(
+        "SELECT * FROM quarantine_entries WHERE id=?", (row["quarantine_entry_id"],)
+    ).fetchone()
+    if entry is None or not is_preserved_original(entry):
+        return None
+    active = conn.execute(
+        "SELECT i.relpath FROM optimization_jobs j JOIN items i ON i.id = j.result_item_id"
+        " WHERE j.id=? AND i.missing_since IS NULL",
+        (int(entry["optimization_job_id"]),),
+    ).fetchone()
+    return {
+        "job_id": int(entry["optimization_job_id"]),
+        "active_relpath": str(active["relpath"]) if active else "",
+    }
+
+
 #  What the encoder's workspace is called when a person reads about it. The real
 #  path is inside the container and would not help anybody find anything, so the
 #  journal keeps it — Undo needs it — and the page says where it is in words.
@@ -441,6 +477,8 @@ def _reason(conn: sqlite3.Connection, row: sqlite3.Row, kind: str) -> str:
         return found["summary"] if found else "Approved in Library Review."
     if kind == DELETE_QUEUE:
         return "You chose Delete queue. Nothing is deleted."
+    if kind == RESTORE and row["quarantine_entry_id"]:
+        return "You asked for this to go back."
     if kind == OPTIMIZATION:
         return "You chose the optimized version. The original is preserved."
     return "You asked for this to go back."
