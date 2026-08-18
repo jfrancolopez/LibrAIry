@@ -139,10 +139,62 @@ is cleared, and retrying is something you ask for. Nothing knows how much of a
 half-written file is valid, and re-spending an hour of CPU because a container
 was updated is not a decision to take on your behalf.
 
+## Adopting a result
+
+The machinery exists; the button does not yet. What is built and proved:
+
+An adoption is **one decision and two operations**, in one immutable plan:
+
+    1  Library/Music/Live/concert.wav  ->  Quarantine/Music/Live/concert.wav
+    2  the verified optimized copy     ->  Library/Music/Live/concert.flac
+
+Nothing moves when the plan is made. It moves at Commit, like every other
+decision here, and **Undo** reverses it: the optimized copy goes back to the
+encoder's workspace and the original returns to the library, both verified by
+hash, in the order that keeps them from ever wanting the same path at once.
+
+The generated file is **read in place**. It never becomes a fourth folder you
+can see, and `optimization` is a plan source only — no plan, and no undo, can
+move a file *into* the encoder's workspace except the one reverse of an
+adoption LibrAIry recorded itself.
+
+**Collisions refuse.** If something is already at the destination, the plan
+stops. LibrAIry will not write `concert (2).flac` beside the `concert.wav` it
+was asked to replace. The one exception is an HEVC re-encode of an MP4, whose
+output lands on the original's own path — allowed only because operation 1
+takes that exact file, checked by hash, out of the way first.
+
+**A failed second operation puts the original back.** If the optimized copy
+cannot be filed, the original returns to its exact library path with its exact
+bytes before the commit finishes. You are not asked to go and undo half a plan.
+
+### The preserved original
+
+It appears in Quarantine as **Preserved original**, not as something you
+rejected, with the active version named beside it. Its only actions are
+**Restore original** — which undoes the adoption, both files, in order — and
+**Details**.
+
+There is deliberately **no Delete queue** for it yet. Moving it would change
+the exact path Undo expects to find it at, so disposal gets designed against
+Undo rather than around it.
+
+### What adoption does not carry
+
+A representation change inherits the file's place in the library and none of
+the conclusions drawn about the old bytes: no captions, no extracted text, no
+probe cache, no duplicate or similarity records, no audit findings. All of
+those describe bytes that no longer exist.
+
+Your **catalog identity is not lost**. A TMDB or MusicBrainz answer is held
+against the album or movie *folder*, not against the file, and adoption keeps
+the file in its folder — so `Movies/Fight Club (1999)` is still TMDB 550 after
+its MKV becomes an MP4.
+
 ## What is deliberately not here
 
 No AV1, no hardware encoders (NVENC, QSV, VAAPI), no HDR conversion, no
 resizing, no frame-rate conversion, no audio normalization, no image
-compression. No suspend-and-resume orchestration. And no adoption: **Use
-result**, **Replace original** and **Apply** do not exist, and a test fails if
-any of those words appears on a button.
+compression. No suspend-and-resume orchestration. And no adoption **button**:
+**Use result**, **Replace original** and **Apply** do not exist, and a test
+fails if any of those words appears on a button.
