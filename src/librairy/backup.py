@@ -10,6 +10,7 @@ from pathlib import Path
 
 from librairy.config import Settings
 from librairy.db import database_path
+from librairy.live import live
 from librairy.paths import validate_relpath
 from librairy.planner import utc_now
 from librairy.taxonomy import CATEGORIES
@@ -260,6 +261,34 @@ def enqueue_backup_item(
     return cursor.rowcount == 1
 
 
+def _due_backups(conn: sqlite3.Connection, *, batch_size: int) -> list[sqlite3.Row]:
+    """The queue rows a run would actually hand to rclone.
+
+    Joined against `items` because a queued row is a request to copy a file,
+    and a file that is not there cannot be copied. Without the join the run
+    burns an rclone invocation per poll on a source that does not exist, fails,
+    increments `attempts`, and eventually exhausts a perfectly good backup
+    request — for an unmounted share, or for an optimized copy that was
+    adopted, queued, and then un-adopted, whose bytes are back in the job's
+    staging directory.
+
+    The row is left alone rather than deleted. If the share comes back, or the
+    optimized version is adopted again, the next scan clears `missing_since`
+    and this picks the request up where it was.
+    """
+    return list(
+        conn.execute(
+            f"""
+            SELECT q.* FROM backup_queue q JOIN items i ON i.id = q.item_id
+            WHERE q.state IN ('queued','failed') AND q.attempts < ? AND {live()}
+            ORDER BY q.id
+            LIMIT ?
+            """,  # noqa: S608 - a module constant
+            (MAX_BACKUP_ATTEMPTS, batch_size),
+        )
+    )
+
+
 def run_backup_once(
     conn: sqlite3.Connection,
     settings: Settings,
@@ -269,15 +298,7 @@ def run_backup_once(
     status = backup_status(settings)
     if not status.available:
         return BackupRunSummary(paused=True, warning=status.detail)
-    rows = conn.execute(
-        """
-        SELECT * FROM backup_queue
-        WHERE state IN ('queued','failed') AND attempts < ?
-        ORDER BY id
-        LIMIT ?
-        """,
-        (MAX_BACKUP_ATTEMPTS, batch_size),
-    ).fetchall()
+    rows = _due_backups(conn, batch_size=batch_size)
     copied = failed = 0
     for row in rows:
         if _copy_and_verify(conn, settings, row):

@@ -9,6 +9,7 @@ from pathlib import Path
 from librairy.config import Settings
 from librairy.humanize import human_bytes
 from librairy.lifecycle import state_counts, vanished_count
+from librairy.live import LIVE
 
 
 @dataclass(frozen=True)
@@ -82,7 +83,9 @@ def dashboard_data(conn: sqlite3.Connection, settings: Settings) -> dict[str, ob
         "current_phase": worker_state.get("current_phase", "unknown"),
         "counts": counts,
         "lifecycle": lifecycle_rows(inbox_counts),
-        "library_count": _count(conn, "SELECT COUNT(*) FROM items WHERE root='library'"),
+        "library_count": _count(
+            conn, f"SELECT COUNT(*) FROM items WHERE root='library' AND {LIVE}"
+        ),
         "proposal_count": proposals,
         "approved_count": _count(conn, "SELECT COUNT(*) FROM proposals WHERE status='approved'"),
         "recent_history": _recent_history(conn),

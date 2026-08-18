@@ -15,6 +15,7 @@ from librairy.ai.status import provider_models, upsert_provider_status
 from librairy.backup import backup_status
 from librairy.config import Settings
 from librairy.db import database_path
+from librairy.live import LIVE
 from librairy.web.dashboard import _disk_stats, _worker_state
 
 PROBE_TTL_SECONDS = 60
@@ -245,7 +246,8 @@ def _pipeline(conn: sqlite3.Connection) -> list[Bar]:
     }
     rows = list(
         conn.execute(
-            "SELECT state, COUNT(*) AS count FROM items GROUP BY state ORDER BY count DESC"
+            f"SELECT state, COUNT(*) AS count FROM items WHERE {LIVE}"
+            " GROUP BY state ORDER BY count DESC"
         )
     )
     total = sum(row["count"] for row in rows) or 1
@@ -313,8 +315,13 @@ def _totals(conn: sqlite3.Connection) -> dict[str, int]:
         return int(conn.execute(sql).fetchone()[0])
 
     return {
-        "library_files": count("SELECT COUNT(*) FROM items WHERE root='library'"),
-        "inbox_files": count("SELECT COUNT(*) FROM items WHERE root='inbox'"),
+        # Both are claims about what is on the disk now, so both exclude rows
+        # whose file is not there — a vanished share, or an optimized copy that
+        # was un-adopted and is dormant in its job's staging directory.
+        "library_files": count(
+            f"SELECT COUNT(*) FROM items WHERE root='library' AND {LIVE}"
+        ),
+        "inbox_files": count(f"SELECT COUNT(*) FROM items WHERE root='inbox' AND {LIVE}"),
         "moves_all_time": count("SELECT COUNT(*) FROM history WHERE action='move'"),
         "quarantined": count("SELECT COUNT(*) FROM quarantine_entries"),
     }

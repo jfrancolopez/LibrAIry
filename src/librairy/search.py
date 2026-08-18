@@ -9,6 +9,7 @@ from pathlib import PurePosixPath
 from typing import Any
 
 from librairy.config import Settings
+from librairy.live import live
 
 PAGE_SIZE = 50
 TEXT_FIELDS = ("name", "clean_name", "tags", "artist", "album", "title", "show", "genre", "event")
@@ -33,7 +34,7 @@ FTS_OPERATORS = {"AND", "OR", "NOT", "NEAR"}
 # and the rejection made about that file, History can still reach it, and if
 # the file comes back the next scan clears the flag and it is searchable again
 # with no rebuild. The record was never wrong; only the query was.
-LIVE_ONLY = "i.missing_since IS NULL"
+LIVE_ONLY = live()
 
 
 @dataclass(frozen=True)

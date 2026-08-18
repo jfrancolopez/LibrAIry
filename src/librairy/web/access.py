@@ -16,6 +16,7 @@ from pathlib import Path
 
 from librairy.config import Settings
 from librairy.humanize import human_bytes
+from librairy.live import LIVE
 from librairy.web.auth import has_admin_password
 
 
@@ -79,8 +80,12 @@ def access_data(conn: sqlite3.Connection, settings: Settings) -> dict[str, objec
 
 
 def _usage(conn: sqlite3.Connection, root: str) -> tuple[int, str]:
+    # "This share holds N files and X GB" is a statement about the disk. A row
+    # for a file that is not there contributes neither, so both sides of it
+    # exclude missing rows rather than only the count.
     row = conn.execute(
-        "SELECT COUNT(*) AS files, COALESCE(SUM(size), 0) AS bytes FROM items WHERE root=?",
+        "SELECT COUNT(*) AS files, COALESCE(SUM(size), 0) AS bytes FROM items"
+        f" WHERE root=? AND {LIVE}",
         (root,),
     ).fetchone()
     return int(row["files"]), human_bytes(int(row["bytes"]))

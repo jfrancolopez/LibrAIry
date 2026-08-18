@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from pathlib import PurePosixPath
 
 from librairy.config import Settings
+from librairy.live import dormant_optimization_result
 from librairy.scanner import visible_files
 
 # Enough to recognise which files are meant without turning a status line into
@@ -63,9 +64,20 @@ def library_consistency(
     if on_disk is None:
         on_disk = visible_files(settings.library_dir, settings.ignore_patterns)
     present = set(on_disk)
+    # Missing rows are included on purpose: a row describing a file that is not
+    # there is exactly the drift this panel exists to report, and the note below
+    # explains it rather than offering a command that would not help.
+    #
+    # The one exception is a dormant optimization result. Its file is in the
+    # job's staging directory by design, one click from coming back, and the
+    # job's own record says where — so counting it here would be inventing a
+    # problem that is already accounted for somewhere the user can see.
     indexed = {
         row["relpath"]
-        for row in conn.execute("SELECT relpath FROM items WHERE root='library'")
+        for row in conn.execute(
+            "SELECT relpath FROM items i WHERE root='library'"
+            f" AND NOT ({dormant_optimization_result()})"
+        )
     }
     unindexed = sorted(present - indexed)
     missing = sorted(indexed - present)
