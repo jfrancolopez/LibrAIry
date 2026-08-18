@@ -379,3 +379,51 @@ def test_the_probe_cache_holds_one_row_per_item_across_all_tools(scene) -> None:
     assert len(rows) == 1, "if this now holds two rows, the debt has been paid"
     assert rows[0]["tool"] == "some-other-tool"
     assert get_cached_metadata(conn, item_id, "fp", TOOL) is None
+
+
+# --- AIFF, proved rather than extended by analogy -----------------------------------
+
+
+@pytest.mark.skipif(not __import__("shutil").which("ffmpeg"), reason="needs ffmpeg")
+@pytest.mark.parametrize(
+    ("label", "codec", "channels", "raw"),
+    [
+        ("16-bit mono", "pcm_s16be", 1, "s16le"),
+        ("16-bit stereo", "pcm_s16be", 2, "s16le"),
+        ("24-bit mono", "pcm_s24be", 1, "s24le"),
+        ("24-bit stereo", "pcm_s24be", 2, "s24le"),
+    ],
+)
+def test_aiff_to_flac_keeps_every_sample(
+    tmp_path: Path, label: str, codec: str, channels: int, raw: str
+) -> None:
+    """LOSSLESS is a promise about the audio, and AIFF is not WAV: big-endian,
+    a different chunk layout, and 24-bit samples that are not the little-endian
+    ones with the bytes reversed.
+
+    Both sides are decoded to the same canonical raw PCM and hashed. Comparing
+    the files directly would compare containers; comparing durations or bit
+    depths would compare metadata.
+    """
+    import hashlib
+    import subprocess
+
+    def ffmpeg(*args: str) -> None:
+        subprocess.run(
+            ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", *args],
+            check=True, capture_output=True,
+        )
+
+    def canonical(path: Path, out: Path) -> str:
+        ffmpeg("-i", str(path), "-map", "0:a:0", "-c:a", f"pcm_{raw}",
+               "-ac", str(channels), "-f", raw, str(out))
+        return hashlib.blake2b(out.read_bytes(), digest_size=32).hexdigest()
+
+    source = tmp_path / "take.aiff"
+    ffmpeg("-f", "lavfi", "-i", "sine=frequency=440:duration=1",
+           "-ac", str(channels), "-c:a", codec, str(source))
+    target = tmp_path / "take.flac"
+    ffmpeg("-i", str(source), "-map", "0:a:0", "-c:a", "flac", str(target))
+
+    assert canonical(source, tmp_path / "a.raw") == canonical(target, tmp_path / "b.raw")
+    assert target.stat().st_size < source.stat().st_size

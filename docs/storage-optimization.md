@@ -141,7 +141,20 @@ was updated is not a decision to take on your behalf.
 
 ## Adopting a result
 
-The machinery exists; the button does not yet. What is built and proved:
+**Use optimized** files the converted copy in your library and keeps your
+original in Quarantine. The whole sequence, and where each step can be stopped:
+
+| Step | What it does | Files moved |
+|---|---|---|
+| Advisor | suggests | none |
+| Queue | you ask for the conversion | none |
+| Ready for review | the converted copy exists and has been checked | none |
+| **Use optimized** | approves the change | **none** |
+| Commit | performs it | two |
+| Restore original | undoes it | two, back |
+
+Only **Commit** moves anything, which is true of every other decision in
+LibrAIry as well.
 
 An adoption is **one decision and two operations**, in one immutable plan:
 
@@ -179,6 +192,24 @@ There is deliberately **no Delete queue** for it yet. Moving it would change
 the exact path Undo expects to find it at, so disposal gets designed against
 Undo rather than around it.
 
+### Space reclaimed is 0 B, and stays there
+
+While both copies are on the disk, nothing has been freed. Every screen says
+so in the same words:
+
+| | |
+|---|---|
+| Original baseline | 842 MB |
+| Optimized representation | 504 MB |
+| Representation reduction | 338 MB |
+| Extra storage while the original is retained | 504 MB |
+| **Space reclaimed now** | **0 B** |
+| If you eventually remove the preserved original | 842 MB freed at that moment |
+| Final net reduction against the original baseline | 338 MB |
+
+The last two are different numbers and they differ by more than a factor of
+two, which is why nothing here is ever labelled "reclaimable" or "saved".
+
 ### What adoption does not carry
 
 A representation change inherits the file's place in the library and none of
@@ -191,10 +222,33 @@ against the album or movie *folder*, not against the file, and adoption keeps
 the file in its folder — so `Movies/Fight Club (1999)` is still TMDB 550 after
 its MKV becomes an MP4.
 
+## AIFF
+
+Proved rather than assumed. AIFF is big-endian, has its own chunk layout, and
+stores 24-bit samples in a form that is not the little-endian one with the
+bytes reversed — so "it works for WAV" is not an argument about AIFF.
+
+Both sides decoded to the same canonical raw PCM and hashed
+(`scripts/prove_aiff_roundtrip.py`):
+
+```
+case                   aiff       flac   depth  samples identical
+16-bit mono         264,654     44,323  16-bit  yes
+16-bit stereo       529,254     81,162  16-bit  yes
+24-bit mono         396,954     44,352  24-bit  yes
+24-bit stereo       793,854     81,220  24-bit  yes
+```
+
+Sample for sample, at both depths, mono and stereo. **LOSSLESS** means what it
+says for AIFF.
+
 ## What is deliberately not here
 
 No AV1, no hardware encoders (NVENC, QSV, VAAPI), no HDR conversion, no
 resizing, no frame-rate conversion, no audio normalization, no image
-compression. No suspend-and-resume orchestration. And no adoption **button**:
-**Use result**, **Replace original** and **Apply** do not exist, and a test
-fails if any of those words appears on a button.
+compression. No suspend-and-resume orchestration.
+
+And nothing that says your original was replaced. **Use result**, **Replace
+original**, **Apply** and **Overwrite** do not exist, and a test fails if any
+of those words appears on a button — because the original is preserved, and a
+word implying otherwise would be a lie about the one thing that matters here.

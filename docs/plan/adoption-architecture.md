@@ -307,9 +307,25 @@ alter it, and rebuilding `items` means dropping a table fifteen foreign keys
 point into — the third time this wall has decided a design here.
 
 **The row yields the path.** `root` stays `library`, `missing_since` is set as
-before, and `relpath` is parked at `_optimization/<job-id>/<former relpath>` —
-the former path kept inside the parked one, so lineage still reads, and the
-`_` prefix following the convention `_to-delete` and `_librairy` already use.
+before, and `relpath` is parked at
+
+    __librairy_internal__/optimization-dormant/<job-id>/<item-id>
+
+An earlier version used `_optimization/<job>/<former path>`. That was a
+convention, and a convention is not a reservation: `Library/_optimization/` is
+a folder somebody could plausibly create, and the moment they did, this
+bookkeeping address would collide with real media through the same UNIQUE
+constraint that made parking necessary. `librairy/reserved.py` owns the name
+now — `validate_dest` refuses it, so no plan, correction, import or restore can
+file a real file inside it, and `scan_root` refuses to index anything found
+there, so a physical file cannot manufacture a colliding row. One that exists
+is reported by the Browse consistency panel with its own note and no remedy
+command, because scanning would not index it either.
+
+The former path is deliberately *not* encoded. `optimization_jobs`, `plan_ops`
+and `history` all record where the file was and where it went; a fourth copy
+would be a fourth thing to keep in agreement, and nothing reads this string as
+a path.
 
 It is the more honest record anyway. There is no file at
 `Music/Live/concert.flac` while the copy is in staging, and a row saying there
