@@ -246,10 +246,41 @@ def enqueue_backup_item(
     relpath: str,
     fingerprint: str,
 ) -> bool:
+    """Ask for these bytes, at this path, to be copied off-site.
+
+    Backup identity is `UNIQUE (item_id, relpath, fingerprint)`, so it is
+    genuinely fingerprint-aware and `INSERT OR IGNORE` does the right thing in
+    both directions: the same bytes at the same path are already requested (or
+    already done) and nothing is added, while *different* bytes are a new
+    request even though the item and the path are unchanged.
+
+    That matters because one item's bytes really do change under a stable id:
+    adopting an optimized version, undoing it, re-running the encode and
+    adopting again reuses the same `items` row by design.
+
+    What `INSERT OR IGNORE` alone does not handle is the row left behind. A
+    still-pending request for the *previous* fingerprint at this same path is a
+    request to copy bytes that are no longer there — and `_copy_and_verify`
+    checks the source against the remote, not against the recorded hash, so it
+    would happily upload the new file and mark the old fingerprint `done`. That
+    is a backup record asserting something untrue, which is worse than a
+    failure. Those rows are discarded.
+
+    `done` and `copying` are left alone: one is a fact about a copy that exists
+    on the remote, the other is in flight.
+    """
     if not settings.backup_enabled:
         return False
     if not should_back_up(conn, settings, item_id):
         return False
+    conn.execute(
+        """
+        DELETE FROM backup_queue
+        WHERE item_id=? AND relpath=? AND fingerprint != ?
+          AND state IN ('queued','failed')
+        """,
+        (item_id, relpath, fingerprint),
+    )
     cursor = conn.execute(
         """
         INSERT OR IGNORE INTO backup_queue(
