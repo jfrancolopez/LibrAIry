@@ -369,3 +369,55 @@ def test_no_banned_wording_reaches_a_person_from_python(path: Path) -> None:
     ]
 
     assert offenders == []
+
+
+# --- the scenes the interaction tests stand on --------------------------------
+
+
+def test_the_fixture_carries_one_of_every_decision_kind(client) -> None:
+    """Coverage disappears by omission, silently, and stays gone.
+
+    Search, History, Quarantine and Commit each went a whole pass with their
+    shared controls unexercised, because the fixture had no rows on them — and
+    three controls on the staged-quarantine card had never been seen by any
+    inventory at all, because nothing here ever produced a staged proposal.
+
+    So the scenes are asserted rather than assumed. If a decision type stops
+    being represented, this fails on the pass that removed it instead of on the
+    pass that needed it.
+    """
+    from librairy.web.commit_queue import TYPE_ORDER, queue_summary
+
+    summary = queue_summary(client.app.state.conn)
+    present = {
+        group["type"] for group in summary["all_groups"] if group["decisions"]
+    }
+
+    assert present == set(TYPE_ORDER), f"no fixture decision of kind {set(TYPE_ORDER) - present}"
+
+
+def test_the_fixture_fills_every_quarantine_view_that_matters(client) -> None:
+    """Held, Waiting for Commit and Delete queue each need a row, and one of
+    those rows has to be a preserved optimization original — the shape that
+    renders differently from every other file in quarantine."""
+    from librairy.web.quarantine import _counts
+
+    counts = _counts(client.app.state.conn)
+
+    for view in ("held", "waiting", "delete-queue"):
+        assert counts.get(view), f"no quarantine row in the {view} view"
+    assert counts.get("preserved:delete-queue"), "no preserved original to look at"
+
+
+def test_the_fixture_journal_covers_what_history_can_show(client) -> None:
+    """Every History filter needs something in it, and the refusal that the
+    page renders differently needs a row too."""
+    from librairy.history import HISTORY_KINDS, kind_counts
+
+    counts = kind_counts(client.app.state.conn)
+
+    for kind in ("filed", "quarantined", "failed"):
+        assert counts.get(kind), f"the journal has nothing under {kind}"
+    assert counts["all"] == sum(
+        counts[key] for key in HISTORY_KINDS if key != "all"
+    )

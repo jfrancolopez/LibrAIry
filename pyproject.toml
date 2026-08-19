@@ -4,7 +4,10 @@ build-backend = "hatchling.build"
 
 [project]
 name = "librairy"
-version = "1.2.0"
+# Read from `src/librairy/__init__.py`, which is the one place the number
+# lives. Declaring it here as well is how the installed metadata came to say
+# 1.0.0 while this file said 1.2.0.
+dynamic = ["version"]
 description = "Privacy-first file organization and library manager"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -27,6 +30,9 @@ dev = [
 
 [project.scripts]
 librairy = "librairy.cli:main"
+
+[tool.hatch.version]
+path = "src/librairy/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/librairy"]

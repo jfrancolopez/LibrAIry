@@ -18,7 +18,9 @@ import sys
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
 
+from librairy.scanner import scan_root
 from librairy.web.thumbs import PLAYABLE_VIDEO
 
 # The dev fixture is not an installed package — `scripts/ui_serve.py` reaches
@@ -171,3 +173,61 @@ def test_the_reserved_optimization_namespace_is_on_neither_surface(client) -> No
     )
 
     assert RESERVED_TOP not in everywhere
+
+
+def test_scanning_the_unindexed_file_is_what_makes_search_find_it(tmp_path: Path) -> None:
+    """The other half of the contract, and the proof the first half is real.
+
+    A file Browse sees and Search does not is only interesting if scanning it
+    changes that. Asserted on its own fixture rather than the shared one,
+    because it ends by scanning — and the shared fixture's whole point is a
+    file nothing has scanned.
+    """
+    from tests.dev.fixture import build_app
+
+    root = tmp_path / "library-scan"
+    app = build_app(root)
+    client = TestClient(app)
+    settings, conn = app.state.settings, app.state.conn
+    stray = "Music/Pop/Stray/never-scanned.flac"
+
+    assert (settings.library_dir / stray).is_file(), "the fixture wrote it to disk"
+    assert "never-scanned.flac" not in client.get("/search/results?q=never-scanned").text
+
+    scan_root(conn, "library", settings.library_dir, settings)
+
+    assert "never-scanned.flac" in client.get("/search/results?q=never-scanned").text
+
+
+def test_a_file_deleted_underneath_leaves_a_record_that_says_so(tmp_path: Path) -> None:
+    """The disagreement in the other direction.
+
+    Browse walks the disk, so a file removed outside LibrAIry is simply not
+    there. Search reads the index, which still has a row until the scanner
+    reconciles — and after it does, the row is retained and marked rather than
+    dropped, because "this used to be here and is not any more" is a thing a
+    person needs to be able to look up.
+    """
+    from tests.dev.fixture import build_app
+
+    root = tmp_path / "library-drift"
+    app = build_app(root)
+    client = TestClient(app)
+    settings, conn = app.state.settings, app.state.conn
+    relpath = "Music/Pop/Prince/03 - Kiss.flac"
+    item_id = conn.execute("SELECT id FROM items WHERE relpath=?", (relpath,)).fetchone()["id"]
+
+    assert "03 - Kiss.flac" in client.get("/search/results?q=Kiss").text
+    (settings.library_dir / relpath).unlink()
+    scan_root(conn, "library", settings.library_dir, settings)
+
+    missing = conn.execute(
+        "SELECT missing_since FROM items WHERE id=?", (item_id,)
+    ).fetchone()["missing_since"]
+    detail = client.get(f"/items/{item_id}")
+
+    assert missing is not None, "the scanner marks it rather than dropping it"
+    assert "03 - Kiss.flac" not in client.get("/browse/Music?folder=Pop/Prince").text
+    assert "03 - Kiss.flac" not in client.get("/search/results?q=Kiss").text
+    assert detail.status_code == 200
+    assert "Not on disk" in detail.text
