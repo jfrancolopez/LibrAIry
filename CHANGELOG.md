@@ -615,6 +615,85 @@ every connection is already in autocommit. The page was **writing**.
   was not a legal transition.
 - The header no longer overflows on a phone.
 
+### Added — Storage Optimization
+
+Optional, secondary, and never on a timer. LibrAIry can convert a file to a
+smaller representation, and the whole feature is built so that no step of it
+loses you anything.
+
+- **Opportunities** are advisory: a section in Review that names what could be
+  converted, what it would save, and what it would cost in CPU. Nothing is
+  queued without you saying so.
+- **The queue** runs one job at a time, inside a maintenance window, at a
+  measured share of the machine (`Low` is `pools=2:frame-threads=2`, and the
+  number is measured rather than guessed). The worker never waits for the
+  encoder; a restart marks a running job failed and never resumes it.
+- **Nothing replaces anything until you commit.** A finished conversion is a
+  result to review, verified against the original's running time and, for
+  lossless audio, sample-for-sample.
+- **Adoption preserves the original** in Quarantine and commits like every other
+  decision. `Restore original` reverses it — both files, in order, preflighted
+  before either moves.
+- **Disposal** goes through the delete queue, which is a folder you empty
+  yourself. LibrAIry still deletes no user file, ever.
+- **The arithmetic is honest.** Nothing is called "saved" while both copies are
+  on the disk; realized reduction counts only originals LibrAIry can see are
+  gone, and that is never the same number as what the deletion freed.
+
+### Changed — Commit is a list of decisions
+
+- Every pending change now declares what kind it is — **new file**, **library
+  correction**, **optimization**, **restore**, **delete queue** — and each one
+  is one card. A correction to a twelve-track album is one decision and twelve
+  operations, and the page counts decisions.
+- **Each decision appears exactly once.** New files used to be rendered twice —
+  as cards, and again as a "Ready to move" total with a five-row sample — and
+  the plan behind them appeared a third time under "Started but never run".
+- The headline, the filter tabs, the nav badge and the Dashboard tile all come
+  out of one query. The badge used to read 2 above a page saying 5, because it
+  could not see restores, delete-queue requests or adoptions.
+- Approved inbox files still commit as **one batch**: one plan, one journal
+  entry, one Undo. The page says so where the button is.
+
+### Changed — Quarantine, History and the Dashboard
+
+- **Quarantine** has states rather than a list: Held, Waiting for Commit,
+  Delete queue, Removed, Put back. Preserved optimization originals are visibly
+  distinct and carry their own two decisions — `Restore original` and
+  `Keep original` — because "I have changed my mind about deleting this" is not
+  "I want the old file back".
+- **History** reads as a timeline: days, plans, and a sentence per plan. Undo is
+  offered only where the files are still where the journal says, and says why
+  when they are not. Its filters ask where a file went rather than naming one
+  action, so quarantine, disposal and restore entries are findable at all.
+- **The Dashboard** answers what needs attention, what is running and where the
+  work is. It walks no filesystem, runs no tool and calls no provider.
+
+### Changed — one word per idea
+
+- `docs/ui-vocabulary.md` now holds the decision lifecycle and the words that
+  belong to each step, and `tests/test_control_inventory.py` enforces it against
+  every control on every populated page: no word may mean two things, and no
+  thing may have two words.
+- Fifteen labels were retired. Getting to Commit had five, re-running the
+  analyser had two, and asking a provider whether it answers had three.
+- `Undo` now means only "reverse files that moved". The pre-execution
+  withdrawals are `Cancel decision`, `Cancel request`, `Send back to Review` and
+  `Remove approval`.
+
+### Fixed — controls that could not do anything
+
+- Every `Preview` button on Quarantine was inert: the page never loaded the
+  script that answers it.
+- A failed optimization could not be removed from the queue by any control, and
+  a stale one offered a control the update then refused.
+- The withdrawal on a New file card carried no label and sent *every* approved
+  inbox file back, not the one it was drawn on.
+- The confirm screen stayed on screen after committing, question and button
+  intact, above a panel saying the files had already moved.
+- The Undone page printed the stored outcome code, which for the commonest
+  refusal is two full hashes.
+
 ## v1.2.0 - 2026-08-04
 
 Container hardening release. `docker scout quickview` goes from 7C/36H/55M/143L and a

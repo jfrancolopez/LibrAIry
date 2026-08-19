@@ -485,3 +485,45 @@ def test_the_fixture_journal_covers_what_history_can_show(client) -> None:
     assert counts["all"] == sum(
         counts[key] for key in HISTORY_KINDS if key != "all"
     )
+
+
+# --- keyboard, and the honest limit of what is proven -------------------------
+
+
+def test_every_control_is_a_natively_focusable_element(client) -> None:
+    """The strongest keyboard claim this project can actually make.
+
+    Delivering a real key press needs a debugger protocol, not a URL: a headless
+    Chrome run can `focus()` a button and observe that it is focused, and has no
+    channel to press Enter on it. Measured — the probe reports
+    `{"focused": "pv", "expanded": "false"}` — so automated keyboard activation
+    stays **unverified**, and this file will not pretend otherwise.
+
+    What is checkable is the property everything else rests on. Enter and Space
+    activate a `<button>`, Escape dismisses a `popover`, and Tab reaches both,
+    because the platform does it. That is only true while every control *is* one
+    of those elements — a `<div onclick>` looks identical and is reachable by
+    nothing but a mouse.
+    """
+    focusable = {"button", "a", "summary", "input", "select", "textarea"}
+    unreachable = [
+        f"{control.page}: <{control.tag} class={control.attrs.get('class', '')!r}>"
+        for control in inventory(client)
+        if control.tag not in focusable and "tabindex" not in control.attrs
+    ]
+
+    assert unreachable == []
+
+
+def test_the_shared_popover_is_the_platform_s_and_not_a_reimplementation(client) -> None:
+    """Keyboard behaviour that is inherited cannot be got wrong by accident.
+
+    `popovertarget` on a native button gives activation, light dismissal and
+    Escape from the user agent. A scripted panel would have to implement three
+    behaviours that nothing here tests.
+    """
+    body = client.get("/review").text
+
+    assert 'class="ext-info-toggle"' in body
+    assert "popovertarget=" in body
+    assert 'popover class="ext-info-panel"' in body or "popover " in body
