@@ -286,7 +286,11 @@ def test_unexecuted_plans_are_surfaced_instead_of_vanishing(tmp_path: Path) -> N
 
 
 def test_overview_totals_are_human_readable(tmp_path: Path) -> None:
-    from librairy.web.commit import commit_overview, human_bytes
+    """`approved_count` is all that is left of the old aggregate — it guards
+    `/commit/create` against building an empty plan — and it comes out of the
+    same summary the page counts with rather than a query of its own."""
+    from librairy.humanize import human_bytes
+    from librairy.web.commit import commit_overview
 
     client, conn, settings = client_for(tmp_path)
     seed_approved(conn, settings, "e.txt", "Documents/2026/e.txt")
@@ -294,7 +298,7 @@ def test_overview_totals_are_human_readable(tmp_path: Path) -> None:
     data = commit_overview(conn)
 
     assert data["approved_count"] == 1
-    assert data["total_bytes"].endswith(("B", "KB", "MB"))
+    assert data["summary"]["size"].endswith(("B", "KB", "MB"))
     assert human_bytes(0) == "0 B"
     assert human_bytes(1536) == "1.5 KB"
 

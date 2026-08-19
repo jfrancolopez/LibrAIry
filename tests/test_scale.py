@@ -406,3 +406,59 @@ def test_the_realized_total_is_one_query_whatever_the_population(mixed) -> None:
     assert counts["adopted"] == 3 * EACH
     #  Nothing has been removed, so nothing has been reclaimed — at any scale.
     assert counts["realized_bytes"] == 0
+
+
+def test_no_query_behind_commit_loads_more_than_a_page(big) -> None:
+    """The bound that matters is rows returned, not statements issued.
+
+    `commit_overview` used to build its own list of library corrections: every
+    accepted finding into Python, then a query per row for its files, its drift
+    and its withdrawals. Bounded page beside it, unbounded load behind it — at
+    25,000 corrections that one query returned 25,000 rows and cost 97 ms, and
+    nothing on the page had used it since the decision taxonomy landed.
+
+    `queue_rows` answers the same question one page at a time.
+    """
+    import sqlite3 as _sqlite3
+
+    from librairy.web.commit import commit_overview
+
+    conn, settings = big
+
+    class Measuring:
+        """Counts rows returned, which is what an unbounded query costs."""
+
+        def __init__(self, wrapped: _sqlite3.Connection) -> None:
+            self._conn = wrapped
+            self.widest: tuple[int, str] = (0, "")
+
+        def execute(self, sql, *args, **kwargs):  # noqa: ANN001, ANN202
+            rows = self._conn.execute(sql, *args, **kwargs).fetchall()
+            if len(rows) > self.widest[0]:
+                self.widest = (len(rows), " ".join(str(sql).split())[:90])
+            return _Rows(rows)
+
+        def __getattr__(self, name):  # noqa: ANN001, ANN204
+            return getattr(self._conn, name)
+
+    measuring = Measuring(conn)
+    commit_overview(measuring, settings)
+
+    count, sql = measuring.widest
+    assert count <= COMMIT_PAGE_SIZE, f"{count} rows from {sql}"
+
+
+class _Rows:
+    """Just enough of a cursor for the code under measurement."""
+
+    def __init__(self, rows: list) -> None:
+        self._rows = rows
+
+    def fetchone(self):  # noqa: ANN201
+        return self._rows[0] if self._rows else None
+
+    def fetchall(self) -> list:
+        return self._rows
+
+    def __iter__(self):  # noqa: ANN204
+        return iter(self._rows)

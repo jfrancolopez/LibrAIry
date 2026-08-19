@@ -44,7 +44,7 @@ from librairy.models import EvidenceEntry
 from librairy.scanner import scan_root
 from librairy.web import actionability as act
 from librairy.web.app import create_app
-from librairy.web.commit import commit_overview
+from librairy.web.commit_queue import CORRECTION, queue_rows
 from librairy.web.review import audit_view
 
 TRACK = "Music/Pop/Queen/05 - Song.flac"
@@ -179,7 +179,13 @@ def test_a_desynced_row_still_reaches_commit(tmp_path: Path) -> None:
 
     pending = pending_corrections(conn)
     assert [row["id"] for row in pending] == [ident]
-    assert commit_overview(conn, settings)["corrections"][0]["finding_id"] == ident
+    #  And it reaches the Commit page. The page used to build its own list of
+    #  corrections — every accepted finding loaded into Python, with a query
+    #  per row for its files and its drift — which is unbounded and was a
+    #  second answer to a question `queue_rows` already answers one page at a
+    #  time. This is that page's own row.
+    rows = queue_rows(conn, settings, kind=CORRECTION)
+    assert [row["finding_id"] for row in rows] == [ident]
 
 
 # --- 4-6: a second approval is impossible -------------------------------------
