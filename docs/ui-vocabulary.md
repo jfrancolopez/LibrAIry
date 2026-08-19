@@ -7,6 +7,60 @@ navigation bar.
 This is a developer reference. It is not shown to users; it exists so that a
 new control can be named by looking something up rather than by inventing.
 
+## The lifecycle every decision follows
+
+Almost everything a person does in LibrAIry is one of these, in this order.
+A screen may skip a step; it may not reorder them, and it may not use one
+step's words for another step's act.
+
+    Observe / Analyse       LibrAIry looks and forms an opinion. Nothing moves.
+        |
+    Review                  You read the opinion. Nothing moves.
+        |
+    Approve                 You decide. Nothing moves.
+        |
+    Waiting for Commit      The decision exists as a plan. Nothing has moved.
+        |
+    Commit                  The executor moves files, hash-verified, journalled.
+        |
+    History                 What happened, permanently.
+        |
+    Undo                    Reverse it, where the files are still where the
+                            journal says they are.
+
+Deviations exist and are deliberate. `Keep original` and `Restore original`
+act immediately because they reverse a commit that has already happened —
+they are Undo wearing the name of the outcome a person wants. `Analyse again`
+and `Dismiss suggestion` change no file at all.
+
+## The nine words the whole product is built from
+
+| Word | Means exactly |
+|---|---|
+| **Current** | where the file is now |
+| **After Commit** | where it would be if you committed |
+| **Waiting for Commit** | approved, and nothing has moved |
+| **Undo** | reverse something that actually happened |
+| **Cancel request** / **Send back to Review** | withdraw something that has *not* happened |
+| **Dismissed** | you told LibrAIry not to suggest this for now |
+| **Restore suggestion** | reconsider a dismissed one |
+| **Preserved original** | the original kept when an optimized version was adopted |
+| **Delete queue** | a folder you empty yourself; LibrAIry has still deleted nothing |
+
+Two rules follow from the table, and `tests/test_control_inventory.py` holds
+both against every control on every populated page:
+
+- **No two controls share a word and mean different things.** `Commit` was on
+  the button that commits *and* on a link to the Commit page. `Cancel` was
+  beside `Cancel request` while meaning "stop the encoder".
+- **No two words mean the same thing.** Getting to Commit had four labels;
+  re-running the analyser had two; asking a provider whether it answers had
+  three.
+
+Where a repeat is deliberate — a search box on each page, a bulk control
+beside its row-level twin — it is listed in that test with the reason. The
+list is the specification; a label not in it and not unique is drift.
+
 ## Decisions
 
 | Say | For | Never |
@@ -92,6 +146,30 @@ thing carrying the meaning.
 - A verb, unless it names a place you are going.
 - Sentence case. Not Title Case, and not SHOUTING.
 - The same action gets the same word on every page.
+
+## Words this pass retired
+
+Every one of these was live in the product and meant the same as the word
+beside it. They are listed so that a future search for "why is it not called
+X" has an answer.
+
+| Was | Now | Where |
+|---|---|---|
+| Commit 2 / Commit them / Back to Commit | **View in Commit** | Review, Dashboard, commit progress |
+| Send all back / Send back | **Send back to Review** / **Cancel request** | Commit |
+| Re-analyse | **Analyse again** | Review inbox rows |
+| Open details | **View details** | Search results |
+| View details (→ Health) | **Open Health** | the search index warning |
+| Test it / Test connection | **Test** | Settings catalogs, LM Studio |
+| Cancel (stop an encoder) | **Stop** | optimization queue |
+| discard | **Discard changes** | Settings save bar |
+| No suggestion | **Dismiss suggestions** | storage opportunities |
+| Review details | **Details** | library review row |
+| Apply | **Apply filters** | Review filter panel |
+| Undo (a review decision) | **Cancel decision** | Review undo bar |
+| Marked for deletion | **Headed for the delete queue** | vanished files, review undo |
+| "Put it back" | **Restore** | quarantine caption |
+| Waiting on you | **Suggested for quarantine** | Quarantine |
 
 ## Empty states
 
