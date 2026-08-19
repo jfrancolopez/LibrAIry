@@ -177,7 +177,7 @@
               {% if row.files %}
                 {# On demand. Showing every move of every decision by default
                    is how a page with two hundred waiting becomes unreadable. #}
-                <details>
+                <details class="commit-files">
                   <summary>Files</summary>
                   <ul class="sample-moves">
                     {% for file in row.files %}

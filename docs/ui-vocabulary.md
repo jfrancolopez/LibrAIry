@@ -89,12 +89,29 @@ are three different libraries, not three ways of saying no.
 
 ## Before execution
 
-| Say | For |
-|---|---|
-| **Commit** | carry out what was approved |
-| **Send back to Review** | return an approved correction to the queue |
-| **Remove approval** / **Remove old approval** | withdraw an approval, the second when it has gone stale |
-| **Cancel request** | withdraw a quarantine decision |
+Four words, and which one you use depends on *what* is being withdrawn and
+*where it goes back to*. They are one family — never **Undo** — and the family
+is what a reader learns; the object is what tells them apart.
+
+| Say | For | Goes back to |
+|---|---|---|
+| **Commit** | carry out what was approved | — |
+| **Send back to Review** | withdraw an approval, from Commit | the Review queue it came from |
+| **Remove approval** / **Remove old approval** | withdraw an approval where it was made, the second when it has gone stale | nowhere: the row is already in front of you |
+| **Cancel request** | withdraw a quarantine decision or an adopted optimization | nowhere: there was no queue, only a request |
+| **Cancel decision** | withdraw the last thing you did in Review, whatever it was | the queue, undone |
+
+**Cancel decision** is the only one that is time-ordered rather than
+row-scoped: it takes back one press of Approve, Quarantine, Later or Analyse
+again, over however many files that press covered. Singular on purpose — one
+press is one decision — and the sentence beside it carries the count:
+
+    Approved 3 files.   [Cancel decision]
+    Put off 1 file.     [Cancel decision]
+
+It was **Undo**, which is reserved for bytes that moved. Two words for
+"reverse" would eventually teach somebody that Undo works before Commit as
+well, and the one place that belief is expensive is the one place it is wrong.
 
 Never **Undo** here. Nothing has moved yet, and teaching people that Undo
 sometimes means "before" is how somebody comes to believe it will rescue a

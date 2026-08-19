@@ -374,6 +374,31 @@ def test_no_banned_wording_reaches_a_person_from_python(path: Path) -> None:
 # --- the scenes the interaction tests stand on --------------------------------
 
 
+def test_staging_an_inbox_does_not_walk_back_a_decision(tmp_path) -> None:
+    """`ui_serve --inbox 95` reaches for every row in the inbox.
+
+    That now includes the approved file waiting for Commit, and staging tried
+    to move it back to `proposed` — which the lifecycle refuses on purpose,
+    because re-staging an answer the owner already gave is how a late duplicate
+    could quietly overwrite it. The dev server raised on startup.
+    """
+    from tests.dev.fixture import build_app, stage_inbox
+
+    app = build_app(tmp_path / "staged")
+    conn, settings = app.state.conn, app.state.settings
+
+    stage_inbox(conn, settings, 3)
+
+    states = {
+        row["state"]
+        for row in conn.execute("SELECT state FROM items WHERE root='inbox'")
+    }
+    #  The three the fixture makes: what staging just proposed, the approved
+    #  file waiting for Commit, and the duplicate staged for quarantine. The
+    #  point is that the last two are still where they were.
+    assert states == {"proposed", "approved", "quarantine-proposed"}, states
+
+
 def test_the_fixture_carries_one_of_every_decision_kind(client) -> None:
     """Coverage disappears by omission, silently, and stays gone.
 

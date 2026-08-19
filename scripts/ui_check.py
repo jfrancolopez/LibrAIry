@@ -327,6 +327,7 @@ PAGES = {
     # which Commit's whole job — telling them apart — can be looked at. The
     # fixture used to put one library correction here and nothing else.
     "commit-mixed": "/commit",
+    "commit-open": "/commit",
     # The three quarantine views that have rows in them. Held is the page as it
     # opens; the other two are where a decision goes and what disposal leaves
     # behind, and neither had ever been photographed.
@@ -344,6 +345,10 @@ PAGES = {
 EXPANDED = {
     "review-details": ("audit-details",),
     "storage": ("storage-why",),
+    #  Every disclosure a Commit card can carry, open at once: the widest an
+    #  OPTIMIZE card gets is its storage accounting beside its file list, and a
+    #  closed `<details>` measures as no layout at all.
+    "commit-open": ("why", "commit-files"),
 }
 
 

@@ -873,7 +873,14 @@ def stage_inbox(conn, settings: Settings, count: int) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(JPEG)
     scan_root(conn, "inbox", settings.inbox_dir, settings)
-    for row in conn.execute("SELECT id, relpath FROM items WHERE root='inbox'"):
+    #  Only the ones this call wrote. `WHERE root='inbox'` also matched the
+    #  approved file `_pending_decisions` leaves waiting for Commit, and
+    #  staging tried to walk it back to `proposed` — which the lifecycle
+    #  refuses, on purpose, because that is an answer the owner already gave.
+    staged = conn.execute(
+        "SELECT id, relpath FROM items WHERE root='inbox' AND relpath LIKE '2026-05-%'"
+    ).fetchall()
+    for row in staged:
         name = Path(row["relpath"]).name
         upsert_proposal(
             conn,
