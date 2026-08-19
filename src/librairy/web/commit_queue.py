@@ -80,8 +80,7 @@ TYPE_BADGE = {
 # What the group means, under its heading. The delete-queue sentence is the
 # most important one on the page.
 TYPE_NOTE = {
-    NEW_FILE: "New files from your inbox, filed into the library. They commit "
-    "together, from the New files section on this page.",
+    NEW_FILE: "New files from your inbox, filed into the library.",
     CORRECTION: "Files already in your library, moved or renamed.",
     RESTORE: "Held files going back where they came from.",
     DELETE_QUEUE: "Moved into one folder for you to empty yourself. "
@@ -157,6 +156,11 @@ def queue_summary(conn: sqlite3.Connection) -> dict[str, Any]:
         }
         for key in TYPE_ORDER
     ]
+    for group in groups:
+        #  Said per group as well as in total, because the New files group is
+        #  the one whose decisions commit as a batch and so needs its own
+        #  headline figure beside the button that commits them.
+        group["size"] = human_bytes(group["bytes"])
     total_decisions = sum(group["decisions"] for group in groups)
     total_bytes = sum(group["bytes"] for group in groups)
     return {

@@ -2602,6 +2602,20 @@ summary.timeline-head::-webkit-details-marker { display: none; }
 /* What just happened, kept on the page after the pending count reaches zero. */
 .commit-last { margin-top: var(--space-4); }
 
+/* The New files group's own actions: the batch commits together, so the button
+   belongs to the group rather than to each card. Deliberately not `.button-row`
+   — that sets `flex: 0 0 auto` on every child, so the sentence beside the
+   buttons refused to shrink and ran 275px past a 375px screen. */
+.commit-group-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-sm);
+}
+.commit-group-actions > span { flex: 1 1 16ch; min-width: 0; }
+
 .correction-list { list-style: none; margin: 0; padding: 0; }
 .correction {
   border-left: 3px solid var(--audit);

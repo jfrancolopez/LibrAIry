@@ -55,6 +55,11 @@
       </nav>
     </section>
 
+    {% if queue_empty_kind %}
+      {# The filter outlived the decisions it named. #}
+      <p class="status">Nothing of that kind is waiting any more.
+        <a href="/commit">Show everything waiting</a>.</p>
+    {% endif %}
     {% for group in queue_groups %}
       {# Collapse is a visual convenience and nothing else: it changes no state,
          persists nowhere, and every row inside is still in the queue. #}
@@ -64,6 +69,29 @@
           {{ group.label }} <span class="view-count">{{ group.decisions }}</span>
         </summary>
         <p class="muted">{{ group.note }}</p>
+        {% if group.type == 'new-file' %}
+          {# The only group whose decisions do not each own a plan: approved
+             inbox proposals become one plan when you press this, so they move
+             together and one press of Undo puts the whole batch back. That is
+             why the action is here and not on every card — and it is here
+             rather than in a second list of the same files further down the
+             page, which is what it used to be. #}
+          <div class="commit-group-actions">
+            <form method="post" action="/commit/create">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button type="submit" class="btn-primary">Review moves</button>
+            </form>
+            <form method="post" action="/commit/unapprove">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button type="submit" class="btn-ghost">Send back to Review</button>
+            </form>
+            <span class="muted">
+              {{ group.decisions }} file{{ '' if group.decisions == 1 else 's' }} ·
+              {{ group.size }} · these commit together, and the next screen
+              lists every move before anything happens.
+            </span>
+          </div>
+        {% endif %}
         <ul class="correction-list">
           {% for row in group.rows %}
             <li class="correction">
@@ -197,53 +225,7 @@
     {% endfor %}
   {% endif %}
 
-  {% if approved_count %}
-    <h2 class="commit-section">New files</h2>
-    <div class="widget-grid">
-      <section class="widget card centerpiece">
-        <h3>Ready to move</h3>
-        <p class="big">{{ approved_count }}</p>
-        <p class="muted">{{ total_bytes }} across {{ by_category|length }} categor{{ 'y' if by_category|length == 1 else 'ies' }}</p>
-        <form method="post" action="/commit/create">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-          <button type="submit" class="btn-lg">Review moves</button>
-        </form>
-        <p class="muted">Next screen lists every move, one by one. Nothing happens until you confirm there.</p>
-        {# Changing your mind before execution is not Undo — nothing has
-           happened yet. Kept visually quiet: it is the escape hatch, not the
-           thing this card is for. #}
-        <form method="post" action="/commit/unapprove">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-          <button type="submit" class="btn-ghost">Send back to Review</button>
-        </form>
-      </section>
-
-      <section class="widget card">
-        <h3>What moves</h3>
-        <ul>
-          {% for row in by_category %}
-            <li><span>{{ row.category }}</span><span><strong>{{ row.count }}</strong> <span class="muted">{{ row.size }}</span></span></li>
-          {% endfor %}
-        </ul>
-      </section>
-
-      <section class="widget card widget-wide">
-        <h3>First few moves</h3>
-        <ul class="sample-moves">
-          {% for row in sample %}
-            <li class="from-to">
-              <span class="mono muted">{{ row.src }}</span>
-              <span aria-hidden="true">→</span>
-              <span class="mono">{{ row.dest }}</span>
-            </li>
-          {% endfor %}
-        </ul>
-        {% if approved_count > sample|length %}
-          <p class="muted">…and {{ approved_count - sample|length }} more on the next screen.</p>
-        {% endif %}
-      </section>
-    </div>
-  {% elif not corrections %}
+  {% if not summary.decisions %}
     {# The Commit tab stays whether or not there is anything in it, so this
        state has to be worth arriving at. It says what would appear here, and
        points at both places decisions get made — the two Review workloads,
@@ -263,7 +245,7 @@
      Committing the last item used to replace the page with "Nothing is
      approved yet" — true, and reading as though the thing you had just done
      never occurred. This is History rendered, not a second record of it. #}
-  {% if last_result and not approved_count and not corrections %}
+  {% if last_result and not summary.decisions %}
     <section class="card commit-last">
       <h3>Last completed</h3>
       <p><strong>{{ last_result.label }}</strong> —

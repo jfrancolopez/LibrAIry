@@ -118,12 +118,25 @@ def _queue(
     kind = kind if kind in TYPE_ORDER else ""
     shown = [kind] if kind else [g["type"] for g in summary["groups"]]
     total = 0
+    #  A page number that has run past the end of the list is not an error to
+    #  report, it is a page to not be on. Sending the last decision of page 2
+    #  back left "Page 2" above nothing at all, with a Previous link as the only
+    #  way out — and a filter with nothing left in it rendered a heading, a note
+    #  and an empty list.
+    if kind:
+        total = next(
+            (g["decisions"] for g in summary["all_groups"] if g["type"] == kind), 0
+        )
+        page = min(max(1, page), max(1, -(-total // PAGE_SIZE)))
+    else:
+        #  Across types the page is a set of bounded groups, each showing its
+        #  own first page. There is nothing for a page number to mean here.
+        page = 1
     groups = []
     for key in shown:
         group = next((g for g in summary["all_groups"] if g["type"] == key), None)
         if group is None or not group["decisions"]:
             continue
-        total = group["decisions"] if kind else total
         groups.append(
             {**group, "rows": queue_rows(conn, settings, kind=key, page=page)}
         )
@@ -133,7 +146,10 @@ def _queue(
         "queue_type": kind,
         "queue_types": TYPE_ORDER,
         "queue_labels": TYPE_LABEL,
-        "queue_page": max(1, page),
+        "queue_page": page,
+        #  A filter whose category has emptied since the link was made. The
+        #  page says so rather than rendering a summary above a blank.
+        "queue_empty_kind": bool(kind) and not groups,
         "queue_page_size": PAGE_SIZE,
         # Paging only means anything inside one type; across types the page is
         # a set of bounded groups, which is what keeps the DOM small either way.

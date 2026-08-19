@@ -215,13 +215,38 @@ def test_commit_page_shows_what_would_move_before_anything_moves(tmp_path: Path)
 
     page = client.get("/commit").text
 
-    assert "Ready to move" in page
-    assert "What moves" in page
-    assert "documents" in page
-    # A sample of the actual destinations, not just a total.
+    #  One card per approved file, each naming where it is and where it goes.
+    #  There used to be a second rendering of the same rows underneath — a
+    #  "Ready to move" total, a per-category list and a five-row sample — which
+    #  read as a separate pile of work and left a person asking whether they
+    #  had approved the same files twice.
+    assert page.count('<li class="correction">') == 2, "one card per decision"
     assert "Documents/2026/a.txt" in page
+    assert "Documents/2026/b.txt" in page
     assert "Review moves" in page
     assert "be undone from History" in page
+    for gone in ("Ready to move", "What moves", "First few moves"):
+        assert gone not in page, f"{gone} is a second list of the same decisions"
+
+
+def test_a_new_file_appears_exactly_once(tmp_path: Path) -> None:
+    """The duplicate was two renderings of one query, not two backend concepts.
+
+    `_inbox_rows` and `commit_overview`'s own aggregate both read
+    `proposals WHERE status='approved'`. The aggregate is older — it is the
+    Commit page as it was before decisions had types — and it survived the
+    taxonomy because it carried the only button that could commit an inbox
+    file. That button is now on the group, once, where the batch it acts on is.
+    """
+    client, conn, settings = client_for(tmp_path)
+    seed_approved(conn, settings, "solo.txt", "Documents/2026/solo.txt")
+
+    page = client.get("/commit").text
+
+    assert page.count("Documents/2026/solo.txt") == 1
+    assert page.count('action="/commit/create"') == 1
+    #  One withdrawal per card plus the group's own, and no more.
+    assert page.count('action="/commit/unapprove"') == 2
 
 
 def test_commit_page_with_nothing_approved_points_at_review(tmp_path: Path) -> None:
@@ -272,3 +297,80 @@ def test_overview_totals_are_human_readable(tmp_path: Path) -> None:
     assert data["total_bytes"].endswith(("B", "KB", "MB"))
     assert human_bytes(0) == "0 B"
     assert human_bytes(1536) == "1.5 KB"
+
+
+def test_the_headline_equals_the_sum_of_its_categories(tmp_path: Path) -> None:
+    """A category missing from a total is how the nav badge came to read 2
+    above a page saying 5. The header, the tabs and the groups are all one
+    query now, and this is the property that says so."""
+    from librairy.web.commit_queue import TYPE_ORDER, queue_summary
+
+    client, conn, settings = client_for(tmp_path)
+    seed_approved(conn, settings, "a.txt", "Documents/2026/a.txt")
+    seed_approved(conn, settings, "b.txt", "Documents/2026/b.txt")
+
+    summary = queue_summary(conn)
+
+    assert summary["decisions"] == sum(
+        group["decisions"] for group in summary["all_groups"]
+    )
+    assert {group["type"] for group in summary["all_groups"]} == set(TYPE_ORDER)
+    #  And the page prints that same number rather than counting again.
+    page = client.get("/commit").text
+    assert f"<strong>{summary['decisions']}</strong> decision" in page
+
+
+def test_one_summary_feeds_the_page_the_nav_badge_and_the_dashboard(tmp_path: Path) -> None:
+    """Three surfaces answered "how much is waiting" and one of them was wrong.
+
+    They are not asked to agree by convention here — they are asked to come out
+    of `queue_summary`, so agreeing is the only thing they can do.
+    """
+    from librairy.web.commit_queue import queue_summary
+    from librairy.web.dashboard import operations_overview
+
+    client, conn, settings = client_for(tmp_path)
+    seed_approved(conn, settings, "a.txt", "Documents/2026/a.txt")
+
+    decisions = queue_summary(conn)["decisions"]
+    page = client.get("/commit").text
+    dashboard = operations_overview(conn, settings)
+
+    assert f'>All <span class="view-count">{decisions}</span>' in page
+    #  The nav badge, rendered into every page by `base.html`.
+    assert f'<span class="nav-count">{decisions}</span>' in page
+    waiting = next(
+        surface for surface in dashboard["surfaces"] if surface["label"] == "Commit"
+    )
+    assert waiting["count"] == decisions
+
+
+def test_a_page_number_past_the_end_lands_somewhere_real(tmp_path: Path) -> None:
+    """Sending back the last decision on page 2 left "Page 2" above nothing.
+
+    The only way off it was Previous, on a page reached by a link somebody had
+    bookmarked. A page number that has run past the end is not an error to
+    report; it is a page not to be on.
+    """
+    client, conn, settings = client_for(tmp_path)
+    for index in range(3):
+        seed_approved(conn, settings, f"f{index}.txt", f"Documents/2026/f{index}.txt")
+
+    far = client.get("/commit?type=new-file&page=9").text
+    across = client.get("/commit?page=4").text
+
+    assert far.count('<li class="correction">') == 3
+    assert "Page 9" not in far
+    #  Across types there is no single list for a page number to index, so it
+    #  cannot be used to land on empty groups either.
+    assert across.count('<li class="correction">') == 3
+
+
+def test_a_filter_whose_category_emptied_says_so(tmp_path: Path) -> None:
+    client, conn, settings = client_for(tmp_path)
+    seed_approved(conn, settings, "a.txt", "Documents/2026/a.txt")
+
+    page = client.get("/commit?type=restore").text
+
+    assert "Nothing of that kind is waiting any more" in page
+    assert 'href="/commit"' in page
