@@ -373,4 +373,35 @@ def test_a_filter_whose_category_emptied_says_so(tmp_path: Path) -> None:
     page = client.get("/commit?type=restore").text
 
     assert "Nothing of that kind is waiting any more" in page
-    assert 'href="/commit"' in page
+    #  And it shows what *is* waiting rather than a headline above a blank:
+    #  cancelling the last optimization lands on exactly this page, from the
+    #  route that renders Commit filtered to optimizations.
+    assert page.count('<li class="correction">') == 1
+
+
+def test_a_finished_commit_stops_asking_whether_to_run_it(tmp_path: Path) -> None:
+    """The confirm screen stayed up, live, above its own result.
+
+    `Move 1 file?` as the heading, `Yes, move them` still armed, and the plan
+    table still reading "not started" — while the panel underneath said the
+    file had already moved. Three statements on one screen, two of them false.
+
+    The panel retires both out of band, which is the only way a swapped-in
+    fragment can reach markup outside itself without inline script the CSP
+    forbids.
+    """
+    client, conn, settings = client_for(tmp_path)
+    seed_approved(conn, settings, "a.txt", "Documents/2026/a.txt")
+
+    confirm = client.post("/commit/create", headers=csrf(client)).text
+    plan_id = conn.execute("SELECT id FROM plans ORDER BY created_at DESC").fetchone()["id"]
+    before = client.get(f"/commit/progress/{plan_id}").text
+    client.post(f"/commit/execute/{plan_id}", headers=csrf(client))
+    wait_for_plan(conn, plan_id)
+    after = client.get(f"/commit/progress/{plan_id}").text
+
+    assert 'id="commit-question"' in confirm and 'id="commit-plan-preview"' in confirm
+    assert "hx-swap-oob" not in before, "nothing is retired while it is still running"
+    assert 'id="commit-question" class="page-head" hx-swap-oob="outerHTML"' in after
+    assert 'id="commit-plan-preview" hx-swap-oob="delete"' in after
+    assert "Commit finished" in after

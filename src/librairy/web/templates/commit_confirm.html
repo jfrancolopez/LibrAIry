@@ -5,7 +5,11 @@
      UUID and a SHA-256 — the two things on it least useful to the person
      deciding. What they need first is: how many files, how much data, where
      it is going, and can I undo it. #}
-  <header class="page-head">
+  {# Retired by the progress panel once the plan finishes — see
+     `partials/commit_progress.html`. Leaving it up meant a page that asked
+     "Move 1 file?" above a panel saying the file had already moved, with the
+     button that moves it still armed. #}
+  <header id="commit-question" class="page-head">
     <div>
       <h1>Move {{ ops|length }} file{{ 's' if ops|length != 1 else '' }}?</h1>
       <p class="muted">
@@ -24,6 +28,7 @@
     </form>
   </header>
 
+  <div id="commit-plan-preview">
   <p class="pill-row">
     {% for category in categories %}
       <span class="badge badge-info">{{ category.category }} {{ category.count }}</span>
@@ -60,6 +65,7 @@
       {% endfor %}
     </tbody>
   </table>
+  </div>
 
   {% include "partials/commit_progress.html" %}
 

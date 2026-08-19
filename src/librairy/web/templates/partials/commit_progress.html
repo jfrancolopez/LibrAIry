@@ -11,6 +11,25 @@
    nothing and does not sit there re-rendering forever. #}
 <div id="commit-progress" class="commit-progress"
      {% if plan.status not in ('done', 'failed') %}hx-get="/commit/progress/{{ plan.id }}" hx-trigger="every 1s" hx-swap="outerHTML"{% endif %}>
+  {# The confirm screen asked a question and listed what *would* happen. Once
+     it has happened both are stale — and worse, the question was still on
+     screen with its button live, so a finished commit read as one that had not
+     started. These retire the question and the preview out of band, which is
+     the only way a swapped-in panel can reach markup outside itself without
+     inline script the CSP forbids. Both are no-ops on `commit_running.html`,
+     which has neither. #}
+  {% if plan.status in ('done', 'failed') %}
+    <header id="commit-question" class="page-head" hx-swap-oob="outerHTML">
+      <div>
+        <h1>{{ 'Commit finished' if plan.status == 'done' else 'Commit stopped' }}</h1>
+        <p class="muted">
+          Every file below was copied and verified by hash before the original
+          was released, written to History, and undoable from there.
+        </p>
+      </div>
+    </header>
+    <div id="commit-plan-preview" hx-swap-oob="delete"></div>
+  {% endif %}
   {% if error %}<p class="status warn">{{ error }}</p>{% endif %}
 
   {% set done = counts.get('done', 0) %}

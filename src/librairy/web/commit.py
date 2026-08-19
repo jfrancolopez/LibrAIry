@@ -123,12 +123,19 @@ def _queue(
     #  back left "Page 2" above nothing at all, with a Previous link as the only
     #  way out — and a filter with nothing left in it rendered a heading, a note
     #  and an empty list.
+    emptied = False
     if kind:
         total = next(
             (g["decisions"] for g in summary["all_groups"] if g["type"] == kind), 0
         )
+        #  Cancelling the last optimization lands here from
+        #  `/maintenance/optimization/{job}/send-back`, which renders this page
+        #  filtered to optimizations — a filter that, by then, has nothing in
+        #  it. Saying so and showing the rest beats a headline above a blank.
+        if not total:
+            emptied, kind, shown = True, "", [g["type"] for g in summary["groups"]]
         page = min(max(1, page), max(1, -(-total // PAGE_SIZE)))
-    else:
+    if not kind:
         #  Across types the page is a set of bounded groups, each showing its
         #  own first page. There is nothing for a page number to mean here.
         page = 1
@@ -149,7 +156,7 @@ def _queue(
         "queue_page": page,
         #  A filter whose category has emptied since the link was made. The
         #  page says so rather than rendering a summary above a blank.
-        "queue_empty_kind": bool(kind) and not groups,
+        "queue_empty_kind": emptied,
         "queue_page_size": PAGE_SIZE,
         # Paging only means anything inside one type; across types the page is
         # a set of bounded groups, which is what keeps the DOM small either way.
