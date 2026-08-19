@@ -322,6 +322,42 @@ def test_inbox_approvals_can_be_sent_back_before_they_run(tmp_path: Path) -> Non
     assert (settings.inbox_dir / "new.txt").is_file(), "nothing moved"
 
 
+def test_sending_one_new_file_back_leaves_the_others_approved(tmp_path: Path) -> None:
+    """The control on one card used to post the section-wide withdrawal.
+
+    It also rendered with no label at all, because the row carried no
+    `back_label` — so the only control on a New file card was a blank button
+    that quietly un-approved every other new file on the page.
+    """
+    client, conn, settings = scene(tmp_path, inbox=True)
+    for name in ("second.txt", "third.txt"):
+        (settings.inbox_dir / name).write_text(name, encoding="utf-8")
+    scan_root(conn, "inbox", settings.inbox_dir, settings)
+    for row in conn.execute("SELECT id FROM items WHERE root='inbox'").fetchall():
+        conn.execute(
+            "INSERT OR IGNORE INTO proposals(item_id, category, clean_name,"
+            " dest_relpath, confidence, action, dest_root, status, evidence,"
+            " created_at, updated_at)"
+            " VALUES (?, 'documents', 'x.txt', 'Documents/x.txt', 0.9, 'move',"
+            " 'library', 'approved', '[]', 'now', 'now')",
+            (row["id"],),
+        )
+    first = conn.execute(
+        "SELECT id FROM proposals WHERE status='approved' ORDER BY id"
+    ).fetchone()["id"]
+
+    client.post(
+        "/commit/unapprove", data={"proposal_id": str(first)}, headers=csrf(client)
+    )
+
+    statuses = [
+        row["status"]
+        for row in conn.execute("SELECT status FROM proposals ORDER BY id").fetchall()
+    ]
+    assert statuses[0] == "proposed"
+    assert statuses.count("approved") == len(statuses) - 1
+
+
 def test_the_pre_commit_reversal_is_never_called_undo(tmp_path: Path) -> None:
     """Before execution and after execution are different actions. One word
     for both is how somebody comes to believe Undo will rescue a commit they

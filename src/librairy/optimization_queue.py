@@ -226,17 +226,34 @@ def _live_job_for(conn: sqlite3.Connection, relpath: str, kind: str) -> sqlite3.
     ).fetchone()
 
 
+#  What `Remove from queue` can clear. Everything that is not going to move on
+#  its own: not yet started, or finished in a way that produced nothing to
+#  keep. `stale` and `failed` are here because leaving them out made two rows
+#  that could never be cleared by anything —
+#
+#    stale   the checkbox was enabled and the update refused, so pressing the
+#            only control offered answered "0 removed. 1 had already started or
+#            finished", which was also untrue
+#    failed  the checkbox was disabled and the card had no action at all, so a
+#            failed encode stayed on the page for ever
+#
+#  Both are safe: a job that never started has no staging directory, and one
+#  that failed had its staging cleared when it failed.
+REMOVABLE_STATES = (QUEUED, WAITING, STALE, FAILED)
+
+
 def cancel(conn: sqlite3.Connection, job_id: int) -> bool:
     """Remove a job from the queue. Running jobs are stopped by the executor.
 
-    A job that has not started leaves nothing behind, which is why this can be
-    a single update. Once an encoder exists, a running job additionally has a
-    process to terminate and a staging directory to clear.
+    A job in any of `REMOVABLE_STATES` leaves nothing behind, which is why this
+    can be a single update. A running job additionally has a process to
+    terminate and a staging directory to clear, and goes through `stop`.
     """
+    marks = ",".join("?" * len(REMOVABLE_STATES))
     cursor = conn.execute(
         "UPDATE optimization_jobs SET state=?, finished_at=?, updated_at=? "
-        "WHERE id=? AND state IN (?, ?)",
-        (CANCELLED, utc_now(), utc_now(), job_id, QUEUED, WAITING),
+        f"WHERE id=? AND state IN ({marks})",  # noqa: S608 - placeholder count only
+        (CANCELLED, utc_now(), utc_now(), job_id, *REMOVABLE_STATES),
     )
     return cursor.rowcount > 0
 

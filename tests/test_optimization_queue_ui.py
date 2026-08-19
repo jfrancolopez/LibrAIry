@@ -432,3 +432,61 @@ def test_a_stale_row_explains_itself_once(tmp_path: Path) -> None:
     shown = text_of(client.get("/maintenance/optimization").text)
 
     assert shown.count("The file changed after this was queued") == 1
+
+
+def test_a_failed_or_stale_job_can_actually_be_removed(tmp_path: Path) -> None:
+    """Two rows on the queue page could never be cleared by anything.
+
+    A stale job's checkbox was enabled and `queue.cancel` refused the state, so
+    pressing the only control offered answered "0 removed. 1 had already
+    started or finished" — untrue, and the row stayed. A failed job's checkbox
+    was disabled and its card carried no action at all, so a failed encode sat
+    on the page for ever.
+
+    Both are safe to clear: a job that never started has no staging directory,
+    and one that failed had its staging cleared when it failed.
+    """
+    from librairy import optimization_queue as queue
+    from librairy.web.review import _queue_row, apply_queue_action
+
+    settings = Settings(
+        APPDATA_DIR=tmp_path / "appdata",
+        INBOX_DIR=tmp_path / "inbox",
+        LIBRARY_DIR=tmp_path / "library",
+        QUARANTINE_DIR=tmp_path / "quarantine",
+        AUTH_REQUIRED=False,
+        _env_file=None,
+    )
+    for directory in (settings.inbox_dir, settings.library_dir, settings.quarantine_dir):
+        directory.mkdir(parents=True, exist_ok=True)
+    conn = connect(settings)
+    ids = {}
+    for state in (queue.STALE, queue.FAILED):
+        ids[state] = int(
+            conn.execute(
+                """
+                INSERT INTO optimization_jobs(
+                  root, relpath, fingerprint, kind, quality, from_label, to_label,
+                  preset, preset_version, rule_version, source_bytes,
+                  estimated_bytes, run_policy, state, queued_at, updated_at
+                ) VALUES ('library', ?, 'f', 'audio-to-flac', 'lossless', 'WAV',
+                          'FLAC', 'p', 1, 1, 10, 5, 'window', ?, 'now', 'now')
+                """,
+                (f"Music/{state}.wav", state),
+            ).lastrowid
+        )
+
+    for state, job_id in ids.items():
+        row = conn.execute(
+            "SELECT * FROM optimization_jobs WHERE id=?", (job_id,)
+        ).fetchone()
+        assert _queue_row(row, conn)["can_remove"], f"{state} offers no way out"
+
+    message = apply_queue_action(conn, "remove", list(ids.values()), settings)
+
+    assert "2 removed" in message
+    states = {
+        row["state"]
+        for row in conn.execute("SELECT state FROM optimization_jobs").fetchall()
+    }
+    assert states == {queue.CANCELLED}

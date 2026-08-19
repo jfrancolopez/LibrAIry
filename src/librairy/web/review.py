@@ -1709,7 +1709,10 @@ def _queue_row(
             row["state"] in {queue.QUEUED, queue.WAITING}
             and row["run_policy"] != queue.FORCED
         ),
-        "can_remove": row["state"] in {queue.QUEUED, queue.WAITING, queue.STALE},
+        #  Exactly what `queue.cancel` will accept. Two lists that were meant
+        #  to agree did not: the checkbox allowed a stale row the update then
+        #  refused, and disallowed a failed row nothing else could clear.
+        "can_remove": row["state"] in queue.REMOVABLE_STATES,
         "queued_at": row["queued_at"],
     }
 
@@ -1760,7 +1763,7 @@ def apply_queue_action(
     if removed != len(job_ids):
         return (
             f"{removed} removed. "
-            f"{len(job_ids) - removed} had already started or finished."
+            f"{len(job_ids) - removed} is running or has a result to decide about."
         )
     return f"{removed} removed from the queue."
 

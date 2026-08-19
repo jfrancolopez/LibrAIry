@@ -406,6 +406,12 @@
 
   {# The preview card carries an expand control, so the page that renders one
      has to carry the viewer it opens — otherwise Quarantine grows the exact
-     dead button Browse had. #}
+     dead button Browse had.
+
+     And the button that opens the card needs its own script, which this page
+     did not load: every `Preview` on Quarantine was inert markup. Nothing
+     listened, nothing fetched, `aria-expanded` stayed false. The DOM
+     assertions all passed, because the markup was never the problem. #}
   {% include "partials/lightbox.html" %}
+  <script src="/static/previews.js" defer></script>
 {% endblock %}

@@ -173,7 +173,13 @@
                 {% if not row.applying %}
                   <form method="post" action="{{ row.back_url }}">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                    <button type="submit">{{ row.back_label or 'Send back' }}</button>
+                    {# Names the one decision this card is about. Absent, the
+                       withdrawal is the whole section's — which is what the
+                       New files card was silently posting. #}
+                    {% if row.back_id %}
+                      <input type="hidden" name="proposal_id" value="{{ row.back_id }}">
+                    {% endif %}
+                    <button type="submit">{{ row.back_label }}</button>
                   </form>
                 {% endif %}
               </div>

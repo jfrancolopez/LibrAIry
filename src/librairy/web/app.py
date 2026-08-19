@@ -1418,8 +1418,11 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         )
 
     @app.post("/commit/unapprove", include_in_schema=False)
-    def commit_unapprove(request: Request) -> RedirectResponse:  # noqa: ARG001
-        """Send the approved inbox files back to Review.
+    def commit_unapprove(
+        request: Request,  # noqa: ARG001
+        proposal_id: Annotated[list[int], Form()] = [],  # noqa: B006 - starlette form list
+    ) -> RedirectResponse:
+        """Send approved inbox files back to Review — named ones, or all of them.
 
         Deliberately not `Undo`. Nothing has moved, so there is nothing to
         reverse — this puts a decision back, and calling it Undo would teach
@@ -1427,11 +1430,24 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         Only `approved` rows are touched: a proposal that has already committed
         has a file somewhere else, and reopening it would describe a move that
         already happened.
+
+        `proposal_id` is what makes the control on one card mean that card.
+        Without it every new-file row on Commit posted the section-wide
+        withdrawal, so sending one file back sent all of them back — and the
+        row's button carried no label to say so.
         """
-        conn.execute(
-            "UPDATE proposals SET status='proposed', updated_at=? WHERE status='approved'",
-            (utc_now(),),
-        )
+        if proposal_id:
+            marks = ",".join("?" * len(proposal_id))
+            conn.execute(
+                "UPDATE proposals SET status='proposed', updated_at=?"
+                f" WHERE status='approved' AND id IN ({marks})",  # noqa: S608 - count only
+                (utc_now(), *proposal_id),
+            )
+        else:
+            conn.execute(
+                "UPDATE proposals SET status='proposed', updated_at=? WHERE status='approved'",
+                (utc_now(),),
+            )
         return RedirectResponse("/review", status_code=303)
 
     @app.post("/commit/create", response_class=HTMLResponse)

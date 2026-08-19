@@ -213,6 +213,11 @@ def _inbox_rows(conn: sqlite3.Connection, limit: int, offset: int) -> list[dict[
             "op_count": 1,
             "plan_id": "",
             "back_url": "/commit/unapprove",
+            "back_label": "Send back to Review",
+            #  Scoped to this row. Without it the control on one card posted the
+            #  page-wide withdrawal: "send this one back" sent all of them back,
+            #  and the card carried no label at all to warn anybody.
+            "back_id": row["id"],
         }
         for row in rows
     ]
