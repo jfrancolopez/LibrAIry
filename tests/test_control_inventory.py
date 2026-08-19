@@ -32,6 +32,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from librairy.scanner import scan_root  # noqa: E402
 from tests.dev.controls import SURFACES, inventory  # noqa: E402
 from tests.dev.fixture import build_fixture  # noqa: E402
 
@@ -374,29 +375,67 @@ def test_no_banned_wording_reaches_a_person_from_python(path: Path) -> None:
 # --- the scenes the interaction tests stand on --------------------------------
 
 
-def test_staging_an_inbox_does_not_walk_back_a_decision(tmp_path) -> None:
-    """`ui_serve --inbox 95` reaches for every row in the inbox.
+def test_staging_an_inbox_leaves_every_other_decision_alone(tmp_path) -> None:
+    """`ui_serve --inbox 95` reached for every row in the inbox.
 
-    That now includes the approved file waiting for Commit, and staging tried
-    to move it back to `proposed` — which the lifecycle refuses on purpose,
+    That included the approved file waiting for Commit, and staging tried to
+    move it back to `proposed` — which the lifecycle refuses on purpose,
     because re-staging an answer the owner already gave is how a late duplicate
     could quietly overwrite it. The dev server raised on startup.
+
+    Every lifecycle state an inbox row can be in, and what staging must do to
+    each: add to the ones it owns, and pass over the rest.
     """
+    from librairy.lifecycle import transition_item
     from tests.dev.fixture import build_app, stage_inbox
 
     app = build_app(tmp_path / "staged")
     conn, settings = app.state.conn, app.state.settings
 
-    stage_inbox(conn, settings, 3)
+    #  A file in every state a real inbox accumulates, none of them staged by
+    #  this helper and none of them its business.
+    #  Each with the legal route to it — `discovered -> postponed` is not one,
+    #  which is itself the lifecycle refusing to let a decision be invented.
+    decided = (
+        ("kept.jpeg", ("pending",)),
+        ("later.jpeg", ("proposed", "postponed")),
+        ("filed.jpeg", ("committed",)),
+        ("held.jpeg", ("quarantined",)),
+    )
+    untouchable = {}
+    for name, _state in decided:
+        path = settings.inbox_dir / "already-decided" / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"x")
+    scan_root(conn, "inbox", settings.inbox_dir, settings)
+    for name, route in decided:
+        row = conn.execute(
+            "SELECT id FROM items WHERE relpath=?", (f"already-decided/{name}",)
+        ).fetchone()
+        for step in route:
+            transition_item(conn, int(row["id"]), step)
+        untouchable[name] = route[-1]
 
-    states = {
-        row["state"]
-        for row in conn.execute("SELECT state FROM items WHERE root='inbox'")
+    stage_inbox(conn, settings, 5)
+    once = _inbox_states(conn)
+    stage_inbox(conn, settings, 5)
+    twice = _inbox_states(conn)
+
+    for name, state in untouchable.items():
+        assert once[f"already-decided/{name}"] == state, f"{name} was rewritten"
+    #  The approved file waiting for Commit and the duplicate staged for
+    #  quarantine are the fixture's own, and equally none of staging's business.
+    assert once["2026-08-18/IMG_5150.jpeg"] == "approved"
+    assert once["2026-08-18/foo-again.jpg"] == "quarantine-proposed"
+    assert sum(1 for path in once if path.startswith("2026-05-")) == 5
+    assert once == twice, "running it twice changed something"
+
+
+def _inbox_states(conn) -> dict:  # noqa: ANN001
+    return {
+        row["relpath"]: row["state"]
+        for row in conn.execute("SELECT relpath, state FROM items WHERE root='inbox'")
     }
-    #  The three the fixture makes: what staging just proposed, the approved
-    #  file waiting for Commit, and the duplicate staged for quarantine. The
-    #  point is that the last two are still where they were.
-    assert states == {"proposed", "approved", "quarantine-proposed"}, states
 
 
 def test_the_fixture_carries_one_of_every_decision_kind(client) -> None:

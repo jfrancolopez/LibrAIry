@@ -853,6 +853,12 @@ def _running_audit(conn) -> None:  # noqa: ANN001
     )
 
 
+#  The inbox folder `stage_inbox` owns. Nothing else in the fixture writes
+#  under it, which is what makes "only the rows this function wrote" a fact
+#  rather than a hope.
+STAGED_PREFIX = "2026-05-"
+
+
 def stage_inbox(conn, settings: Settings, count: int) -> None:
     """Fill the inbox with `count` staged proposals.
 
@@ -864,23 +870,46 @@ def stage_inbox(conn, settings: Settings, count: int) -> None:
 
     The answer, measured rather than guessed, is what the navigation between
     the two workloads was designed against.
+
+    It *adds* rows. It does not reach for whatever happens to be in the inbox
+    and bend it into shape: `WHERE root='inbox'` also matched the approved file
+    `_pending_decisions` leaves waiting for Commit, and staging tried to walk it
+    back to `proposed` — which the lifecycle refuses, on purpose, because that
+    is an answer the owner already gave. `ui_serve --inbox 95` raised on
+    startup.
+
+    Two rules follow, and the second is the one that matters if the first is
+    ever undermined by a change of naming:
+
+      * only files this function wrote are candidates — it owns a prefix
+      * and a candidate is staged only from a state the lifecycle allows to be
+        staged, so an approved, rejected, committed or quarantined row is
+        passed over rather than rewritten
+
+    Idempotent: running it twice re-proposes its own rows and touches nothing
+    else. A fixture helper that can corrupt state is a fixture helper that will.
     """
-    from librairy.models import EvidenceEntry as Entry
-    from librairy.proposals import upsert_proposal
+    from librairy.classify import REANALYZABLE_STATES  # noqa: PLC0415
+    from librairy.models import EvidenceEntry as Entry  # noqa: PLC0415
+    from librairy.proposals import upsert_proposal  # noqa: PLC0415
+
+    #  What may become `proposed` without overwriting a decision. `discovered`
+    #  is a fresh scan; the rest are states the analyser itself re-proposes
+    #  from. Deliberately read from the application rather than restated here.
+    stageable = {"discovered", *REANALYZABLE_STATES} - {"approved"}
 
     for index in range(count):
-        path = settings.inbox_dir / f"2026-05-0{index % 7 + 1}" / f"IMG_{1000 + index}.jpeg"
+        path = settings.inbox_dir / f"{STAGED_PREFIX}0{index % 7 + 1}" / f"IMG_{1000 + index}.jpeg"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(JPEG)
     scan_root(conn, "inbox", settings.inbox_dir, settings)
-    #  Only the ones this call wrote. `WHERE root='inbox'` also matched the
-    #  approved file `_pending_decisions` leaves waiting for Commit, and
-    #  staging tried to walk it back to `proposed` — which the lifecycle
-    #  refuses, on purpose, because that is an answer the owner already gave.
-    staged = conn.execute(
-        "SELECT id, relpath FROM items WHERE root='inbox' AND relpath LIKE '2026-05-%'"
+    candidates = conn.execute(
+        "SELECT id, relpath, state FROM items WHERE root='inbox' AND relpath LIKE ?",
+        (f"{STAGED_PREFIX}%",),
     ).fetchall()
-    for row in staged:
+    for row in candidates:
+        if row["state"] not in stageable:
+            continue
         name = Path(row["relpath"]).name
         upsert_proposal(
             conn,
@@ -891,6 +920,6 @@ def stage_inbox(conn, settings: Settings, count: int) -> None:
             confidence=0.91,
             evidence=[Entry("filesystem", "folder date", "2026-05", 0.9)],
         )
-        #  As above: the item has to move with its proposal, or every one of
-        #  these ninety-five rows is a row whose Approve button raises.
+        #  The item moves with its proposal, or every one of these ninety-five
+        #  rows is a row whose Approve button raises.
         transition_item(conn, int(row["id"]), "proposed")

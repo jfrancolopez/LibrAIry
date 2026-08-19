@@ -311,3 +311,75 @@ def test_the_worker_keeps_the_thumbnail_cache_within_its_budget(
     remaining = sorted(path.name for path in thumbs.glob("*.jpg"))
     assert len(remaining) <= 3, remaining
     assert sum(path.stat().st_size for path in thumbs.glob("*.jpg")) <= 2500
+
+
+def test_a_worker_cycle_leaves_every_settled_decision_where_it_was(tmp_path: Path) -> None:
+    """Startup and one cycle over an inbox that already has answers in it.
+
+    Separate from the fixture helper that raised on this shape. That was
+    development tooling and cannot reach production — `src/librairy` imports
+    nothing from `tests/`, only `src/librairy` is packaged, and `import tests`
+    fails inside the image. But the underlying question is a real one, and the
+    only way to answer it about the *application* is to point the application
+    at an inbox in every state and start it.
+
+    A scan sees files it has seen before. It must not re-open a decision.
+    """
+    from librairy.lifecycle import transition_item
+    from librairy.models import EvidenceEntry
+    from librairy.proposals import upsert_proposal
+    from librairy.scanner import scan_root
+    from librairy.worker import run_once
+
+    settings = settings_for(tmp_path)
+    routes = {
+        "proposed": ("proposed",),
+        "approved": ("proposed", "approved"),
+        "pending": ("pending",),
+        "postponed": ("proposed", "postponed"),
+        "committed": ("committed",),
+    }
+    for state in routes:
+        for index in range(10):
+            path = settings.inbox_dir / state / f"{index}.txt"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(f"{state}-{index}", encoding="utf-8")
+    conn = connect(settings)
+    scan_root(conn, "inbox", settings.inbox_dir, settings)
+    for state, route in routes.items():
+        for row in conn.execute(
+            "SELECT id, relpath FROM items WHERE relpath LIKE ?", (f"{state}/%",)
+        ).fetchall():
+            upsert_proposal(
+                conn,
+                item_id=row["id"],
+                category="documents",
+                clean_name=Path(row["relpath"]).name,
+                dest_relpath=f"Documents/{Path(row['relpath']).name}",
+                confidence=0.9,
+                evidence=[EvidenceEntry("heuristic", "category", "documents", 0.9)],
+            )
+            for step in route:
+                transition_item(conn, int(row["id"]), step)
+
+    before = _states_by_folder(conn)
+    run_once(conn, settings)
+    after = _states_by_folder(conn)
+    run_once(conn, settings)
+    twice = _states_by_folder(conn)
+
+    assert before == {state: {state: 10} for state in routes}, before
+    for state in ("approved", "committed", "postponed", "pending"):
+        assert after[state] == {state: 10}, f"{state} was reopened by a scan"
+    assert after == twice, "a second cycle moved something the first left alone"
+
+
+def _states_by_folder(conn) -> dict:  # noqa: ANN001
+    found: dict[str, dict[str, int]] = {}
+    for row in conn.execute(
+        "SELECT relpath, state FROM items WHERE root='inbox'"
+    ).fetchall():
+        folder = str(row["relpath"]).split("/", 1)[0]
+        found.setdefault(folder, {})
+        found[folder][row["state"]] = found[folder].get(row["state"], 0) + 1
+    return found
