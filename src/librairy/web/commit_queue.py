@@ -89,8 +89,22 @@ TYPE_NOTE = {
     "The original is preserved in Quarantine, not deleted.",
 }
 
-# One page of rows, whatever is waiting.
+# One page of rows, whatever is waiting. The same 50 every other list in
+# LibrAIry uses — Review, Quarantine, History, Search and Browse all bound a
+# page at fifty rows, and `tests/test_scale.py` pins them together.
 PAGE_SIZE = 50
+
+# How many of a group the unfiltered view shows.
+#
+# Fifty is the bound on *a list*. The All view is not one list, it is one per
+# decision kind, so its real bound was fifty times however many kinds happen to
+# be populated — a hundred cards with two kinds, and two hundred and fifty with
+# all five, at roughly 2 KB each. That is not a checkpoint page, it is a scroll.
+#
+# So All previews each kind and the filtered view is the working list. The page
+# is bounded at `PREVIEW_SIZE * len(TYPE_ORDER)` — fifty again, and this time it
+# stays fifty when a sixth kind of decision is invented.
+PREVIEW_SIZE = 10
 
 
 def queue_summary(conn: sqlite3.Connection) -> dict[str, Any]:

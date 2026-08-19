@@ -22,6 +22,7 @@ about anybody's NAS.
 
 from __future__ import annotations
 
+import inspect
 import sqlite3
 import time
 from pathlib import Path
@@ -462,3 +463,67 @@ class _Rows:
 
     def __iter__(self):  # noqa: ANN204
         return iter(self._rows)
+
+
+# --- one page-size policy, pinned ---------------------------------------------
+
+
+def test_every_paged_surface_bounds_a_list_at_fifty() -> None:
+    """Five modules each name their own `PAGE_SIZE`, and they must agree.
+
+    Owning the constant per page is right — a page knows what its rows cost —
+    but five independent literals is exactly how one of them becomes 100
+    without anybody deciding. This is the decision, written down.
+    """
+    from librairy import search
+    from librairy.history import list_history
+    from librairy.web import browse, commit_queue, quarantine, review
+
+    sizes = {
+        "search": search.PAGE_SIZE,
+        "browse": browse.PAGE_SIZE,
+        "review": review.PAGE_SIZE,
+        "quarantine": quarantine.PAGE_SIZE,
+        "commit": commit_queue.PAGE_SIZE,
+    }
+    journal = inspect.signature(list_history).parameters["limit"].default
+
+    assert set(sizes.values()) == {50}, sizes
+    assert journal == 50, "History's page is a default argument, not a constant"
+
+
+def test_the_unfiltered_commit_page_is_bounded_by_the_page_not_the_group(big) -> None:
+    """Fifty is the bound on a list. The All view is one list per decision kind,
+    so its real bound was fifty times however many kinds were populated — a
+    hundred cards with two, two hundred and fifty with five, at about 2 KB each.
+
+    It previews each kind instead, and the whole list of one kind is one click
+    and one real URL away.
+    """
+    from librairy.web.commit import commit_overview
+    from librairy.web.commit_queue import PREVIEW_SIZE, TYPE_ORDER
+
+    conn, settings = big
+
+    unfiltered = commit_overview(conn, settings)
+    filtered = commit_overview(conn, settings, kind="new-file")
+
+    shown = sum(len(group["rows"]) for group in unfiltered["queue_groups"])
+    assert shown <= PREVIEW_SIZE * len(TYPE_ORDER)
+    assert all(len(group["rows"]) <= PREVIEW_SIZE for group in unfiltered["queue_groups"])
+    assert any(group["more"] for group in unfiltered["queue_groups"]), "no way through"
+    assert sum(len(group["rows"]) for group in filtered["queue_groups"]) <= COMMIT_PAGE_SIZE
+
+
+def test_paging_a_filtered_commit_view_neither_repeats_nor_drops(big) -> None:
+    """The property a pager exists for, and the one nobody checks."""
+    from librairy.web.commit_queue import PAGE_SIZE, queue_rows
+
+    conn, settings = big
+    seen: list[str] = []
+    for page in (1, 2, 3):
+        rows = queue_rows(conn, settings, kind="new-file", page=page)
+        assert len(rows) == PAGE_SIZE
+        seen.extend(row["current"] for row in rows)
+
+    assert len(seen) == len(set(seen)), "a row appeared on two pages"

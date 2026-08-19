@@ -75,6 +75,7 @@ def _queue(
 ) -> dict[str, Any]:
     from librairy.web.commit_queue import (
         PAGE_SIZE,
+        PREVIEW_SIZE,
         TYPE_LABEL,
         TYPE_ORDER,
         queue_rows,
@@ -106,13 +107,18 @@ def _queue(
         #  Across types the page is a set of bounded groups, each showing its
         #  own first page. There is nothing for a page number to mean here.
         page = 1
+    #  Filtered: the working list, fifty at a time. Unfiltered: a preview of
+    #  each kind, so the page stays one screenful of each rather than fifty of
+    #  every kind that happens to be populated.
+    size = PAGE_SIZE if kind else PREVIEW_SIZE
     groups = []
     for key in shown:
         group = next((g for g in summary["all_groups"] if g["type"] == key), None)
         if group is None or not group["decisions"]:
             continue
+        rows = queue_rows(conn, settings, kind=key, page=page, page_size=size)
         groups.append(
-            {**group, "rows": queue_rows(conn, settings, kind=key, page=page)}
+            {**group, "rows": rows, "more": max(0, int(group["decisions"]) - len(rows))}
         )
     return {
         "summary": summary,
@@ -187,6 +193,18 @@ def _unfinished_plans(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     Quarantine requests turned out to be in it too — they have had their own
     RESTORE and DELETE QUEUE sections since the taxonomy landed, and nothing
     took them out of here. Excluded now, for the same reason.
+
+    And the fourth, which is the one nobody excluded because it *is* the plan
+    behind the New files group: pressing `Review moves` builds and approves an
+    inbox plan, and walking away from the confirm screen left that plan here —
+    a shortened UUID under "Started but never run", beside the very cards whose
+    decisions it carries. The live installation has one. So a plan is only an
+    orphan if nothing else on the page is already speaking for it, and the test
+    for that is whether any of its files still has an approved proposal.
+
+    A plan with no operations is excluded as well. It cannot be finished, it
+    cannot do anything, and "started but never run" describes it only in the
+    sense that nothing ever started.
     """
     return list(
         conn.execute(
@@ -197,6 +215,12 @@ def _unfinished_plans(conn: sqlite3.Connection) -> list[sqlite3.Row]:
               AND p.audit_finding_id IS NULL
               AND p.optimization_job_id IS NULL
               AND p.quarantine_entry_id IS NULL
+              AND EXISTS (SELECT 1 FROM plan_ops o WHERE o.plan_id = p.id)
+              AND NOT EXISTS (
+                SELECT 1 FROM plan_ops o
+                JOIN proposals pr ON pr.item_id = o.item_id
+                WHERE o.plan_id = p.id AND pr.status = 'approved'
+              )
             ORDER BY p.created_at DESC LIMIT 5
             """
         )

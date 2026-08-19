@@ -214,6 +214,14 @@
             </li>
           {% endfor %}
         </ul>
+        {% if group.more %}
+          {# The unfiltered view previews each kind. The whole list of one kind
+             is one click away, and that click is a real URL. #}
+          <p class="pager">
+            <a href="/commit?type={{ group.type }}">Show all {{ group.decisions }}
+              {{ (group.label_one if group.decisions == 1 else group.label)|lower }}</a>
+          </p>
+        {% endif %}
         {% if queue_has_prev or queue_has_next %}
           <p class="pager">
             {% if queue_has_prev %}<a href="/commit?type={{ queue_type }}&amp;page={{ queue_page - 1 }}">Previous</a>{% endif %}

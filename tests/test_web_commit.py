@@ -275,14 +275,23 @@ def test_commit_page_with_an_empty_system_does_not_send_you_to_review(tmp_path: 
 
 
 def test_unexecuted_plans_are_surfaced_instead_of_vanishing(tmp_path: Path) -> None:
+    """A plan that was built and never run must not become invisible.
+
+    It used to be surfaced under "Started but never run", which was right when
+    nothing else on the page mentioned it and wrong for the commonest case:
+    the plan `Review moves` builds *is* the New files group, so it appeared
+    both as its cards and as a shortened UUID two screens down. Being visible
+    is the property; the section is one of two ways to be.
+    """
     client, conn, settings = client_for(tmp_path)
     seed_approved(conn, settings, "d.txt", "Documents/2026/d.txt")
     client.post("/commit/create", data={"csrf_token": client.cookies["csrf_token"]})
 
     page = client.get("/commit").text
 
-    assert "Started but never run" in page
-    assert "Nothing moved." in page
+    assert page.count('<li class="correction">') == 1
+    assert "Documents/2026/d.txt" in page
+    assert "Started but never run" not in page, "the cards already speak for it"
 
 
 def test_overview_totals_are_human_readable(tmp_path: Path) -> None:
@@ -409,3 +418,56 @@ def test_a_finished_commit_stops_asking_whether_to_run_it(tmp_path: Path) -> Non
     assert 'id="commit-question" class="page-head" hx-swap-oob="outerHTML"' in after
     assert 'id="commit-plan-preview" hx-swap-oob="delete"' in after
     assert "Commit finished" in after
+
+
+def test_the_plan_behind_the_new_files_is_not_also_an_orphan(tmp_path: Path) -> None:
+    """The fourth thing to appear twice on this page, and the live one.
+
+    `Review moves` builds and approves a plan from the approved inbox
+    proposals. Walking away from the confirm screen left that plan under
+    "Started but never run" — a shortened UUID beside the very cards whose
+    decisions it carries. Corrections, adoptions and quarantine requests had
+    each been excluded from that section as they were found; the inbox plan is
+    the one nobody excluded, because it *is* the plan behind the cards.
+    """
+    client, conn, settings = client_for(tmp_path)
+    seed_approved(conn, settings, "a.txt", "Documents/2026/a.txt")
+    seed_approved(conn, settings, "b.txt", "Documents/2026/b.txt")
+
+    client.post("/commit/create", headers=csrf(client))
+    page = client.get("/commit").text
+
+    assert page.count('<li class="correction">') == 2
+    assert "Started but never run" not in page
+
+
+def test_a_plan_nothing_speaks_for_is_still_shown(tmp_path: Path) -> None:
+    """The section still has a job: a plan whose proposals were sent back has
+    no cards on the page and can still be executed, so it must not vanish."""
+    client, conn, settings = client_for(tmp_path)
+    seed_approved(conn, settings, "a.txt", "Documents/2026/a.txt")
+    client.post("/commit/create", headers=csrf(client))
+
+    #  Sent back to Review afterwards: the plan is still approved and runnable,
+    #  and now nothing else on the page mentions it.
+    conn.execute("UPDATE proposals SET status='proposed'")
+    page = client.get("/commit").text
+
+    assert "Started but never run" in page
+
+
+def test_a_plan_with_no_operations_is_not_called_started(tmp_path: Path) -> None:
+    """It cannot be finished and it cannot do anything. The live installation
+    has two of them, left by an older path."""
+    from librairy.planner import utc_now
+
+    client, conn, _settings = client_for(tmp_path)
+    conn.execute(
+        "INSERT INTO plans(id, status, created_at) VALUES ('empty-plan', 'draft', ?)",
+        (utc_now(),),
+    )
+
+    page = client.get("/commit").text
+
+    assert "Started but never run" not in page
+    assert "empty-plan" not in page
