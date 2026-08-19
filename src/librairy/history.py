@@ -35,11 +35,29 @@ class UndoResult:
 # and were never journalled — so offering those as filters would be offering
 # categories the data cannot fill. Each of these is a predicate over columns
 # that exist, which is why the page can show an honest count beside every one.
+#  Where the file ended up, not what the code called the operation.
+#
+#  These used to name one action each — `action='move'` — and the journal has
+#  written eight action values for years: `quarantine`, `mark_for_deletion`,
+#  `restore_quarantine` and `undo_quarantine` matched no filter at all. So the
+#  row that says "your original was preserved in Quarantine", which is the most
+#  important entry Storage Optimization ever writes, appeared under Everything
+#  and under nothing else. Four buckets summed to six above a page saying 7.
+#
+#  Asking where the file went instead makes each filter true by construction:
+#  every journalled move has a destination root, and every reversal is named
+#  `undo_*` whatever it reversed.
 HISTORY_KINDS: dict[str, tuple[str, str | None]] = {
     "all": ("Everything", None),
-    "filed": ("Filed", "action='move' AND dest_root='library' AND outcome='ok'"),
-    "quarantined": ("Quarantined", "action='move' AND dest_root='quarantine' AND outcome='ok'"),
-    "undone": ("Undone", "action='undo_move'"),
+    "filed": (
+        "Filed",
+        "dest_root='library' AND outcome='ok' AND action NOT LIKE 'undo\\_%' ESCAPE '\\'",
+    ),
+    "quarantined": (
+        "Quarantined",
+        "dest_root='quarantine' AND outcome='ok' AND action NOT LIKE 'undo\\_%' ESCAPE '\\'",
+    ),
+    "undone": ("Undone", "action LIKE 'undo\\_%' ESCAPE '\\'"),
     "settings": ("Settings", "action='settings_change'"),
     # A settings change stores its before -> after in `outcome`, not a status,
     # so "everything that is not ok" counted all 27 of them as failures and the

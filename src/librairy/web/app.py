@@ -100,7 +100,7 @@ from librairy.web.commit import (
     start_execution,
 )
 from librairy.web.commit import progress_data as commit_progress_data
-from librairy.web.commit_queue import OPTIMIZATION
+from librairy.web.commit_queue import OPTIMIZATION, queue_summary
 from librairy.web.dashboard import dashboard_data
 from librairy.web.evidence import humanize_evidence
 from librairy.web.health import health_data, test_provider
@@ -235,24 +235,27 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
     TEMPLATES.env.globals["portal_password_set"] = lambda: has_admin_password(conn)
     TEMPLATES.env.globals["appearance_view"] = lambda: appearance_settings(conn)
     TEMPLATES.env.globals["activity_view"] = lambda: activity(conn)
-    # Commit appears in the nav only when there is something to commit — which
-    # means something whose file is still there. A count that led to "nothing
-    # is approved yet" was worse than no tab at all.
-    # Everything waiting on one press of Commit, from both directions. It used
-    # to count inbox proposals only, so a library correction approved on its
-    # own left the Commit tab absent and the change apparently nowhere — the
-    # same "I approved it and nothing happened" in a different place.
+    # The number on the Commit tab, from the query the Commit page itself
+    # counts with. It used to be its own pair of SELECTs over proposals and
+    # accepted findings, which meant it could not see a quarantine restore, a
+    # delete-queue request or an adopted optimization: the badge read 2 above a
+    # page whose own heading said 5 decisions. Two numbers about one pile.
+    #
+    # `queue_summary` is two aggregate queries over indexed columns and builds
+    # no rows, so it costs the same on a page as the two it replaces.
     TEMPLATES.env.globals["approved_waiting"] = lambda: int(
+        queue_summary(conn)["decisions"]
+    )
+    # What is waiting *from the inbox*, which is a different question and the
+    # one the Review notice asks: "still in the inbox" is not true of a library
+    # correction or an optimization.
+    TEMPLATES.env.globals["inbox_waiting"] = lambda: int(
         conn.execute(
             """
             SELECT COUNT(*) FROM proposals p JOIN items i ON i.id = p.item_id
-            WHERE p.status='approved' AND i.missing_since IS NULL
+            WHERE p.status='approved' AND p.dest_relpath IS NOT NULL
+              AND i.missing_since IS NULL
             """
-        ).fetchone()[0]
-    ) + int(
-        conn.execute(
-            "SELECT COUNT(*) FROM audit_findings f JOIN plans p ON p.id = f.plan_id"
-            " WHERE f.status='accepted' AND p.status='approved'"
         ).fetchone()[0]
     )
     app.middleware("http")(_auth_and_security(conn, settings))

@@ -64,7 +64,7 @@
      the approved pile had gone or that it was still waiting on one press.
      Same count as the nav badge, from the same query — two numbers about the
      same pile are one bug away from disagreeing. #}
-  {% with waiting = approved_waiting() %}
+  {% with waiting = inbox_waiting() %}
     {% if waiting %}
       <section class="status ok notice-row">
         <p>

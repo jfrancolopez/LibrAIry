@@ -185,6 +185,8 @@ def _needs_attention(
     cards teaches people to stop reading the one card that is not, so a healthy
     system produces an empty list here and the section does not render at all.
     """
+    from librairy.web.quarantine import held_count
+
     items: list[dict[str, str]] = []
     if queue["decisions"]:
         items.append({
@@ -192,7 +194,13 @@ def _needs_attention(
                     f"{'' if queue['decisions'] == 1 else 's'} waiting for Commit",
             "href": "/commit",
         })
-    held = int(quarantine["held"] or 0) - int(quarantine["delete_queue"] or 0)
+    #  The Quarantine page's own definition of Held, not a second one. This
+    #  used to be "everything present, minus the delete queue", which counted
+    #  files whose decision was already approved and waiting for Commit — so
+    #  the same two files appeared under "5 changes waiting for Commit" and
+    #  under "4 quarantined files with no decision yet", and the second claim
+    #  was untrue of them.
+    held = held_count(conn)
     if held:
         items.append({
             "text": f"{held} quarantined file{'' if held == 1 else 's'} "

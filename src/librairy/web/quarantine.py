@@ -175,6 +175,17 @@ _WHERE = {
 _PRESERVED = "qe.optimization_job_id IS NOT NULL"
 
 
+def held_count(conn: sqlite3.Connection) -> int:
+    """How many quarantined files have had no decision taken about them.
+
+    Public because the Dashboard needs exactly this number and had grown its
+    own arithmetic for it — present minus the delete queue, which counted the
+    files whose decision was approved and waiting for Commit. Two answers to
+    one question is how a dashboard comes to contradict the page it links to.
+    """
+    return int(_counts(conn).get("held", 0))
+
+
 def _counts(conn: sqlite3.Connection) -> dict[str, int]:
     """How many are in each view, counted in SQL over the whole table.
 

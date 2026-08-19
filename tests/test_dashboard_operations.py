@@ -245,3 +245,57 @@ def test_the_query_count_is_bounded(tmp_path: Path) -> None:
     operations_overview(counting, settings)
 
     assert len(counting.queries) <= 12, counting.queries
+
+
+def test_a_file_already_waiting_for_commit_is_not_also_undecided(tmp_path: Path) -> None:
+    """"Needs attention" counted the same files twice, and lied about one count.
+
+    Its quarantine number was "everything present, minus the delete queue",
+    which includes entries whose decision is approved and waiting for Commit.
+    Those appeared under "N changes waiting for Commit" *and* under "N
+    quarantined files with no decision yet" — a sentence that was untrue of
+    exactly those files. The Quarantine page's own Held bucket is the answer,
+    and there is now one definition of it.
+    """
+    from librairy.quarantine_requests import request_delete_queue
+    from librairy.web.quarantine import held_count
+
+    client, conn, settings = scene(tmp_path)
+    entries = _two_held_files(conn, settings)
+
+    before = [item["text"] for item in operations_overview(conn, settings)["needs_attention"]]
+    request_delete_queue(conn, settings, entries[0])
+    after = [item["text"] for item in operations_overview(conn, settings)["needs_attention"]]
+
+    assert "2 quarantined files with no decision yet" in before
+    assert "1 quarantined file with no decision yet" in after
+    assert held_count(conn) == 1
+    assert client.get("/dashboard").status_code == 200
+
+
+def _two_held_files(conn, settings) -> list[int]:  # noqa: ANN001
+    """Two quarantined files, both really on disk, both decidable."""
+    ids = []
+    for name in ("one.flac", "two.flac"):
+        landing = settings.quarantine_dir / "2026-08-19" / name
+        landing.parent.mkdir(parents=True, exist_ok=True)
+        landing.write_text(name, encoding="utf-8")
+        item = int(
+            conn.execute(
+                "INSERT INTO items(root, relpath, size, mtime_ns, fingerprint, state,"
+                " first_seen_at, last_seen_at)"
+                " VALUES ('quarantine', ?, 4, 1, ?, 'quarantined', 'now', 'now')",
+                (f"2026-08-19/{name}", name),
+            ).lastrowid
+        )
+        ids.append(
+            int(
+                conn.execute(
+                    "INSERT INTO quarantine_entries(item_id, reason, original_root,"
+                    " original_relpath, quarantined_at)"
+                    " VALUES (?, 'user', 'library', ?, 'now')",
+                    (item, f"Music/{name}"),
+                ).lastrowid
+            )
+        )
+    return ids
