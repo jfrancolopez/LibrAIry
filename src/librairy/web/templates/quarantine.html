@@ -290,7 +290,12 @@
                   {# A decision is already waiting. The only things worth
                      offering now are seeing it and taking it back — and taking
                      it back is not called Undo, because nothing has moved. #}
-                  <a class="btn" href="/commit?type=quarantine">View in Commit</a>
+                  {# The group that actually holds this decision. `quarantine`
+                     is not one of Commit's types — it fell through to All, so
+                     pressing it on a preserved original landed you in a list of
+                     everything and left you to find the row again. The intent
+                     is already one of Commit's own keys. #}
+                  <a class="btn" href="/commit?type={{ entry.request.intent }}">View in Commit</a>
                   {% if not entry.request.applying %}
                     <form method="post" action="/quarantine/cancel/{{ entry.id }}">
                       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">

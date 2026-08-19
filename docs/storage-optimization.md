@@ -184,13 +184,53 @@ bytes before the commit finishes. You are not asked to go and undo half a plan.
 ### The preserved original
 
 It appears in Quarantine as **Preserved original**, not as something you
-rejected, with the active version named beside it. Its only actions are
-**Restore original** — which undoes the adoption, both files, in order — and
-**Details**.
+rejected, with the active version named beside it. **Restore original** undoes
+the adoption — both files, in order, hashes checked.
 
-There is deliberately **no Delete queue** for it yet. Moving it would change
-the exact path Undo expects to find it at, so disposal gets designed against
-Undo rather than around it.
+### Letting the original go
+
+The whole point of the feature is the space, and the space does not come back
+until the original does not exist. That path is the same one every other file
+gets, and nothing on it deletes anything:
+
+```
+preserved original
+    → Delete queue          a request; moves nothing
+    → Commit                moves it to quarantine/_to-delete
+    → you empty that folder yourself, in your own file manager
+```
+
+While it is in the delete queue the card says **Original in delete queue**, and
+offers two different decisions:
+
+| | |
+|---|---|
+| **Restore original** | undoes the disposal *and* the optimization: the original is the live file again |
+| **Keep original** | undoes only the disposal: the optimized version stays live, the original goes back to being preserved |
+
+Restoring from the delete queue reverses two plans in order — the disposal
+first, then the adoption — and checks both before moving anything. If the
+original cannot come out of the delete queue, the optimized file is not touched
+at all; a library holding neither version is the one outcome worth any amount
+of care to avoid.
+
+### After you delete it
+
+The worker scans quarantine as well as the inbox, so emptying the delete queue
+is noticed. From then on:
+
+* the card reads **Original removed**, and explains that you removed it
+* **Restore original** is gone rather than present and broken — the bytes it
+  would need do not exist
+* History says *Original removed from storage. This optimization can no longer
+  restore the original automatically.*
+* every record stays: the item row, its fingerprint, the adoption plan, the
+  job, the result item and the journal. That is how the optimization can still
+  tell you where its original went.
+
+LibrAIry does not restore it from your off-site backup either, even if it is
+there. Backup is a copy, not a second library, and quietly pulling a file back
+from a remote is not something that should happen because you pressed Undo.
 
 ### Space reclaimed is 0 B, and stays there
 
@@ -209,6 +249,23 @@ so in the same words:
 
 The last two are different numbers and they differ by more than a factor of
 two, which is why nothing here is ever labelled "reclaimable" or "saved".
+
+Moving the original into the delete queue changes none of these numbers, which
+is exactly why it has its own state: it is the moment somebody is most likely
+to assume the space has come back. It has not — every byte is still in
+`quarantine/_to-delete`.
+
+Once the original is genuinely gone, and only then, two more numbers exist and
+they are still two:
+
+| | |
+|---|---|
+| Freed when you removed it | 842 MB, at that moment |
+| **Net storage reduction** | **338 MB**, against what it took before |
+
+The Optimization page totals the second one across every original you have
+actually removed, and says *No storage has come back yet* until you have
+removed one.
 
 ### What adoption does not carry
 

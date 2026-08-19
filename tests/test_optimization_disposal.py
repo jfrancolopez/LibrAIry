@@ -550,3 +550,42 @@ def test_an_undone_adoption_contributes_nothing(adopted) -> None:
         "preserved": 0,
         "realized_bytes": 0,
     }
+
+
+# --- and the numbers on every other page -------------------------------------------
+
+
+def test_the_dashboard_stops_counting_a_file_you_deleted(adopted) -> None:
+    """Emptying the delete queue is something LibrAIry asks people to do
+    themselves. Until this, the tile went on counting those files and adding
+    their sizes into a total describing disk that was no longer in use."""
+    from librairy.web.dashboard import dashboard_data
+
+    conn, settings, entry_id, _, _ = adopted
+    queue_it(conn, settings, entry_id)
+    before = {
+        surface["label"]: surface for surface in dashboard_data(conn, settings)["surfaces"]
+    }
+    assert before["Quarantine"]["count"] == 1
+
+    remove_it(conn, settings)
+
+    after = {
+        surface["label"]: surface for surface in dashboard_data(conn, settings)["surfaces"]
+    }
+    assert after["Quarantine"]["count"] == 0
+    assert dashboard_data(conn, settings)["delete_queue_count"] == 0
+
+
+def test_one_original_is_never_in_two_buckets(adopted) -> None:
+    from librairy.web.quarantine import quarantine_data
+
+    conn, settings, entry_id, _, _ = adopted
+
+    for step in (lambda: None, lambda: queue_it(conn, settings, entry_id),
+                 lambda: remove_it(conn, settings)):
+        step()
+        counts = quarantine_data(conn, settings)["counts"]
+        buckets = [counts[view] for view in
+                   ("held", "waiting", "delete-queue", "removed", "restored")]
+        assert sum(buckets) == 1, counts

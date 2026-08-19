@@ -17,6 +17,13 @@ new control can be named by looking something up rather than by inventing.
 | **Restore suggestion** | putting a dismissed suggestion back | Undismiss |
 | **Restore** | putting a quarantined *file* back where it came from | Put it back |
 | **Delete queue** | gathering a held file into the folder you empty yourself | ~~Mark for deletion~~ |
+| **Restore original** | undoing an optimization: the preserved original becomes the live file again | Undo optimization, Revert |
+| **Keep original** | taking a preserved original back out of the delete queue, leaving the optimized version live | Remove from delete queue |
+
+**Restore original** and **Keep original** are deliberately different decisions
+rather than one with a confirmation. "I have changed my mind about deleting
+this" is not "I want the old file back", and from the delete queue both are
+available at once.
 
 `Mark for deletion` is banned. It reads as "a deletion has been arranged", and
 LibrAIry has never deleted a file. Worse, the same label sat on two buttons with

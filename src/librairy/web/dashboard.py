@@ -124,16 +124,27 @@ def operations_overview(
             "SELECT status, COUNT(*) AS count FROM audit_findings GROUP BY status"
         )
     }
+    #  `i.missing_since IS NULL` throughout, and it is not decoration: emptying
+    #  the delete queue is something LibrAIry asks people to do themselves, and
+    #  without this the tile went on counting the files they had just deleted —
+    #  and adding their sizes into a total describing disk that was no longer in
+    #  use. Same predicate `live.py` owns, same one Quarantine's own views use.
     quarantine = conn.execute(
         """
         SELECT
-          SUM(CASE WHEN qe.restored_at IS NULL THEN 1 ELSE 0 END) AS held,
-          SUM(CASE WHEN qe.restored_at IS NULL
-                    AND i.relpath LIKE '_to-delete/%' ESCAPE '\\' THEN 1 ELSE 0 END)
-            AS delete_queue,
-          COALESCE(SUM(CASE WHEN qe.restored_at IS NULL THEN i.size ELSE 0 END), 0)
-            AS bytes
-        FROM quarantine_entries qe LEFT JOIN items i ON i.id = qe.item_id
+          SUM(CASE WHEN present THEN 1 ELSE 0 END) AS held,
+          SUM(CASE WHEN present AND queued THEN 1 ELSE 0 END) AS delete_queue,
+          SUM(CASE WHEN NOT present THEN 1 ELSE 0 END) AS removed,
+          COALESCE(SUM(CASE WHEN present THEN size ELSE 0 END), 0) AS bytes
+        FROM (
+          SELECT
+            (qe.restored_at IS NULL AND i.id IS NOT NULL
+             AND i.missing_since IS NULL) AS present,
+            (i.relpath LIKE '_to-delete/%' ESCAPE '\\') AS queued,
+            qe.restored_at IS NULL AS active,
+            i.size AS size
+          FROM quarantine_entries qe LEFT JOIN items i ON i.id = qe.item_id
+        ) WHERE active
         """
     ).fetchone()
     library = conn.execute(

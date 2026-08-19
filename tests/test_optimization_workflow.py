@@ -946,3 +946,17 @@ def test_the_optimization_page_reports_a_realized_reduction_only_then(ready) -> 
     #  which is not the 842 KB the deletion freed at that moment.
     assert "338.0 KB" in body
     assert "842" not in body.split("Net storage reduction realized")[1][:200]
+
+
+def test_view_in_commit_lands_on_the_decision_you_pressed(ready) -> None:
+    """`/commit?type=quarantine` is not one of Commit's types. It fell through
+    to All, so the link took you to a list of everything and left you to find
+    your row again. Found by following it in a browser."""
+    client, conn, settings, job_id, _relpath, _target = ready
+    entry_id = adopt(client, conn, settings, job_id)
+    post(client, f"/quarantine/delete-queue/{entry_id}")
+
+    body = client.get("/quarantine?view=waiting").text
+
+    assert '/commit?type=delete-queue"' in body
+    assert "/commit?type=quarantine" not in body
