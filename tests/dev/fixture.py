@@ -23,6 +23,7 @@ from librairy.audit import Finding, record_findings
 from librairy.config import Settings
 from librairy.corrections import accept_correction
 from librairy.db import connect
+from librairy.lifecycle import transition_item
 from librairy.models import EvidenceEntry
 from librairy.scanner import scan_root
 from librairy.web.app import create_app
@@ -44,8 +45,6 @@ FILES: dict[str, bytes | None] = {
     "Movies/The Matrix (1998)/The Matrix (1998).mkv": b"video",
     # 5. hidden junk that Browse deliberately does not show
     "Music/Pop/.DS_Store": b"\x00\x01macos",
-    # 6. unindexed: on disk, never scanned
-    "Music/Pop/Stray/never-scanned.flac": b"stray",
     # 7. stale correction: audited, then changed underneath
     "Music/Pop/Prince/03 - Kiss.flac": b"kiss bytes",
     # 8. accepted correction, waiting for Commit
@@ -73,6 +72,11 @@ FILES: dict[str, bytes | None] = {
     # then collapses, and a placeholder cannot prove a player was released.
     "Photos/2022/Vacation/IMG_4021.MOV": TINY_MP4,
     "Projects/Budget/household-budget.xlsx": b"PK\x03\x04xlsx",
+    # 12. two more held files, so a quarantine decision can be *taken* in the
+    #     fixture without emptying the Held view it was taken from. Waiting for
+    #     Commit and Held are different pages; both need a row.
+    "Photos/2022/Vacation/foo-second-copy.jpg": None,
+    "Documents/Manuals/router-manual.pdf": b"%PDF-1.4 router",
 }
 
 TAG_EVIDENCE = [
@@ -117,7 +121,6 @@ def build_app(root: Path):  # noqa: ANN201
         path.write_bytes(JPEG if body is None else body)
     conn = connect(settings)
     scan_root(conn, "library", settings.library_dir, settings)
-    conn.execute("DELETE FROM items WHERE relpath LIKE 'Music/Pop/Stray/%'")
 
     batch: list[Finding] = []
 
@@ -363,8 +366,156 @@ def build_app(root: Path):  # noqa: ANN201
     _adoptable_optimizations(conn, settings)
     _history_entries(conn)
     _quarantine_entries(conn, settings)
+    _pending_decisions(conn, settings)
+    _a_file_nobody_scanned(settings)
 
     return create_app(settings, conn)
+
+
+def _a_file_nobody_scanned(settings: Settings) -> None:
+    """The one file Browse can see and Search cannot.
+
+    Written last, and on disk only — not in `FILES`, and never handed to
+    `scan_root`. It used to be written with everything else and its `items` row
+    deleted straight after the first scan, which worked until something else
+    needed a second scan: `_adoptable_optimizations` rescans the library four
+    times and put the row back every time. The scene whose whole purpose is the
+    difference between physical truth and indexed truth had quietly stopped
+    holding it, and both surfaces listed the file.
+
+    Creating it after the last scan cannot be undone by an earlier one.
+    """
+    path = settings.library_dir / "Music/Pop/Stray/never-scanned.flac"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"stray")
+
+
+def _pending_decisions(conn, settings: Settings) -> None:  # noqa: ANN001
+    """One decision of every kind Commit can carry, all waiting at once.
+
+    Commit is the page that has to stay readable when the queue is *mixed*, and
+    the fixture only ever put one library correction in it. So the page nobody
+    could photograph with more than one category on it was the page whose whole
+    job is telling categories apart.
+
+    Five categories, one row each, made the way a person makes them:
+
+        New file       an inbox proposal, approved in Review
+        Correction     already here — the Bowie finding above
+        Optimization   a verified result, adopted but not committed
+        Restore        a held file asked to go back
+        Delete queue   a held file asked into the pile you empty yourself
+
+    Two optimizations are carried further than that, because the states after
+    Commit are the ones with nothing to look at otherwise: one is executed, so
+    History has a real plan in it and Quarantine has a preserved original; that
+    original is then sent to the delete queue and committed, so the delete-queue
+    view has the row that the whole disposal path exists to produce.
+    """
+    from librairy.executor import execute_plan
+    from librairy.models import EvidenceEntry as Entry
+    from librairy.proposals import upsert_proposal
+    from librairy.quarantine_requests import request_delete_queue, request_restore
+    from librairy.web.review import ReviewFilters, apply_queue_action, apply_review_action
+
+    # --- a new file, approved and waiting ---------------------------------
+    arrival = settings.inbox_dir / "2026-08-18" / "IMG_5150.jpeg"
+    arrival.parent.mkdir(parents=True, exist_ok=True)
+    arrival.write_bytes(JPEG)
+    scan_root(conn, "inbox", settings.inbox_dir, settings)
+    row = conn.execute(
+        "SELECT id FROM items WHERE root='inbox' AND relpath LIKE '%IMG_5150%'"
+    ).fetchone()
+    proposal_id = upsert_proposal(
+        conn,
+        item_id=row["id"],
+        category="photos",
+        clean_name="IMG_5150.jpeg",
+        dest_relpath="Photos/2026/August/IMG_5150.jpeg",
+        confidence=0.93,
+        evidence=[Entry("filesystem", "folder date", "2026-08", 0.9)],
+    )
+    #  `upsert_proposal` writes the proposal; the *item* is moved on by the
+    #  analyser that called it. Skipping this leaves a row Review will render
+    #  and cannot approve — `discovered -> approved` is not a legal transition,
+    #  so pressing Approve raised `LifecycleError`.
+    transition_item(conn, int(row["id"]), "proposed")
+    apply_review_action(
+        conn, "approve", ReviewFilters(), proposal_ids=[int(proposal_id)]
+    )
+
+    # --- an optimization adopted and committed, then sent to the pile -----
+    #
+    # The only way to a preserved original is through the executor, and the
+    # only way into the delete queue is through a second decision and a second
+    # commit. Both are run here rather than written into the tables, because a
+    # hand-written preserved original is a row nothing produced and so proves
+    # nothing about the path that does.
+    def adopt(name: str) -> int:
+        job = conn.execute(
+            "SELECT id FROM optimization_jobs WHERE relpath LIKE ? AND state='ready'"
+            " ORDER BY id",
+            (f"%{name}%",),
+        ).fetchone()
+        apply_queue_action(conn, "use-optimized", [int(job["id"])], settings)
+        return int(job["id"])
+
+    def approved_plan(job_id: int) -> str:
+        return conn.execute(
+            "SELECT id FROM plans WHERE optimization_job_id=? AND status='approved'",
+            (job_id,),
+        ).fetchone()["id"]
+
+    executed = adopt("Le Samourai")
+    execute_plan(conn, approved_plan(executed), settings)
+    preserved = conn.execute(
+        "SELECT id FROM quarantine_entries WHERE optimization_job_id=?", (executed,)
+    ).fetchone()
+    if preserved is not None:
+        plan_id = request_delete_queue(conn, settings, int(preserved["id"]))
+        execute_plan(conn, plan_id, settings)
+
+    # One more adopted and left where a person leaves it: approved, nothing
+    # moved, the row on the queue page reading Waiting for Commit.
+    adopt("Chinatown")
+
+    # --- a duplicate staged for quarantine, still undecided ---------------
+    #
+    # The only three controls in the product no inventory had ever seen, because
+    # nothing in the fixture ever produced a staged proposal — and two of them
+    # were the last invented labels left (`Move it out`, `Keep it`).
+    duplicate = settings.inbox_dir / "2026-08-18" / "foo-again.jpg"
+    duplicate.write_bytes(JPEG)
+    scan_root(conn, "inbox", settings.inbox_dir, settings)
+    staged = conn.execute(
+        "SELECT id FROM items WHERE root='inbox' AND relpath LIKE '%foo-again%'"
+    ).fetchone()
+    upsert_proposal(
+        conn,
+        item_id=staged["id"],
+        category="photos",
+        clean_name="foo-again.jpg",
+        dest_relpath="2026-08-18/foo-again.jpg",
+        dest_root="quarantine",
+        action="quarantine",
+        confidence=1.0,
+        evidence=[
+            Entry("fingerprint", "blake2b", "9f2c41ab77e0", 1.0),
+            Entry("filesystem", "also at", "Photos/2022/foo.jpg", 1.0),
+        ],
+    )
+    transition_item(conn, int(staged["id"]), "quarantine-proposed")
+
+    # --- two quarantine decisions, both waiting ---------------------------
+    for relpath, ask in (
+        ("Photos/2022/Vacation/foo-second-copy.jpg", request_delete_queue),
+        ("Documents/Manuals/router-manual.pdf", request_restore),
+    ):
+        entry = conn.execute(
+            "SELECT id FROM quarantine_entries WHERE original_relpath=?", (relpath,)
+        ).fetchone()
+        if entry is not None:
+            ask(conn, settings, int(entry["id"]))
 
 
 def _history_entries(conn) -> None:  # noqa: ANN001
@@ -409,6 +560,11 @@ def _quarantine_entries(conn, settings: Settings) -> None:  # noqa: ANN001
     entries = [
         ("Photos/2022/Vacation/foo-copy.jpg", "exact_duplicate", JPEG),
         ("Movies/The Matrix (1998)/The Matrix (1998).srt", "user", b"1\n00:00:01,000 --> "),
+        # Held only so that a decision can be taken on them below. Taking one
+        # on the two above would leave the Held view — the one this page opens
+        # on — with nothing in it.
+        ("Photos/2022/Vacation/foo-second-copy.jpg", "exact_duplicate", JPEG),
+        ("Documents/Manuals/router-manual.pdf", "user", b"%PDF-1.4 router"),
     ]
     for relpath, reason, body in entries:
         row = conn.execute(
@@ -728,3 +884,6 @@ def stage_inbox(conn, settings: Settings, count: int) -> None:
             confidence=0.91,
             evidence=[Entry("filesystem", "folder date", "2026-05", 0.9)],
         )
+        #  As above: the item has to move with its proposal, or every one of
+        #  these ninety-five rows is a row whose Approve button raises.
+        transition_item(conn, int(row["id"]), "proposed")

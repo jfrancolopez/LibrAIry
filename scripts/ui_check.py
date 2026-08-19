@@ -323,6 +323,20 @@ PAGES = {
     # Every waiting state at once. All of them are reachable without an
     # encoder, which is the point of building orchestration before execution.
     "queue": "/maintenance/optimization",
+    # Five kinds of decision on one page, which is the only condition under
+    # which Commit's whole job — telling them apart — can be looked at. The
+    # fixture used to put one library correction here and nothing else.
+    "commit-mixed": "/commit",
+    # The three quarantine views that have rows in them. Held is the page as it
+    # opens; the other two are where a decision goes and what disposal leaves
+    # behind, and neither had ever been photographed.
+    "quarantine": "/quarantine",
+    "quarantine-waiting": "/quarantine?view=waiting",
+    "quarantine-delete": "/quarantine?view=delete-queue",
+    # A journal with real plans in it, including an adoption and a disposal.
+    "history": "/history",
+    "search": "/browse?q=IMG_4021",
+    "item": "/items/1",
 }
 
 # Scenes that need something opened before it can be looked at. A closed

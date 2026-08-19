@@ -35,7 +35,9 @@ Development only, on exactly the same terms as `ui_check.py`:
 from __future__ import annotations
 
 import argparse
+import atexit
 import shutil
+import signal
 import sys
 import tempfile
 from pathlib import Path
@@ -62,6 +64,31 @@ def main(argv: list[str] | None = None) -> int:
     from tests.dev.fixture import build_app, stage_inbox  # noqa: PLC0415
 
     root = Path(tempfile.mkdtemp(prefix="librairy-ui-"))
+
+    #  `finally` was not enough, and the difference was eight abandoned
+    #  libraries in `/var/folders` after one afternoon. Uvicorn installs its own
+    #  SIGTERM handling and leaves through it, so the block below never ran when
+    #  the server was stopped by anything other than Ctrl-C — which is how every
+    #  scripted restart stops it.
+    #
+    #  The rule this file claims for itself is that nothing it starts outlives
+    #  it. A directory holding a whole fixture library is something it started.
+    def cleanup(*_signal_args: object) -> None:
+        shutil.rmtree(root, ignore_errors=True)
+
+    atexit.register(cleanup)
+    for received in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+        previous = signal.getsignal(received)
+
+        def stop(number: int, frame: object, _previous=previous) -> None:  # noqa: ANN001
+            cleanup()
+            if callable(_previous):
+                _previous(number, frame)
+            else:
+                raise SystemExit(128 + number)
+
+        signal.signal(received, stop)
+
     try:
         app = build_app(root)
         if args.inbox:
@@ -70,7 +97,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"serving http://{args.host}:{args.port}/review")  # noqa: T201
         uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
     finally:
-        shutil.rmtree(root, ignore_errors=True)
+        cleanup()
     return 0
 
 

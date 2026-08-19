@@ -17,6 +17,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import textwrap
 from pathlib import Path
 
@@ -326,3 +327,44 @@ def test_the_filter_panel_is_measured_open_not_closed() -> None:
 
     assert "?" in PAGES["review-filters"]
     assert PAGES["review-filters"].startswith("/review")
+
+
+def test_the_fixture_server_takes_its_library_with_it() -> None:
+    """Nothing the harness starts may outlive it — including a directory.
+
+    That rule was asserted for Chrome and its profile, and not for the fixture
+    library `ui_serve.py` builds. `finally` did not cover it: uvicorn installs
+    its own SIGTERM handling and leaves through it, so every scripted restart
+    of the server abandoned a whole library in the temp directory. Eight of
+    them accumulated in one afternoon.
+    """
+    import signal
+    import time
+
+    marker = "librairy-ui-"
+
+    def libraries() -> set[Path]:
+        return {path for path in Path(tempfile.gettempdir()).glob(f"{marker}*")}
+
+    before = libraries()
+    server = subprocess.Popen(  # noqa: S603
+        [sys.executable, str(ROOT / "scripts" / "ui_serve.py"), "--port", "8791"],
+        cwd=ROOT,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline and not (libraries() - before):
+            time.sleep(0.2)
+        started = libraries() - before
+        assert started, "the server never built its fixture library"
+    finally:
+        server.send_signal(signal.SIGTERM)
+        server.wait(timeout=30)
+
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline and (libraries() - before):
+        time.sleep(0.2)
+
+    assert libraries() - before == set(), "a fixture library outlived the server"

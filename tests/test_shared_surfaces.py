@@ -139,3 +139,35 @@ def test_preview_is_a_toggle_wherever_it_is_offered(client, url, name) -> None:
     assert 'aria-expanded="false"' in body
     assert "data-preview-url" in body
     assert "data-preview-target" in body
+
+
+# --- physical truth against indexed truth -------------------------------------
+
+
+def test_browse_sees_a_file_the_index_has_never_heard_of(client) -> None:
+    """Browse walks the disk; Search reads the index. The difference is the
+    point of having both, and the fixture had stopped demonstrating it.
+
+    The unindexed file used to be written with everything else and its `items`
+    row deleted after the first scan. `_adoptable_optimizations` rescans the
+    library four times, so the row came straight back and both surfaces listed
+    the file — a scene that proved the opposite of what it was for, silently,
+    for as long as nobody looked.
+    """
+    on_disk = client.get("/browse/Music?folder=Pop/Stray").text
+    indexed = client.get("/search/results?q=never-scanned").text
+
+    assert "never-scanned.flac" in on_disk
+    assert "never-scanned.flac" not in indexed
+
+
+def test_the_reserved_optimization_namespace_is_on_neither_surface(client) -> None:
+    """`__librairy_internal__` is LibrAIry's own workspace, not the library."""
+    from librairy.reserved import RESERVED_TOP
+
+    everywhere = "".join(
+        client.get(url).text
+        for url in ("/browse", "/browse/Music", "/search/results?q=optimization")
+    )
+
+    assert RESERVED_TOP not in everywhere
