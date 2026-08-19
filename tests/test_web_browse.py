@@ -135,7 +135,11 @@ def test_error_page_identifies_itself(tmp_path: Path) -> None:
 
     assert response.status_code == 404
     assert "[ERROR 404]" in response.text
-    assert "Back to dashboard" in response.text
+    #  A refusal offers the page the decision was on first, when there is one,
+    #  and the dashboard always. There is no referer on a typed-in URL, so this
+    #  one falls back to the standing pair.
+    assert 'href="/dashboard"' in response.text
+    assert 'href="/history"' in response.text
 
 
 def test_browse_templates_have_no_mutating_affordances(tmp_path: Path) -> None:

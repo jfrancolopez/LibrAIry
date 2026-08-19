@@ -45,7 +45,10 @@ def test_history_lists_commit_plan_detail_and_single_op_undo(tmp_path: Path) -> 
     assert plan_hash in detail.text
     assert "Documents/a.txt" in detail.text
     assert undo.status_code == 200
-    assert ">undo</span>" in undo.text
+    #  A sentence, not a journal id and a status token: the refusal codes
+    #  carry two full hashes and were rendered verbatim.
+    assert ">Undo</span>" in undo.text
+    assert "put back" in undo.text
     assert (settings.inbox_dir / "a.txt").read_text(encoding="utf-8") == "a.txt"
     assert not (settings.library_dir / "Documents/a.txt").exists()
 
@@ -63,7 +66,7 @@ def test_whole_plan_undo_restores_pre_commit_tree_and_journals(tmp_path: Path) -
         )
     ]
     assert response.status_code == 200
-    assert response.text.count(">undo</span>") == 2
+    assert response.text.count(">Undo</span>") == 2
     assert (settings.inbox_dir / "a.txt").exists()
     assert (settings.inbox_dir / "b.txt").exists()
     assert not (settings.library_dir / "Documents/a.txt").exists()
@@ -313,3 +316,32 @@ def test_an_unknown_filter_falls_back_to_everything(tmp_path: Path) -> None:
 
     assert page.status_code == 200
     assert "Documents/a.txt" in page.text
+
+
+def test_a_refused_reversal_does_not_print_two_hashes_at_a_person(tmp_path: Path) -> None:
+    """The Undone page rendered the stored outcome code verbatim.
+
+    For the commonest refusal that is
+    `undo_refused_changed expected=<blake2b> actual=<blake2b>` — 130 characters
+    of hex, on a page whose whole job is telling somebody what happened to
+    their file. The codes stay in the journal and in the title attribute; the
+    page says it in words.
+    """
+    from librairy.web.history import undo_outcome_text
+
+    client, conn, settings = client_for(tmp_path)
+    plan_id = seed_committed_plan(settings, conn, ["a.txt"])
+    history_id = conn.execute(
+        "SELECT id FROM history WHERE plan_id=? ORDER BY id LIMIT 1", (plan_id,)
+    ).fetchone()["id"]
+    #  Edited since the commit, which is exactly the case that refuses.
+    (settings.library_dir / "Documents/a.txt").write_text("changed", encoding="utf-8")
+
+    response = client.post(f"/history/undo/{history_id}", headers=csrf(client))
+
+    assert response.status_code == 200
+    assert "expected=" not in response.text.split("title=")[0]
+    assert "the file has been edited since" in response.text
+    assert undo_outcome_text("undo_refused_changed expected=aa actual=bb") == (
+        "not put back — the file has been edited since"
+    )

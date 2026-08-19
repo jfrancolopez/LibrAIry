@@ -80,7 +80,8 @@ TYPE_BADGE = {
 # What the group means, under its heading. The delete-queue sentence is the
 # most important one on the page.
 TYPE_NOTE = {
-    NEW_FILE: "New files from your inbox, filed into the library.",
+    NEW_FILE: "New files from your inbox, filed into the library. They commit "
+    "together, from the New files section on this page.",
     CORRECTION: "Files already in your library, moved or renamed.",
     RESTORE: "Held files going back where they came from.",
     DELETE_QUEUE: "Moved into one folder for you to empty yourself. "
@@ -327,7 +328,11 @@ def _plan_row(
             else (
                 "Send back to Review"
                 if kind == CORRECTION
-                else ("Send back" if kind == OPTIMIZATION else "Cancel request")
+                #  The optimization card posts to the same handler the
+                #  optimization page's `Cancel request` posts to, and said so
+                #  in a comment while wearing a different label. The same act
+                #  seen from two pages gets the same words.
+                else "Cancel request"
             )
         ),
         # Every file this decision touches, on demand. A correction to an album

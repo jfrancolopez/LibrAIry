@@ -5,7 +5,7 @@
      index at all, which is exactly why it is the answer offered here. #}
   {% if index_warning %}
     <p class="notice-warn" role="status">{{ index_warning }}
-      <a href="/health">View details</a> — or browse the folders, which read
+      <a href="/health">Open Health</a> — or browse the folders, which read
       the disk directly and are always complete.</p>
   {% endif %}
   {% if not query and not filters.category and not filters.root and not filters.year and not filters.genre and not filters.content %}
@@ -54,7 +54,7 @@
                 data-preview-url="/preview/items/{{ row.item_id }}"
                 data-preview-target="search-preview-{{ row.item_id }}"
                 aria-expanded="false">Preview</button>
-              <a class="btn" href="/items/{{ row.item_id }}">Open details</a>
+              <a class="btn" href="/items/{{ row.item_id }}">View details</a>
             </div>
             <div id="search-preview-{{ row.item_id }}"></div>
             <p class="muted result-copy">copy: {{ row.host_path }}</p>

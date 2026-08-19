@@ -96,7 +96,7 @@
           hx-vals='{"action": "reanalyze", "proposal_id": "{{ proposal.id }}", "state": "{{ proposal.status }}", "sort": "{{ filters.sort }}"}'
           hx-target="#review-list" hx-swap="outerHTML"
           title="Wrong? Put it back in the queue for a fresh pass: tags, catalogs, duplicate detectors and AI."
-          hx-headers='{"x-csrf-token":"{{ csrf }}"}'>Re-analyse</button>
+          hx-headers='{"x-csrf-token":"{{ csrf }}"}'>Analyse again</button>
         {# "Quarantine" rather than "Don't want it": it is one word, it is what
            actually happens, and it is the name of the page you get it back
            from. Nothing is deleted — the confirm says so. #}

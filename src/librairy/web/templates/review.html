@@ -72,7 +72,7 @@
           Still in the inbox: approving decides, committing moves. One press files
           {{ 'them' if waiting != 1 else 'it' }} for real.
         </p>
-        <a class="btn-primary" href="/commit">Commit {{ waiting }}</a>
+        <a class="btn-primary" href="/commit">View in Commit</a>
       </section>
     {% endif %}
   {% endwith %}
@@ -102,7 +102,7 @@
           <td>Stays in the inbox until you commit, then moves to the library.</td>
         </tr>
         <tr>
-          <th>Re-analyse</th>
+          <th>Analyse again</th>
           <td>The guess is wrong or thin. The file goes back in the queue for a fresh
             pass — tags, catalogs, the duplicate detectors and any AI you have switched
             on. Worth doing after adding catalog keys or an AI provider.</td>
@@ -185,8 +185,8 @@
                   {%- if entry.size %} · was {{ entry.size }}{% endif %}
                 </span>
                 {# Where it was going, and what that meant. "Set aside" and
-                   "Marked for deletion" both point into quarantine, and a bare
-                   path under one heading makes them look like filing. #}
+                   "Headed for the delete queue" both point into quarantine, and
+                   a bare path under one heading makes them look like filing. #}
                 {% if entry.intent %}
                   <span class="vanished-facts muted">{{ entry.intent }}
                     <span class="mono">{{ entry.destination }}</span></span>
@@ -274,7 +274,7 @@
             </select>
           </label>
           <div class="filter-actions">
-            <button type="submit" class="btn-primary">Apply</button>
+            <button type="submit" class="btn-primary">Apply filters</button>
             <a class="btn" href="/review">Clear</a>
           </div>
         </div>
@@ -314,7 +314,7 @@
       <div class="toolbar-group" data-selection-only hidden>
         <button type="submit" name="action" value="approve" class="btn-primary" data-needs-selection>Approve</button>
         <button type="submit" name="action" value="reanalyze" data-needs-selection
-          title="Back in the queue for a fresh pass over catalogs, tools and AI.">Re-analyse</button>
+          title="Back in the queue for a fresh pass over catalogs, tools and AI.">Analyse again</button>
         <button type="submit" name="action" value="postpone" data-needs-selection>Later</button>
         <button type="submit" name="action" value="discard" class="btn-danger" data-needs-selection
           hx-confirm="Move the selected files to Quarantine on the next commit? Nothing is deleted — you can restore them from the Quarantine page.">Quarantine</button>

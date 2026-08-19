@@ -77,12 +77,12 @@
        finished commit is exactly when somebody realises. It is the same
        hash-verified reversal History uses — there is only one. #}
     <a class="btn" href="/browse">View in Browse</a>
-    <a class="btn" href="/history/plans/{{ plan.id }}">View History</a>
+    <a class="btn" href="/history/plans/{{ plan.id }}">View in History</a>
     <form method="post" action="/history/plans/{{ plan.id }}/undo">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <button type="submit" class="btn-ghost">Undo</button>
     </form>
-    <a class="btn" href="/commit">Back to Commit</a>
+    <a class="btn" href="/commit">View in Commit</a>
   </div>
   {% endif %}
 

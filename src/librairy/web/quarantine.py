@@ -5,6 +5,7 @@ from dataclasses import asdict
 
 from librairy.config import Settings
 from librairy.db import transaction
+from librairy.humanize import human_ago, human_bytes
 from librairy.lifecycle import LifecycleError, assert_transition, transition_item
 from librairy.optimization_disposal import (
     IN_DELETE_QUEUE,
@@ -283,7 +284,7 @@ def _may_transition(state: str, target: str) -> bool:
 
 
 def unstage_proposal(conn: sqlite3.Connection, proposal_id: int) -> None:
-    """"Keep it" — the file is filed normally after all.
+    """"Dismiss suggestion" — the file is filed normally after all.
 
     Withdrawing an approval is two events, and the lifecycle is right to want
     both spelled out: the answer is taken back (the item is undecided again),
@@ -423,6 +424,11 @@ def _entries(
             "preserved_storage": _preserved_storage(conn, row),
             "marked": marked_for_deletion(row["item_relpath"]),
             "size_label": human_size(row["item_size"]),
+            #  "3 days ago", not "2026-08-19T12:57:35+00:00". The stored stamp
+            #  was printed raw in the row header, which is the one place on the
+            #  page a person is scanning rather than reading — and every other
+            #  surface in LibrAIry has said it in words for a while.
+            "when": human_ago(row["quarantined_at"]),
             # The name is what identifies the row; the path is detail. Both
             # were in one mono blob that wrapped to four lines on a phone.
             "display_name": _basename(row["item_relpath"] or row["original_relpath"]),
@@ -493,11 +499,18 @@ def _preserved_storage(conn: sqlite3.Connection, row) -> dict[str, str]:
     if not original or not optimized:
         return {}
     effect = storage_effect(original, optimized, STORAGE_STATE[_disposal_state(conn, row)])
+    final = effect.final_net_reduction_bytes
     return {
         "original": human_size(original),
         "active": human_size(optimized),
         "freed_if_removed": human_size(effect.bytes_freed_if_original_removed),
-        "final_reduction": human_size(abs(effect.final_net_reduction_bytes)),
+        #  `human_bytes`, not `human_size`: zero is a size. A remux saves
+        #  nothing, and `human_size(0)` is the empty string, so the card read
+        #  "library ends up  smaller than it started" — no number, and the
+        #  wrong word. The direction is carried beside the magnitude for the
+        #  same reason: `abs()` alone would call a *larger* result smaller.
+        "final_reduction": human_bytes(abs(final)),
+        "final_direction": "smaller" if final > 0 else ("larger" if final < 0 else "same"),
         "reclaimed": human_size(effect.reclaimed_now_bytes) or "0 B",
         "stored_now": human_size(effect.physical_bytes_now),
         "extra_now": human_size(effect.current_extra_storage_bytes) or "0 B",

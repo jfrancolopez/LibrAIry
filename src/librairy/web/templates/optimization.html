@@ -303,7 +303,7 @@
             <form method="post" action="/maintenance/optimization/bulk">
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <input type="hidden" name="job_id" value="{{ job.id }}">
-              <button type="submit" name="action" value="cancel">Cancel</button>
+              <button type="submit" name="action" value="cancel">Stop</button>
             </form>
             {% endif %}
           </div>

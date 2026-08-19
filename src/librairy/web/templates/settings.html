@@ -293,7 +293,7 @@
   <div id="settings-save-bar" class="save-bar" hidden>
     <span>Unsaved changes</span>
     <button type="submit" class="btn-primary">Save settings</button>
-    <button type="button" id="settings-discard">discard</button>
+    <button type="button" id="settings-discard">Discard changes</button>
   </div>
 </form>
 
@@ -382,7 +382,7 @@
                   hx-target="#catalog-test-{{ entry.info.slug }}"
                   hx-swap="outerHTML"
                   hx-indicator="#catalog-test-{{ entry.info.slug }}"
-                  hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>Test it</button>
+                  hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>Test</button>
           <span class="muted">{{ 'Consulted during analysis.' if entry.enabled else 'Skipped — no requests are made.' }}</span>
         </div>
       </section>
@@ -536,7 +536,7 @@
   <ol class="steps setup-steps-open">
     <li><span>In LM Studio, open the <strong>Developer</strong> tab and start the server.</span></li>
     <li><span>Turn on <strong>Serve on Local Network</strong> in the same panel. Without it the server only answers its own machine, and LibrAIry times out.</span></li>
-    <li><span>Load a model, then press <strong>Test connection</strong> to see it listed here.</span></li>
+    <li><span>Load a model, then press <strong>Test</strong> to see it listed here.</span></li>
   </ol>
   <div class="field-row">
     <label class="field">IP or URL <input id="lmstudio-host" name="lmstudio_host" form="lmstudio-form" value="{{ lmstudio.host }}" placeholder="192.168.1.50"></label>
@@ -553,7 +553,7 @@
               hx-include="#lmstudio-form"
               hx-target="#lmstudio-test"
               hx-swap="outerHTML"
-              hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>Test connection</button>
+              hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>Test</button>
       <button type="submit" class="btn-primary">Save</button>
     </div>
   </form>

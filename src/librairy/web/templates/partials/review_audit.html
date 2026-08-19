@@ -127,7 +127,7 @@
 
              "Dismiss suggestion", not "No change". `No change` was ambiguous
              between "leave the files alone" and "do nothing at all", and the
-             structural choices in Review details — Keep together, Organize
+             structural choices under Details — Keep together, Organize
              individually, Leave current layout — are the place where the first
              meaning actually belongs. #}
           <form method="post" action="/review/audit/{{ finding.id }}/keep">
@@ -246,7 +246,7 @@
        is five things to try before you find the one you wanted. #}
     {% if finding.details %}
     <details class="audit-details">
-      <summary>Review details</summary>
+      <summary>Details</summary>
 
       {% if finding.details.summary %}
       {# Four numbers a person can check by hand, and deliberately not one

@@ -122,7 +122,10 @@ def test_the_warning_reaches_the_page(tmp_path: Path) -> None:
     body = client.get("/browse?q=heroes").text
 
     assert "Search index needs rebuild" in body
-    assert "View details" in body
+    #  Named for where it goes. `View details` is the word for opening a file's
+    #  own page, and the same words pointing at Health made two destinations
+    #  look like one control.
+    assert "Open Health" in body
 
 
 def test_the_repair_clears_the_warning_by_being_true(tmp_path: Path) -> None:

@@ -182,7 +182,9 @@ def test_the_offer_names_what_it_will_take_back(tmp_path: Path) -> None:
 
     entry = latest(conn)
     assert entry is not None
-    assert entry.summary == "Sent to quarantine 3 files"
+    #  Past tense for the decision, not for the move: nothing goes to
+    #  quarantine until Commit, and "Sent to quarantine" said it already had.
+    assert entry.summary == "Chose quarantine for 3 files"
 
 
 def test_the_journal_does_not_grow_without_bound(tmp_path: Path) -> None:

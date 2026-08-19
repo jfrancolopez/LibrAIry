@@ -498,7 +498,7 @@ def test_a_library_destination_reads_as_filing(tmp_path: Path) -> None:
 
     assert "Would have been filed as" in detail
     assert "Would have been filed as" in notice
-    assert "Marked for deletion" not in notice
+    assert "delete queue" not in notice
 
 
 def test_a_quarantine_destination_is_not_called_filing(tmp_path: Path) -> None:
@@ -518,7 +518,7 @@ def test_a_quarantine_destination_is_not_called_filing(tmp_path: Path) -> None:
     assert "Would have been filed as" not in notice
 
 
-def test_a_delete_pile_destination_says_marked_for_deletion(tmp_path: Path) -> None:
+def test_a_delete_pile_destination_names_the_delete_queue(tmp_path: Path) -> None:
     client, conn, settings = client_for(tmp_path)
     item_id = seed(conn, settings, "doomed.mkv", gone=True)
     conn.execute(
@@ -529,7 +529,7 @@ def test_a_delete_pile_destination_says_marked_for_deletion(tmp_path: Path) -> N
 
     notice = client.get("/review").text
 
-    assert "Marked for deletion" in notice
+    assert "Headed for the delete queue" in notice
     assert "Set aside" not in notice
 
 

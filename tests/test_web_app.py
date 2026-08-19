@@ -75,3 +75,55 @@ def test_terminal_idiom_is_gone_from_chrome(tmp_path) -> None:
         text = client.get(path).text
         for token in ("[OK]", "[WARN]", "[FAIL]"):
             assert token not in text, f"{token} still on {path}"
+
+
+def test_a_refusal_offers_the_page_the_decision_was_on(tmp_path) -> None:
+    """The only links on a refusal were the dashboard and History.
+
+    Neither is where the row the person was acting on lives, and the page was
+    reached by POST, so the back button re-submitted. A refusal has to say what
+    to do next, and the first useful thing is "go back to where you were".
+    """
+    client = _refusal_client(tmp_path)
+    client.get("/review")
+    token = client.cookies["csrf_token"]
+
+    refused = client.post(
+        "/review/audit/9999/accept",
+        headers={
+            "accept": "text/html",
+            "x-csrf-token": token,
+            "referer": "http://testserver/review?state=confident",
+        },
+    )
+    elsewhere = client.post(
+        "/review/audit/9999/accept",
+        headers={
+            "accept": "text/html",
+            "x-csrf-token": token,
+            "referer": "https://example.com/review",
+        },
+    )
+
+    assert 'href="/review?state=confident">Back to Review' in refused.text
+    #  Same-origin only. The referer is the caller's to choose, and a refusal
+    #  page is not somewhere a link out of the appliance may grow.
+    assert "example.com" not in elsewhere.text
+
+
+def _refusal_client(tmp_path) -> TestClient:
+    from librairy.config import Settings
+    from librairy.db import connect
+    from librairy.web.app import create_app
+
+    settings = Settings(
+        APPDATA_DIR=tmp_path / "appdata",
+        INBOX_DIR=tmp_path / "inbox",
+        LIBRARY_DIR=tmp_path / "library",
+        QUARANTINE_DIR=tmp_path / "quarantine",
+        AUTH_REQUIRED=False,
+        _env_file=None,
+    )
+    for directory in (settings.inbox_dir, settings.library_dir, settings.quarantine_dir):
+        directory.mkdir(parents=True, exist_ok=True)
+    return TestClient(create_app(settings, connect(settings)))

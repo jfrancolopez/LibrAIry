@@ -313,5 +313,9 @@ def destination_intent(dest_root: str | None, dest_relpath: str | None) -> str:
     if not dest_relpath:
         return ""
     if dest_root == "quarantine":
-        return "Marked for deletion" if marked_for_deletion(dest_relpath) else "Set aside"
+        #  Never the banned phrase, which a person saw here: nothing is marked
+        #  for deletion anywhere in LibrAIry — the delete queue is a folder.
+        if marked_for_deletion(dest_relpath):
+            return "Headed for the delete queue"
+        return "Set aside"
     return "Would have been filed as"

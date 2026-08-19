@@ -109,6 +109,7 @@ from librairy.web.history import (
     plan_detail_data,
     undo_history_entry,
     undo_history_plan,
+    undo_outcome_text,
 )
 from librairy.web.params import OptionalFloat, OptionalInt, PageNumber
 from librairy.web.quarantine import (
@@ -216,6 +217,7 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
     app.mount("/static", RevalidatedStatics(directory=PACKAGE_DIR / "static"), name="static")
     TEMPLATES.env.globals["provider_header"] = lambda: provider_header(conn, settings)
     TEMPLATES.env.globals["app_version"] = __version__
+    TEMPLATES.env.globals["undo_outcome_text"] = undo_outcome_text
     # One source for "what is a .VOB?", reachable from any template. Static
     # reference text: no file is read, nothing is looked up over the network,
     # and nothing it returns can change a classification.
@@ -1837,9 +1839,39 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
                 "title": "That could not be done",
                 "status": exc.status_code,
                 "message": exc.detail,
+                #  Where the person was. A refusal used to offer the dashboard
+                #  and History, neither of which is where the decision they were
+                #  making lives — so the only way back to the row was the back
+                #  button, on a page reached by POST.
+                **_came_from(request),
             },
             status_code=exc.status_code,
         )
+
+    #  The page a refusal should offer to go back to, named for what it is.
+    #  Same-origin only: the referer is a request header and so is the caller's
+    #  to choose, and a link out of the appliance is not something a refusal
+    #  page should ever be able to grow.
+    SECTIONS = {
+        "review": "Review",
+        "commit": "Commit",
+        "quarantine": "Quarantine",
+        "history": "History",
+        "maintenance": "the optimization queue",
+        "browse": "Browse",
+        "settings": "Settings",
+        "health": "Health",
+    }
+
+    def _came_from(request: Request) -> dict[str, str]:
+        referer = request.headers.get("referer", "")
+        base = str(request.base_url).rstrip("/")
+        if not referer.startswith(base + "/"):
+            return {}
+        path = referer[len(base) :]
+        section = path.lstrip("/").split("/", 1)[0].split("?", 1)[0]
+        label = SECTIONS.get(section)
+        return {"back": path, "back_label": label} if label else {}
 
     @app.exception_handler(404)
     async def not_found(request: Request, exc) -> HTMLResponse:  # noqa: ARG001

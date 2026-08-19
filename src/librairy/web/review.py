@@ -273,8 +273,8 @@ ACTION_TOASTS = {
     "reject": "{n} set aside.",
     "postpone": "{n} put off. Filter State to “Put off for later” to find {them} again.",
     "discard": "{n} headed for quarantine on the next commit. Nothing is deleted.",
-    "mark_delete": "{n} marked for deletion. {They} move to quarantine/_to-delete on the "
-    "next commit — LibrAIry still deletes nothing.",
+    "mark_delete": "{n} headed for the delete queue on the next commit. {They} move to "
+    "quarantine/_to-delete — LibrAIry still deletes nothing.",
     "reanalyze": "{n} back in the queue. The old guess stays until a better one lands, "
     "usually within a cycle or two.",
 }

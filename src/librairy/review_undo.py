@@ -29,12 +29,16 @@ from librairy.planner import utc_now
 #  the audit log, and it starts where this stops.
 KEEP_BATCHES = 20
 
+#  What the last decision was, in the past tense it deserves: the *decision*
+#  happened, the move has not. "Sent to quarantine" claimed a file had already
+#  gone somewhere it will not go until Commit, and "Marked for deletion" is the
+#  banned phrase — nothing here is ever marked for deletion, or deleted.
 ACTION_LABELS = {
     "approve": "Approved",
     "reject": "Set aside",
     "postpone": "Put off",
-    "discard": "Sent to quarantine",
-    "mark_delete": "Marked for deletion",
+    "discard": "Chose quarantine for",
+    "mark_delete": "Chose the delete queue for",
     "reanalyze": "Sent back for another look",
 }
 

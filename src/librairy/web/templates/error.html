@@ -3,5 +3,11 @@
   <p class="status warn">[ERROR {{ status }}]</p>
   <h1>{{ title or 'Error' }}</h1>
   <p>{{ message }}</p>
-  <p><a href="/dashboard">Back to dashboard</a> <a href="/history">History</a></p>
+  {# The page the decision was on, first: nothing else on this page takes the
+     reader back to the row they were acting on. #}
+  <p class="button-row">
+    {% if back %}<a class="btn btn-primary" href="{{ back }}">Back to {{ back_label }}</a>{% endif %}
+    <a class="btn" href="/dashboard">Dashboard</a>
+    <a class="btn" href="/history">History</a>
+  </p>
 {% endblock %}

@@ -7,11 +7,29 @@ from datetime import UTC, date, datetime, timedelta
 from librairy.config import Settings
 from librairy.history import HISTORY_KINDS, kind_counts, list_history, undo_op, undo_plan
 
-
 #  What an adoption's reversal is called and whether it can happen at all,
 #  derived from where the preserved original is right now rather than from the
 #  fact that a plan once ran. A journal row is permanent; the ability to undo it
 #  is not, and rendering a button that can only fail is the thing this replaces.
+#  What a reversal did, said to a person. The stored outcome is a code, and
+#  two of them carry diagnostics: `undo_refused_changed expected=<hash>
+#  actual=<hash>` was rendered verbatim on the Undone page, two full BLAKE2b
+#  digests wide, beside a bare journal id and the word "ok".
+UNDO_OUTCOMES = {
+    "ok": "put back",
+    "undo_refused_missing": "not put back — the file is no longer where LibrAIry left it",
+    "undo_refused_occupied": "not put back — something is already at its old path",
+    "undo_refused_changed": "not put back — the file has been edited since",
+    "undo_refused_source": "not put back — the file could not be read safely",
+}
+
+
+def undo_outcome_text(outcome: str) -> str:
+    """One sentence for a reversal's outcome, whatever diagnostics follow it."""
+    code = str(outcome or "").split(" ", 1)[0]
+    return UNDO_OUTCOMES.get(code, "not put back")
+
+
 def _adoption_undo(conn: sqlite3.Connection, plan_id: object) -> dict[str, object]:
     from librairy.optimization_disposal import (
         IN_DELETE_QUEUE,

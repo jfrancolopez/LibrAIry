@@ -16,7 +16,10 @@
         <p class="muted">Nothing moves until you approve it and commit.</p>
         <a class="btn btn-primary btn-lg" href="/review">Review them</a>
         {% if approved_count %}
-          <a class="btn" href="/commit">{{ approved_count }} already approved</a>
+          {# The count belongs in the sentence, not on the button: a label that
+             is a number is a label that says nothing about where it goes. #}
+          <p class="muted">{{ approved_count }} already approved and waiting.</p>
+          <a class="btn" href="/commit">View in Commit</a>
         {% endif %}
       </div>
     </section>
@@ -26,7 +29,7 @@
       <div class="hero-copy">
         <h1>approved, ready to commit</h1>
         <p class="muted">Committing moves them into your library. It is undoable.</p>
-        <a class="btn btn-primary btn-lg" href="/commit">Commit them</a>
+        <a class="btn btn-primary btn-lg" href="/commit">View in Commit</a>
       </div>
     </section>
   {% else %}

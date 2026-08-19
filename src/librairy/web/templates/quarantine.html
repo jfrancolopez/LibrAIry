@@ -53,7 +53,7 @@
   {% endif %}
 
   <section class="metric wide">
-    <h2>Waiting on you</h2>
+    <h2>Suggested for quarantine</h2>
     <p class="muted">LibrAIry thinks {{ 'these belong' if staged|length != 1 else 'this belongs' }} in quarantine. Nothing moves until you say so and then commit.</p>
     {% if staged %}
       {% for proposal in staged %}
@@ -87,11 +87,11 @@
                row you pressed is the row you see afterwards. #}
             <form method="post" action="/quarantine/staged/{{ proposal.id }}/approve">
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-              <button type="submit" class="btn-primary">Move it out</button>
+              <button type="submit" class="btn-primary">Quarantine</button>
             </form>
             <form method="post" action="/quarantine/staged/{{ proposal.id }}/unstage">
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-              <button type="submit">Keep it</button>
+              <button type="submit">Dismiss suggestion</button>
             </form>
             {# Straight to the queue: being finished with a duplicate that has
                not moved yet was otherwise two commits. Nothing is deleted. #}
@@ -188,7 +188,7 @@
                 {% elif entry.gone %}
                   <span class="badge badge-warn">Not on disk</span>
                 {% endif %}
-                <span class="muted qrow-when">{{ entry.quarantined_at }}</span>
+                <span class="muted qrow-when" title="{{ entry.quarantined_at }}">{{ entry.when }}</span>
               </span>
             </header>
 
@@ -228,16 +228,28 @@
                   <div><dt>Freed when you removed it</dt>
                        <dd>{{ entry.preserved_storage.original }}</dd></div>
                   <div><dt>Net storage reduction</dt>
-                       <dd>{{ entry.preserved_storage.final_reduction }} smaller
-                           than before this optimization</dd></div>
+                       <dd>
+                         {%- if entry.preserved_storage.final_direction == 'same' %}
+                           the same as before this optimization
+                         {%- else %}
+                           {{ entry.preserved_storage.final_reduction }}
+                           {{ entry.preserved_storage.final_direction }}
+                           than before this optimization
+                         {%- endif %}</dd></div>
                 {% else %}
                   <div><dt>Space reclaimed so far</dt>
                        <dd>{{ entry.preserved_storage.reclaimed }}</dd></div>
                   <div><dt>If you remove this original</dt>
                        <dd>{{ entry.preserved_storage.freed_if_removed }} freed at that
-                           moment · library ends up
-                           {{ entry.preserved_storage.final_reduction }} smaller than
-                           it started</dd></div>
+                           moment ·
+                           {%- if entry.preserved_storage.final_direction == 'same' %}
+                             the library ends up the size it started
+                           {%- else %}
+                             library ends up
+                             {{ entry.preserved_storage.final_reduction }}
+                             {{ entry.preserved_storage.final_direction }} than
+                             it started
+                           {%- endif %}</dd></div>
                 {% endif %}
               </dl>
               {% endif %}
@@ -368,7 +380,8 @@
                 <li><span class="badge badge-info">why</span> {{ entry.reason_text }}</li>
                 <li><span class="badge badge-info">now at</span>
                   <span class="mono">{{ entry.item_relpath or 'restored' }}</span></li>
-                <li><span class="badge badge-info">quarantined</span> {{ entry.quarantined_at }}</li>
+                <li><span class="badge badge-info">quarantined</span> {{ entry.when }}
+                    <span class="mono muted">{{ entry.quarantined_at }}</span></li>
                 {% if entry.restored_at %}
                   <li><span class="badge badge-ok">put back</span> {{ entry.restored_at }}</li>
                 {% endif %}
@@ -381,7 +394,7 @@
           </article>
         {% endfor %}
       </div>
-      <p class="muted">"Put it back" returns the file to exactly where it came from, verified by hash on the way.</p>
+      <p class="muted"><strong>Restore</strong> returns the file to exactly where it came from, verified by hash on the way.</p>
     {% else %}
       <p class="muted">Nothing has been moved out yet. Files appear here after you approve a
         quarantine in Review and then commit — never before, and never on their own.</p>

@@ -284,3 +284,78 @@ def test_the_web_route_refuses_an_entry_that_is_not_a_preserved_original(
 
     assert response.status_code == 409
     assert "not a preserved original" in response.text
+
+
+def test_a_remux_does_not_claim_the_library_got_smaller(tmp_path: Path) -> None:
+    """A saving of nothing was rendered as "ends up  smaller than it started".
+
+    Two faults in one sentence. `human_size(0)` is the empty string, so the
+    number vanished; and the magnitude was taken with `abs()`, so a result that
+    is *larger* than the original would have been announced as smaller too.
+    """
+    from librairy.web.quarantine import _preserved_storage
+
+    conn = _preserved_scene(tmp_path)
+
+    def card(source: int, actual: int) -> dict:
+        conn.execute(
+            "UPDATE optimization_jobs SET source_bytes=?, actual_bytes=?",
+            (source, actual),
+        )
+        row = conn.execute("SELECT * FROM quarantine_entries LIMIT 1").fetchone()
+        return _preserved_storage(conn, row)
+
+    same = card(1000, 1000)
+    smaller = card(1000, 400)
+    larger = card(1000, 1500)
+
+    assert same["final_direction"] == "same"
+    assert same["final_reduction"] == "0 B", "zero is a size"
+    assert smaller["final_direction"] == "smaller"
+    assert larger["final_direction"] == "larger"
+
+
+def _preserved_scene(tmp_path: Path):  # noqa: ANN202
+    """One adopted job and the quarantine entry that preserved its original."""
+    from librairy.config import Settings
+    from librairy.db import connect
+
+    settings = Settings(
+        APPDATA_DIR=tmp_path / "appdata",
+        INBOX_DIR=tmp_path / "inbox",
+        LIBRARY_DIR=tmp_path / "library",
+        QUARANTINE_DIR=tmp_path / "quarantine",
+        _env_file=None,
+    )
+    for directory in (settings.inbox_dir, settings.library_dir, settings.quarantine_dir):
+        directory.mkdir(parents=True, exist_ok=True)
+    conn = connect(settings)
+    item = int(
+        conn.execute(
+            "INSERT INTO items(root, relpath, size, mtime_ns, fingerprint, state,"
+            " first_seen_at, last_seen_at)"
+            " VALUES ('quarantine', 'Movies/keep.mkv', 1000, 1, 'f', 'quarantined',"
+            " 'now', 'now')"
+        ).lastrowid
+    )
+    job = int(
+        conn.execute(
+            """
+            INSERT INTO optimization_jobs(
+              item_id, root, relpath, fingerprint, kind, quality, from_label,
+              to_label, preset, preset_version, rule_version, source_bytes,
+              actual_bytes, run_policy, state, queued_at, updated_at
+            ) VALUES (?, 'library', 'Movies/keep.mkv', 'f', 'remux', 'remux',
+                      'MKV', 'MP4', 'p', 1, 1, 1000, 1000, 'window', 'adopted',
+                      'now', 'now')
+            """,
+            (item,),
+        ).lastrowid
+    )
+    conn.execute(
+        "INSERT INTO quarantine_entries(item_id, reason, original_root,"
+        " original_relpath, quarantined_at, optimization_job_id, plan_id)"
+        " VALUES (?, 'user', 'library', 'Movies/keep.mkv', 'now', ?, 'plan-a')",
+        (item, job),
+    )
+    return conn
