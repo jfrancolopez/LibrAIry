@@ -306,6 +306,33 @@ def _incoherent_ops(rows: list[sqlite3.Row], settings: Settings) -> dict[int, st
     return blocked
 
 
+def _duplicate_evidence_expired(
+    conn: sqlite3.Connection, row: sqlite3.Row, settings: Settings
+) -> str:
+    """Empty unless this is a duplicate whose library copy is no longer there.
+
+    The one piece of evidence that makes setting an inbox file aside safe is
+    that the same bytes are already filed. Between staging and Commit that can
+    stop being true — a hand deletion, another tool, a restore — and quarantining
+    the arrival on expired evidence leaves the person with no copy at all.
+    Nothing was deleted and nothing was overwritten, and they have still lost
+    the file.
+
+    So the evidence is re-read here, from the disk, at the moment it is acted
+    on. See `librairy/inbox_duplicates.py`.
+    """
+    from librairy.inbox_duplicates import is_duplicate_proposal, still_redundant
+
+    if row["op_type"] != "quarantine" or row["src_root"] != "inbox":
+        return ""
+    item_id = row["item_id"]
+    if item_id is None or not is_duplicate_proposal(conn, int(item_id)):
+        return ""
+    if still_redundant(conn, settings, int(item_id)) is not None:
+        return ""
+    return "skipped_changed no_matching_library_copy"
+
+
 def _is_merge_plan(conn: sqlite3.Connection, plan_id: str) -> bool:
     from librairy.merge import MERGE_KINDS
 
@@ -367,6 +394,14 @@ def _execute_op(conn: sqlite3.Connection, row: sqlite3.Row, settings: Settings) 
     if current_fingerprint != row["src_fingerprint"]:
         _finish_op(conn, row["id"], "skipped_changed", None)
         _journal(conn, row, row["dest_relpath"], current_fingerprint, "skipped_changed")
+        return "skipped_changed"
+    stale = _duplicate_evidence_expired(conn, row, settings)
+    if stale:
+        # Per operation and not per plan, deliberately. An inbox commit's files
+        # are independent of one another — one file's twin disappearing must not
+        # stop the other forty being filed — and this is a fact about one file.
+        _finish_op(conn, row["id"], "skipped_changed", None)
+        _journal(conn, row, row["dest_relpath"], current_fingerprint, stale)
         return "skipped_changed"
 
     dest = validate_dest(_root_path(settings, row["dest_root"]), row["dest_relpath"])

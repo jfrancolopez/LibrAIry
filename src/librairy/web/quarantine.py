@@ -215,6 +215,16 @@ def _counts(conn: sqlite3.Connection) -> dict[str, int]:
     return counts
 
 
+def _duplicate_of_path(conn: sqlite3.Connection, row: sqlite3.Row) -> str:
+    """The library file this held copy matches, if that is why it is held."""
+    if row["duplicate_of"] is None:
+        return ""
+    found = conn.execute(
+        "SELECT root, relpath FROM items WHERE id=?", (row["duplicate_of"],)
+    ).fetchone()
+    return f"{found['root']}/{found['relpath']}" if found else ""
+
+
 def reason_text(reason: str | None) -> str:
     return REASONS.get(str(reason or ""), str(reason or "no reason recorded"))
 
@@ -423,6 +433,11 @@ def _entries(
             "reason_tag": REASON_TAGS.get(
                 quarantine_effective_reason(row), "set aside"
             ),
+            #  Which file it is a copy of. "Byte-for-byte copy of a file you
+            #  already have" is the sentence this page has said for a year, and
+            #  it does not say *which* — which is the only part that decides
+            #  whether restoring this one is worth doing.
+            "duplicate_of": _duplicate_of_path(conn, row),
             #  A preserved original is not a rejection, and its controls are not
             #  the generic ones. Restore means undo the adoption, and the delete
             #  queue is a two-plan dependency rather than a move — which is why

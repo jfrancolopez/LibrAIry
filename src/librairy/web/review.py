@@ -25,6 +25,7 @@ from librairy.corrections import (
 )
 from librairy.duplicates import items_with_reports, reports_for_item
 from librairy.flags import flags_for, unhidden_name
+from librairy.inbox_duplicates import describe as describe_duplicate
 from librairy.lifecycle import (
     resolved_missing_count,
     transition_item,
@@ -516,6 +517,11 @@ def _proposal_rows(
             # The comparison itself is loaded on demand — it carries two
             # previews, and a page of fifty rows must not fetch a hundred.
             "has_duplicate": int(row["item_id"]) in compared,
+            # A file you already have, arriving again. Named on the row rather
+            # than buried in the comparison panel: "already in your library"
+            # is useless without saying where, and where is the only thing
+            # that decides whether this arrival is worth keeping.
+            "duplicate_of": describe_duplicate(conn, int(row["item_id"])),
             # Re-analyse puts the item back to 'discovered' and leaves the old
             # guess on screen until the worker replaces it in place. Without
             # saying so, pressing it looks like it did nothing.

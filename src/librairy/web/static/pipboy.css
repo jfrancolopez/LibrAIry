@@ -2565,6 +2565,16 @@ summary.timeline-head::-webkit-details-marker { display: none; }
   flex-wrap: wrap;
   align-items: baseline;
 }
+/* The library file an arrival duplicates, on the row. */
+.row-duplicate {
+  display: flex;
+  gap: var(--space-1);
+  align-items: baseline;
+  flex-wrap: wrap;
+  font-size: var(--text-sm);
+  margin: 0 0 var(--space-1);
+}
+
 /* A merge's collisions, inline. Deliberately not a wizard: answering six
    conflicts should be six presses on one page, not six screens. */
 .audit-merge { margin: 0 0 var(--space-2); }

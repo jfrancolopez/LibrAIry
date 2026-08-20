@@ -62,6 +62,24 @@
         {% endif %}
       </p>
 
+      {# A file you already have, arriving again. The library path is the whole
+         decision — "already in your library" without saying where leaves a
+         person no way to judge whether this arrival is the better copy — so it
+         is on the row rather than inside the Compare panel. #}
+      {% if proposal.duplicate_of %}
+      <div class="row-duplicate">
+        <span class="badge badge-info">EXACT DUPLICATE</span>
+        {% if proposal.duplicate_of.match %}
+        <span class="muted">Already in your library:</span>
+        <span class="mono">{{ proposal.duplicate_of.match }}</span>
+        {% if proposal.duplicate_of.extra %}
+        <span class="muted">and {{ proposal.duplicate_of.extra }} more</span>
+        {% endif %}
+        {% endif %}
+        <span class="muted">{{ proposal.duplicate_of.note }}</span>
+      </div>
+      {% endif %}
+
       <div class="proposal-actions">
         {# Look before you leap, then leap: the two inspect buttons sit left of
            the decisions, in the order you would use them. #}
@@ -82,11 +100,16 @@
 
         <span class="action-gap"></span>
 
+        {# "Approve" files a new arrival; this arrival is not being filed, it
+           is being set aside, and one word for both would mean the primary
+           button on the page sometimes puts a file in your library and
+           sometimes takes it out. Same action, same route, same deferral to
+           Commit — only the sentence changes. #}
         <button type="button" class="btn-primary"
           hx-post="/review/action"
           hx-vals='{"action": "approve", "proposal_id": "{{ proposal.id }}", "state": "{{ proposal.status }}", "sort": "{{ filters.sort }}"}'
           hx-target="#review-list" hx-swap="outerHTML"
-          hx-headers='{"x-csrf-token":"{{ csrf }}"}'>Approve</button>
+          hx-headers='{"x-csrf-token":"{{ csrf }}"}'>{{ 'Set aside duplicate' if proposal.duplicate_of else 'Approve' }}</button>
         {# Was "Not this", which set the guess aside and never guessed again —
            a dead end in one click, escapable only from the command line. The
            useful answer to a wrong guess is to look again, now that the keys

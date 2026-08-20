@@ -441,9 +441,16 @@ def test_a_hand_quarantined_file_is_not_called_a_duplicate(tmp_path: Path) -> No
     assert "no reason recorded" not in body
 
 
-def test_a_duplicate_is_still_recorded_as_one(tmp_path: Path) -> None:
+def staged_duplicate(tmp_path: Path, *, twin: bool = True):
+    """An inbox file whose bytes are already in the library, staged to be set
+    aside — which is what the worker's duplicate pass produces."""
     client, conn, settings = client_for(tmp_path)
     (settings.inbox_dir / "dupe.txt").write_text("dupe", encoding="utf-8")
+    if twin:
+        filed = settings.library_dir / "Documents" / "dupe.txt"
+        filed.parent.mkdir(parents=True, exist_ok=True)
+        filed.write_text("dupe", encoding="utf-8")
+        scan_root(conn, "library", settings.library_dir, settings)
     scan_root(conn, "inbox", settings.inbox_dir, settings)
     item_id = int(conn.execute("SELECT id FROM items WHERE relpath='dupe.txt'").fetchone()[0])
     upsert_proposal(
@@ -453,16 +460,78 @@ def test_a_duplicate_is_still_recorded_as_one(tmp_path: Path) -> None:
         clean_name="dupe.txt",
         dest_relpath="dupe.txt",
         confidence=0.99,
-        evidence=[EvidenceEntry("heuristic", "duplicate", "exact duplicate of library:x", 0.99)],
+        evidence=[
+            EvidenceEntry(
+                "heuristic", "duplicate", "exact duplicate of library:Documents/dupe.txt", 0.99
+            )
+        ],
         action="quarantine",
         dest_root="quarantine",
     )
     plan_id = create_plan(conn, [quarantine_operation("dupe.txt")], settings)
     approve_plan(conn, plan_id, settings)
+    return client, conn, settings, plan_id
+
+
+def test_a_duplicate_is_still_recorded_as_one(tmp_path: Path) -> None:
+    client, conn, settings, plan_id = staged_duplicate(tmp_path)
+
     execute_plan(conn, plan_id, settings)
 
     assert conn.execute("SELECT reason FROM quarantine_entries").fetchone()[0] == "exact_duplicate"
     assert "byte-for-byte copy" in client.get("/quarantine").text
+
+
+def test_the_held_copy_says_which_file_it_matches(tmp_path: Path) -> None:
+    """"A copy of something you already have" without saying *what* leaves no
+    way to judge whether restoring this one is worth doing."""
+    client, conn, settings, plan_id = staged_duplicate(tmp_path)
+
+    execute_plan(conn, plan_id, settings)
+
+    entry = conn.execute("SELECT duplicate_of FROM quarantine_entries").fetchone()
+    assert entry["duplicate_of"] is not None
+    assert "library/Documents/dupe.txt" in client.get("/quarantine").text
+
+
+def test_a_duplicate_whose_library_copy_has_gone_is_not_set_aside(
+    tmp_path: Path,
+) -> None:
+    """The safety property of the whole workflow.
+
+    The library copy is the only thing that makes the arrival redundant. If it
+    is deleted between staging and Commit — by hand, by another tool, by a
+    restore — quarantining the arrival leaves no copy anywhere. Nothing was
+    deleted and nothing was overwritten, and the file is gone.
+    """
+    client, conn, settings, plan_id = staged_duplicate(tmp_path)
+    (settings.library_dir / "Documents" / "dupe.txt").unlink()
+
+    summary = execute_plan(conn, plan_id, settings)
+
+    assert summary.done == 0
+    assert summary.skipped_changed == 1
+    assert (settings.inbox_dir / "dupe.txt").is_file()
+    assert conn.execute("SELECT COUNT(*) FROM quarantine_entries").fetchone()[0] == 0
+    outcome = conn.execute("SELECT outcome FROM history ORDER BY id DESC").fetchone()
+    assert "no_matching_library_copy" in outcome["outcome"]
+
+
+def test_a_file_you_set_aside_yourself_needs_no_twin(tmp_path: Path) -> None:
+    """The check is about duplicate evidence, not about quarantine. Sending a
+    file to Quarantine from Review is a decision, and it has no twin to lose."""
+    client, conn, settings, plan_id = staged_duplicate(tmp_path, twin=False)
+    conn.execute(
+        "UPDATE proposals SET evidence=? WHERE item_id IN"
+        " (SELECT id FROM items WHERE root='inbox')",
+        ('[{"source": "heuristic", "field": "category", "detail": "you sent it", '
+         '"weight": 1.0}]',),
+    )
+
+    summary = execute_plan(conn, plan_id, settings)
+
+    assert summary.done == 1
+    assert conn.execute("SELECT reason FROM quarantine_entries").fetchone()[0] == "user"
 
 
 def test_a_moved_out_row_leads_with_the_name_and_hides_the_rest(tmp_path: Path) -> None:

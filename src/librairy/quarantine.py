@@ -49,6 +49,17 @@ def marked_for_deletion(relpath: str | None) -> bool:
     return bool(relpath) and str(relpath).replace("\\", "/").split("/", 1)[0] == DELETE_PILE
 
 
+def _duplicate_of(conn: sqlite3.Connection, op: sqlite3.Row) -> int | None:
+    """The library file this one is a copy of, when that is why it is here."""
+    from librairy.inbox_duplicates import twins_of
+
+    item_id = op["item_id"]
+    if item_id is None or quarantine_reason(conn, int(item_id)) != "exact_duplicate":
+        return None
+    twins = twins_of(conn, int(item_id))
+    return twins[0].item_id if twins else None
+
+
 def quarantine_reason(conn: sqlite3.Connection, item_id: int) -> str:
     """Why this file is in quarantine: the duplicate finder, or you.
 
@@ -85,11 +96,18 @@ def record_quarantine_entry(conn: sqlite3.Connection, op: sqlite3.Row) -> None:
         INSERT INTO quarantine_entries(
           item_id, reason, duplicate_of, original_root, original_relpath,
           quarantined_at, plan_id, optimization_job_id
-        ) VALUES (?, ?, NULL, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             op["item_id"],
             quarantine_reason(conn, op["item_id"]),
+            #  Which file this is a copy of. The column has existed since the
+            #  first release and was written as NULL, so the Quarantine page
+            #  could say "exact duplicate" and not say of *what* — which is the
+            #  only part a person needs in order to decide whether to restore
+            #  it. Resolved by fingerprint at the moment of quarantine, so a
+            #  library copy that has since moved is still the right answer.
+            _duplicate_of(conn, op),
             op["src_root"],
             op["src_relpath"],
             utc_now(),
