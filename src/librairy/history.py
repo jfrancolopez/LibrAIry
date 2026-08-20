@@ -146,8 +146,25 @@ def undo_plan(conn: sqlite3.Connection, plan_id: str, settings: Settings) -> lis
     `_root_path` does not resolve it. Reached by adopting, restoring the
     original, and adopting again: two done plans for one job, and the older
     one's journal now has four `ok` rows in it.
+
+    A folder correction is the reason this also tidies up afterwards. Committing
+    one empties the folder it renamed; undoing it empties the folder the commit
+    created, and leaving that behind would mean "put it back" left something
+    that was not there before. Only directories these files just left, only when
+    nothing at all remains in them — see `subtree.remove_emptied_directories`.
     """
-    return [undo_op(conn, row["id"], settings) for row in plan_journal(conn, plan_id)]
+    from librairy.subtree import remove_emptied_directories
+
+    entries = plan_journal(conn, plan_id)
+    results = [undo_op(conn, row["id"], settings) for row in entries]
+    vacated = [
+        row["dest_relpath"]
+        for row, result in zip(entries, results, strict=True)
+        if row["dest_root"] == "library" and result.outcome == "ok"
+    ]
+    if vacated:
+        remove_emptied_directories(settings, vacated)
+    return results
 
 
 @dataclass(frozen=True)

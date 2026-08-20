@@ -83,7 +83,7 @@ def execute_plan(conn: sqlite3.Connection, plan_id: str, settings: Settings) -> 
     from librairy.corrections import settle_plan
     from librairy.quarantine_requests import settle_quarantine_plan
 
-    settle_plan(conn, plan_id)
+    settle_plan(conn, plan_id, settings)
     # The same reasoning, for the other kind of decision that waits here: one
     # door, so there is one place to forget rather than two. Both are no-ops
     # for an ordinary inbox plan.

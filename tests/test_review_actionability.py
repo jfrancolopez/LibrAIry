@@ -4,17 +4,26 @@ Every test here traces back to one real report against the live library:
 
     I select `Lipps Inc.`, press Accept corrections, and nothing happens.
 
-That was completely accurate. `Music/Pop/Lipps Inc.` is a folder-naming
-observation — `naming-inconsistency` is not in `EXECUTABLE_KINDS`, and the
-executor cannot rename a subtree — so it could never be approved. But its
-checkbox was enabled and unmarked, and the toolbar's Approve button disabled
-itself when nothing eligible was selected. A disabled button issues no request,
-so there was no error, no message and no change. The software said nothing at
-all about a thing it had already decided was impossible.
+That was completely accurate. `Music/Pop/Lipps Inc.` was a folder-naming
+observation — the executor could not rename a subtree — so it could never be
+approved. But its checkbox was enabled and unmarked, and the toolbar's Approve
+button disabled itself when nothing eligible was selected. A disabled button
+issues no request, so there was no error, no message and no change. The
+software said nothing at all about a thing it had already decided was
+impossible.
 
 So actionability is a value on the row now, not something inferred from which
 button happened to render, and the tests below hold that line from both ends:
 an observation can never look approvable, and a real correction still can.
+
+`Lipps Inc.` itself has since changed sides. `librairy/subtree.py` expands a
+folder rename into the concrete file moves it is, so that row is a correction
+now and `tests/test_subtree_corrections.py` proves it end to end. The rule this
+file exists for did not change with it — an observation still must never look
+approvable — so the observation here is now `album-name-mismatch`, a folder
+finding that carries a destination and still has no move that answers it. That
+substitution is the point: the rule is about actionability, not about which
+kinds happen to be executable this month.
 """
 
 from __future__ import annotations
@@ -66,15 +75,31 @@ def correction() -> Finding:
     )
 
 
-def lipps() -> Finding:
-    """The live finding, reproduced. Note that it *has* a destination.
+def observation() -> Finding:
+    """A folder finding that has a destination and still cannot be executed.
 
-    That is the trap: `dest_relpath` looks like something to execute, and it is
-    not. `Music/Pop/Lipps Inc` is a folder name, and renaming a folder is not a
-    move the plan can express — every file inside it would have to move, as one
-    coherent operation, with companions and collisions handled. Until that
-    exists this is a thing to know, not a thing to press.
+    That is the trap this whole file is about: `dest_relpath` looks like
+    something to press, and it is not. The tags inside say the release is
+    called one thing and the folder says another — but which of the two is
+    right is a judgement, and acting on it could merge this folder into one
+    that already exists under the other name. There is no move that answers it.
+
+    `naming-inconsistency` used to sit here, and now does not: a folder rename
+    expands into concrete moves and is approvable. Kinds move between the two
+    lists as they are reasoned about. The rule does not.
     """
+    return Finding(
+        relpath=LIPPS,
+        kind="album-name-mismatch",
+        severity="review",
+        summary="The files inside are tagged 'Mouth to Mouth'.",
+        dest_relpath="Music/Pop/Mouth to Mouth",
+        evidence=[EvidenceEntry("tags", "album", "Mouth to Mouth", 0.9)],
+    )
+
+
+def folder_rename() -> Finding:
+    """The original report, which is now a correction rather than a suggestion."""
     return Finding(
         relpath=LIPPS,
         kind="naming-inconsistency",
@@ -135,7 +160,7 @@ def post(client: TestClient, url: str, **data):
 def test_an_observation_is_never_selectable_for_approval(tmp_path: Path) -> None:
     """The bug itself. The checkbox was enabled, so the selection was legal,
     so the button that could not act on it disabled itself silently."""
-    client, conn, _ = scene(tmp_path, lipps())
+    client, conn, _ = scene(tmp_path, observation())
 
     row = article(client.get("/review").text, finding_id(conn, LIPPS))
 
@@ -146,7 +171,7 @@ def test_an_observation_is_never_selectable_for_approval(tmp_path: Path) -> None
 def test_an_observation_says_why_rather_than_omitting_a_button(tmp_path: Path) -> None:
     """A row that merely lacks an Approve control reads as a bug. Saying "no
     automatic correction is available" makes it a rule."""
-    client, conn, _ = scene(tmp_path, lipps())
+    client, conn, _ = scene(tmp_path, observation())
 
     row = article(client.get("/review").text, finding_id(conn, LIPPS))
 
@@ -155,13 +180,13 @@ def test_an_observation_says_why_rather_than_omitting_a_button(tmp_path: Path) -
     assert ">Approve change</button>" not in row
 
 
-def test_a_folder_rename_is_not_executable_merely_because_it_has_a_destination(
+def test_a_finding_is_not_executable_merely_because_it_has_a_destination(
     tmp_path: Path,
 ) -> None:
     """`dest_relpath` is not the test, and must never become it. A future
     detector could set a destination without anybody having reasoned about
     what executing it would mean."""
-    client, conn, settings = scene(tmp_path, lipps())
+    client, conn, settings = scene(tmp_path, observation())
     ident = finding_id(conn, LIPPS)
 
     assert conn.execute(
@@ -174,6 +199,21 @@ def test_a_folder_rename_is_not_executable_merely_because_it_has_a_destination(
         assert "observation" in str(exc)
     else:  # pragma: no cover - the whole point is that this cannot happen
         raise AssertionError("a folder rename was turned into a plan")
+
+
+def test_the_folder_that_started_this_is_now_a_correction(tmp_path: Path) -> None:
+    """The other outcome of the same report, four passes later.
+
+    `Lipps Inc.` is approvable because renaming a folder is now expressed as
+    the file moves it always was — not because the rule was relaxed. The row
+    says how many files that is before it asks anyone to approve it.
+    """
+    client, conn, _ = scene(tmp_path, folder_rename())
+
+    row = article(client.get("/review").text, finding_id(conn, LIPPS))
+
+    assert ">Approve change</button>" in row
+    assert 'data-audit-eligible="1"' in row
 
 
 def test_a_real_correction_is_still_selectable_and_approvable(tmp_path: Path) -> None:
@@ -191,7 +231,7 @@ def test_a_real_correction_is_still_selectable_and_approvable(tmp_path: Path) ->
 def test_selecting_only_an_observation_reports_a_result(tmp_path: Path) -> None:
     """Even reaching the endpoint directly — a second tab, a stale page, curl —
     produces a sentence rather than a shrug."""
-    client, conn, settings = scene(tmp_path, lipps())
+    client, conn, settings = scene(tmp_path, observation())
 
     result = apply_audit_bulk(conn, settings, "accept", [finding_id(conn, LIPPS)])
 
@@ -227,7 +267,7 @@ def test_an_approved_row_is_rendered_under_waiting_for_commit(tmp_path: Path) ->
 
 
 def test_the_bulk_result_counts_every_outcome_by_name(tmp_path: Path) -> None:
-    client, conn, settings = scene(tmp_path, correction(), lipps())
+    client, conn, settings = scene(tmp_path, correction(), observation())
 
     result = apply_audit_bulk(
         conn, settings, "accept", [finding_id(conn, TRACK), finding_id(conn, LIPPS)]
@@ -311,7 +351,7 @@ def test_the_pre_commit_reversal_is_not_called_undo(tmp_path: Path) -> None:
 
 
 def test_dismissing_hides_the_row_without_deleting_the_record(tmp_path: Path) -> None:
-    client, conn, settings = scene(tmp_path, lipps())
+    client, conn, settings = scene(tmp_path, observation())
     ident = finding_id(conn, LIPPS)
 
     post(client, f"/review/audit/{ident}/keep")
@@ -325,7 +365,7 @@ def test_dismissing_hides_the_row_without_deleting_the_record(tmp_path: Path) ->
 
 
 def test_dismissing_says_where_the_row_went(tmp_path: Path) -> None:
-    client, conn, _ = scene(tmp_path, lipps())
+    client, conn, _ = scene(tmp_path, observation())
 
     response = post(client, f"/review/audit/{finding_id(conn, LIPPS)}/keep")
 
@@ -335,7 +375,7 @@ def test_dismissing_says_where_the_row_went(tmp_path: Path) -> None:
 
 
 def test_a_dismissed_row_is_visible_and_offers_restore(tmp_path: Path) -> None:
-    client, conn, _ = scene(tmp_path, lipps())
+    client, conn, _ = scene(tmp_path, observation())
     ident = finding_id(conn, LIPPS)
     post(client, f"/review/audit/{ident}/keep")
 
@@ -346,7 +386,7 @@ def test_a_dismissed_row_is_visible_and_offers_restore(tmp_path: Path) -> None:
 
 
 def test_restoring_puts_it_back_in_the_active_list(tmp_path: Path) -> None:
-    client, conn, settings = scene(tmp_path, lipps())
+    client, conn, settings = scene(tmp_path, observation())
     ident = finding_id(conn, LIPPS)
     post(client, f"/review/audit/{ident}/keep")
 
@@ -377,11 +417,11 @@ def test_an_identical_audit_leaves_a_dismissed_suggestion_dismissed(
 ) -> None:
     """Otherwise the same question comes back every week and the list stops
     being read — which is the failure mode dismissal exists to prevent."""
-    client, conn, settings = scene(tmp_path, lipps())
+    client, conn, settings = scene(tmp_path, observation())
     ident = finding_id(conn, LIPPS)
     post(client, f"/review/audit/{ident}/keep")
 
-    record_findings(conn, [lipps()])
+    record_findings(conn, [observation()])
 
     assert (
         conn.execute("SELECT status FROM audit_findings WHERE id=?", (ident,)).fetchone()[

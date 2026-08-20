@@ -83,6 +83,59 @@ that unreliable, and all three are fixed. See [the command line](docs/cli.md).
   health block as `{'ok': True, ...}`; dicts, tuples and values containing
   newlines all render line-oriented now, the way list values already did.
 
+### Added — a folder can now be renamed, as every file move it actually is
+
+`Music/Pop/Lipps Inc.` was the report that opened this and the one that kept it
+shut. Library Review could see the folder was wrong and spell the corrected
+name, and it had to show that with no button, because LibrAIry has one executor
+and every guarantee it makes is stated per file — a fingerprint checked at
+commit time, a collision that never overwrites, a plan that cannot be
+recomputed, an undo that puts each file back. `mv folderA folderB` has none of
+them.
+
+So the correction is not a folder operation that moves files as a side effect.
+It **is** the files; the folder disappearing afterwards is what is left when
+they have all gone. See [the guide](docs/using-librairy.md#library-audit).
+
+- **Approval expands the folder into concrete moves**, one operation per file,
+  at any depth, each carrying the fingerprint it was approved against. The
+  folder itself is never an operand — there would be nothing to fingerprint and
+  nothing for Undo to check. Commit, History and Undo learned nothing new: it
+  is the same plan, the same journal and the same reversal a single-file
+  correction already used.
+- **The row says how big the decision is before asking you to make it.**
+  *Affects 14 files · 620 MB · everything in this folder*, on the row rather
+  than inside a disclosure.
+- **Seven refusals, each said out loud on the row.** A folder that would merge
+  into one that already exists; a file inside that is not indexed, has changed,
+  or has been deleted since the audit; a file already waiting for Commit as
+  part of another correction; a protected folder; a disc structure; more than
+  200 files, because a plan is a list somebody reads and past a couple of
+  hundred rows approving it stops being a decision.
+- **A rename that only changes capitalisation is refused where the filesystem
+  cannot express it.** `JAMES BROWN` → `James Brown` is the naming detector's
+  commonest output, and on APFS or NTFS the destination directory already
+  exists — it *is* the source, so each file would move onto itself. There is a
+  two-step dance through a temporary name that would work, and it is exactly
+  the unjournalled folder operation this avoids. The same finding on a
+  case-sensitive volume is executable.
+- **Approval reads the bytes; the page reads `stat`.** Rendering fifty folder
+  findings must not hash the library, so Review checks that every file is
+  present, indexed and the length the index recorded, and `accept_correction`
+  verifies fingerprints. A file rewritten to its old length between the two is
+  refused at the door, not half moved.
+- **Emptied folders are taken away, in both directions.** Committing a rename
+  empties the old folder; undoing it empties the new one. Only directories the
+  plan itself emptied, only when nothing at all is left in them — `rmdir` and
+  never `rmtree`, so a `.DS_Store` nobody asked about is enough to keep a
+  folder. Not journalled, because there is nothing in an empty directory to
+  restore and every undo recreates its parents on the way back.
+- **This expands what is actionable; it does not make everything actionable.**
+  Only folder findings whose correction is a re-rooting are executable.
+  *One album in several folders*, *artist filed in two places* and *folder name
+  disagrees with the tags* propose merges and choices, not renames, and stay
+  observations.
+
 ### Added — Library Audit corrections can be applied
 
 The audit stopped at "this looks wrong" because two guarantees were missing.

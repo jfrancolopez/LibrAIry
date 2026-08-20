@@ -1200,20 +1200,51 @@ Only kinds whose correction is a concrete, deterministic move:
 
 | Executable | Observation only |
 |---|---|
-| Tags disagree with the folder, naming cleanup on a **file** | Naming inconsistency (any **folder**), possible duplicate, missing artwork, not indexed, system file, unexpected file type, loose file |
-
-Renaming a file is one move the plan already represents. Renaming a folder is
-every file beneath it, and the correction group resolves a file plus its
-companions in one directory — not a subtree. Until that is built and proven, a
-folder rename is shown with its suggested spelling and no button.
+| Tags disagree with the folder, naming cleanup on a **file**, naming inconsistency on a **folder** | Possible duplicate, missing artwork, not indexed, system file, unexpected file type, loose file, one album in several folders, artist filed in two places, folder name disagrees with the tags |
 
 The observations are all true and worth showing; none has a move that answers
 it. *Missing artwork* describes a file that is exactly where it belongs.
-*Naming inconsistency* is about a folder, and the corrected spelling of
-`JAMES BROWN` is a judgement — "James Brown"? "James Brown & The J.B.'s"? —
-that LibrAIry will not make on your behalf. *Possible duplicate* has a real
-answer, quarantining the copy, but that is a different action with its own
-safety rules and it is not offered here yet.
+*Possible duplicate* has a real answer, quarantining the copy, but that is a
+different action with its own safety rules and it is not offered here yet.
+*One album in several folders* and *artist filed in two places* propose a merge
+or a choice, not a rename — which of two spellings is right is a judgement, and
+merging asks a question no rule answers, such as which of two `cover.jpg` files
+wins.
+
+### Renaming a folder
+
+A folder is not a thing that can be corrected. The directory entry is one name;
+what you mean by "fix that folder" is the files underneath it. So approving one
+builds the moves it actually is — one operation per file, at any depth — and the
+folder disappearing afterwards is what is left when they have all gone.
+
+```text
+Naming inconsistency                      Ready to approve
+Lipps Inc.
+Ends in a dot, which Windows silently drops.
+Music/Pop/ Lipps Inc. → Lipps Inc
+
+Affects  14 files · 620 MB · everything in this folder
+  Moves 14 files ▸
+
+[Approve change] [Dismiss suggestion] [⋯]
+```
+
+It is refused, on the row and in words, when any of this is true:
+
+| Refused | Because |
+|---|---|
+| The new name already exists as a folder | Merging two folders asks questions renaming one does not — which `cover.jpg` wins. |
+| Only the capitalisation changes, on a Mac or Windows volume | The destination *is* the source there, so each file would move onto itself. On a case-sensitive volume the same rename works. |
+| A file inside is not indexed, has changed, or is gone | The finding describes the folder as it was checked. If that is not what is there, the suggestion is out of date, not smaller. |
+| A file inside is already waiting for Commit | Two approved plans would each believe they know where it is. |
+| The folder is protected, or holds a disc structure | Neither moves, by rule. |
+| More than 200 files | A plan is a list you read before approving it. Past a couple of hundred rows, approving stops being a decision. |
+
+Commit, History and Undo treat it exactly like any other correction — one plan,
+all-or-nothing, one History line, one Undo that puts every file back where it
+was. Undoing also takes away the folder the commit created, so "put it back"
+does not leave something behind that was not there before.
 
 ### Companions travel with their media
 

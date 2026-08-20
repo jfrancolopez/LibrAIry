@@ -205,7 +205,17 @@
     </details>
     {% endif %}
 
+    {# The scale of the thing, above the fold rather than inside an expander.
+       "Approve change" on a folder rename is a decision about fourteen files
+       and 620 MB; a row that only says so once you open a disclosure has told
+       you after you needed to know. The list itself stays folded. #}
     {% if finding.affected_count > 1 %}
+    <p class="audit-scale">
+      <span class="muted">Affects</span>
+      <strong>{{ finding.affected_count }} files</strong>
+      {% if finding.affected_size %}<span class="muted">· {{ finding.affected_size }}</span>{% endif %}
+      {% if finding.affects_subtree %}<span class="muted">· everything in this folder</span>{% endif %}
+    </p>
     <details class="audit-affected">
       <summary>Moves {{ finding.affected_count }} files</summary>
       <ul>

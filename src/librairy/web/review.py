@@ -17,6 +17,7 @@ from librairy.corrections import (
     CorrectionRefused,
     describe_state,
     finding_state,
+    group_size,
     is_executable,
     plan_files,
     resolve_group,
@@ -1036,10 +1037,16 @@ def _audit_row(
     state = CURRENT if settings is None else finding_state(settings, row)
     executable = settings is not None and is_executable(row, state)
     affected: list[dict[str, str]] = []
+    affected_size = 0
     blocked = ""
     if executable and not accepted:
         try:
-            group = resolve_group(conn, settings, row)
+            # `verify=False`: this is a page render, not an approval. A file
+            # correction reads two or three files either way, but a folder
+            # correction is a whole subtree, and fifty rows of those would make
+            # Review read the library twice over to draw itself. The page
+            # checks what `stat` answers; `accept_correction` reads the bytes.
+            group = resolve_group(conn, settings, row, verify=False)
         except CorrectionRefused as exc:
             # Resolvable in principle, not resolvable today — an unindexed
             # companion, a disc structure. Say so instead of offering a button
@@ -1057,6 +1064,7 @@ def _audit_row(
                 }
                 for item in group.files
             ]
+            affected_size = group_size(conn, group)
     elif accepted:
         affected = [
             {
@@ -1126,6 +1134,11 @@ def _audit_row(
         "blocked": blocked,
         "affected": affected,
         "affected_count": len(affected),
+        # What the correction is, in facts, above the fold. A folder rename
+        # whose scale is only visible after opening an expander is a decision
+        # made without the number that matters most.
+        "affected_size": human_size(affected_size) if affected_size else "",
+        "affects_subtree": bool(affected) and affected[0]["role"] == "member",
         "item_id": row["item_id"],
         "can_preview": can_preview,
         "browse_href": _audit_browse_href(row["relpath"], state),

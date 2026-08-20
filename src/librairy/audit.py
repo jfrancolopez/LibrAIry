@@ -88,16 +88,21 @@ KINDS = {
 # executing it would mean, and the allowlist is where that thinking is
 # recorded. Three kinds were considered and left out on purpose:
 #
-# * `naming-inconsistency` is always about a *folder*. Renaming one is not one
-#   move but every file beneath it, and the existing correction group resolves
-#   a primary plus its companions in one directory — not a subtree. Until that
-#   is built and proven, a folder rename stays a suggestion. This is why
-#   `JAMES BROWN` is shown with its corrected spelling and no button.
 # * `duplicate` has a correct answer — quarantine the copy — but that is a
 #   different action class with its own safety semantics, not a move.
 # * `missing-artwork`, `unindexed` and `system-junk` describe files that are
 #   exactly where they belong.
-EXECUTABLE_KINDS = frozenset({"tag-path-mismatch", "naming-cleanup"})
+#
+# `naming-inconsistency` was the fourth entry on that list for a long time, and
+# for the right reason: it is always about a *folder*, and renaming one is not
+# one move but every file beneath it. `librairy/subtree.py` is that proof, so it
+# is executable now — but only ever as the concrete list of moves it expands to,
+# and only when every one of them is safe. A folder finding with no destination,
+# one whose files are not all indexed, one that would merge into an existing
+# folder, and one too large to read before approving are all still suggestions.
+EXECUTABLE_KINDS = frozenset(
+    {"tag-path-mismatch", "naming-cleanup", "naming-inconsistency"}
+)
 
 # Kinds whose `relpath` names a folder rather than a file. The UI needs this to
 # decide three things it would otherwise get wrong: whether to offer the

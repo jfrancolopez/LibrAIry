@@ -2553,6 +2553,18 @@ summary.timeline-head::-webkit-details-marker { display: none; }
 /* Dismissed rows read as a record rather than a queue. */
 .audit-dismissed .audit-row { opacity: 0.75; }
 .audit-dismissed[open] .audit-row { opacity: 1; }
+/* How big the correction is, on the row rather than inside the disclosure
+   below it. "Approve change" on a folder rename is a decision about every file
+   underneath, and a scale a person only sees after opening an expander has
+   arrived after the moment it was needed. */
+.audit-scale {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-sm);
+  display: flex;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+  align-items: baseline;
+}
 .audit-affected { margin: 0 0 var(--space-2); }
 .audit-affected summary { cursor: pointer; }
 .audit-affected ul { list-style: none; margin: var(--space-2) 0 0; padding: 0; }

@@ -167,10 +167,20 @@ def test_every_folder_kind_is_a_real_kind() -> None:
     assert set(KINDS) >= FOLDER_KINDS
 
 
-def test_no_folder_kind_is_executable() -> None:
-    """Renaming a folder is every file beneath it, which the correction plan
-    does not represent. The two sets must not overlap."""
-    assert not (FOLDER_KINDS & EXECUTABLE_KINDS)
+def test_the_only_executable_folder_kind_is_one_that_expands_to_moves() -> None:
+    """Renaming a folder is every file beneath it.
+
+    That used to mean no folder kind could be executable at all. It now means
+    exactly one thing: a folder kind may be executable only if `subtree.py`
+    knows how to expand it into concrete per-file moves. Any other folder kind
+    that acquires a destination is still an observation, because re-rooting a
+    `split-album` or an `artist-split` destination would produce a confident
+    plan for a decision nobody made.
+    """
+    from librairy.subtree import SUBTREE_KINDS
+
+    assert FOLDER_KINDS & EXECUTABLE_KINDS == SUBTREE_KINDS
+    assert SUBTREE_KINDS <= FOLDER_KINDS
 
 
 def test_the_music_folder_kinds_are_all_declared() -> None:

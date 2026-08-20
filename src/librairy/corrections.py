@@ -141,23 +141,38 @@ class CorrectionGroup:
     resolved before the plan is built so that Review can show all of it, and so
     that a companion nobody expected to move is a thing you see rather than a
     thing you discover afterwards.
+
+    `files` is the whole list because there are now two shapes of correction and
+    only one of them has a first file that means anything. A file correction is
+    a primary plus the companions that follow it; a folder correction is a
+    subtree, where every file is in the group for the same reason and calling
+    one of them the primary would be inventing a distinction. `subject` says
+    which, and `primary`/`companions` are kept for the first shape.
     """
 
     finding_id: int
-    primary: Affected
-    companions: tuple[Affected, ...]
+    files: tuple[Affected, ...]
+    subject: str = "file"
 
     @property
-    def files(self) -> tuple[Affected, ...]:
-        return (self.primary, *self.companions)
+    def primary(self) -> Affected:
+        return self.files[0]
+
+    @property
+    def companions(self) -> tuple[Affected, ...]:
+        return self.files[1:]
 
     @property
     def count(self) -> int:
-        return 1 + len(self.companions)
+        return len(self.files)
 
 
 def resolve_group(
-    conn: sqlite3.Connection, settings: Settings, row: sqlite3.Row
+    conn: sqlite3.Connection,
+    settings: Settings,
+    row: sqlite3.Row,
+    *,
+    verify: bool = True,
 ) -> CorrectionGroup:
     """The primary file and every companion that must travel with it.
 
@@ -175,11 +190,21 @@ def resolve_group(
       classifier learned that from seven phone-camera folders where an
       unrelated `IMG_9323.jpeg` sits beside an `IMG_9323.MOV`.
 
+    A folder finding takes the other road entirely: there is no primary and no
+    companion rule, only every file beneath the folder, re-rooted. See
+    `librairy/subtree.py`. Both shapes come back as one `CorrectionGroup`
+    because both are approved, planned, committed and undone the same way — the
+    difference is which files are in it, not what happens to them.
+
     Anything the group cannot move safely refuses the whole group rather than
     moving part of it. A correction the user approved as one action is one
     action.
     """
     from librairy.audit import _in_dvd_structure
+    from librairy.subtree import is_subtree_finding
+
+    if is_subtree_finding(row):
+        return resolve_subtree_group(conn, settings, row, verify=verify)
 
     src_relpath = row["relpath"]
     dest_relpath = row["dest_relpath"]
@@ -200,8 +225,33 @@ def resolve_group(
     companions = _companions_for(conn, settings, primary)
     for affected in (primary, *companions):
         _assert_movable(conn, settings, affected)
+    return CorrectionGroup(finding_id=int(row["id"]), files=(primary, *companions))
+
+
+def resolve_subtree_group(
+    conn: sqlite3.Connection,
+    settings: Settings,
+    row: sqlite3.Row,
+    *,
+    verify: bool = True,
+) -> CorrectionGroup:
+    """A folder rename, as the list of file moves it will actually perform."""
+    from librairy.subtree import plan_moves
+
+    moves = plan_moves(conn, settings, row, verify=verify)
+    folder = PurePosixPath(row["relpath"]).name
     return CorrectionGroup(
-        finding_id=int(row["id"]), primary=primary, companions=tuple(companions)
+        finding_id=int(row["id"]),
+        files=tuple(
+            Affected(
+                relpath=relpath,
+                dest_relpath=dest_relpath,
+                role="member",
+                reason=f"inside {folder}",
+            )
+            for relpath, dest_relpath in moves
+        ),
+        subject="subtree",
     )
 
 
@@ -497,7 +547,9 @@ def _refusal(row: sqlite3.Row, state: str) -> str:
     return "this file changed after it was audited and needs re-analysis"
 
 
-def settle_plan(conn: sqlite3.Connection, plan_id: str) -> None:
+def settle_plan(
+    conn: sqlite3.Connection, plan_id: str, settings: Settings | None = None
+) -> None:
     """Close the loop between a finished plan and the finding that asked for it.
 
     Called from `execute_plan`, which is the one door both the web commit and
@@ -507,6 +559,10 @@ def settle_plan(conn: sqlite3.Connection, plan_id: str) -> None:
     A plan that only partly applied puts its finding back to `open`. The
     correction did not happen as approved, and the honest thing is to let the
     next audit look at whatever state the files are actually in now.
+
+    `settings` is optional only because `integrity.py` calls this to write what
+    a crashed commit never got to write, and has no filesystem work to do. With
+    it, a finished folder rename also loses the directories it emptied.
     """
     plan = conn.execute(
         "SELECT status, audit_finding_id FROM plans WHERE id=?", (plan_id,)
@@ -518,6 +574,32 @@ def settle_plan(conn: sqlite3.Connection, plan_id: str) -> None:
         "UPDATE audit_findings SET status=?, updated_at=? WHERE id=? AND status='accepted'",
         (status, utc_now(), plan["audit_finding_id"]),
     )
+    if settings is not None and plan["status"] == "done":
+        _remove_emptied_directories(conn, settings, plan_id)
+
+
+def _remove_emptied_directories(
+    conn: sqlite3.Connection, settings: Settings, plan_id: str
+) -> None:
+    """Take away the folders the correction emptied, and nothing else.
+
+    Only directories this plan moved files out of. The reasoning is in
+    `subtree.remove_emptied_directories`; the reverse direction is in
+    `history.undo_plan`, which has exactly the same job with the two paths
+    swapped.
+    """
+    from librairy.subtree import remove_emptied_directories
+
+    moved = [
+        row["src_relpath"]
+        for row in conn.execute(
+            "SELECT src_relpath FROM plan_ops"
+            " WHERE plan_id=? AND src_root='library' AND result IN ('done','renamed_collision')",
+            (plan_id,),
+        )
+    ]
+    if moved:
+        remove_emptied_directories(settings, moved)
 
 
 def pending_corrections(conn: sqlite3.Connection) -> list[sqlite3.Row]:
@@ -554,20 +636,38 @@ def undo_correction(conn: sqlite3.Connection, settings: Settings, plan_id: str):
     """Put every file a correction moved back where it came from.
 
     A correction is one logical action, so undoing it one journal row at a time
-    through the History page would be a chore and easy to leave half done. This
-    walks the plan's own journal entries in reverse and calls the same
-    `undo_op` the History page calls — same fingerprint check, same collision
-    handling, same refusal when a file has changed since. Nothing here reverses
-    a move itself.
-    """
-    from librairy.history import undo_op
+    through the History page would be a chore and easy to leave half done.
 
-    entries = conn.execute(
-        "SELECT id FROM history WHERE plan_id=? AND action='move' AND outcome='ok'"
-        " ORDER BY id DESC",
-        (plan_id,),
-    ).fetchall()
-    return [undo_op(conn, entry["id"], settings) for entry in entries]
+    This is `history.undo_plan` under a name that says what it is for. It used
+    to be its own loop over the same journal rows, and the two drifted the
+    moment one of them learned to take away the folders a correction had
+    emptied and the other did not — leaving "put it back" with an empty
+    `Lipps Inc/` still standing when reached from Review, and not when reached
+    from History. Nothing here reverses a move itself.
+    """
+    from librairy.history import undo_plan
+
+    return undo_plan(conn, plan_id, settings)
+
+
+def group_size(conn: sqlite3.Connection, group: CorrectionGroup) -> int:
+    """How much disk one correction moves, read from the index and not the disk.
+
+    A folder correction that says "14 files" and not how much of the library
+    that is has told you the cheaper half of the fact. Taken from `items`
+    because the audit already measured it — walking the subtree to add up sizes
+    on every page render is exactly the thing `_group_facts` refuses to do.
+    """
+    relpaths = [affected.relpath for affected in group.files]
+    if not relpaths:
+        return 0
+    placeholders = ",".join("?" * len(relpaths))
+    row = conn.execute(
+        f"SELECT COALESCE(SUM(size), 0) AS total FROM items"  # noqa: S608 - placeholders only
+        f" WHERE root='library' AND relpath IN ({placeholders})",
+        relpaths,
+    ).fetchone()
+    return int(row["total"])
 
 
 def plan_files(conn: sqlite3.Connection, plan_id: str) -> list[sqlite3.Row]:

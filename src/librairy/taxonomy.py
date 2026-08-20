@@ -97,11 +97,40 @@ def render_destination(
         return RenderResult(None, f"missing tokens: {', '.join(missing)}")
     try:
         safe_fields = _safe_fields(fields)
-        relpath = tidy_relpath(template.format(**safe_fields))
+        relpath = _render_path(template, safe_fields)
         validate_dest(library_root, relpath)
     except (KeyError, ValueError, PathValidationError) as exc:
         return RenderResult(None, str(exc))
     return RenderResult(relpath)
+
+
+def _render_path(template: str, safe_fields: dict[str, Any]) -> str:
+    """Fill the template, tidying what came from the fields and not the template.
+
+    The distinction is the whole function. Field values are metadata off a tag,
+    a catalog or a filename, and they go through `slugify` and then through
+    `tidy_relpath` again because joining them to literal text can produce
+    something neither pass would have allowed on its own — `Movies/{title}
+    ({year})` glues a clean title to a literal space and a pair of brackets, and
+    tidying only the field left `The-Matrix (1999)`, half done.
+
+    A component made *entirely* of literal text is different. It was written
+    here, in this file, by someone choosing what the folder is called. Running
+    it through the same slug turned `Music Videos` into `Music-Videos` — a
+    folder named after a rule about untrusted input rather than after the thing
+    it holds. `Music`, `Movies`, `Shows` and `Photos` never noticed because a
+    single word survives slugification unchanged.
+    """
+    components: list[str] = []
+    for component in template.split("/"):
+        rendered = component.format(**safe_fields)
+        components.append(rendered if _is_literal(component) else tidy_relpath(rendered))
+    return "/".join(part for part in components if part)
+
+
+def _is_literal(component: str) -> bool:
+    """True when this template component has no field in it at all."""
+    return all(name is None for _, name, _, _ in Formatter().parse(component))
 
 
 def template_style(conn: sqlite3.Connection | None, category: str) -> str:

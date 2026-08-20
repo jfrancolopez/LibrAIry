@@ -46,7 +46,7 @@ GUETTA_FILE = "David-Guetta-feat.-Sia-Titanium-(Extended-Mix).mp4"
 
 def test_a_music_video_is_genre_artist_file() -> None:
     assert rendered("music_videos", GUETTA) == (
-        f"Music-Videos/House/David-Guetta/{GUETTA_FILE}"
+        f"Music Videos/House/David-Guetta/{GUETTA_FILE}"
     )
 
 
@@ -55,7 +55,7 @@ def test_a_music_video_has_exactly_three_levels_above_the_file() -> None:
     LibrAIry running and nothing to explain it."""
     parts = rendered("music_videos", GUETTA).split("/")
 
-    assert parts[0] == "Music-Videos"
+    assert parts[0] == "Music Videos"
     assert len(parts) == 4, parts
 
 
@@ -174,7 +174,7 @@ def test_an_unknown_artist_is_named_rather_than_guessed() -> None:
         {"genre": "House", "artist": "Unknown Artist", "clean_name": "song_final.mp4"},
     )
 
-    assert destination == "Music-Videos/House/Unknown-Artist/song_final.mp4"
+    assert destination == "Music Videos/House/Unknown-Artist/song_final.mp4"
 
 
 # --- genre ---------------------------------------------------------------------
@@ -187,7 +187,7 @@ def test_one_primary_genre_is_one_folder() -> None:
     same_file_other_genre = rendered("music_videos", GUETTA | {"genre": "Dance"})
 
     assert house != same_file_other_genre
-    assert house.count("Music-Videos") == 1
+    assert house.count("Music Videos") == 1
 
 
 def test_secondary_genres_are_not_path_components() -> None:
@@ -213,7 +213,7 @@ def test_without_a_genre_the_conventional_style_still_avoids_an_album() -> None:
         "music_videos",
         {"artist": "David Guetta", "clean_name": "x.mp4"},
         style="conventional",
-    ) == "Music-Videos/David-Guetta/x.mp4"
+    ) == "Music Videos/David-Guetta/x.mp4"
 
 
 # --- things that must not appear in a path -------------------------------------
@@ -279,8 +279,22 @@ def test_the_artist_title_separator_does_not_survive_the_house_policy() -> None:
 
 
 def test_the_top_level_folder_is_spelled_the_way_the_policy_spells_it() -> None:
-    """`Music Videos/` in the template becomes `Music-Videos/` on disk, because
-    `tidy_relpath` sanitises the whole rendered path and not only the fields.
-    Consistent with everything else LibrAIry files, and still readable over
-    SSH — but it is not the literal string in the brief."""
-    assert rendered("music_videos", GUETTA).startswith("Music-Videos/")
+    """`Music Videos/`, with the space, because that is what the template says.
+
+    It used to come out `Music Videos/`. Not a decision anybody made: the
+    rendered path went through `tidy_relpath` whole, so the literal text in the
+    template was slugified alongside the fields, and the folder ended up named
+    after a rule about untrusted input rather than after the thing it holds.
+    `Music`, `Movies`, `Shows` and `Photos` never noticed, because a single word
+    survives slugification unchanged.
+
+    Field values are still slugified, twice — once on their own and once after
+    being joined to literal text, which is what `Movies/{title} ({year})` needs.
+    Only components made entirely of template text are left alone.
+    """
+    assert rendered("music_videos", GUETTA).startswith("Music Videos/")
+    assert rendered(
+        "movies",
+        {"genre": "Sci-Fi", "title": "The Matrix", "year": 1999,
+         "clean_name": "The Matrix (1999).mkv"},
+    ) == "Movies/Sci-Fi/The-Matrix-(1999)/The-Matrix-(1999).mkv"
