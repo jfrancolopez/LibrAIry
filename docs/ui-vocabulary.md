@@ -46,6 +46,7 @@ and `Dismiss suggestion` change no file at all.
 | **Restore suggestion** | reconsider a dismissed one |
 | **Preserved original** | the original kept when an optimized version was adopted |
 | **Delete queue** | a folder you empty yourself; LibrAIry has still deleted nothing |
+| **Set aside** | a file moved out of the library into Quarantine, where it can be restored |
 
 Two rules follow from the table, and `tests/test_control_inventory.py` holds
 both against every control on every populated page:
@@ -71,8 +72,16 @@ list is the specification; a label not in it and not unique is drift.
 | **Restore suggestion** | putting a dismissed suggestion back | Undismiss |
 | **Restore** | putting a quarantined *file* back where it came from | Put it back |
 | **Delete queue** | gathering a held file into the folder you empty yourself | ~~Mark for deletion~~ |
+| **Set this copy aside** | choosing which of two identical files goes to Quarantine | Delete, Remove duplicate, Keep this one |
 | **Restore original** | undoing an optimization: the preserved original becomes the live file again | Undo optimization, Revert |
 | **Keep original** | taking a preserved original back out of the delete queue, leaving the optimized version live | Remove from delete queue |
+
+**Set aside** is not **Delete queue** and not **Quarantine**. The delete queue is
+where you put something you have finished with; setting a copy aside is the
+decision that one of two identical files is the spare. It is phrased as an act
+on *this copy* — "Set **this** copy aside" — because the row carries one control
+per file and a label that did not say which would be the worst button in the
+product.
 
 **Restore original** and **Keep original** are deliberately different decisions
 rather than one with a confirmation. "I have changed my mind about deleting

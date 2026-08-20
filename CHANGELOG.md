@@ -83,6 +83,26 @@ that unreliable, and all three are fixed. See [the command line](docs/cli.md).
   health block as `{'ok': True, ...}`; dicts, tuples and values containing
   newlines all render line-oriented now, the way list values already did.
 
+### Fixed — three things a browser found and no assertion had
+
+Found by driving the new workflows in a real browser rather than by reading the
+markup, which is the only way any of them would have surfaced.
+
+- **Commit named a folder rename after one of its files.** A fourteen-file
+  rename is one decision, and the card was titled `01 - Funkytown.flac` with
+  that file's before and after under it — one fourteenth of what pressing
+  Commit would do, and no sign that a folder was involved at all. The card is
+  named by the finding now: *Lipps Inc.*, `Music/Pop/Lipps Inc.` →
+  `Music/Pop/Lipps Inc`, *3 files*.
+- **Setting a duplicate aside was filed under "Library corrections".** Both
+  come from a Library Review finding and they are not the same act: a
+  correction moves a file to a better place in the library, and this takes one
+  *out* of it. Commit has a sixth group — **Duplicates set aside**, badge
+  `SET ASIDE` — so the page never tells anybody that a quarantine is a rename.
+- **And the commit screen said "Applying correction … 1 file moved".** It now
+  says *Setting aside — foo.jpg · 1 file going to Quarantine. Nothing is
+  deleted; it can be restored from the Quarantine page.*
+
 ### Added — the duplicate the audit found can now be set aside
 
 *Possible duplicate* has been in the audit since the first release and has never

@@ -77,6 +77,20 @@ FILES: dict[str, bytes | None] = {
     #     Commit and Held are different pages; both need a row.
     "Photos/2022/Vacation/foo-second-copy.jpg": None,
     "Documents/Manuals/router-manual.pdf": b"%PDF-1.4 router",
+    # 13. the folder correction. A trailing dot, which Windows silently drops —
+    #     and, unlike a capitalisation fix, a rename a case-insensitive
+    #     filesystem can actually carry out, so this row is approvable on the
+    #     machine the screenshots are taken on.
+    "Music/Pop/Lipps Inc./01 - Funkytown.flac": b"funkytown bytes",
+    "Music/Pop/Lipps Inc./02 - All Night Dancing.flac": b"all night bytes",
+    "Music/Pop/Lipps Inc./cover.jpg": None,
+    # 14. a music video filed as a film, which is what a collection that
+    #     predates the music-video classifier actually looks like.
+    "Movies/Daft Punk - Around the World (Official Video).mkv": b"daft punk video",
+    # 15. and a phone clip that came along with somebody's folder. Reported,
+    #     never corrected — the row with an explanation and no button.
+    "Music Videos/House/Fatboy Slim/Fatboy Slim - Praise You.mp4": b"praise you",
+    "Music Videos/IMG_4099.MOV": TINY_MP4,
 }
 
 TAG_EVIDENCE = [
@@ -353,6 +367,34 @@ def build_app(root: Path):  # noqa: ANN201
             EvidenceEntry("filesystem", "also under", "Music/Pop", 0.9),
         ],
     )
+    finding(
+        "Music/Pop/Lipps Inc.",
+        "naming-inconsistency",
+        "Ends in a dot, which Windows silently drops.",
+        "Music/Pop/Lipps Inc",
+        [EvidenceEntry("filesystem", "name", "Lipps Inc.", 1.0)],
+        "high",
+    )
+    finding(
+        "Movies/Daft Punk - Around the World (Official Video).mkv",
+        "music-video-misfiled",
+        "Named as a music video by Daft Punk, but filed under Movies.",
+        "Music Videos/General/Daft-Punk/"
+        "Daft Punk - Around the World (Official Video).mkv",
+        [
+            EvidenceEntry("heuristic", "version", "Official Video", 0.8),
+            EvidenceEntry("heuristic", "artist", "Daft Punk", 0.8),
+            EvidenceEntry("heuristic", "title", "Around the World", 0.8),
+        ],
+    )
+    finding(
+        "Music Videos/IMG_4099.MOV",
+        "music-video-personal",
+        "This looks like a clip off a phone or a camera, not a music video. "
+        "Where it belongs depends on when it was taken.",
+        None,
+        [EvidenceEntry("filesystem", "name", "IMG_4099.MOV", 0.85)],
+    )
     record_findings(conn, batch)
 
     # 7 goes stale: the bytes change after the audit looked at them.
@@ -366,10 +408,37 @@ def build_app(root: Path):  # noqa: ANN201
     _adoptable_optimizations(conn, settings)
     _history_entries(conn)
     _quarantine_entries(conn, settings)
+    _an_inbox_music_video(conn, settings)
     _pending_decisions(conn, settings)
     _a_file_nobody_scanned(settings)
 
     return create_app(settings, conn)
+
+
+def _an_inbox_music_video(conn, settings: Settings) -> None:  # noqa: ANN001
+    """One music video waiting in Review, classified by the real classifier.
+
+    Written into the inbox and put through `analyze_items` rather than handed a
+    proposal, because the thing worth looking at on this row is the *evidence* —
+    the source folder, the parsed artist, the parsed title — and a proposal
+    written by hand would show whatever was typed into it.
+
+    Ordered before `_pending_decisions`, which approves a proposal of its own.
+    `analyze_items` only touches items that are still `discovered`, so running
+    it here reaches this file and nothing else.
+    """
+    from librairy.classify import analyze_items  # noqa: PLC0415
+
+    path = (
+        settings.inbox_dir
+        / "Music Videos"
+        / "Electronic"
+        / "Daft Punk - Around the World (Official Video).mkv"
+    )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"daft punk video, in the inbox")
+    scan_root(conn, "inbox", settings.inbox_dir, settings)
+    analyze_items(conn, settings)
 
 
 def _a_file_nobody_scanned(settings: Settings) -> None:
@@ -398,10 +467,11 @@ def _pending_decisions(conn, settings: Settings) -> None:  # noqa: ANN001
     could photograph with more than one category on it was the page whose whole
     job is telling categories apart.
 
-    Five categories, one row each, made the way a person makes them:
+    Six categories, one row each, made the way a person makes them:
 
         New file       an inbox proposal, approved in Review
         Correction     already here — the Bowie finding above
+        Set aside      one of two identical files, chosen by hand
         Optimization   a verified result, adopted but not committed
         Restore        a held file asked to go back
         Delete queue   a held file asked into the pile you empty yourself
@@ -412,6 +482,7 @@ def _pending_decisions(conn, settings: Settings) -> None:  # noqa: ANN001
     original is then sent to the delete queue and committed, so the delete-queue
     view has the row that the whole disposal path exists to produce.
     """
+    from librairy.audit_duplicates import set_aside
     from librairy.executor import execute_plan
     from librairy.models import EvidenceEntry as Entry
     from librairy.proposals import upsert_proposal
@@ -443,6 +514,19 @@ def _pending_decisions(conn, settings: Settings) -> None:  # noqa: ANN001
     apply_review_action(
         conn, "approve", ReviewFilters(), proposal_ids=[int(proposal_id)]
     )
+
+    # --- one of two identical files, chosen ------------------------------
+    #
+    # `Photos/2022/foo.jpg` and not either `cover.jpg`, deliberately. The other
+    # copies of these bytes sit inside the Lipps Inc. folder rename and the
+    # Wings companion group, and a file may only be in one approved plan at a
+    # time — setting one of those aside would leave two other fixture scenes
+    # blocked, which is true behaviour and a useless fixture.
+    duplicate = conn.execute(
+        "SELECT id FROM audit_findings WHERE kind='duplicate' AND status='open'"
+    ).fetchone()
+    if duplicate is not None:
+        set_aside(conn, settings, int(duplicate["id"]), "Photos/2022/foo.jpg")
 
     # --- an optimization adopted and committed, then sent to the pile -----
     #

@@ -39,18 +39,25 @@ from librairy.humanize import human_bytes
 
 NEW_FILE = "new-file"
 CORRECTION = "correction"
+#  A duplicate the owner chose to set aside. It comes from a Library Review
+#  finding, exactly like a correction, and it is not one: a correction moves a
+#  file to a better place in the library, and this takes a file *out* of the
+#  library. Filing it under "Files already in your library, moved or renamed"
+#  would be the page telling somebody that a quarantine is a rename.
+SET_ASIDE = "set-aside"
 RESTORE = "restore"
 DELETE_QUEUE = "delete-queue"
 OPTIMIZATION = "optimization"
 
 # The order the page reads in: what arrives, what is being tidied, what is
 # going back, what you are finished with.
-TYPE_ORDER = (NEW_FILE, CORRECTION, OPTIMIZATION, RESTORE, DELETE_QUEUE)
+TYPE_ORDER = (NEW_FILE, CORRECTION, SET_ASIDE, OPTIMIZATION, RESTORE, DELETE_QUEUE)
 
 # The heading for a group of them.
 TYPE_LABEL = {
     NEW_FILE: "New files",
     CORRECTION: "Library corrections",
+    SET_ASIDE: "Duplicates set aside",
     RESTORE: "Restores",
     DELETE_QUEUE: "Delete queue",
     OPTIMIZATION: "Optimizations",
@@ -61,6 +68,7 @@ TYPE_LABEL = {
 TYPE_LABEL_ONE = {
     NEW_FILE: "New file",
     CORRECTION: "Library correction",
+    SET_ASIDE: "Duplicate set aside",
     RESTORE: "Restore",
     DELETE_QUEUE: "Delete queue",
     OPTIMIZATION: "Optimization",
@@ -72,6 +80,7 @@ TYPE_LABEL_ONE = {
 TYPE_BADGE = {
     NEW_FILE: "FILE",
     CORRECTION: "MOVE",
+    SET_ASIDE: "SET ASIDE",
     RESTORE: "RESTORE",
     DELETE_QUEUE: "DELETE QUEUE",
     OPTIMIZATION: "OPTIMIZE",
@@ -82,6 +91,8 @@ TYPE_BADGE = {
 TYPE_NOTE = {
     NEW_FILE: "New files from your inbox, filed into the library.",
     CORRECTION: "Files already in your library, moved or renamed.",
+    SET_ASIDE: "One of two identical files, going to Quarantine. "
+    "Nothing is deleted, and it can be restored.",
     RESTORE: "Held files going back where they came from.",
     DELETE_QUEUE: "Moved into one folder for you to empty yourself. "
     "LibrAIry never deletes anything.",
@@ -127,6 +138,8 @@ def queue_summary(conn: sqlite3.Connection) -> dict[str, Any]:
         SELECT
           CASE
             WHEN p.optimization_job_id IS NOT NULL THEN 'optimization'
+            WHEN p.audit_finding_id IS NOT NULL AND o.dest_root='quarantine'
+              THEN 'set-aside'
             WHEN p.audit_finding_id IS NOT NULL THEN 'correction'
             WHEN o.dest_root='quarantine' AND o.dest_relpath LIKE '_to-delete/%'
               THEN 'delete-queue'
@@ -250,7 +263,8 @@ def _plan_rows(
     offset: int,
 ) -> list[dict[str, Any]]:
     where = {
-        CORRECTION: "p.audit_finding_id IS NOT NULL",
+        CORRECTION: "p.audit_finding_id IS NOT NULL AND o.dest_root != 'quarantine'",
+        SET_ASIDE: "p.audit_finding_id IS NOT NULL AND o.dest_root='quarantine'",
         DELETE_QUEUE: (
             "p.quarantine_entry_id IS NOT NULL AND o.dest_root='quarantine'"
             " AND o.dest_relpath LIKE '_to-delete/%'"
@@ -290,9 +304,16 @@ def _plan_row(
     kind: str,
 ) -> dict[str, Any]:
     subject = PurePosixPath(row["src_relpath"]).name or row["src_relpath"]
+    #  A folder rename is fourteen operations and one decision, and the plan's
+    #  first operation is a file. Titling the card `01 - Funkytown.flac` and
+    #  showing that file's before and after describes one fourteenth of what
+    #  pressing Commit will do — a person reading it would not know a folder was
+    #  being renamed at all. The finding is the decision, so it is what the card
+    #  names.
+    folder = _folder_subject(conn, row, kind)
     reason = _reason(conn, row, kind)
     stale = ""
-    if settings is not None and kind == CORRECTION:
+    if settings is not None and kind in (CORRECTION, SET_ASIDE):
         from librairy.correction_state import plan_drift
 
         stale = plan_drift(conn, settings, row["plan_id"])
@@ -307,15 +328,19 @@ def _plan_row(
         **extra,
         "type": kind,
         "badge": TYPE_BADGE[kind],
-        "subject": subject,
+        "subject": folder["subject"] if folder else subject,
         #  For an optimization the first operation preserves the original, so
         #  its destination is the quarantine path rather than what the library
         #  will hold. `_optimization_fields` supplies the real After.
-        "current": f"{row['src_root']}/{row['src_relpath']}",
+        "current": folder["current"] if folder else f"{row['src_root']}/{row['src_relpath']}",
         "after": (
-            f"library/{extra['optimization']['target_relpath']}"
-            if kind == OPTIMIZATION
-            else f"{row['dest_root']}/{row['dest_relpath']}"
+            folder["after"]
+            if folder
+            else (
+                f"library/{extra['optimization']['target_relpath']}"
+                if kind == OPTIMIZATION
+                else f"{row['dest_root']}/{row['dest_relpath']}"
+            )
         ),
         "size": human_bytes(row["bytes"]),
         "reason": reason,
@@ -329,7 +354,7 @@ def _plan_row(
         # component, one attribute, rather than a chain of ifs in the template.
         "back_url": (
             f"/review/audit/{row['audit_finding_id']}/unapprove"
-            if kind == CORRECTION
+            if kind in (CORRECTION, SET_ASIDE)
             else (
                 #  The same withdrawal the optimization page's Cancel request
                 #  calls. One implementation, one `plan_withdrawals` record.
@@ -345,7 +370,7 @@ def _plan_row(
             if stale
             else (
                 "Send back to Review"
-                if kind == CORRECTION
+                if kind in (CORRECTION, SET_ASIDE)
                 #  The optimization card posts to the same handler the
                 #  optimization page's `Cancel request` posts to, and said so
                 #  in a comment while wearing a different label. The same act
@@ -496,9 +521,34 @@ def _files(conn: sqlite3.Connection, plan_id: str) -> list[dict[str, str]]:
     ]
 
 
+def _folder_subject(
+    conn: sqlite3.Connection, row: sqlite3.Row, kind: str
+) -> dict[str, str] | None:
+    """The folder a subtree correction renames, or None for every other plan.
+
+    Read from the finding rather than from the plan's operations: the finding is
+    what somebody approved, and the operations are how it is carried out.
+    """
+    from librairy.subtree import SUBTREE_KINDS
+
+    if kind != CORRECTION or not row["audit_finding_id"]:
+        return None
+    found = conn.execute(
+        "SELECT kind, relpath, dest_relpath FROM audit_findings WHERE id=?",
+        (row["audit_finding_id"],),
+    ).fetchone()
+    if found is None or found["kind"] not in SUBTREE_KINDS or not found["dest_relpath"]:
+        return None
+    return {
+        "subject": PurePosixPath(found["relpath"]).name or found["relpath"],
+        "current": f"library/{found['relpath']}",
+        "after": f"library/{found['dest_relpath']}",
+    }
+
+
 def _reason(conn: sqlite3.Connection, row: sqlite3.Row, kind: str) -> str:
     """Why this is waiting, in the words of the decision that made it."""
-    if kind == CORRECTION and row["audit_finding_id"]:
+    if kind in (CORRECTION, SET_ASIDE) and row["audit_finding_id"]:
         found = conn.execute(
             "SELECT summary FROM audit_findings WHERE id=?", (row["audit_finding_id"],)
         ).fetchone()

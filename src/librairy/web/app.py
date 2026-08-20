@@ -1561,6 +1561,21 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         ).fetchone()["n"]
         if row is not None:
             name = row["relpath"].rpartition("/")[2] or row["relpath"]
+            #  Both come from a Library Review finding and they are not the
+            #  same act. A correction moves a file to a better place in the
+            #  library; setting a duplicate aside takes one *out* of it. One
+            #  heading for both would tell somebody a quarantine is a rename.
+            held = conn_.execute(
+                "SELECT 1 FROM plan_ops WHERE plan_id=? AND dest_root='quarantine'"
+                " LIMIT 1",
+                (plan_id,),
+            ).fetchone()
+            if held is not None:
+                return {
+                    "heading": f"Setting aside — {name}",
+                    "blurb": f"{ops} file{'' if ops == 1 else 's'} going to Quarantine. "
+                    "Nothing is deleted; it can be restored from the Quarantine page.",
+                }
             return {
                 "heading": f"Applying correction — {name}",
                 "blurb": f"{ops} file{'' if ops == 1 else 's'} already in your library. "
