@@ -103,6 +103,87 @@ markup, which is the only way any of them would have surfaced.
   says *Setting aside — foo.jpg · 1 file going to Quarantine. Nothing is
   deleted; it can be restored from the Quarantine page.*
 
+### Added — a folder can be merged into another, and you choose what survives
+
+The rename half of structural correction landed last release. Merging is the
+other half, and moving the files was never the difficulty — two folders each
+holding a `cover.jpg` is.
+See [the guide](docs/using-librairy.md#merging-two-folders).
+
+- **LibrAIry does not choose which one survives.** Keep the larger, keep the
+  newer, keep the one already there: each is a preference wearing a rule's
+  clothes, and a merge would apply it to every album in your library at once.
+  A merge with no collisions is an ordinary correction; a merge with collisions
+  is a **Your choice**, and becomes approvable only when every conflict has an
+  answer. Your answers are remembered between visits.
+- **Three outcomes, none of which loses bytes.** *Keep existing* sends the
+  incoming copy to Quarantine. *Use incoming* sends the copy that was there to
+  Quarantine **first**, then moves the incoming one into the space it left.
+  *Keep both* renames, and the name is on the button before you press it rather
+  than invented by Commit afterwards.
+- **One Commit decision, however many operations.** *Merge folders ·
+  `Music/Soul/JAMES BROWN` → Into `Music/Soul/James Brown`*, not seventy-six
+  cards. `Into` and not `After Commit`, because the folder is already there.
+- **A file that appears at a destination after you approve refuses the whole
+  merge**, before the first operation. Every collision in a merge was found and
+  answered; one that appeared since is a question nobody was asked, and the
+  ordinary answer — renumber and carry on — would invent a name you never
+  approved.
+- **Undo restores both trees**, including the copy that was displaced.
+- **Still observations:** *artist filed in two places* (which of two sections an
+  artist belongs in is a judgement, not a collision), a folder inside another
+  folder in the same merge, two arriving files with the same name, and anything
+  over 200 operations.
+
+### Added — a file you already have, arriving again
+
+The duplicate finder has recognised these since the first release. What did not
+exist was the workflow around it — and the missing piece was not a template.
+
+- **The evidence is re-read at Commit, not trusted from staging.** The library
+  copy is the only thing that makes an arrival redundant. If it is deleted or
+  edited in between — by hand, by another tool, by a restore — the arrival is
+  **skipped and stays in your inbox**. Nothing was deleted and nothing was
+  overwritten, and without this check you would still have lost the file.
+- **Per file, not per commit.** One arrival losing its twin never stops the
+  other forty being filed.
+- **Quarantine says what it matched.** `quarantine_entries.duplicate_of` has
+  existed since the first release and was written as NULL, so the page could say
+  *byte-for-byte copy of a file you already have* without saying of **what** —
+  the only part that decides whether restoring it is worth doing.
+- **Review names the match on the row**, not behind *Compare*, and the button
+  says **Set aside duplicate** rather than *Approve* — the primary button on a
+  page must not sometimes put a file in your library and sometimes take one out.
+- **Restoring returns it to the inbox**, never straight into the library: it was
+  never filed, so there is nowhere in the library to go back to.
+- A library copy that has since **moved** is still the twin; the same file
+  arriving **again** is recognised again.
+
+### Changed — a music video's filename is now one LibrAIry can read back
+
+`musicvideo.parse` reads the artist and the title either side of ` - ` and the
+version out of the brackets. The house naming policy turned every space into a
+dash — so LibrAIry could not read back a name it had written itself, and the
+workaround was to treat the artist *folder* as the identity instead.
+
+```text
+before   Daft-Punk-Around-the-World-(Official-Video).mkv
+now      Daft Punk - Around the World (Official Video).mkv
+```
+
+- **Safe, not restyled.** Control characters, `/`, `< > : | ? *`, emoji,
+  typographic quotes, trailing dots, reserved names like `CON` and over-length
+  names are all still handled exactly as before. `AC/DC` becomes `AC-DC`,
+  because a slash in a filename is a directory separator. Apostrophes,
+  ampersands, commas and accents stay.
+- **Music Videos and nothing else.** `slugify` is unchanged and every other
+  category is named byte-for-byte as it was — pinned by a test, because the
+  tempting fix was to change the policy for everyone over a problem one category
+  has.
+- **Nothing already filed is renamed or reported.** Library Audit checks names
+  for damage and never for style, so a file filed the old way is spelled
+  differently and is not a finding.
+
 ### Added — the duplicate the audit found can now be set aside
 
 *Possible duplicate* has been in the audit since the first release and has never

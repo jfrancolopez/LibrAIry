@@ -35,10 +35,15 @@ GUETTA = {
     "artist": "David Guetta",
     "clean_name": "David Guetta feat. Sia - Titanium (Extended Mix).mp4",
 }
-# What the house naming policy makes of that name. Written out rather than
-# recomputed, because the point of these tests is to notice if it changes:
-# whitespace becomes a dash, and the parentheses around the version survive.
-GUETTA_FILE = "David-Guetta-feat.-Sia-Titanium-(Extended-Mix).mp4"
+# What the naming policy makes of that name. Written out rather than
+# recomputed, because the point of these tests is to notice if it changes.
+#
+# It used to be `David-Guetta-feat.-Sia-Titanium-(Extended-Mix).mp4`, and the
+# dashes were the bug: `musicvideo.parse` reads the artist and the title either
+# side of ` - `, so LibrAIry could not read back a name it had written itself.
+# A music video's filename is an identity rather than a description, so it is
+# made *safe* rather than restyled. See `naming.media_filename`.
+GUETTA_FILE = "David Guetta feat. Sia - Titanium (Extended Mix).mp4"
 
 
 # --- the hierarchy -------------------------------------------------------------
@@ -46,7 +51,7 @@ GUETTA_FILE = "David-Guetta-feat.-Sia-Titanium-(Extended-Mix).mp4"
 
 def test_a_music_video_is_genre_artist_file() -> None:
     assert rendered("music_videos", GUETTA) == (
-        f"Music Videos/House/David-Guetta/{GUETTA_FILE}"
+        f"Music Videos/House/David Guetta/{GUETTA_FILE}"
     )
 
 
@@ -137,9 +142,9 @@ def test_a_featured_credit_does_not_become_a_folder() -> None:
     the filename, where it is searchable and costs nothing."""
     destination = rendered("music_videos", GUETTA)
 
-    assert "/David-Guetta/" in destination
-    assert "David-Guetta-feat.-Sia/" not in destination
-    assert "feat.-Sia" in destination.rsplit("/", 1)[1]
+    assert "/David Guetta/" in destination
+    assert "David Guetta feat. Sia/" not in destination
+    assert "feat. Sia" in destination.rsplit("/", 1)[1]
 
 
 @pytest.mark.parametrize(
@@ -152,16 +157,19 @@ def test_a_featured_credit_does_not_become_a_folder() -> None:
     ],
 )
 def test_the_whole_credit_survives_into_the_filename(credit: str) -> None:
-    """Every name in the credit reaches the filename. The house policy turns
-    spaces into dashes on its way there — see
-    `test_the_artist_title_separator_does_not_survive_the_house_policy`."""
-    from librairy.naming import slugify_filename
+    """Every name in the credit reaches the filename, unchanged.
+
+    It used to reach it slugified, and every one of these is a credit a parser
+    has to be able to read back — `feat.`, `&`, `vs.` and `x` are how a pool
+    says who is on the record.
+    """
+    from librairy.naming import media_filename
 
     destination = rendered(
         "music_videos", {"genre": "House", "artist": "Primary", "clean_name": credit}
     )
 
-    assert destination.endswith(f"/{slugify_filename(credit)}")
+    assert destination.endswith(f"/{media_filename(credit)}")
     for name in re.findall(r"[A-Z][\w']+", credit.split(" - ")[0]):
         assert name in destination
 
@@ -174,7 +182,7 @@ def test_an_unknown_artist_is_named_rather_than_guessed() -> None:
         {"genre": "House", "artist": "Unknown Artist", "clean_name": "song_final.mp4"},
     )
 
-    assert destination == "Music Videos/House/Unknown-Artist/song_final.mp4"
+    assert destination == "Music Videos/House/Unknown Artist/song_final.mp4"
 
 
 # --- genre ---------------------------------------------------------------------
@@ -213,7 +221,7 @@ def test_without_a_genre_the_conventional_style_still_avoids_an_album() -> None:
         "music_videos",
         {"artist": "David Guetta", "clean_name": "x.mp4"},
         style="conventional",
-    ) == "Music Videos/David-Guetta/x.mp4"
+    ) == "Music Videos/David Guetta/x.mp4"
 
 
 # --- things that must not appear in a path -------------------------------------
@@ -256,19 +264,18 @@ def test_version_markers_survive_sanitization() -> None:
             assert word in out, (version, out)
 
 
-def test_the_artist_title_separator_does_not_survive_the_house_policy() -> None:
-    """The open question, pinned so it cannot be discovered by accident.
+def test_the_house_policy_still_destroys_the_separator_everywhere_else() -> None:
+    """The question this used to record as open, now answered — and the answer
+    is not "change `slugify`".
 
-    `slugify` turns every run of whitespace into a dash, so the ` - ` that
-    separates artist from title becomes the same character as the dashes
-    inside each of them: `David Guetta feat. Sia - Titanium` becomes
-    `David-Guetta-feat.-Sia-Titanium`, and nothing in the name says where the
-    artist stops.
+    `slugify` turns every run of whitespace into a dash, so ` - ` becomes the
+    same character as the dashes inside the names either side of it and nothing
+    says where the artist stops. That is fine for a name nobody reads back, and
+    it is fatal for one that is an identity. Changing `slugify` would rename
+    every future file in every category over a problem one category has.
 
-    That is survivable — the structured credit lives in the index, and the
-    filename is for a human over SSH — but it is a real difference from the
-    naming this collection was asked for, and changing `slugify` would rename
-    every future file in every category. Recorded here, decided later.
+    So the split is by category, not by policy: `slugify` is unchanged and still
+    does exactly this, and `music_videos` does not go through it.
     """
     from librairy.naming import slugify_filename
 
@@ -276,6 +283,8 @@ def test_the_artist_title_separator_does_not_survive_the_house_policy() -> None:
 
     assert out == "David-Guetta-feat.-Sia-Titanium-(Extended-Mix).mp4"
     assert " - " not in out
+    #  And the category that needs the separator keeps it.
+    assert " - " in rendered("music_videos", GUETTA).rsplit("/", 1)[1]
 
 
 def test_the_top_level_folder_is_spelled_the_way_the_policy_spells_it() -> None:

@@ -197,14 +197,14 @@ def test_a_featured_artist_stays_in_the_name_and_does_not_get_a_folder(
     )
 
     assert result.fields["artist"] == "The Weeknd"
-    assert "The-Weeknd/" in result.dest_relpath
-    assert "Daft-Punk" in result.clean_name
+    assert "/The Weeknd/" in result.dest_relpath
+    assert "Daft Punk" in result.clean_name
 
 
 def test_the_version_survives_into_the_filename(tmp_path: Path) -> None:
     result = classify(tmp_path, DAFT)
 
-    assert "(Official-Video)" in result.clean_name
+    assert result.clean_name == "Daft Punk - Around the World (Official Video).mkv"
 
 
 def test_two_versions_of_one_song_are_two_files_in_one_group(
@@ -261,7 +261,7 @@ def test_the_genre_folder_the_person_already_chose_is_used(tmp_path: Path) -> No
     result = classify(tmp_path, DAFT)
 
     assert result.fields["genre"] == "Electronic"
-    assert result.dest_relpath.startswith("Music Videos/Electronic/Daft-Punk/")
+    assert result.dest_relpath.startswith("Music Videos/Electronic/Daft Punk/")
 
 
 def test_an_artist_folder_is_not_mistaken_for_a_genre(tmp_path: Path) -> None:
@@ -277,7 +277,7 @@ def test_no_genre_is_manufactured_when_the_path_says_nothing(tmp_path: Path) -> 
 
     assert result.fields["genre"] == "General"
     assert result.dest_relpath == (
-        "Music Videos/General/Coldplay/Coldplay-Yellow-(Lyric-Video).mp4"
+        "Music Videos/General/Coldplay/Coldplay - Yellow (Lyric Video).mp4"
     )
 
 
@@ -316,7 +316,10 @@ def test_a_music_video_proposal_can_actually_be_stored(tmp_path: Path) -> None:
 
     proposal = proposal_for(conn, DAFT)
     assert proposal["category"] == "music_videos"
-    assert proposal["dest_relpath"].startswith("Music Videos/Electronic/Daft-Punk/")
+    assert proposal["dest_relpath"] == (
+        "Music Videos/Electronic/Daft Punk/"
+        "Daft Punk - Around the World (Official Video).mkv"
+    )
 
 
 def test_approving_and_committing_files_it_where_the_proposal_said(
@@ -345,7 +348,7 @@ def test_search_can_tell_a_music_video_from_a_film(tmp_path: Path) -> None:
 
     conn, settings = inbox(tmp_path)
     for relpath in (
-        "Music Videos/House/Fatboy Slim/Fatboy-Slim-Praise-You.mp4",
+        "Music Videos/House/Fatboy Slim/Fatboy Slim - Praise You.mp4",
         "Movies/Sci-Fi/The-Matrix-(1999)/The-Matrix-(1999).mkv",
     ):
         path = settings.library_dir / relpath
@@ -357,7 +360,7 @@ def test_search_can_tell_a_music_video_from_a_film(tmp_path: Path) -> None:
     films = search_items(conn, "", SearchFilters(category="movies", root="library"))
 
     assert [row["relpath"] for row in videos] == [
-        "Music Videos/House/Fatboy Slim/Fatboy-Slim-Praise-You.mp4"
+        "Music Videos/House/Fatboy Slim/Fatboy Slim - Praise You.mp4"
     ]
     assert [row["relpath"] for row in films] == [
         "Movies/Sci-Fi/The-Matrix-(1999)/The-Matrix-(1999).mkv"

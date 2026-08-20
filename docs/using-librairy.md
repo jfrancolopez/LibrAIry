@@ -647,6 +647,36 @@ Version markers survive the naming policy — the parentheses are kept — becau
 `(Clean)` and `(Dirty)` are the two things a DJ most needs to tell apart at a
 glance.
 
+### The filename is the identity, so LibrAIry keeps it readable
+
+Everywhere else, LibrAIry names a file the house way: spaces become dashes,
+apostrophes are dropped, `&` becomes `and`. Nothing reads
+`Photos/2024/August/IMG_5150.jpeg` back, so it does not matter.
+
+A music video is different. Its name **is** what identifies it — the artist and
+the title either side of ` - `, the version in brackets — and the house style
+destroyed the separator the whole scheme rests on:
+
+```text
+before   Daft-Punk-Around-the-World-(Official-Video).mkv
+now      Daft Punk - Around the World (Official Video).mkv
+```
+
+So music videos are made **safe** rather than restyled. Everything that would
+break a filesystem, a shell or a share still goes: control characters, `/`,
+`< > : | ? *`, emoji, typographic quotes, trailing dots, reserved names like
+`CON`, and anything over the length limit. `AC/DC` becomes `AC-DC`, because a
+slash in a filename is a directory separator. Everything else stays —
+apostrophes in `Guns N' Roses`, the comma and ampersand in `Earth, Wind & Fire`,
+the accent in `Beyoncé`.
+
+**This applies to Music Videos and nothing else.** Movies, Shows, Music, Photos
+and the rest are named exactly as they were.
+
+**Nothing already filed is renamed or reported.** Library Audit checks names for
+*damage*, never for style, so a file filed before this change is spelled
+differently and is not a finding. The new form is for new proposals.
+
 ### One primary genre, one folder
 
 A track can be House *and* Dance *and* Electro House. It is filed **once**,
@@ -682,11 +712,10 @@ videos by many artists a compilation — that is just the genre. The
 compilation policy from Music does not apply; the videos organise under their
 own artists.
 
-**And it never proposes to restyle a filename.** LibrAIry's naming policy turns
-every space into a dash, so a check that compared each file against its
-canonical name would report a hand-made collection as one problem per file. A
-music-video correction changes the **folder** and keeps the name it found.
-Filing a *new* file from the inbox is a different question — there is no
+**And it never proposes to restyle a filename.** A check that compared each file
+against its canonical name would report a hand-made collection as one problem
+per file. A music-video correction changes the **folder** and keeps the name it
+found. Filing a *new* file from the inbox is a different question — there is no
 existing name to respect there, so the naming policy applies.
 
 Where it can, it also uses a folder you already have. If
@@ -1281,8 +1310,76 @@ inside a protected folder, when it is already waiting for Commit, or when it is
 **the last one left**: if you set one aside and the other has since gone, there
 is no duplicate any more and nothing to do about it.
 
-This is the one row that has an action and can never be swept up by *Approve all
-confident*. Bulk approval has no answer to "which one".
+This is one of two rows that have an action and can never be swept up by
+*Approve all confident*. Bulk approval has no answer to "which one".
+
+### Merging two folders
+
+Renaming a folder is one question. Merging two is a different one, and the files
+are not the hard part:
+
+```text
+Music/Soul/James Brown/          Music/Soul/JAMES BROWN/
+    cover.jpg                        cover.jpg
+    01 - Track.flac                  02 - Track.flac
+```
+
+`01` and `02` move without anyone thinking about it. The two `cover.jpg` files
+have no rule that answers them — keep the larger, keep the newer, keep the one
+already there are all preferences, and a merge would apply whichever you picked
+to every album in your library at once. So you answer them, one at a time:
+
+```text
+One album in several folders                         Your choice
+Merging into James Brown · 1 file moves directly · 1 needs your choice · 8.2 MB
+
+  cover.jpg — incoming 844 KB, already there 621 KB
+    [Keep existing]  [Use incoming]  [Keep both as cover (2).jpg]
+
+1 of these still need your choice before this can be approved.
+```
+
+| Answer | What happens |
+|---|---|
+| **Keep existing** | The incoming copy goes to Quarantine. Nothing is deleted. |
+| **Use incoming** | The copy already there goes to Quarantine **first**, then this one takes its place. Nothing is deleted. |
+| **Keep both** | Both are kept, and the incoming one is renamed — to the name on the button, not one Commit invents later. |
+
+Your answers are remembered, so a merge with six conflicts is six presses on one
+page rather than an exam you have to finish in one sitting. When none are left,
+**Approve change** appears and the merge goes through Commit as one decision —
+one card, however many operations it takes — and Undo restores **both** folders,
+including whatever was displaced.
+
+It is refused when a folder in the merge is inside another one in the same merge
+(one file cannot move twice), when two arriving files have the same name (no
+per-file choice can resolve that — neither of them is there yet), when a folder
+is protected, or when the whole thing would be more than 200 operations.
+
+*Artist filed in two places* stays an observation. Which of two sections an
+artist belongs in is a judgement about how you want your library arranged, not a
+collision anyone can settle by looking at two files.
+
+### A file you already have, arriving again
+
+When something in your inbox is byte-for-byte identical to a file already in
+your library, the row says so and says **where**:
+
+```text
+EXACT DUPLICATE   Already in your library: Music/Live/Artist/concert.flac
+                  The bytes are identical.
+[Set aside duplicate] [Compare] [Evidence]
+```
+
+It waits for Commit like everything else, and it goes to Quarantine — restoring
+it puts it back in your **inbox**, because it was never filed and there is
+nowhere in your library for it to return to. The Quarantine row says which file
+it matched.
+
+**The evidence is checked again when you Commit.** The library copy is the only
+thing that makes the arrival redundant, and if it has been deleted or edited in
+between, the arrival is left exactly where it is. Without that check, nothing
+would have been deleted or overwritten and you would still have lost the file.
 
 ### Renaming a folder
 

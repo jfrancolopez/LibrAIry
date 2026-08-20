@@ -73,8 +73,15 @@ list is the specification; a label not in it and not unique is drift.
 | **Restore** | putting a quarantined *file* back where it came from | Put it back |
 | **Delete queue** | gathering a held file into the folder you empty yourself | ~~Mark for deletion~~ |
 | **Set this copy aside** | choosing which of two identical files goes to Quarantine | Delete, Remove duplicate, Keep this one |
+| **Set aside duplicate** | the same act on an *arrival* that is already in the library | Approve, Reject, Skip |
+| **Keep existing** / **Use incoming** / **Keep both** | answering one collision inside a folder merge | Overwrite, Replace, Skip |
 | **Restore original** | undoing an optimization: the preserved original becomes the live file again | Undo optimization, Revert |
 | **Keep original** | taking a preserved original back out of the delete queue, leaving the optimized version live | Remove from delete queue |
+
+**Keep existing** and **Use incoming** are named for the *outcome*, never for
+the mechanism. `Overwrite` and `Replace` are both wrong twice over: nothing is
+overwritten — the copy that loses goes to Quarantine — and both words describe
+what happens to bytes rather than which file you end up with.
 
 **Set aside** is not **Delete queue** and not **Quarantine**. The delete queue is
 where you put something you have finished with; setting a copy aside is the

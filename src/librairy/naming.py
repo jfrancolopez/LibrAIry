@@ -9,6 +9,27 @@ emoji, a colon, and a name that happens to be "CON".
 This module is only about *proposing* names. It never touches a file that is
 already filed: the sanitiser runs when a destination is worked out, and moving
 anything still needs an approved plan.
+
+**Two jobs, and they are not the same job.** Safety is "this name cannot break
+a filesystem, a shell or a URL". Style is "this is how LibrAIry spells a name it
+invented". `slugify` does both at once, and for most of what LibrAIry files that
+is right — nobody needs to read `Photos/2024/August/IMG_5150.jpeg` back.
+
+For one category it is wrong, and the failure is precise: a music video's
+filename *is* its identity. `musicvideo.parse` reads the artist and the title
+either side of ` - ` and the version out of the brackets — and `slugify` turns
+every space into a dash, so a file LibrAIry filed itself could no longer be read
+by the code that named it. `media_filename` is the other half of the split: the
+same hygiene, none of the restyling, so what goes in comes back out.
+
+    slugify            invented names. Space -> dash, apostrophe dropped,
+                       & -> and. Right when nothing has to read the name back.
+    media_filename     names whose punctuation is load-bearing. Made safe and
+                       otherwise left alone.
+
+`taxonomy.PARSED_FILENAME_CATEGORIES` is the list of categories on the second
+side of that line, and it has one member. Widening it is a product decision
+about how a library reads, not a refactor.
 """
 
 from __future__ import annotations
@@ -302,6 +323,30 @@ def tidy_component(component: str, *, is_filename: bool = False) -> str:
         return slugify(component)
     if cleaned.upper() in RESERVED:
         cleaned = f"{cleaned}_"
+    return f"{cleaned}{suffix}"
+
+
+def media_filename(display: str, *, fallback: str = "untitled") -> str:
+    """A filename that keeps the punctuation its meaning depends on.
+
+    Safety and nothing else: NFC, no control characters, no invisibles, no
+    Windows-forbidden characters, no reserved device name, no trailing dot, no
+    traversal, capped to a length every filesystem accepts. The extension
+    survives intact, and so does everything a reader — human or parser — needs.
+
+    `Daft Punk - Around the World (Official Video).mkv` comes back unchanged.
+    `AC/DC - Back In Black.mkv` comes back as `AC-DC - Back In Black.mkv`,
+    because a slash in a filename is a directory separator and no amount of
+    wanting it to be a band name changes that.
+    """
+    stem, suffix = _split_name(display)
+    cleaned = tidy_component(stem)
+    if not cleaned.strip():
+        #  A name made entirely of things that cannot be in a filename. House
+        #  style is the right fallback there — there is nothing left to
+        #  preserve — and the extension is kept out of it, because `.mp4` is
+        #  what a player looks at and not part of anybody's title.
+        cleaned = slugify(stem, fallback=fallback)
     return f"{cleaned}{suffix}"
 
 

@@ -8,7 +8,7 @@ from pathlib import Path
 from string import Formatter
 from typing import Any
 
-from librairy.naming import slugify, tidy_relpath
+from librairy.naming import media_filename, slugify, tidy_component, tidy_relpath
 from librairy.paths import PathValidationError, sanitize_component, validate_dest
 
 CATEGORIES = (
@@ -22,6 +22,19 @@ CATEGORIES = (
     "projects",
     "misc",
 )
+#  Categories whose filename is an identity rather than a description.
+#
+#  A music video is named `Artist - Title (Version).ext` and `musicvideo.parse`
+#  reads exactly that back — which is what makes two pool spellings of one file
+#  converge, what keeps `(Clean)` and `(Dirty)` apart, and what lets the audit
+#  recognise a file LibrAIry filed itself. House style turns every space into a
+#  dash and destroys the separator the whole scheme rests on, so this category
+#  is made *safe* rather than restyled. See `naming.media_filename`.
+#
+#  One member, deliberately. Widening it is a decision about how a library reads
+#  and would change the name of every file filed under whatever is added.
+PARSED_FILENAME_CATEGORIES = frozenset({"music_videos"})
+
 DEFAULT_STYLE = "conventional"
 DEFAULT_STYLES = {
     "music": "genre-first",
@@ -96,15 +109,15 @@ def render_destination(
     if missing:
         return RenderResult(None, f"missing tokens: {', '.join(missing)}")
     try:
-        safe_fields = _safe_fields(fields)
-        relpath = _render_path(template, safe_fields)
+        safe_fields = _safe_fields(fields, category)
+        relpath = _render_path(template, safe_fields, category)
         validate_dest(library_root, relpath)
     except (KeyError, ValueError, PathValidationError) as exc:
         return RenderResult(None, str(exc))
     return RenderResult(relpath)
 
 
-def _render_path(template: str, safe_fields: dict[str, Any]) -> str:
+def _render_path(template: str, safe_fields: dict[str, Any], category: str) -> str:
     """Fill the template, tidying what came from the fields and not the template.
 
     The distinction is the whole function. Field values are metadata off a tag,
@@ -121,11 +134,26 @@ def _render_path(template: str, safe_fields: dict[str, Any]) -> str:
     it holds. `Music`, `Movies`, `Shows` and `Photos` never noticed because a
     single word survives slugification unchanged.
     """
+    tidy = _tidy_for(category)
     components: list[str] = []
     for component in template.split("/"):
         rendered = component.format(**safe_fields)
-        components.append(rendered if _is_literal(component) else tidy_relpath(rendered))
+        components.append(rendered if _is_literal(component) else tidy(rendered))
     return "/".join(part for part in components if part)
+
+
+def _tidy_for(category: str):  # noqa: ANN202
+    """How this category's path components are made safe.
+
+    Two answers, and the second one has exactly one category in it. See
+    `naming.py` for the split: most of what LibrAIry files is named for a person
+    to glance at, and one thing is named for a parser to read back.
+    """
+    if category not in PARSED_FILENAME_CATEGORIES:
+        return tidy_relpath
+    return lambda component: "/".join(
+        tidy_component(part) for part in component.split("/") if part
+    )
 
 
 def _is_literal(component: str) -> bool:
@@ -181,19 +209,31 @@ def _missing_tokens(template: str, fields: dict[str, Any]) -> list[str]:
     return sorted(set(missing))
 
 
-def _safe_fields(fields: dict[str, Any]) -> dict[str, Any]:
+def _safe_fields(fields: dict[str, Any], category: str) -> dict[str, Any]:
     """Every token in a destination template, made safe to be a path component.
 
     Sanitising here rather than at each call site is what makes the guarantee
     hold: a new template or a new metadata source cannot introduce a folder
     with a space, an ampersand or an emoji in it without going through this.
+
+    Which *kind* of safe depends on the category, and only one category differs.
+    A music video's filename is read back by `musicvideo.parse` — the artist and
+    the title either side of ` - `, the version in brackets — so slugging it
+    would mean LibrAIry could not read a name it wrote itself. Those keep their
+    punctuation and lose only what is unsafe. Everything else gets house style.
     """
+    parsed = category in PARSED_FILENAME_CATEGORIES
     safe: dict[str, Any] = {}
     for key, value in fields.items():
         if isinstance(value, int):
             safe[key] = value
             continue
         text = _strip_hashtags(str(value))
+        if parsed:
+            safe[key] = (
+                media_filename(text) if key == "clean_name" else tidy_component(text)
+            )
+            continue
         # clean_name is the filename, so its extension must not be mangled by
         # the length cap or absorbed into the slug. tidy_relpath rather than
         # slugify_filename because a disc files a whole structure under one

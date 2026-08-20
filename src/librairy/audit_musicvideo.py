@@ -23,12 +23,14 @@ the naming policy, because there is no existing name to respect. Auditing an old
 one asks whether it is in the right place, not whether it is spelled the house
 way. So a move here **keeps the filename it found** and changes only the folder.
 
-That leaves one asymmetry worth stating plainly: LibrAIry's own naming policy
-removes the ` - ` between artist and title, so a file it filed itself cannot be
-re-parsed afterwards. The artist folder is what identifies it instead, and a
-file whose name begins with its own artist folder is treated as consistent
-rather than unreadable. Changing the naming policy is a separate decision with
-a much larger blast radius; `test_music_video_paths.py` records it.
+One thing here is now back-compatibility rather than architecture. LibrAIry's
+naming policy *used* to remove the ` - ` between artist and title, so a file it
+filed itself could not be re-parsed — and the artist folder was what identified
+it instead. `naming.media_filename` fixed that for everything filed since, and
+the fallback stays because everything filed before is still on disk with a
+slugged name. A file whose name begins with its own artist folder is consistent,
+not unreadable, and reporting a library for being spelled the old way would be
+the worst possible version of a naming change.
 
 Nothing here looks at a frame. `classify/video_vision.py` explains why at
 length; the short version is that a performer on a stage is equally consistent

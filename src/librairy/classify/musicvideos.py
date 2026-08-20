@@ -158,26 +158,30 @@ def read(relpath: str) -> MusicVideoRead | None:
 
 
 def canonical_name(parsed: musicvideo.ParsedName, ext: str, fallback: str) -> str:
-    """`Artist feat. Guest - Title (Version).mp4`, through the one naming policy.
+    """`Artist feat. Guest - Title (Version).ext` — the form the parser reads back.
 
     Rebuilt from the parsed fields rather than tidied in place, because that is
-    what makes two pools' spellings of the same file converge —
-    `01. artist_title_extended.mp4` and `Artist - Title (Extended Mix).mp4`
-    should end up the same shape. The full credit stays in the name: it is
-    searchable there and costs nothing, whereas a
+    what makes two pools' spellings of the same file converge:
+    `01. artist_title_extended.mp4` and `Artist - Title (Extended Mix).mp4` end
+    up the same shape. The full credit stays in the name — it is searchable
+    there and costs nothing, whereas a
     `Music Videos/House/David Guetta feat. Sia/` folder is how a collection
     grows a thousand one-off collaborations.
 
-    `naming.slugify_filename` via `clean_name_from_title` does the sanitising.
-    There is one naming policy and this is not a second one.
+    The separators are the point. ` - ` is what `musicvideo.parse` splits on and
+    the brackets are what it reads the version out of, so a name built here and
+    then slugged would be a name LibrAIry could not read back — see
+    `naming.media_filename` and `taxonomy.PARSED_FILENAME_CATEGORIES`. This
+    returns the display form; `render_destination` makes it safe, through the
+    one sanitiser, exactly as it does for every other category.
     """
-    from librairy.taxonomy import clean_name_from_title
+    from librairy.naming import media_filename
 
     credit = parsed.credited_artist or parsed.primary_artist
     if not credit or not parsed.title:
-        return clean_name_from_title(fallback, ext)
+        return media_filename(f"{fallback}{ext}")
     versions = "".join(f" ({version})" for version in parsed.versions)
-    return clean_name_from_title(f"{credit} - {parsed.title}{versions}", ext)
+    return media_filename(f"{credit} - {parsed.title}{versions}{ext}")
 
 
 # --- reading the path ------------------------------------------------------------

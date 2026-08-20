@@ -76,7 +76,7 @@ def test_a_music_video_under_movies_is_found(tmp_path: Path) -> None:
 
     assert [row["kind"] for row in rows] == ["music-video-misfiled"]
     assert rows[0]["dest_relpath"] == (
-        "Music Videos/General/Daft-Punk/"
+        "Music Videos/General/Daft Punk/"
         "Daft Punk - Around the World (Official Video).mkv"
     )
 
@@ -132,7 +132,7 @@ def test_a_video_loose_at_the_top_of_music_videos_is_found(tmp_path: Path) -> No
     rows = findings(conn, settings)
 
     assert [row["kind"] for row in rows] == ["music-video-misfiled"]
-    assert rows[0]["dest_relpath"].startswith("Music Videos/General/Fatboy-Slim/")
+    assert rows[0]["dest_relpath"].startswith("Music Videos/General/Fatboy Slim/")
 
 
 # --- what it deliberately leaves alone ---------------------------------------------
@@ -201,7 +201,7 @@ def test_a_finding_is_not_raised_when_the_destination_is_occupied(
     conn, settings = library(
         tmp_path,
         "Music Videos/Fatboy Slim - Praise You.mp4",
-        "Music Videos/General/Fatboy-Slim/Fatboy Slim - Praise You.mp4",
+        "Music Videos/General/Fatboy Slim/Fatboy Slim - Praise You.mp4",
     )
 
     assert [row["relpath"] for row in findings(conn, settings)] == []
