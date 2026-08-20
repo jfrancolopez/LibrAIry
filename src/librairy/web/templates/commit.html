@@ -69,13 +69,18 @@
           {{ group.label }} <span class="view-count">{{ group.decisions }}</span>
         </summary>
         <p class="muted">{{ group.note }}</p>
-        {% if group.type == 'new-file' %}
-          {# The only group whose decisions do not each own a plan: approved
-             inbox proposals become one plan when you press this, so they move
-             together and one press of Undo puts the whole batch back. That is
-             why the action is here and not on every card — and it is here
-             rather than in a second list of the same files further down the
-             page, which is what it used to be. #}
+        {# Approved inbox proposals do not each own a plan: they become one when
+           this is pressed, so they move together and one press of Undo puts the
+           whole batch back. That is why the action is on the group and not on
+           every card.
+
+           It appears on both groups that contain arrivals, because the batch is
+           one batch. An arrival being *set aside* is in it too — it is still an
+           approved proposal — and showing the button only under New files left
+           the set-aside card with no way to commit itself and a button
+           somewhere else that silently did it. Same label, same endpoint, one
+           act; `tests/test_control_inventory.py` records the repeat. #}
+        {% if group.arrivals %}
           <div class="commit-group-actions">
             <form method="post" action="/commit/create">
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -86,9 +91,9 @@
               <button type="submit" class="btn-ghost">Send back to Review</button>
             </form>
             <span class="muted">
-              {{ group.decisions }} file{{ '' if group.decisions == 1 else 's' }} ·
-              {{ group.size }} · these commit together, and the next screen
-              lists every move before anything happens.
+              {{ group.arrivals }} file{{ '' if group.arrivals == 1 else 's' }} from your
+              inbox · these commit together with anything else waiting from your
+              inbox, and the next screen lists every move before anything happens.
             </span>
           </div>
         {% endif %}
@@ -102,7 +107,11 @@
                 {% if row.stale %}<span class="badge badge-status-approval-outdated">Approval is outdated</span>{% endif %}
                 <span class="muted">{{ row.size }}{% if row.op_count > 1 %} · {{ row.op_count }} files{% endif %}</span>
               </div>
-              <h3 class="commit-subject">{{ row.subject }}{{ ext_info(row.current) }}</h3>
+              {# The `?` explains a file extension, so it belongs on a card
+                 whose subject is a file. A folder rename and a folder merge are
+                 named for the folder, and asking what `.` means produced a
+                 control that said "no file extension" about a directory. #}
+              <h3 class="commit-subject">{{ row.subject }}{% if row.is_file %}{{ ext_info(row.current) }}{% endif %}</h3>
               {% if row.optimization %}
               {% set opt = row.optimization %}
               <dl class="correction-shape">

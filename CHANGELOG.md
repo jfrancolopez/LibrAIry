@@ -103,6 +103,29 @@ markup, which is the only way any of them would have surfaced.
   says *Setting aside — foo.jpg · 1 file going to Quarantine. Nothing is
   deleted; it can be restored from the Quarantine page.*
 
+### Changed — Commit tells a file being filed from a file being set aside
+
+Found by driving the new workflows in a browser rather than by reading markup.
+
+- **An arrival going to Quarantine was counted as a new file**, under a heading
+  reading *New files from your inbox, filed into the library*. It is not being
+  filed; it is leaving. Commit's **Set aside** group now holds both shapes —
+  an arrival that is already in your library, and a library copy chosen over
+  another — and each says why: *Identical to `Music/Live/Artist/concert.flac`,
+  which you already have*.
+- **And it had no way to commit itself.** Approved inbox proposals commit as one
+  batch, and the button for that lived only under *New files* — so the
+  set-aside card showed no Commit control while a button in another group
+  silently committed it. The batch bar now appears on every group that holds
+  arrivals, and says so.
+- **The `?` extension badge no longer appears on a folder.** A merge card and a
+  folder-rename card are named for a folder, and the control explaining file
+  extensions had nothing to say about a directory except that it had none.
+- The set-aside category is computed per *plan* rather than per operation. A
+  merge is a correction that quarantines what it displaces, so it holds
+  operations of both shapes, and reading them one at a time counted one merge as
+  two decisions in two groups.
+
 ### Added — a folder can be merged into another, and you choose what survives
 
 The rename half of structural correction landed last release. Merging is the

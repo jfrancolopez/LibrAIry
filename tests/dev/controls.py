@@ -117,6 +117,12 @@ class _Reader(HTMLParser):
         self.page = page
         self.found: list[Control] = []
         self.forms: list[dict[str, str]] = []
+        #  The hidden fields inside each open form, innermost last. A form that
+        #  posts to a shared endpoint carries the act in one of them —
+        #  `/review/audit/{id}/merge-choice` is one route and three different
+        #  answers — and without reading them the inventory sees one action
+        #  wearing three labels, which is the thing it exists to complain about.
+        self.form_values: list[dict[str, str]] = []
         self.form_ids: dict[str, str] = {}
         self._open: dict | None = None
         self._depth = 0
@@ -127,8 +133,14 @@ class _Reader(HTMLParser):
         values = {key: (value or "") for key, value in attrs}
         if tag == "form":
             self.forms.append(values)
+            self.form_values.append({})
             if values.get("id"):
                 self.form_ids[values["id"]] = values.get("action", "")
+        #  `<input>` is a void element, so it arrives here and not at
+        #  `handle_startendtag` unless the author wrote it self-closing. Both
+        #  spellings are in the templates and both have to be read.
+        if tag == "input" and values.get("type") == "hidden" and self.form_values:
+            self.form_values[-1][values.get("name", "")] = values.get("value", "")
         if self._open is not None:
             self._depth += 1
             return
@@ -141,10 +153,13 @@ class _Reader(HTMLParser):
             values = {key: (value or "") for key, value in attrs}
             if values.get("type") == "submit":
                 self.found.append(self._build("input", values, values.get("value", "")))
+            elif values.get("type") == "hidden" and self.form_values:
+                self.form_values[-1][values.get("name", "")] = values.get("value", "")
 
     def handle_endtag(self, tag: str) -> None:  # noqa: D102
         if tag == "form" and self.forms:
             self.forms.pop()
+            self.form_values.pop()
         if self._open is None:
             return
         if self._depth:
@@ -186,6 +201,18 @@ class _Reader(HTMLParser):
         except (ValueError, AttributeError):
             return ""
 
+    #  Field names that carry *which act* a shared endpoint is being asked for.
+    #  `action` is the convention everywhere else; `choice` is the merge row,
+    #  where the three answers to one collision are three acts on one route.
+    ACT_FIELDS = ("action", "choice")
+
+    def _posted_act(self) -> str:
+        """The act named by a hidden field in the form this control submits."""
+        if not self.form_values:
+            return ""
+        fields = self.form_values[-1]
+        return next((fields[name] for name in self.ACT_FIELDS if fields.get(name)), "")
+
     def _build(self, tag: str, values: dict[str, str], text: str) -> Control:
         method, target = "", ""
         for attribute, verb in _TARGETS:
@@ -217,7 +244,7 @@ class _Reader(HTMLParser):
             name=text or values.get("aria-label", "") or values.get("title", ""),
             popover=values.get("popovertarget", ""),
             form=values.get("form", ""),
-            value=values.get("value", "") or self._hx_action(values),
+            value=values.get("value", "") or self._hx_action(values) or self._posted_act(),
             attrs=values,
         )
 

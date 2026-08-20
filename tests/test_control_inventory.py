@@ -426,7 +426,7 @@ def test_staging_an_inbox_leaves_every_other_decision_alone(tmp_path) -> None:
     #  The approved file waiting for Commit and the duplicate staged for
     #  quarantine are the fixture's own, and equally none of staging's business.
     assert once["2026-08-18/IMG_5150.jpeg"] == "approved"
-    assert once["2026-08-18/foo-again.jpg"] == "quarantine-proposed"
+    assert once["2026-08-19/foo-again.jpg"] == "quarantine-proposed"
     assert sum(1 for path in once if path.startswith("2026-05-")) == 5
     assert once == twice, "running it twice changed something"
 

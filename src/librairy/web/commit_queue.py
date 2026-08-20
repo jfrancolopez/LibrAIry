@@ -57,7 +57,7 @@ TYPE_ORDER = (NEW_FILE, CORRECTION, SET_ASIDE, OPTIMIZATION, RESTORE, DELETE_QUE
 TYPE_LABEL = {
     NEW_FILE: "New files",
     CORRECTION: "Library corrections",
-    SET_ASIDE: "Duplicates set aside",
+    SET_ASIDE: "Set aside",
     RESTORE: "Restores",
     DELETE_QUEUE: "Delete queue",
     OPTIMIZATION: "Optimizations",
@@ -68,7 +68,7 @@ TYPE_LABEL = {
 TYPE_LABEL_ONE = {
     NEW_FILE: "New file",
     CORRECTION: "Library correction",
-    SET_ASIDE: "Duplicate set aside",
+    SET_ASIDE: "Set aside",
     RESTORE: "Restore",
     DELETE_QUEUE: "Delete queue",
     OPTIMIZATION: "Optimization",
@@ -91,8 +91,9 @@ TYPE_BADGE = {
 TYPE_NOTE = {
     NEW_FILE: "New files from your inbox, filed into the library.",
     CORRECTION: "Files already in your library, moved or renamed.",
-    SET_ASIDE: "One of two identical files, going to Quarantine. "
-    "Nothing is deleted, and it can be restored.",
+    SET_ASIDE: "Files leaving, rather than being filed: a copy you already "
+    "have, or something you sent here yourself. They go to Quarantine, nothing "
+    "is deleted, and they can be restored.",
     RESTORE: "Held files going back where they came from.",
     DELETE_QUEUE: "Moved into one folder for you to empty yourself. "
     "LibrAIry never deletes anything.",
@@ -148,14 +149,25 @@ def queue_summary(conn: sqlite3.Connection) -> dict[str, Any]:
     Python. This is what stays honest when the queue is large: `SELECT
     COUNT(*)` does not care how many rows it counted.
     """
-    inbox = conn.execute(
-        """
-        SELECT COUNT(*) AS decisions, COALESCE(SUM(i.size), 0) AS bytes
-        FROM proposals p JOIN items i ON i.id = p.item_id
-        WHERE p.status='approved' AND p.dest_relpath IS NOT NULL
-          AND i.missing_since IS NULL
-        """
-    ).fetchone()
+    #  Split by where the file is going and not by where it came from. An
+    #  approved inbox proposal whose destination is quarantine is not a new file
+    #  being filed into the library, and counting it under a heading that says
+    #  so was the page describing an arrival being set aside as an arrival being
+    #  kept.
+    inbox = {
+        row["kind"]: row
+        for row in conn.execute(
+            """
+            SELECT CASE WHEN p.dest_root='quarantine' THEN 'set-aside'
+                        ELSE 'new-file' END AS kind,
+                   COUNT(*) AS decisions, COALESCE(SUM(i.size), 0) AS bytes
+            FROM proposals p JOIN items i ON i.id = p.item_id
+            WHERE p.status='approved' AND p.dest_relpath IS NOT NULL
+              AND i.missing_since IS NULL
+            GROUP BY kind
+            """
+        )
+    }
     plans = conn.execute(
         f"""
         SELECT kind, COUNT(DISTINCT plan_id) AS decisions, COUNT(*) AS operations,
@@ -181,20 +193,30 @@ def queue_summary(conn: sqlite3.Connection) -> dict[str, Any]:
         """  # noqa: S608 - one interpolated constant, no user input
     ).fetchall()
 
-    types: dict[str, dict[str, int]] = {
-        NEW_FILE: {
-            "decisions": int(inbox["decisions"]),
-            # One inbox proposal is one file: decision and operation coincide.
-            "operations": int(inbox["decisions"]),
-            "bytes": int(inbox["bytes"]),
-        }
-    }
-    for row in plans:
-        types[row["kind"]] = {
+    types: dict[str, dict[str, int]] = {}
+    arrivals: dict[str, int] = {}
+    for kind, row in inbox.items():
+        types[kind] = {
             "decisions": int(row["decisions"]),
-            "operations": int(row["operations"]),
+            # One inbox proposal is one file: decision and operation coincide.
+            "operations": int(row["decisions"]),
             "bytes": int(row["bytes"]),
         }
+        #  How many of this group's decisions are approved inbox proposals, and
+        #  so part of the one batch plan. The group action bar is drawn from
+        #  this rather than from the group's own total, because `Set aside`
+        #  holds both arrivals and library copies and only the arrivals commit
+        #  as a batch.
+        arrivals[kind] = int(row["decisions"])
+    for row in plans:
+        #  Both halves of the set-aside group are real at once: an arrival that
+        #  is already in the library, and a library copy chosen over another.
+        totals = types.setdefault(
+            row["kind"], {"decisions": 0, "operations": 0, "bytes": 0}
+        )
+        totals["decisions"] += int(row["decisions"])
+        totals["operations"] += int(row["operations"])
+        totals["bytes"] += int(row["bytes"])
     groups = [
         {
             "type": key,
@@ -202,6 +224,7 @@ def queue_summary(conn: sqlite3.Connection) -> dict[str, Any]:
             "label_one": TYPE_LABEL_ONE[key],
             "note": TYPE_NOTE[key],
             "badge": TYPE_BADGE[key],
+            "arrivals": arrivals.get(key, 0),
             **types.get(key, {"decisions": 0, "operations": 0, "bytes": 0}),
         }
         for key in TYPE_ORDER
@@ -240,31 +263,44 @@ def queue_rows(
     """
     offset = max(0, (max(1, page) - 1) * page_size)
     if kind == NEW_FILE:
-        return _inbox_rows(conn, page_size, offset)
+        return _inbox_rows(conn, kind, page_size, offset)
+    if kind == SET_ASIDE:
+        #  The one group with two sources. An arrival being set aside is an
+        #  approved proposal; a library copy being set aside is an approved
+        #  plan. They are the same decision seen from the two places a file can
+        #  be leaving from, and one heading is the honest number.
+        rows = _inbox_rows(conn, kind, page_size, offset)
+        return [*rows, *_plan_rows(conn, settings, kind, page_size - len(rows), offset)]
     return _plan_rows(conn, settings, kind, page_size, offset)
 
 
-def _inbox_rows(conn: sqlite3.Connection, limit: int, offset: int) -> list[dict[str, Any]]:
+def _inbox_rows(
+    conn: sqlite3.Connection, kind: str, limit: int, offset: int
+) -> list[dict[str, Any]]:
+    if limit <= 0:
+        return []
+    leaving = "=" if kind == SET_ASIDE else "!="
     rows = conn.execute(
-        """
-        SELECT p.id, p.dest_root, p.dest_relpath, i.relpath AS src_relpath, i.size
+        f"""
+        SELECT p.id, p.dest_root, p.dest_relpath, p.item_id,
+               i.relpath AS src_relpath, i.size
         FROM proposals p JOIN items i ON i.id = p.item_id
         WHERE p.status='approved' AND p.dest_relpath IS NOT NULL
-          AND i.missing_since IS NULL
+          AND i.missing_since IS NULL AND p.dest_root {leaving} 'quarantine'
         ORDER BY p.id
         LIMIT ? OFFSET ?
-        """,
+        """,  # noqa: S608 - one operator from a two-way branch
         (limit, offset),
     ).fetchall()
     return [
         {
-            "type": NEW_FILE,
-            "badge": TYPE_BADGE[NEW_FILE],
+            "type": kind,
+            "badge": TYPE_BADGE[kind],
             "subject": PurePosixPath(row["src_relpath"]).name,
             "current": f"inbox/{row['src_relpath']}",
             "after": f"{row['dest_root']}/{row['dest_relpath']}",
             "size": human_bytes(row["size"]),
-            "reason": "You approved this in Review.",
+            "reason": _inbox_reason(conn, kind, row),
             "op_count": 1,
             "plan_id": "",
             "back_url": "/commit/unapprove",
@@ -276,6 +312,23 @@ def _inbox_rows(conn: sqlite3.Connection, limit: int, offset: int) -> list[dict[
         }
         for row in rows
     ]
+
+
+def _inbox_reason(conn: sqlite3.Connection, kind: str, row: sqlite3.Row) -> str:
+    """Why this arrival is here, in the words its own row used.
+
+    "You approved this in Review" is true of a file being filed and unhelpful
+    about one being set aside — what a person wants to see there is the file it
+    is a copy of, which is the whole reason they pressed the button.
+    """
+    from librairy.inbox_duplicates import describe
+
+    if kind != SET_ASIDE:
+        return "You approved this in Review."
+    described = describe(conn, int(row["item_id"]))
+    if described and described["match"]:
+        return f"Identical to {described['match']}, which you already have."
+    return "You sent this to Quarantine from Review."
 
 
 def _plan_rows(
@@ -352,6 +405,10 @@ def _plan_row(
         "type": kind,
         "badge": TYPE_BADGE[kind],
         "subject": folder["subject"] if folder else subject,
+        #  Whether this card is about a file. A folder rename and a folder
+        #  merge are not, and the extension badge beside the title has nothing
+        #  to explain about a directory.
+        "is_file": folder is None,
         #  "After Commit" for everything but a merge, which goes *into* a folder
         #  that is already there.
         "after_label": (folder or {}).get("verb", ""),

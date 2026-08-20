@@ -241,9 +241,17 @@
       <p class="audit-scale">
         <span class="muted">Merging into</span>
         <strong>{{ finding.merge.target_name }}</strong>
-        <span class="muted">· {{ finding.merge.moving }} files move directly</span>
-        {% if finding.merge.conflicts %}
-        <span class="muted">· {{ finding.merge.conflicts|length }} need your choice</span>
+        <span class="muted">· {{ finding.merge.moving }}
+          file{{ '' if finding.merge.moving == 1 else 's' }} move{{ 's' if finding.merge.moving == 1 else '' }} directly</span>
+        {# Outstanding, not total. A conflict that has been answered is not
+           still a question, and a line that says otherwise is the row arguing
+           with the Approve button beside it. #}
+        {% if finding.merge.unresolved %}
+        <span class="muted">· {{ finding.merge.unresolved }}
+          need{{ 's' if finding.merge.unresolved == 1 else '' }} your choice</span>
+        {% elif finding.merge.conflicts %}
+        <span class="muted">· {{ finding.merge.conflicts|length }}
+          conflict{{ '' if finding.merge.conflicts|length == 1 else 's' }} resolved</span>
         {% endif %}
         <span class="muted">· {{ finding.merge.size }}</span>
       </p>
@@ -283,8 +291,9 @@
       </div>
       {% endfor %}
       {% if not finding.merge.settled %}
-      <p class="audit-actionability">{{ finding.merge.unresolved }} of these still need
-        your choice before this can be approved.</p>
+      <p class="audit-actionability">{{ finding.merge.unresolved }} of these still
+        need{{ 's' if finding.merge.unresolved == 1 else '' }} your choice before this
+        can be approved.</p>
       {% endif %}
     </div>
     {% endif %}

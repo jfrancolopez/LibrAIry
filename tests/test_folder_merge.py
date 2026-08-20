@@ -461,6 +461,9 @@ def test_the_commit_card_says_merge_and_where_into(tmp_path: Path) -> None:
     assert card["current"] == f"library/{STRAY}"
     assert card["after"] == f"library/{KEEPER}"
     assert card["after_label"] == "Into"
+    #  Not a file, so no extension badge beside the title. A `?` explaining
+    #  that a directory has no file extension is a control with nothing to say.
+    assert card["is_file"] is False
 
 
 # --- the refusals ------------------------------------------------------------------------

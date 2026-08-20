@@ -91,6 +91,17 @@ FILES: dict[str, bytes | None] = {
     #     never corrected — the row with an explanation and no button.
     "Music Videos/House/Fatboy Slim/Fatboy Slim - Praise You.mp4": b"praise you",
     "Music Videos/IMG_4099.MOV": TINY_MP4,
+    # 16. a merge with nothing in the way: one album, two folders, no two files
+    #     of the same name. Approvable straight off.
+    "Music/Soul/Sam Cooke/Live at the Harlem Square Club/01 - Feel It.flac": b"feel it",
+    "Music/Soul/Sam Cooke/Harlem Square/02 - Chain Gang.flac": b"chain gang",
+    # 17. and a merge with a question in it. Both folders hold a cover, and the
+    #     two covers are different pictures — which is the row this whole
+    #     interaction exists for.
+    "Music/Soul/James Brown/Live at the Apollo/01 - Introduction.flac": b"intro",
+    "Music/Soul/James Brown/Live at the Apollo/cover.jpg": None,
+    "Music/Soul/James Brown/Apollo 1962/02 - I'll Go Crazy.flac": b"go crazy",
+    "Music/Soul/James Brown/Apollo 1962/cover.jpg": b"a different picture entirely",
 }
 
 TAG_EVIDENCE = [
@@ -388,6 +399,43 @@ def build_app(root: Path):  # noqa: ANN201
         ],
     )
     finding(
+        "Music/Soul/Sam Cooke/Harlem Square",
+        "split-album",
+        "'Live at the Harlem Square Club' is split across 2 folders holding "
+        "2 tracks between them.",
+        "Music/Soul/Sam Cooke/Live at the Harlem Square Club",
+        [
+            EvidenceEntry("tags", "album", "Live at the Harlem Square Club", 0.95),
+            EvidenceEntry("filesystem", "tracks", "2", 0.9),
+            EvidenceEntry(
+                "filesystem", "folder", "Music/Soul/Sam Cooke/Harlem Square", 0.9
+            ),
+            EvidenceEntry(
+                "filesystem",
+                "folder",
+                "Music/Soul/Sam Cooke/Live at the Harlem Square Club",
+                0.9,
+            ),
+        ],
+    )
+    finding(
+        "Music/Soul/James Brown/Apollo 1962",
+        "split-album",
+        "'Live at the Apollo' is split across 2 folders holding 2 tracks "
+        "between them.",
+        "Music/Soul/James Brown/Live at the Apollo",
+        [
+            EvidenceEntry("tags", "album", "Live at the Apollo", 0.95),
+            EvidenceEntry("filesystem", "tracks", "2", 0.9),
+            EvidenceEntry(
+                "filesystem", "folder", "Music/Soul/James Brown/Apollo 1962", 0.9
+            ),
+            EvidenceEntry(
+                "filesystem", "folder", "Music/Soul/James Brown/Live at the Apollo", 0.9
+            ),
+        ],
+    )
+    finding(
         "Music Videos/IMG_4099.MOV",
         "music-video-personal",
         "This looks like a clip off a phone or a camera, not a music video. "
@@ -409,6 +457,7 @@ def build_app(root: Path):  # noqa: ANN201
     _history_entries(conn)
     _quarantine_entries(conn, settings)
     _an_inbox_music_video(conn, settings)
+    _an_arriving_duplicate(conn, settings)
     _pending_decisions(conn, settings)
     _a_file_nobody_scanned(settings)
 
@@ -439,6 +488,38 @@ def _an_inbox_music_video(conn, settings: Settings) -> None:  # noqa: ANN001
     path.write_bytes(b"daft punk video, in the inbox")
     scan_root(conn, "inbox", settings.inbox_dir, settings)
     analyze_items(conn, settings)
+
+
+def _an_arriving_duplicate(conn, settings: Settings) -> None:  # noqa: ANN001
+    """A file already in the library, dropped into the inbox a second time.
+
+    The staged-quarantine row, and the only place three of the product's
+    controls appear at all. It used to be written by hand, with evidence
+    invented for the occasion — and the invention was load-bearing without
+    anybody meaning it to be: both `quarantine_reason` and
+    `inbox_duplicates.is_duplicate_proposal` read that evidence back to tell
+    "the duplicate finder decided this" from "you did", and neither recognised
+    the made-up spelling. The fixture's one staged duplicate was the one shape
+    of staged duplicate the product does not produce.
+
+    So it goes through the worker's own pass now. rmlint is stood in for — it is
+    not installed on every machine — and everything after the hashes agree is
+    the real thing.
+    """
+    from librairy.dedup import detect_exact_duplicates  # noqa: PLC0415
+    from librairy.worker import _stage_quarantine_proposals  # noqa: PLC0415
+
+    arrival = settings.inbox_dir / "2026-08-19" / "foo-again.jpg"
+    arrival.parent.mkdir(parents=True, exist_ok=True)
+    arrival.write_bytes(JPEG)
+    scan_root(conn, "inbox", settings.inbox_dir, settings)
+
+    def agreed(pairs, _settings):  # noqa: ANN001, ANN202
+        return {tuple(sorted((left.id, right.id))) for left, right in pairs}
+
+    _stage_quarantine_proposals(
+        conn, detect_exact_duplicates(conn, settings, rmlint_check=agreed)
+    )
 
 
 def _a_file_nobody_scanned(settings: Settings) -> None:
@@ -562,33 +643,6 @@ def _pending_decisions(conn, settings: Settings) -> None:  # noqa: ANN001
     # One more adopted and left where a person leaves it: approved, nothing
     # moved, the row on the queue page reading Waiting for Commit.
     adopt("Chinatown")
-
-    # --- a duplicate staged for quarantine, still undecided ---------------
-    #
-    # The only three controls in the product no inventory had ever seen, because
-    # nothing in the fixture ever produced a staged proposal — and two of them
-    # were the last invented labels left (`Move it out`, `Keep it`).
-    duplicate = settings.inbox_dir / "2026-08-18" / "foo-again.jpg"
-    duplicate.write_bytes(JPEG)
-    scan_root(conn, "inbox", settings.inbox_dir, settings)
-    staged = conn.execute(
-        "SELECT id FROM items WHERE root='inbox' AND relpath LIKE '%foo-again%'"
-    ).fetchone()
-    upsert_proposal(
-        conn,
-        item_id=staged["id"],
-        category="photos",
-        clean_name="foo-again.jpg",
-        dest_relpath="2026-08-18/foo-again.jpg",
-        dest_root="quarantine",
-        action="quarantine",
-        confidence=1.0,
-        evidence=[
-            Entry("fingerprint", "blake2b", "9f2c41ab77e0", 1.0),
-            Entry("filesystem", "also at", "Photos/2022/foo.jpg", 1.0),
-        ],
-    )
-    transition_item(conn, int(staged["id"]), "quarantine-proposed")
 
     # --- two quarantine decisions, both waiting ---------------------------
     for relpath, ask in (
