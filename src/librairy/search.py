@@ -10,10 +10,15 @@ from typing import Any
 
 from librairy.config import Settings
 from librairy.live import live
+from librairy.taxonomy import CATEGORIES as TAXONOMY_CATEGORIES
 
 PAGE_SIZE = 50
 TEXT_FIELDS = ("name", "clean_name", "tags", "artist", "album", "title", "show", "genre", "event")
-CATEGORIES = {"music", "movies", "shows", "photos", "documents", "books", "projects", "misc"}
+#  Taken from the taxonomy rather than written out again. This was a hand-kept
+#  copy and it had already drifted: `music_videos` was added to the taxonomy and
+#  never here, so every music video in the library fell through to `misc` and
+#  the category filter could not find one.
+CATEGORIES = frozenset(TAXONOMY_CATEGORIES)
 # Kept in step with web/thumbs.py: only these can answer a thumbnail request,
 # and asking for one on anything else renders a broken-image icon.
 THUMBNAILABLE = {
@@ -415,8 +420,17 @@ def _evidence(payload: str | None) -> list[dict[str, Any]]:
 
 
 def _category_from_path(relpath: str) -> str:
+    """The category a filed file is in, read from where it is.
+
+    The fallback for a file with no proposal — anything that was already in the
+    library when LibrAIry first scanned it. `Music Videos/` is the reason for
+    the underscore: the category is spelled `music_videos` and the folder is
+    spelled with a space, so lowercasing alone made every music video in the
+    library `misc`, and the Music Video filter matched nothing but the files
+    filed since.
+    """
     parts = PurePosixPath(relpath).parts
-    top = parts[0].lower() if parts else "misc"
+    top = parts[0].lower().replace(" ", "_") if parts else "misc"
     return top if top in CATEGORIES else "misc"
 
 

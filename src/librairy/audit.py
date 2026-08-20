@@ -77,6 +77,12 @@ KINDS = {
     # just inside the files rather than beside them, which matters to some
     # players and not others.
     "artwork-not-on-disk": "Artwork is embedded but not on disk",
+    # Music videos. Two that have an answer and two that do not — see
+    # `audit_musicvideo` for why moving somebody's holiday clip is a decision
+    # about their holiday rather than a filing rule.
+    "music-video-misfiled": "Music video in the wrong place",
+    "music-video-personal": "Personal clip under Music Videos",
+    "music-video-unreadable": "Music video nobody can be sure about",
 }
 
 # Kinds whose correction is a concrete, deterministic filesystem move that
@@ -101,7 +107,16 @@ KINDS = {
 # one whose files are not all indexed, one that would merge into an existing
 # folder, and one too large to read before approving are all still suggestions.
 EXECUTABLE_KINDS = frozenset(
-    {"tag-path-mismatch", "naming-cleanup", "naming-inconsistency"}
+    {
+        "tag-path-mismatch",
+        "naming-cleanup",
+        "naming-inconsistency",
+        # One file moving to one place, which the plan has always been able to
+        # express. The two music-video kinds that are *not* here are the ones
+        # with no answer: a phone clip needs a year and an event chosen for it,
+        # and a name nobody can read has no artist to file it under.
+        "music-video-misfiled",
+    }
 )
 
 # Kinds whose `relpath` names a folder rather than a file. The UI needs this to
@@ -384,6 +399,7 @@ def detect(
         ("missing-artwork", _missing_artwork),
         ("unindexed", _unindexed),
         ("system-junk", _system_junk),
+        ("music-video", _music_videos),
     ):
         if kind in skip:
             continue
@@ -398,6 +414,14 @@ def detect(
             finding.item_id = row["id"]
             finding.fingerprint = row["fingerprint"]
     return sorted(findings, key=lambda finding: (finding.relpath, finding.kind))
+
+
+def _music_videos(view: LibraryView) -> list[Finding]:
+    """Kept in its own module: it is the only detector that reads a filename as
+    a credit rather than as a description. See `audit_musicvideo`."""
+    from librairy import audit_musicvideo
+
+    return audit_musicvideo.detect(view)
 
 
 def _catalog_tier(conn: sqlite3.Connection, view: LibraryView, run: object | None) -> list[Finding]:

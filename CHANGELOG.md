@@ -83,6 +83,54 @@ that unreliable, and all three are fixed. See [the command line](docs/cli.md).
   health block as `{'ok': True, ...}`; dicts, tuples and values containing
   newlines all render line-oriented now, the way list values already did.
 
+### Added — Music Videos is a category, not a design document
+
+The destination templates, the DJ filename parser, the version-identity rules
+and the "no album layer" guarantee were all written and all proven. Nothing was
+connected to any of it. No classifier ever produced the category, and
+`proposals.category` was a CHECK constraint that had never heard the word
+`music_videos` — so the one INSERT that would have made the rest reachable could
+not have succeeded. Nobody found out, because nothing tried.
+See [the guide](docs/using-librairy.md#music-videos).
+
+- **Two signals, and neither is the extension.** A `Music Videos/` folder
+  somebody put the file in, or a version marker only a video can carry —
+  `(Official Video)`, `(Lyric Video)`, `(Visualizer)`. `(Live)` and
+  `(Remastered)` are deliberately not in that set: both are as true of an audio
+  release, and one word should not file a concert recording as a video.
+- **`Artist - Title` alone changes nothing.** `50 Cent - In Da Club.mp4` loose in
+  the inbox classifies exactly as it did before, because a good deal of cinema is
+  named `Director - Title` by somebody's ripping script. No film that was
+  classified correctly yesterday moves today.
+- **Order of precedence, stated once:** an `S01E02` is an episode, always; a
+  catalogued film beats a version marker; nothing beats the folder. A film in
+  your `Music Videos/` directory means the folder is wrong about one file, not
+  that a catalog overrules you about your own files.
+- **Phone clips stay personal.** `IMG_4021.MOV` is filed with the photographs it
+  was taken beside even when it is sitting inside a Music Videos folder, and
+  nothing a model saw in a frame is allowed to decide this category at all.
+- **No artist is invented.** A name that cannot be read gets `Unknown Artist`
+  and lands below the confidence threshold for a person to place, rather than a
+  guess that becomes a directory and outlives itself.
+- **Versions are identity.** `(Clean)` and `(Dirty)`, official and lyric, live
+  and studio are four different files with four destinations and one group, so
+  Review shows them together and nothing calls either a duplicate.
+- **Library Audit learned three findings.** *Music video in the wrong place* is
+  a correction — one file, one move, undoable. *Personal clip under Music
+  Videos* and *Music video nobody can be sure about* are observations, because
+  choosing a year and an event for somebody's holiday clip is not a filing rule
+  and there is no artist to invent for an unreadable name.
+- **The audit never restyles a filename.** A check that compared every file
+  against its canonical name would report a hand-made collection as one problem
+  per file. A correction changes the folder and keeps the name it found, and it
+  files into an artist folder you already have — spelled your way — in
+  preference to inventing one.
+- **Schema 29** rebuilds `proposals` so the category constraint admits
+  `music_videos`, and Search's category list is taken from the taxonomy instead
+  of being a second hand-kept copy. That copy had already drifted, which is why
+  every music video already in a library counted as *misc* and the category
+  filter could not find one.
+
 ### Added — a folder can now be renamed, as every file move it actually is
 
 `Music/Pop/Lipps Inc.` was the report that opened this and the one that kept it

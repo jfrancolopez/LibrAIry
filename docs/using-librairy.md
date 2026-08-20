@@ -586,9 +586,39 @@ catalog id      duration             original artist
 ```
 
 **A music video is not a movie.** `.mp4` alone decides nothing — that is the
-mistake that files phone clips as feature films. It is evidence, alongside the
-source folder, a filename shaped like `Artist - Title`, a duration in the
-right range, embedded tags, and a catalog match.
+mistake that files phone clips as feature films. Two things do:
+
+| Signal | Example |
+|---|---|
+| **The folder somebody put it in** | anything under a `Music Videos/` directory |
+| **A version marker only a video has** | `(Official Video)`, `(Lyric Video)`, `(Visualizer)` |
+
+Both need the filename to read as a real credit — an artist and a title either
+side of a separator. `(Live)` and `(Remastered)` are deliberately *not* video
+markers: both are as true of an audio release, and one word should not file a
+concert recording as a video.
+
+A name shaped like `Artist - Title` with nothing else to go on changes nothing.
+`50 Cent - In Da Club.mp4` sitting loose in your inbox is still classified the
+way it always was, because a good deal of cinema is named `Director - Title` by
+somebody's ripping script. Put it in a `Music Videos/` folder and it is a music
+video.
+
+**Order of precedence**, when a name could be read more than one way:
+
+```text
+S01E02 in the name        → an episode, always
+a catalog names the film  → a film, over a version marker
+the folder says so        → a music video, over everything
+```
+
+A film sitting in your `Music Videos/` folder means the folder is wrong about
+one file — not that a catalog can overrule you about your own files. Review
+shows the reading and you decide.
+
+Nothing a model saw is ever allowed to decide this. A frame showing a performer
+on a stage is equally consistent with a family video, a concert bootleg and a
+music video.
 
 ### Versions are identity, not noise
 
@@ -651,6 +681,17 @@ surfaces those for correction.
 videos by many artists a compilation — that is just the genre. The
 compilation policy from Music does not apply; the videos organise under their
 own artists.
+
+**And it never proposes to restyle a filename.** LibrAIry's naming policy turns
+every space into a dash, so a check that compared each file against its
+canonical name would report a hand-made collection as one problem per file. A
+music-video correction changes the **folder** and keeps the name it found.
+Filing a *new* file from the inbox is a different question — there is no
+existing name to respect there, so the naming policy applies.
+
+Where it can, it also uses a folder you already have. If
+`Music Videos/House/Fatboy Slim/` exists, a stray Fatboy Slim video goes there,
+spelled the way you spelled it, rather than into a new `Fatboy-Slim/` beside it.
 
 ## Ripped discs
 
@@ -866,6 +907,9 @@ a second audit of an unchanged library makes **no catalog requests at all**.
 | **Named unlike its neighbours** | One file in a folder where every other file follows a pattern. |
 | **Loose tracks beside album folders** | Tracks directly in an artist folder that otherwise uses albums. |
 | **A catalog spells this differently** | The tags *and* an outside catalog agree on a spelling the folder does not use. |
+| **Music video in the wrong place** | It reads as a music video and it is under `Movies/`, under the wrong artist, or loose at the top of `Music Videos/`. |
+| **Personal clip under Music Videos** | A phone or camera clip that came along with a folder. Reported, never moved — where it belongs depends on when it was taken. |
+| **Music video nobody can be sure about** | Neither the name nor the folder says who it is by, so no artist folder can be chosen for it. |
 
 ### Folders with many artists in them
 

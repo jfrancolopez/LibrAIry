@@ -6,6 +6,9 @@ from dataclasses import dataclass
 from pathlib import PurePosixPath
 from typing import Any
 
+from librairy.classify.musicvideos import MusicVideoRead
+from librairy.classify.musicvideos import canonical_name as canonical_music_video_name
+from librairy.classify.musicvideos import read as read_music_video
 from librairy.config import Settings
 from librairy.models import EvidenceEntry
 from librairy.taxonomy import RenderResult, clean_name_from_title, render_destination
@@ -94,7 +97,67 @@ def classify_video(
     if parsed.is_episode:
         tvmaze = tvmaze_lookup(parsed, settings) if tvmaze_lookup is not None else None
         return _classify_episode(parsed, settings, tmdb, tvmaze, evidence)
+    music_video = read_music_video(relpath)
+    if music_video is not None and _music_video_wins(music_video, tmdb):
+        return _classify_music_video(relpath, music_video, parsed, settings)
     return _classify_movie(parsed, settings, tmdb, evidence)
+
+
+def _music_video_wins(read: MusicVideoRead, tmdb: dict[str, Any] | None) -> bool:
+    """Which answer stands when a filename could be read both ways.
+
+    An episode never reaches here: `S01E02` is a shape nothing else produces and
+    it is settled above. Between a film and a music video the order is:
+
+    * A catalogued film beats a *guess*. `Kubrick - Barry Lyndon (Remastered
+      HD).mkv` reads as an artist and a title, and TMDB knowing the title is
+      better evidence than a bracket.
+    * Nothing beats the folder. A film sitting in someone's `Music Videos/`
+      directory means the folder is wrong about one file, not that a person
+      saying what their own files are can be overruled by a catalog. Review is
+      where that gets settled, and it will show both readings.
+    """
+    return read.from_folder or tmdb is None
+
+
+def _classify_music_video(
+    relpath: str,
+    read: MusicVideoRead,
+    parsed: ParsedVideoName,
+    settings: Settings,
+) -> VideoClassification:
+    """`Music Videos/Genre/Artist/Artist - Title (Version).ext`, three levels.
+
+    No album layer, on purpose and permanently — see `taxonomy.TEMPLATES`. The
+    album, the year, the BPM, the pool it came from and the featured artists are
+    all worth knowing and all live in the index, where they can be searched
+    without becoming directories.
+
+    The version is part of the identity rather than noise in the name.
+    `In Da Club (Clean)` and `In Da Club (Dirty)` are two files a DJ keeps, and
+    `group_key` is the *work* — artist and title without the version — so the
+    two group together in Review without either being called a duplicate of the
+    other.
+    """
+    clean_name = canonical_music_video_name(
+        read.parsed, parsed.ext, fallback=PurePosixPath(relpath).stem
+    )
+    fields: dict[str, object] = {
+        "genre": read.genre,
+        "artist": read.artist,
+        "clean_name": clean_name,
+    }
+    rendered = _render_if_confident("music_videos", fields, read.confidence, settings)
+    return VideoClassification(
+        "music_videos",
+        clean_name,
+        rendered.relpath,
+        read.confidence,
+        read.evidence,
+        fields,
+        group_key=f"music-video:{read.parsed.work_key}" if read.parsed.work_key else None,
+        reason=rendered.reason,
+    )
 
 
 def _classify_movie(

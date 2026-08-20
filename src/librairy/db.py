@@ -9,7 +9,7 @@ from pathlib import Path
 from librairy.config import Settings
 
 LOGGER = logging.getLogger(__name__)
-SCHEMA_VERSION = 28
+SCHEMA_VERSION = 29
 
 
 class DatabaseVersionError(RuntimeError):
@@ -96,7 +96,8 @@ CREATE TABLE proposals (
   id            INTEGER PRIMARY KEY,
   item_id       INTEGER NOT NULL REFERENCES items(id),
   category      TEXT NOT NULL CHECK (category IN
-                  ('music','movies','shows','photos','documents','books','projects','misc')),
+                  ('music','music_videos','movies','shows','photos','documents',
+                   'books','projects','misc')),
   clean_name    TEXT NOT NULL,
   dest_relpath  TEXT,
   confidence    REAL NOT NULL,
@@ -758,6 +759,55 @@ MIGRATION_028 = """
 ALTER TABLE backup_queue ADD COLUMN verified TEXT NOT NULL DEFAULT '';
 """
 
+#  `music_videos` has been a category since phase 2. It is in `models.Category`,
+#  it has its own destination templates, `test_music_video_paths.py` asserts the
+#  shape of them — and this CHECK constraint never heard about it, so the one
+#  thing that would have made all of that reachable was an INSERT that could not
+#  succeed. Nobody found out, because until now nothing produced the category.
+#
+#  A table rebuild rather than a wider constraint copied from somewhere: the
+#  list is the schema's own statement of what a category is, and the only way to
+#  change it is to say so.
+MIGRATION_029 = """
+-- Every column the table has at version 28, including the two migration 007
+-- added. A rebuild that copies the original CREATE and forgets what came after
+-- it does not fail loudly; it silently drops columns, and the first sign is a
+-- quarantine proposal that has lost the fact that it was a quarantine.
+CREATE TABLE proposals_new (
+  id            INTEGER PRIMARY KEY,
+  item_id       INTEGER NOT NULL REFERENCES items(id),
+  category      TEXT NOT NULL CHECK (category IN
+                  ('music','music_videos','movies','shows','photos','documents',
+                   'books','projects','misc')),
+  clean_name    TEXT NOT NULL,
+  dest_relpath  TEXT,
+  confidence    REAL NOT NULL,
+  group_id      INTEGER REFERENCES groups(id),
+  status        TEXT NOT NULL DEFAULT 'proposed'
+                CHECK (status IN (
+                  'proposed','approved','rejected','postponed','committed','superseded'
+                )),
+  evidence      TEXT NOT NULL,
+  created_at    TEXT NOT NULL,
+  updated_at    TEXT NOT NULL,
+  action        TEXT NOT NULL DEFAULT 'move',
+  dest_root     TEXT NOT NULL DEFAULT 'library',
+  UNIQUE (item_id)
+);
+INSERT INTO proposals_new(id, item_id, category, clean_name, dest_relpath, confidence,
+                          group_id, status, evidence, created_at, updated_at,
+                          action, dest_root)
+  SELECT id, item_id, category, clean_name, dest_relpath, confidence,
+         group_id, status, evidence, created_at, updated_at,
+         action, dest_root FROM proposals;
+DROP TABLE proposals;
+ALTER TABLE proposals_new RENAME TO proposals;
+-- Dropping the table took all three of its indexes with it.
+CREATE INDEX idx_proposals_status ON proposals(status);
+CREATE INDEX idx_proposals_category ON proposals(category);
+CREATE INDEX idx_proposals_group_id ON proposals(group_id);
+"""
+
 MIGRATIONS = {
     1: MIGRATION_001,
     2: MIGRATION_002,
@@ -787,6 +837,7 @@ MIGRATIONS = {
     26: MIGRATION_026,
     27: MIGRATION_027,
     28: MIGRATION_028,
+    29: MIGRATION_029,
 }
 
 
