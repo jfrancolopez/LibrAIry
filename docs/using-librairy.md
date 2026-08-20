@@ -1248,12 +1248,41 @@ Only kinds whose correction is a concrete, deterministic move:
 
 The observations are all true and worth showing; none has a move that answers
 it. *Missing artwork* describes a file that is exactly where it belongs.
-*Possible duplicate* has a real answer, quarantining the copy, but that is a
-different action with its own safety rules and it is not offered here yet.
 *One album in several folders* and *artist filed in two places* propose a merge
 or a choice, not a rename — which of two spellings is right is a judgement, and
 merging asks a question no rule answers, such as which of two `cover.jpg` files
 wins.
+
+*Possible duplicate* is neither. It has a real answer and LibrAIry will not pick
+it for you — see below.
+
+### Identical files: your choice, not a rule
+
+Two byte-identical files have nothing measurable to choose between. The
+difference is what the folders mean to you, and that is not in the bytes. So the
+row lists the copies and you press the one that goes:
+
+```text
+Possible duplicate                                   Your choice
+05 - Song.flac
+Identical bytes to 1 other file in your library.
+Both files are identical, so only you can say which one to keep.
+
+  Music/Pop/Queen/05 - Song.flac        4.8 MB   [Set this copy aside]
+  Music/Unsorted/05 - Song.flac         4.8 MB   [Set this copy aside]
+```
+
+**Set aside, not delete.** The copy moves to Quarantine, where you can look at
+it and put it back. LibrAIry has never deleted a file.
+
+It goes through Commit like every other decision — nothing moves when you press
+the button — and Undo puts it back afterwards. A copy is not offered when it is
+inside a protected folder, when it is already waiting for Commit, or when it is
+**the last one left**: if you set one aside and the other has since gone, there
+is no duplicate any more and nothing to do about it.
+
+This is the one row that has an action and can never be swept up by *Approve all
+confident*. Bulk approval has no answer to "which one".
 
 ### Renaming a folder
 

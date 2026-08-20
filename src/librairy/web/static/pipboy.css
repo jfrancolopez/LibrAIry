@@ -2565,6 +2565,16 @@ summary.timeline-head::-webkit-details-marker { display: none; }
   flex-wrap: wrap;
   align-items: baseline;
 }
+/* One line per identical copy, each with its own decision on it. */
+.audit-copies { margin: 0 0 var(--space-2); }
+.audit-copy {
+  display: flex;
+  gap: var(--space-2);
+  align-items: baseline;
+  flex-wrap: wrap;
+  padding: var(--space-1) 0;
+  font-size: var(--text-sm);
+}
 .audit-affected { margin: 0 0 var(--space-2); }
 .audit-affected summary { cursor: pointer; }
 .audit-affected ul { list-style: none; margin: var(--space-2) 0 0; padding: 0; }

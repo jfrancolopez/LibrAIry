@@ -230,6 +230,33 @@
     </details>
     {% endif %}
 
+    {# Two identical files, and the one thing LibrAIry will not do is choose
+       between them. There is no measurable difference to appeal to — the bytes
+       are the same — so the difference is what the folders mean to the person
+       reading this. Each copy gets its own control, and a copy that cannot be
+       the one to go says why instead of quietly losing its button. #}
+    {% if finding.copies %}
+    <div class="audit-copies">
+      {% for copy in finding.copies %}
+      <div class="audit-copy">
+        <span class="mono">{{ copy.folder }}/</span><strong>{{ copy.name }}</strong>
+        <span class="muted">{{ copy.size }}</span>
+        {% if copy.removable %}
+        <form method="post" action="/review/audit/{{ finding.id }}/set-aside">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="relpath" value="{{ copy.relpath }}">
+          {# "Set aside" and not "Delete". It moves to Quarantine, where it can
+             be looked at and put back — LibrAIry has never deleted a file. #}
+          <button type="submit">Set this copy aside</button>
+        </form>
+        {% else %}
+        <span class="muted">— {{ copy.reason }}</span>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
     {# The same panel component as the inbox row's Why, down to the class. #}
     <div id="audit-why-{{ finding.id }}" class="why" hidden>
       <ul class="why-list">

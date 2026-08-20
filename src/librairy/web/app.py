@@ -24,6 +24,7 @@ from librairy.ai.lmstudio import probe as lmstudio_probe
 from librairy.ai.lmstudio import try_classify as lmstudio_try_classify
 from librairy.alternatives import options_for_proposal
 from librairy.audit import audit_library, keep_as_is, sanitize_scope
+from librairy.audit_duplicates import set_aside as set_copy_aside
 from librairy.backup import request_backup_now
 from librairy.catalog_probe import UnknownCatalog, probe_catalog
 from librairy.catalogs import catalog_enabled
@@ -961,6 +962,26 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         """
         try:
             accept_correction(conn, settings, finding_id)
+        except CorrectionRefused as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return RedirectResponse("/review#library-audit", status_code=303)
+
+    @app.post("/review/audit/{finding_id}/set-aside", include_in_schema=False)
+    def review_audit_set_aside(
+        request: Request,  # noqa: ARG001
+        finding_id: int,
+        relpath: str = Form(...),
+    ) -> RedirectResponse:
+        """Set one named copy of a duplicate aside, waiting for Commit.
+
+        The copy is a form field rather than part of the path because it is the
+        whole decision: both files are byte-identical, so LibrAIry has nothing
+        to choose between them and does not try. `set_aside` refuses everything
+        the row would refuse — including the one that matters most, which is
+        setting aside the last copy left.
+        """
+        try:
+            set_copy_aside(conn, settings, finding_id, relpath)
         except CorrectionRefused as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         return RedirectResponse("/review#library-audit", status_code=303)

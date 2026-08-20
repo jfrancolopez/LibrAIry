@@ -14,6 +14,7 @@ is derived from that value:
 
     READY           a correction LibrAIry can execute, right now
     BLOCKED         a correction in principle, refused today, and why
+    CHOICE          something can be done, and only the owner can say which
     OBSERVATION     nothing to execute — no move answers this
     NEEDS_ANALYSIS  the file changed after the audit
     NOT_ON_DISK     the file is gone
@@ -38,6 +39,7 @@ from librairy.corrections import MISSING, STALE
 
 READY = "ready"
 BLOCKED = "blocked"
+CHOICE = "choice"
 OBSERVATION = "observation"
 NEEDS_ANALYSIS = "needs-analysis"
 NOT_ON_DISK = "not-on-disk"
@@ -47,9 +49,12 @@ APPLYING = "applying"
 CORRECTED = "corrected"
 DISMISSED = "dismissed"
 
-# The single source of "may this be approved". One member today; a set rather
-# than an equality test because the next state added has to make the decision
-# deliberately instead of inheriting it.
+# The single source of "may this be approved". One member, and `CHOICE` is the
+# reason the set exists rather than an equality test: it is the first state that
+# has a real action and still must not be approvable. Two byte-identical files
+# have no measurable difference to choose between, so "approve all confident"
+# has no answer to "which one" — the row carries its own controls and bulk
+# cannot reach it.
 APPROVABLE = frozenset({READY})
 
 # The chip on the row. Never the stored status value: `open`, `accepted` and
@@ -58,6 +63,7 @@ APPROVABLE = frozenset({READY})
 LABEL = {
     READY: "Ready to approve",
     BLOCKED: "Cannot be applied",
+    CHOICE: "Your choice",
     OBSERVATION: "Observation",
     NEEDS_ANALYSIS: "Needs analysis again",
     NOT_ON_DISK: "Not on disk",
@@ -74,6 +80,7 @@ LABEL = {
 EXPLANATION = {
     READY: "",
     BLOCKED: "",
+    CHOICE: "Both files are identical, so only you can say which one to keep.",
     OBSERVATION: "No automatic correction is available for this.",
     NEEDS_ANALYSIS: "The file changed after this was found, so the suggestion "
     "no longer describes it.",
@@ -89,7 +96,7 @@ EXPLANATION = {
 # How a bulk result names each outcome, in the order a summary reads best:
 # what happened first, then what did not, then why not.
 BULK_ORDER = (READY, WAITING, OUTDATED, APPLYING, CORRECTED, DISMISSED, BLOCKED,
-              NEEDS_ANALYSIS, NOT_ON_DISK, OBSERVATION)
+              NEEDS_ANALYSIS, NOT_ON_DISK, CHOICE, OBSERVATION)
 
 
 def actionability(
@@ -99,6 +106,7 @@ def actionability(
     executable: bool,
     blocked: str = "",
     plan: object | None = None,
+    choices: bool = False,
 ) -> str:
     """The one value every control on the row is derived from.
 
@@ -133,6 +141,13 @@ def actionability(
         return CORRECTED
     if status == "kept":
         return DISMISSED
+    if choices:
+        # Before `_corrigible`, and deliberately: a duplicate is not an
+        # executable *kind* and never will be, because the thing to do about it
+        # is a quarantine rather than a move — and it still has something a
+        # person can do. Calling it an observation would be the old lie in a
+        # new place.
+        return CHOICE
     if not _corrigible(row):
         return OBSERVATION
     if state == MISSING:
@@ -185,6 +200,7 @@ OUTCOME_TEXT = {
     CORRECTED: "Already applied",
     DISMISSED: "Dismissed",
     BLOCKED: "Cannot be applied",
+    CHOICE: "Waiting for you to choose",
     NEEDS_ANALYSIS: "Changed since the audit",
     NOT_ON_DISK: "No longer on disk",
     OBSERVATION: "Observation only",

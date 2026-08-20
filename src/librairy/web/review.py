@@ -6,6 +6,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from librairy.audit import FOLDER_KINDS, KINDS, findings_with_status
+from librairy.audit_duplicates import copies as duplicate_copies
 from librairy.audit_job import progress as audit_progress
 from librairy.classify.images import vision_disagrees, vision_for_items
 from librairy.config import Settings
@@ -1076,11 +1077,26 @@ def _audit_row(
             }
             for op in plan_files(conn, plan.plan_id)
         ]
+    #  Byte-identical copies, and which of them could be the one to go. Only a
+    #  duplicate finding has any; see `librairy/audit_duplicates.py` for why
+    #  LibrAIry will not pick for you.
+    duplicates = (
+        duplicate_copies(conn, settings, row)
+        if settings is not None and not accepted
+        else []
+    )
     views = humanize_evidence(row["evidence"]) if row["evidence"] else []
     # One value, and every control on the row derives from it. See
     # `web/actionability.py` for why inferring this from button presence was
     # the actual cause of "I approved it and nothing happened".
-    status_kind = actionability(row, state, executable=executable, blocked=blocked, plan=plan)
+    status_kind = actionability(
+        row,
+        state,
+        executable=executable,
+        blocked=blocked,
+        plan=plan,
+        choices=any(copy.removable for copy in duplicates),
+    )
     status_label = ACTION_LABEL[status_kind]
     # A stale observation is still a true observation. Only a finding that
     # could otherwise move a file has anything to gain from being looked at
@@ -1134,6 +1150,19 @@ def _audit_row(
         "blocked": blocked,
         "affected": affected,
         "affected_count": len(affected),
+        # One row per identical file, each saying whether it can be the one set
+        # aside and why not when it cannot.
+        "copies": [
+            {
+                "relpath": copy.relpath,
+                "folder": copy.folder or "the top of the library",
+                "name": PurePosixPath(copy.relpath).name,
+                "size": human_size(copy.size),
+                "removable": copy.removable,
+                "reason": copy.reason,
+            }
+            for copy in duplicates
+        ],
         # What the correction is, in facts, above the fold. A folder rename
         # whose scale is only visible after opening an expander is a decision
         # made without the number that matters most.

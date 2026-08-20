@@ -83,6 +83,34 @@ that unreliable, and all three are fixed. See [the command line](docs/cli.md).
   health block as `{'ok': True, ...}`; dicts, tuples and values containing
   newlines all render line-oriented now, the way list values already did.
 
+### Added — the duplicate the audit found can now be set aside
+
+*Possible duplicate* has been in the audit since the first release and has never
+had a button. The reason recorded in the code was right the whole time —
+quarantining a copy is a different action class with its own safety rules, not a
+move — but the consequence was that the finding with the clearest answer in the
+whole audit was the one you could do nothing about.
+See [the guide](docs/using-librairy.md#identical-files-your-choice-not-a-rule).
+
+- **LibrAIry does not choose which copy you keep.** The bytes are identical, so
+  there is nothing measurable to appeal to; the difference is what the folders
+  mean to you. Every deterministic rule anyone could write — keep the deeper
+  one, keep the first alphabetically — is a preference wearing a rule's clothes,
+  and it would be applied to a whole library at once. The row lists the copies
+  and you press one.
+- **A new row state, *Your choice*.** It has a real action and is still not
+  approvable, which is the first time those two have come apart: *Approve all
+  confident* has no answer to "which one", so bulk can never reach this row.
+- **Nothing is deleted.** The copy moves to Quarantine, where it can be looked
+  at and restored. It is one approved plan, so it waits for Commit, appears
+  there beside every other decision, is journalled, and Undo puts it back.
+- **The last copy is never set aside.** Checked against the index at the moment
+  you press, not against the audit that found it — so a copy deleted by hand
+  since, or one set aside in another tab, leaves the row saying there is only
+  one left rather than offering to quarantine it. A protected copy, a changed
+  copy and one already waiting for Commit each say so on their own line instead
+  of quietly losing a button.
+
 ### Added — Music Videos is a category, not a design document
 
 The destination templates, the DJ filename parser, the version-identity rules
