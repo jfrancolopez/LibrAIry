@@ -230,6 +230,51 @@ def test_a_case_only_rename_is_refused_where_the_filesystem_cannot_express_it(
             resolve_group(conn, settings, finding)
 
 
+def test_moving_the_files_out_and_back_does_not_correct_the_capitalisation(
+    tmp_path: Path,
+) -> None:
+    """Why the case-only refusal is not solved by a two-step file move.
+
+    The obvious fix is to route every file through a reserved temporary path and
+    back — two ordinary journalled operations, no directory rename. It does not
+    work, and this is the measurement rather than the argument: on a
+    case-insensitive filesystem the destination directory *keeps its old
+    spelling*, because `mkdir` on a name that already exists in another case is
+    a no-op on the directory that is there.
+
+    It only works if the emptied source directory is removed **between** the two
+    halves — a mid-plan filesystem step the executor does not model, whose
+    failure leaves somebody's music inside a reserved namespace that
+    `validate_dest` exists to keep everything out of. That is a worse trade than
+    refusing a rename that changes nothing but capitalisation, so the refusal
+    stands and this test is why.
+    """
+    if case_sensitive(tmp_path):
+        pytest.skip("this filesystem distinguishes case, so the rename is direct")
+    shouting = tmp_path / "JAMES BROWN"
+    shouting.mkdir()
+    (shouting / "track.flac").write_text("bytes", encoding="utf-8")
+    holding = tmp_path / "holding"
+    holding.mkdir()
+
+    (shouting / "track.flac").rename(holding / "track.flac")
+    (tmp_path / "James Brown").mkdir(parents=True, exist_ok=True)
+    (holding / "track.flac").rename(tmp_path / "James Brown" / "track.flac")
+
+    #  The file went out and came back, and the folder is still shouting.
+    assert "JAMES BROWN" in {path.name for path in tmp_path.iterdir()}
+    assert "James Brown" not in {path.name for path in tmp_path.iterdir()}
+
+    #  And with the emptied directory taken away first, it works — which is the
+    #  step that cannot be an ordinary plan operation.
+    (tmp_path / "JAMES BROWN" / "track.flac").rename(holding / "track.flac")
+    (tmp_path / "JAMES BROWN").rmdir()
+    (tmp_path / "James Brown").mkdir()
+    (holding / "track.flac").rename(tmp_path / "James Brown" / "track.flac")
+
+    assert "James Brown" in {path.name for path in tmp_path.iterdir()}
+
+
 def test_an_unindexed_file_in_the_folder_refuses_the_whole_correction(
     tmp_path: Path,
 ) -> None:

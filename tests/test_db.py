@@ -88,6 +88,8 @@ def test_fresh_db_migrates_to_current_schema(tmp_path: Path) -> None:
         "idx_plans_one_active_per_optimization",
         "idx_plans_optimization_job",
         "idx_quarantine_optimization_job",
+        # One answer per conflicting file per merge.
+        "idx_merge_choices_finding",
     }
 
     columns = {row[1] for row in conn.execute("PRAGMA table_info(provider_status)")}
@@ -169,6 +171,9 @@ def test_migration_011_closes_proposals_for_files_already_filed(tmp_path: Path) 
         DROP INDEX IF EXISTS idx_plans_quarantine_entry;
         DROP INDEX IF EXISTS idx_plan_withdrawals_finding;
         DROP TABLE IF EXISTS plan_withdrawals;
+        -- Migration 030. Before `audit_findings` below, which it points at.
+        DROP INDEX IF EXISTS idx_merge_choices_finding;
+        DROP TABLE IF EXISTS merge_choices;
         -- On a table migration 010 created, so it outlives the drops above
         -- and has to come off by name.
         ALTER TABLE backup_queue DROP COLUMN verified;

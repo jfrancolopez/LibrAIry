@@ -107,7 +107,10 @@
               {% set opt = row.optimization %}
               <dl class="correction-shape">
                 <div><dt>Current</dt><dd class="mono">{{ row.current }}</dd></div>
-                <div><dt>After Commit</dt><dd class="mono">{{ row.after }}</dd></div>
+                {# "Into" for a merge: the folder is already there and probably
+                   already has files in it, which "After Commit" would not
+                   suggest. Every other decision creates its destination. #}
+                <div><dt>{{ row.after_label or 'After Commit' }}</dt><dd class="mono">{{ row.after }}</dd></div>
                 {# The path is the same for an HEVC re-encode of an MP4, so the
                    two lines above would read as "nothing changes". What changed
                    is the encoding, and it is named right here rather than left
@@ -160,7 +163,10 @@
                      <dd>the preserved original of an optimized file</dd></div>
                 {% endif %}
                 <div><dt>Current</dt><dd class="mono">{{ row.current }}</dd></div>
-                <div><dt>After Commit</dt><dd class="mono">{{ row.after }}</dd></div>
+                {# "Into" for a merge: the folder is already there and probably
+                   already has files in it, which "After Commit" would not
+                   suggest. Every other decision creates its destination. #}
+                <div><dt>{{ row.after_label or 'After Commit' }}</dt><dd class="mono">{{ row.after }}</dd></div>
                 {% if row.preserved and row.preserved.active_relpath %}
                 <div><dt>Active optimized version</dt>
                      <dd class="mono">library/{{ row.preserved.active_relpath }}</dd></div>

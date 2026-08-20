@@ -361,20 +361,28 @@ def test_an_artist_whose_tracks_are_all_loose_is_consistent() -> None:
 
 @pytest.mark.parametrize(
     "kind",
-    ["split-album", "artist-split", "album-name-mismatch", "track-numbering",
+    ["artist-split", "album-name-mismatch", "track-numbering",
      "naming-outlier", "loose-tracks"],
 )
 def test_no_music_reconciliation_finding_is_executable(kind: str) -> None:
-    """Every one of these is about a folder, or a set of them. The correction
-    plan resolves a file plus its companions in one directory — not a subtree —
-    so none of them may acquire a button by accident."""
+    """Every one of these is about a folder, or a set of them, and none has a
+    module that knows how to expand it into concrete operations.
+
+    `split-album` used to be on this list and is not any more: `merge.py` can
+    expand it, and the collisions it cannot resolve alone are asked about rather
+    than guessed. The rest still may not acquire a button by accident — an
+    `artist-split` proposes no destination at all, and which of two sections an
+    artist belongs in is a judgement about how somebody wants their library
+    arranged rather than a collision anyone can resolve by looking at two files.
+    """
     assert kind in KINDS, "a finding kind with no label renders as a bare slug"
     assert kind not in EXECUTABLE_KINDS
 
 
-def test_a_suggested_destination_does_not_make_a_finding_executable() -> None:
-    """`split-album` carries a destination. That must stay a suggestion."""
-    from librairy.corrections import is_executable
+def test_a_split_album_is_a_merge_and_carries_a_destination() -> None:
+    """The destination is what a merge needs, and the two folders in the
+    evidence are the other half of it."""
+    from librairy.merge import MERGE_KINDS
 
     files = dict(
         [
@@ -389,9 +397,28 @@ def test_a_suggested_destination_does_not_make_a_finding_executable() -> None:
         ]
     )
     split = only(audit_music.detect(view_for(files)), "split-album")
-    row = {"kind": split.kind, "dest_relpath": split.dest_relpath}
 
-    assert split.dest_relpath, "the suggestion is worth showing"
+    assert split.kind in MERGE_KINDS
+    assert split.dest_relpath
+    folders = [
+        entry.detail
+        for entry in split.evidence
+        if entry.source == "filesystem" and entry.field == "folder"
+    ]
+    assert len(folders) >= 2, "a merge needs to know which folders it speaks for"
+
+
+def test_a_suggested_destination_alone_does_not_make_a_finding_executable() -> None:
+    """`dest_relpath` is not the test and must never become it.
+
+    A detector added later could set a destination without anyone having
+    reasoned about what executing it would mean. The allowlist is where that
+    thinking is recorded.
+    """
+    from librairy.corrections import is_executable
+
+    row = {"kind": "album-name-mismatch", "dest_relpath": "Music/Pop/Queen/Opera"}
+
     assert not is_executable(row, "current")
 
 

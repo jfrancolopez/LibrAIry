@@ -1027,6 +1027,66 @@ def _audit_title(relpath: str, kind: str) -> str:
     return name or relpath if kind != "missing-artwork" else PurePosixPath(relpath).name
 
 
+def _merge_view(conn: sqlite3.Connection, settings: Settings, row: sqlite3.Row):  # noqa: ANN201
+    """What this merge would do, or None if this finding is not one.
+
+    Refusals come back as None rather than as an exception: a merge LibrAIry
+    cannot carry out is an observation, and the row already has a place to say
+    why — `blocked` is filled in by the ordinary resolution path below.
+    """
+    from librairy.merge import is_merge_finding, plan_merge
+
+    if not is_merge_finding(row):
+        return None
+    try:
+        return plan_merge(conn, settings, row, verify=False)
+    except CorrectionRefused:
+        return None
+
+
+def _merge_row(view, settings: Settings) -> dict[str, object]:  # noqa: ANN001, ARG001
+    """One merge, as the page reads it: what is settled and what is not."""
+    from librairy.merge import CHOICE_LABEL, CHOICE_NOTE
+
+    return {
+        "target": view.target,
+        "target_name": PurePosixPath(view.target).name,
+        "sources": [
+            {"relpath": source, "name": PurePosixPath(source).name}
+            for source in view.sources
+        ],
+        "moving": len(view.moving),
+        "conflicts": [
+            {
+                "relpath": conflict.relpath,
+                "name": conflict.name,
+                "dest_relpath": conflict.dest_relpath,
+                "identical": conflict.state == "identical",
+                "size": human_size(conflict.size),
+                "occupant_size": human_size(conflict.occupant_size),
+                "keep_both_relpath": conflict.keep_both_relpath,
+                "keep_both_name": PurePosixPath(conflict.keep_both_relpath).name,
+                "choice": conflict.choice,
+                "choice_label": CHOICE_LABEL.get(conflict.choice, ""),
+                "options": [
+                    {
+                        "value": option,
+                        "label": CHOICE_LABEL[option],
+                        "note": CHOICE_NOTE[option],
+                        "chosen": option == conflict.choice,
+                    }
+                    for option in conflict.options
+                ],
+            }
+            for conflict in view.conflicts
+        ],
+        "unresolved": len(view.unresolved),
+        "settled": view.settled,
+        "operations": view.operations,
+        "size": human_size(view.total_bytes),
+    }
+
+
 def _audit_row(
     conn: sqlite3.Connection, settings: Settings | None, row: sqlite3.Row
 ) -> dict[str, object]:
@@ -1040,7 +1100,20 @@ def _audit_row(
     affected: list[dict[str, str]] = []
     affected_size = 0
     blocked = ""
-    if executable and not accepted:
+    #  The other shape of choice, and the difference matters. A duplicate's
+    #  choice *is* the action — pressing a copy approves it. A merge's choices
+    #  are prerequisites: answer them all, then one Approve. So this one can
+    #  stop being a CHOICE and become approvable, and a duplicate never does.
+    merge = (
+        _merge_view(conn, settings, row)
+        if settings is not None and not accepted
+        else None
+    )
+    if merge is not None and merge.unresolved:
+        # A merge that still has questions is not resolvable into a group, and
+        # asking would raise. Its files are listed by the conflict rows.
+        executable = False
+    elif executable and not accepted:
         try:
             # `verify=False`: this is a page render, not an approval. A file
             # correction reads two or three files either way, but a folder
@@ -1095,7 +1168,8 @@ def _audit_row(
         executable=executable,
         blocked=blocked,
         plan=plan,
-        choices=any(copy.removable for copy in duplicates),
+        choices=any(copy.removable for copy in duplicates)
+        or bool(merge and merge.unresolved),
     )
     status_label = ACTION_LABEL[status_kind]
     # A stale observation is still a true observation. Only a finding that
@@ -1163,6 +1237,9 @@ def _audit_row(
             }
             for copy in duplicates
         ],
+        # Two folders becoming one: what moves cleanly, and every collision
+        # with the answers already given. Empty for everything else.
+        "merge": _merge_row(merge, settings) if merge is not None else None,
         # What the correction is, in facts, above the fold. A folder rename
         # whose scale is only visible after opening an expander is a decision
         # made without the number that matters most.

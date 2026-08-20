@@ -24,10 +24,21 @@ neither is:
   distinguish capitalisation.** `JAMES BROWN` -> `James Brown` is the *typical*
   output of the naming detector, and on APFS or NTFS the destination directory
   already exists — it is the source. Moving each file would be moving it onto
-  itself. There is a two-step dance through a temporary name that would work,
-  and it is exactly the unjournalled folder operation this module exists not to
-  do. Refused, with the reason said out loud. The same finding on the Linux
-  volume LibrAIry actually deploys to is executable.
+  itself.
+
+  The obvious fix is to route every file out to a reserved path and back, as
+  two ordinary journalled operations with no directory rename anywhere. It was
+  tried and measured, and it does not work: the destination directory keeps its
+  old spelling, because `mkdir` on a name that already exists in another case
+  does nothing to the directory that is there. It only works if the emptied
+  source directory is removed *between* the two halves — a mid-plan filesystem
+  step the executor does not model, whose failure would leave somebody's music
+  inside the reserved namespace `paths.validate_dest` exists to keep everything
+  out of. `test_subtree_corrections.py` holds the measurement so the idea does
+  not have to be re-argued from first principles.
+
+  So it is refused, with the reason said out loud, and the same finding on the
+  Linux volume LibrAIry actually deploys to is executable.
 * **A subtree bigger than `MAX_SUBTREE_FILES`.** The plan is a list a person
   reads before approving it. Six hundred rows is not a decision, it is a
   formality, and "reorganising a large subtree" is one of the classes that
@@ -69,6 +80,7 @@ def plan_moves(
     row: sqlite3.Row,
     *,
     verify: bool,
+    merging: bool = False,
 ) -> list[tuple[str, str]]:
     """Every `(source, destination)` an approved folder rename would carry out.
 
@@ -95,9 +107,14 @@ def plan_moves(
 
     source = _library_dir(settings, source_root, "this folder")
     _refuse_protected(conn, source_root, dest_root)
-    _refuse_destination(settings, source, source_root, dest_root)
+    _refuse_destination(settings, source, dest_root, merging=merging)
 
     members = _members(settings, source_root)
+    #  Before the emptiness check, and that ordering is the whole message. A
+    #  folder whose files were all deleted by hand since the audit is not an
+    #  empty folder with nothing to correct; it is a folder that is no longer
+    #  the one that was checked, and saying which file went is the useful half.
+    _refuse_vanished(conn, source_root, members)
     if not members:
         raise CorrectionRefused(
             "there are no files in this folder to move, so there is nothing to correct"
@@ -108,7 +125,6 @@ def plan_moves(
             f"correction should move at once"
         )
     _refuse_disc_structure(members)
-    _refuse_vanished(conn, source_root, members)
     _refuse_claimed(conn, members)
 
     moves: list[tuple[str, str]] = []
@@ -194,14 +210,20 @@ def _library_dir(settings: Settings, relpath: str, subject: str) -> Path:
 
 
 def _refuse_destination(
-    settings: Settings, source: Path, source_root: str, dest_root: str
+    settings: Settings, source: Path, dest_root: str, *, merging: bool
 ) -> None:
-    """The destination folder has to be somewhere nothing is yet.
+    """Is the destination somewhere these files can go?
 
-    A merge is a different decision with different questions in it — which of
-    the two `cover.jpg` files wins — and this correction was approved as a
-    rename. The case-only refusal is the interesting branch and is explained at
-    the top of the module.
+    For a rename it has to be somewhere nothing is yet: a merge is a different
+    decision with different questions in it — which of the two `cover.jpg` files
+    wins — and this correction was approved as a rename. `librairy/merge.py`
+    answers those questions and calls this with `merging=True`, which is the one
+    thing that branch turns off.
+
+    The case-only refusal is never turned off, and is explained at the top of
+    the module. It is not about what the correction is; it is about what the
+    filesystem can express, and a merge into a folder the filesystem thinks is
+    the same folder is no more representable than a rename into one.
     """
     from librairy.corrections import CorrectionRefused
 
@@ -216,6 +238,8 @@ def _refuse_destination(
             "this rename only changes capitalisation, and this filesystem treats "
             "both spellings as the same folder, so there is nothing to move it to"
         )
+    if merging:
+        return
     raise CorrectionRefused(
         f"{PurePosixPath(dest_root).name!r} already exists, and merging two folders "
         f"is a different decision from renaming one"

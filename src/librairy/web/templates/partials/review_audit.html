@@ -230,6 +230,65 @@
     </details>
     {% endif %}
 
+    {# Two folders becoming one. What moves without a question is a number;
+       what needs a question is a row, inline rather than behind a wizard —
+       answering six conflicts should be six presses on one page, not six
+       screens. `Approve merge` appears only when nothing is outstanding, and
+       the route refuses anyway, so a stale page cannot approve a half-answered
+       merge. #}
+    {% if finding.merge %}
+    <div class="audit-merge">
+      <p class="audit-scale">
+        <span class="muted">Merging into</span>
+        <strong>{{ finding.merge.target_name }}</strong>
+        <span class="muted">· {{ finding.merge.moving }} files move directly</span>
+        {% if finding.merge.conflicts %}
+        <span class="muted">· {{ finding.merge.conflicts|length }} need your choice</span>
+        {% endif %}
+        <span class="muted">· {{ finding.merge.size }}</span>
+      </p>
+      {% for conflict in finding.merge.conflicts %}
+      <div class="audit-conflict">
+        <p class="audit-conflict-head">
+          <strong>{{ conflict.name }}</strong>
+          {% if conflict.identical %}
+          <span class="muted">— the bytes are identical ({{ conflict.size }})</span>
+          {% else %}
+          <span class="muted">— incoming {{ conflict.size }}, already there
+            {{ conflict.occupant_size }}</span>
+          {% endif %}
+        </p>
+        {% if conflict.choice %}
+        <p class="audit-conflict-answer">
+          <span class="badge">{{ conflict.choice_label }}</span>
+          {% for option in conflict.options %}{% if option.chosen %}
+          <span class="muted">{{ option.note }}</span>
+          {% endif %}{% endfor %}
+        </p>
+        {% endif %}
+        <div class="audit-conflict-options">
+          {% for option in conflict.options %}
+          <form method="post" action="/review/audit/{{ finding.id }}/merge-choice">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="relpath" value="{{ conflict.relpath }}">
+            <input type="hidden" name="choice" value="{{ option.value }}">
+            {# The keep-both name is on the button, before it is pressed.
+               A name Commit invents afterwards is a name nobody approved. #}
+            <button type="submit" class="{{ 'btn-primary' if option.chosen else 'btn-ghost' }}"
+              title="{{ option.note }}">{{ option.label }}{% if option.value == 'keep-both' %}
+              as {{ conflict.keep_both_name }}{% endif %}</button>
+          </form>
+          {% endfor %}
+        </div>
+      </div>
+      {% endfor %}
+      {% if not finding.merge.settled %}
+      <p class="audit-actionability">{{ finding.merge.unresolved }} of these still need
+        your choice before this can be approved.</p>
+      {% endif %}
+    </div>
+    {% endif %}
+
     {# Two identical files, and the one thing LibrAIry will not do is choose
        between them. There is no measurable difference to appeal to — the bytes
        are the same — so the difference is what the folders mean to the person

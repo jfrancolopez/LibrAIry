@@ -9,7 +9,7 @@ from pathlib import Path
 from librairy.config import Settings
 
 LOGGER = logging.getLogger(__name__)
-SCHEMA_VERSION = 29
+SCHEMA_VERSION = 30
 
 
 class DatabaseVersionError(RuntimeError):
@@ -808,6 +808,31 @@ CREATE INDEX idx_proposals_category ON proposals(category);
 CREATE INDEX idx_proposals_group_id ON proposals(group_id);
 """
 
+#  One answer to one collision in one merge. Two folders each holding a
+#  `cover.jpg` is a question no rule answers, so the person answers it — and a
+#  merge with six conflicts is six separate decisions made while reading six
+#  pairs of files. Losing them on a refresh would make the page an exam.
+#
+#  Deliberately not a general "choices" table. This is the smallest durable
+#  representation of the one thing that has to survive between reading a
+#  conflict and approving the merge; a framework for choices in general would
+#  be a schema for a problem nobody has yet.
+MIGRATION_030 = """
+CREATE TABLE merge_choices (
+  id               INTEGER PRIMARY KEY,
+  audit_finding_id INTEGER NOT NULL REFERENCES audit_findings(id),
+  -- The *incoming* file, which is the one the decision is about. The file it
+  -- collides with is wherever the merge would have put this one, so naming it
+  -- again would be a second copy of a fact the plan already derives.
+  relpath          TEXT NOT NULL,
+  choice           TEXT NOT NULL CHECK (choice IN
+                     ('keep-existing','use-incoming','keep-both')),
+  decided_at       TEXT NOT NULL,
+  UNIQUE (audit_finding_id, relpath)
+);
+CREATE INDEX idx_merge_choices_finding ON merge_choices(audit_finding_id);
+"""
+
 MIGRATIONS = {
     1: MIGRATION_001,
     2: MIGRATION_002,
@@ -838,6 +863,7 @@ MIGRATIONS = {
     27: MIGRATION_027,
     28: MIGRATION_028,
     29: MIGRATION_029,
+    30: MIGRATION_030,
 }
 
 

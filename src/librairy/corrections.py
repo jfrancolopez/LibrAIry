@@ -201,8 +201,11 @@ def resolve_group(
     action.
     """
     from librairy.audit import _in_dvd_structure
+    from librairy.merge import is_merge_finding
     from librairy.subtree import is_subtree_finding
 
+    if is_merge_finding(row):
+        return resolve_merge_group(conn, settings, row, verify=verify)
     if is_subtree_finding(row):
         return resolve_subtree_group(conn, settings, row, verify=verify)
 
@@ -226,6 +229,42 @@ def resolve_group(
     for affected in (primary, *companions):
         _assert_movable(conn, settings, affected)
     return CorrectionGroup(finding_id=int(row["id"]), files=(primary, *companions))
+
+
+def resolve_merge_group(
+    conn: sqlite3.Connection,
+    settings: Settings,
+    row: sqlite3.Row,
+    *,
+    verify: bool = True,
+) -> CorrectionGroup:
+    """Two folders becoming one, as the operations that answer every collision.
+
+    The group is only resolvable when every conflict has been answered — see
+    `librairy/merge.py`. An unanswered merge raises, which is what keeps a
+    half-decided merge from becoming a plan however the request arrived.
+    """
+    from librairy.merge import operations, plan_merge
+
+    view = plan_merge(conn, settings, row, verify=verify)
+    specs = operations(view)
+    return CorrectionGroup(
+        finding_id=int(row["id"]),
+        files=tuple(
+            Affected(
+                relpath=spec.src_relpath,
+                dest_relpath=spec.dest_relpath,
+                role="displaced" if spec.op_type == "quarantine" else "member",
+                reason=(
+                    "set aside so the merge could go ahead"
+                    if spec.op_type == "quarantine"
+                    else f"merged into {PurePosixPath(view.target).name}"
+                ),
+            )
+            for spec in specs
+        ),
+        subject="merge",
+    )
 
 
 def resolve_subtree_group(
@@ -414,16 +453,7 @@ def accept_correction(conn: sqlite3.Connection, settings: Settings, finding_id: 
         raise CorrectionRefused(_refusal(row, state))
 
     group = resolve_group(conn, settings, row)
-    specs = [
-        OperationSpec(
-            op_type="move",
-            src_root="library",
-            src_relpath=affected.relpath,
-            dest_root="library",
-            dest_relpath=affected.dest_relpath,
-        )
-        for affected in group.files
-    ]
+    specs = _specs_for(conn, settings, row, group)
     plan_id = create_plan(conn, specs, settings)
     for seq, affected in enumerate(group.files, start=1):
         conn.execute(
@@ -454,6 +484,33 @@ def accept_correction(conn: sqlite3.Connection, settings: Settings, finding_id: 
         (plan_id, utc_now(), finding_id),
     )
     return plan_id
+
+
+def _specs_for(
+    conn: sqlite3.Connection, settings: Settings, row: sqlite3.Row, group: CorrectionGroup
+) -> list[OperationSpec]:
+    """The operations this correction becomes.
+
+    Every correction but one is a list of moves and can be read straight off the
+    group. A merge is not: `keep existing` is a quarantine and no move at all,
+    and `use incoming` is a quarantine *followed by* a move, in that order and
+    only that order. So the merge planner produces its own operations and this
+    asks it rather than guessing from the group it produced.
+    """
+    from librairy.merge import is_merge_finding, operations, plan_merge
+
+    if is_merge_finding(row):
+        return operations(plan_merge(conn, settings, row, verify=True))
+    return [
+        OperationSpec(
+            op_type="move",
+            src_root="library",
+            src_relpath=affected.relpath,
+            dest_root="library",
+            dest_relpath=affected.dest_relpath,
+        )
+        for affected in group.files
+    ]
 
 
 def withdraw_approval(conn: sqlite3.Connection, finding_id: int) -> None:

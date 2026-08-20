@@ -167,20 +167,24 @@ def test_every_folder_kind_is_a_real_kind() -> None:
     assert set(KINDS) >= FOLDER_KINDS
 
 
-def test_the_only_executable_folder_kind_is_one_that_expands_to_moves() -> None:
-    """Renaming a folder is every file beneath it.
+def test_every_executable_folder_kind_is_one_something_can_expand() -> None:
+    """Acting on a folder is acting on every file beneath it.
 
     That used to mean no folder kind could be executable at all. It now means
-    exactly one thing: a folder kind may be executable only if `subtree.py`
-    knows how to expand it into concrete per-file moves. Any other folder kind
-    that acquires a destination is still an observation, because re-rooting a
-    `split-album` or an `artist-split` destination would produce a confident
-    plan for a decision nobody made.
+    something narrower and more useful: a folder kind may be executable only if
+    a module knows how to expand it into concrete per-file operations —
+    `subtree.py` for a rename, `merge.py` for a merge. A folder kind that
+    acquires a `dest_relpath` and no expander stays an observation, because
+    re-rooting an `artist-split` destination would produce a confident plan for
+    a decision nobody made.
     """
+    from librairy.merge import MERGE_KINDS
     from librairy.subtree import SUBTREE_KINDS
 
-    assert FOLDER_KINDS & EXECUTABLE_KINDS == SUBTREE_KINDS
-    assert SUBTREE_KINDS <= FOLDER_KINDS
+    expandable = SUBTREE_KINDS | MERGE_KINDS
+    assert expandable == FOLDER_KINDS & EXECUTABLE_KINDS
+    assert expandable <= FOLDER_KINDS
+    assert not (SUBTREE_KINDS & MERGE_KINDS)
 
 
 def test_the_music_folder_kinds_are_all_declared() -> None:

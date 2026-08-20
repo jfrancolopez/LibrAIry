@@ -118,6 +118,29 @@ PAGE_SIZE = 50
 PREVIEW_SIZE = 10
 
 
+#  What makes a correction plan a set-aside rather than a move.
+#
+#  Asked of the *plan* and never of one operation, which is the difference
+#  between a category and a bug. A merge is a correction that quarantines the
+#  copies it displaces, so it holds operations of both shapes — and a CASE that
+#  read them one at a time counted one merge as two decisions in two groups,
+#  with its headline saying so. A correction is a set-aside when it has no
+#  library-to-library move in it at all: nothing is being rearranged, something
+#  is leaving.
+_SET_ASIDE_CASE = """
+              WHEN p.audit_finding_id IS NOT NULL AND NOT EXISTS (
+                SELECT 1 FROM plan_ops m WHERE m.plan_id = p.id
+                  AND m.op_type='move' AND m.dest_root='library'
+              ) THEN 'set-aside'
+"""
+
+#  The same rule as a WHERE fragment, for one type's page of rows.
+_HAS_LIBRARY_MOVE = (
+    "EXISTS (SELECT 1 FROM plan_ops m WHERE m.plan_id = p.id"
+    " AND m.op_type='move' AND m.dest_root='library')"
+)
+
+
 def queue_summary(conn: sqlite3.Connection) -> dict[str, Any]:
     """Decisions, operations and bytes per type — counted in SQL.
 
@@ -134,28 +157,28 @@ def queue_summary(conn: sqlite3.Connection) -> dict[str, Any]:
         """
     ).fetchone()
     plans = conn.execute(
-        """
-        SELECT
-          CASE
-            WHEN p.optimization_job_id IS NOT NULL THEN 'optimization'
-            WHEN p.audit_finding_id IS NOT NULL AND o.dest_root='quarantine'
-              THEN 'set-aside'
-            WHEN p.audit_finding_id IS NOT NULL THEN 'correction'
-            WHEN o.dest_root='quarantine' AND o.dest_relpath LIKE '_to-delete/%'
-              THEN 'delete-queue'
-            ELSE 'restore'
-          END AS kind,
-          COUNT(DISTINCT p.id) AS decisions,
-          COUNT(o.id) AS operations,
-          COALESCE(SUM(i.size), 0) AS bytes
-        FROM plans p
-        JOIN plan_ops o ON o.plan_id = p.id
-        LEFT JOIN items i ON i.id = o.item_id
-        WHERE p.status IN ('approved','executing')
-          AND (p.audit_finding_id IS NOT NULL OR p.quarantine_entry_id IS NOT NULL
-               OR p.optimization_job_id IS NOT NULL)
+        f"""
+        SELECT kind, COUNT(DISTINCT plan_id) AS decisions, COUNT(*) AS operations,
+               COALESCE(SUM(bytes), 0) AS bytes
+        FROM (
+          SELECT p.id AS plan_id, o.id AS op_id, i.size AS bytes,
+            CASE
+              WHEN p.optimization_job_id IS NOT NULL THEN 'optimization'
+              {_SET_ASIDE_CASE}
+              WHEN p.audit_finding_id IS NOT NULL THEN 'correction'
+              WHEN o.dest_root='quarantine' AND o.dest_relpath LIKE '_to-delete/%'
+                THEN 'delete-queue'
+              ELSE 'restore'
+            END AS kind
+          FROM plans p
+          JOIN plan_ops o ON o.plan_id = p.id
+          LEFT JOIN items i ON i.id = o.item_id
+          WHERE p.status IN ('approved','executing')
+            AND (p.audit_finding_id IS NOT NULL OR p.quarantine_entry_id IS NOT NULL
+                 OR p.optimization_job_id IS NOT NULL)
+        )
         GROUP BY kind
-        """
+        """  # noqa: S608 - one interpolated constant, no user input
     ).fetchall()
 
     types: dict[str, dict[str, int]] = {
@@ -263,8 +286,8 @@ def _plan_rows(
     offset: int,
 ) -> list[dict[str, Any]]:
     where = {
-        CORRECTION: "p.audit_finding_id IS NOT NULL AND o.dest_root != 'quarantine'",
-        SET_ASIDE: "p.audit_finding_id IS NOT NULL AND o.dest_root='quarantine'",
+        CORRECTION: f"p.audit_finding_id IS NOT NULL AND {_HAS_LIBRARY_MOVE}",
+        SET_ASIDE: f"p.audit_finding_id IS NOT NULL AND NOT {_HAS_LIBRARY_MOVE}",
         DELETE_QUEUE: (
             "p.quarantine_entry_id IS NOT NULL AND o.dest_root='quarantine'"
             " AND o.dest_relpath LIKE '_to-delete/%'"
@@ -329,6 +352,9 @@ def _plan_row(
         "type": kind,
         "badge": TYPE_BADGE[kind],
         "subject": folder["subject"] if folder else subject,
+        #  "After Commit" for everything but a merge, which goes *into* a folder
+        #  that is already there.
+        "after_label": (folder or {}).get("verb", ""),
         #  For an optimization the first operation preserves the original, so
         #  its destination is the quarantine path rather than what the library
         #  will hold. `_optimization_fields` supplies the real After.
@@ -529,6 +555,7 @@ def _folder_subject(
     Read from the finding rather than from the plan's operations: the finding is
     what somebody approved, and the operations are how it is carried out.
     """
+    from librairy.merge import MERGE_KINDS
     from librairy.subtree import SUBTREE_KINDS
 
     if kind != CORRECTION or not row["audit_finding_id"]:
@@ -537,7 +564,20 @@ def _folder_subject(
         "SELECT kind, relpath, dest_relpath FROM audit_findings WHERE id=?",
         (row["audit_finding_id"],),
     ).fetchone()
-    if found is None or found["kind"] not in SUBTREE_KINDS or not found["dest_relpath"]:
+    if found is None or not found["dest_relpath"]:
+        return None
+    if found["kind"] in MERGE_KINDS:
+        #  A merge is one decision however many operations carry it out — 76 is
+        #  not 76 cards. `Into` rather than `After Commit`, because the folder
+        #  it goes into is somewhere that already exists and probably already
+        #  has files in it, which "after commit" would not suggest.
+        return {
+            "subject": "Merge folders",
+            "current": f"library/{found['relpath']}",
+            "after": f"library/{found['dest_relpath']}",
+            "verb": "Into",
+        }
+    if found["kind"] not in SUBTREE_KINDS:
         return None
     return {
         "subject": PurePosixPath(found["relpath"]).name or found["relpath"],

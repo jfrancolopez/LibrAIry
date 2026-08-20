@@ -131,7 +131,9 @@ def _execute_plan_unlocked(
     # it is not what the user approved. Ordinary inbox plans are unaffected —
     # their operations are genuinely independent of one another.
     if plan["audit_finding_id"] is not None:
-        blocked = _incoherent_ops(rows, settings)
+        blocked = _incoherent_ops(rows, settings) or _occupied_destinations(
+            conn, plan_id, rows, settings
+        )
         if blocked:
             for row in rows:
                 _finish_op(conn, row["id"], blocked[row["id"]], None)
@@ -304,6 +306,55 @@ def _incoherent_ops(rows: list[sqlite3.Row], settings: Settings) -> dict[int, st
     return blocked
 
 
+def _is_merge_plan(conn: sqlite3.Connection, plan_id: str) -> bool:
+    from librairy.merge import MERGE_KINDS
+
+    placeholders = ",".join("?" * len(MERGE_KINDS))
+    return (
+        conn.execute(
+            f"SELECT 1 FROM plans p JOIN audit_findings f ON f.id = p.audit_finding_id"  # noqa: S608
+            f" WHERE p.id=? AND f.kind IN ({placeholders}) LIMIT 1",
+            (plan_id, *sorted(MERGE_KINDS)),
+        ).fetchone()
+        is not None
+    )
+
+
+def _occupied_destinations(
+    conn: sqlite3.Connection, plan_id: str, rows: list[sqlite3.Row], settings: Settings
+) -> dict[int, str]:
+    """Empty unless something has arrived where a merge was going to put a file.
+
+    A merge is the one correction whose destinations were *examined* when it was
+    approved: every collision was found, shown, and answered. A file that has
+    appeared at one of them since is a question nobody was asked, and the
+    ordinary answer — renumber and carry on — would invent a name the person
+    never approved. So the whole merge is refused, before operation one.
+
+    The plan's own effects are accounted for, which is what makes this a single
+    statement rather than a simulation. `use incoming` quarantines the file at a
+    destination and then moves another one onto it, so a destination that this
+    plan itself is vacating is not occupied as far as the merge is concerned;
+    the operations are ordered quarantines-first so that is true when it runs.
+    """
+    if not _is_merge_plan(conn, plan_id):
+        return {}
+    vacated = {
+        row["src_relpath"]
+        for row in rows
+        if row["src_root"] == "library" and row["result"] not in TERMINAL_RESULTS
+    }
+    library = _root_path(settings, "library")
+    for row in rows:
+        if row["op_type"] != "move" or row["dest_root"] != "library":
+            continue
+        if row["result"] in TERMINAL_RESULTS or row["dest_relpath"] in vacated:
+            continue
+        if validate_relpath(library, row["dest_relpath"], kind="destination").exists():
+            return {row["id"]: "refused_collision" for row in rows}
+    return {}
+
+
 def _execute_op(conn: sqlite3.Connection, row: sqlite3.Row, settings: Settings) -> str:
     if is_optimization_source(row["src_root"]):
         return _execute_adoption_op(conn, row, settings)
@@ -319,10 +370,14 @@ def _execute_op(conn: sqlite3.Connection, row: sqlite3.Row, settings: Settings) 
         return "skipped_changed"
 
     dest = validate_dest(_root_path(settings, row["dest_root"]), row["dest_relpath"])
-    if _is_adoption_plan(conn, row["plan_id"]) and dest.exists():
-        # An adoption never renumbers. See `_execute_adoption_op` for why; the
-        # preserved original is held to the same rule, because a preserved
-        # `concert (2).wav` is not what the person approved either.
+    if dest.exists() and (
+        _is_adoption_plan(conn, row["plan_id"]) or _is_merge_plan(conn, row["plan_id"])
+    ):
+        # Neither an adoption nor a merge ever renumbers. See
+        # `_execute_adoption_op` for the first; for the second, every collision
+        # in a merge was found and answered before approval, so a name invented
+        # here is a name nobody chose — including `cover (2).jpg`, which is what
+        # `keep both` produces *deliberately* and only when it was asked for.
         _finish_op(conn, row["id"], "refused_collision", None)
         _journal(conn, row, row["dest_relpath"], row["src_fingerprint"], "refused_collision")
         return "refused_collision"

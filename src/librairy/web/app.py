@@ -36,6 +36,7 @@ from librairy.filetypes import aria_label as ext_aria_label
 from librairy.filetypes import extension_info, next_ext_id
 from librairy.lifecycle import forget_vanished
 from librairy.logging import configure_logging
+from librairy.merge import record_choice as record_merge_choice
 from librairy.paths import PathValidationError
 from librairy.planner import utc_now
 from librairy.quarantine import QuarantineError
@@ -965,6 +966,28 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         except CorrectionRefused as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         return RedirectResponse("/review#library-audit", status_code=303)
+
+    @app.post("/review/audit/{finding_id}/merge-choice", include_in_schema=False)
+    def review_audit_merge_choice(
+        request: Request,  # noqa: ARG001
+        finding_id: int,
+        relpath: str = Form(...),
+        choice: str = Form(...),
+    ) -> RedirectResponse:
+        """Answer one collision inside one merge. Nothing is approved by this.
+
+        Recorded rather than carried in the approval form because a merge with
+        six conflicts is six decisions made while reading six pairs of files,
+        and losing them on a refresh would make the page an exam. Approval is
+        still a separate press, and it refuses while any answer is missing.
+        """
+        try:
+            record_merge_choice(conn, finding_id, relpath, choice)
+        except CorrectionRefused as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return RedirectResponse(
+            f"/review?focus={finding_id}#finding-{finding_id}", status_code=303
+        )
 
     @app.post("/review/audit/{finding_id}/set-aside", include_in_schema=False)
     def review_audit_set_aside(

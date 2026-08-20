@@ -116,6 +116,11 @@ EXECUTABLE_KINDS = frozenset(
         # with no answer: a phone clip needs a year and an event chosen for it,
         # and a name nobody can read has no artist to file it under.
         "music-video-misfiled",
+        # A merge, which is executable only once every collision inside it has
+        # an answer. Being in this set says the *kind* can produce a move; the
+        # `CHOICE` state is what stops one being approved before its questions
+        # are answered. See `librairy/merge.py`.
+        "split-album",
     }
 )
 

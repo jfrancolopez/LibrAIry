@@ -2565,6 +2565,18 @@ summary.timeline-head::-webkit-details-marker { display: none; }
   flex-wrap: wrap;
   align-items: baseline;
 }
+/* A merge's collisions, inline. Deliberately not a wizard: answering six
+   conflicts should be six presses on one page, not six screens. */
+.audit-merge { margin: 0 0 var(--space-2); }
+.audit-conflict {
+  border-left: 2px solid var(--border);
+  padding: var(--space-1) 0 var(--space-1) var(--space-2);
+  margin: var(--space-1) 0;
+}
+.audit-conflict-head,
+.audit-conflict-answer { margin: 0 0 var(--space-1); font-size: var(--text-sm); }
+.audit-conflict-options { display: flex; gap: var(--space-1); flex-wrap: wrap; }
+
 /* One line per identical copy, each with its own decision on it. */
 .audit-copies { margin: 0 0 var(--space-2); }
 .audit-copy {
