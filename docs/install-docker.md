@@ -110,8 +110,19 @@ docker image prune
 ```
 
 ```bash
-docker builder prune --keep-storage 2GB
+docker builder prune --reserved-space 4GB
 ```
+
+(Older Docker spells that flag `--keep-storage`.) Give it a floor rather than
+letting it take everything: cache is what makes the next rebuild quick, and
+`docker builder prune -a` throws away the part that is still doing its job.
+
+**`docker system df` is the honest number, not the image list.** Every LibrAIry
+image is about 880 MB and roughly 650 MB of that is a base shared with all the
+others, so adding up the `SIZE` column of eighteen stale builds suggests 15 GB
+where the truth is nearer 4. The `RECLAIMABLE` column already accounts for the
+sharing; `docker system df -v` shows the unique size per image if you want to
+see where it went.
 
 Check the space came back, from inside the VM rather than from the host — on
 macOS the host file stays the same size:
@@ -134,3 +145,41 @@ any you did not create yourself.
 
 This is a manual step on purpose. There is no automated cleanup job and none
 should be added: it would eventually run against something you wanted.
+
+### Which LibrAIry images to keep
+
+`docker compose build` retags `librairy:latest` and leaves the previous image
+untagged, so one dangling image appears per rebuild. Eighteen of them collected
+in a fortnight of development. That is normal, and the fix is knowing which
+three to keep rather than pruning by age:
+
+| Keep | Why |
+|---|---|
+| the image the container is running | it is the thing that is running |
+| the previous known-good one | the rollback, if the new one is wrong |
+| any published release tag | it is not rebuildable from `latest` |
+
+Tag the rollback so a prune cannot take it, and so that in six months you know
+what it was:
+
+```bash
+docker tag <old-image-id> librairy:pre-deploy-$(date +%Y%m%d)
+```
+
+Everything else with `<none>` for a name and no container attached is a
+superseded build. Check that nothing references it — a dangling image can still
+back a *stopped* container, and the buildx builder is one — then remove those
+ids specifically rather than reaching for a prune that decides for you:
+
+```bash
+docker ps -a --format '{{.Names}} {{.Image}}'
+```
+
+```bash
+docker rmi <id> <id> <id>
+```
+
+Before deleting anything, know which is which. `docker inspect <id> --format
+'{{index .Config.Labels "org.opencontainers.image.title"}}'` says whether an
+untagged image is even LibrAIry's; several projects' leftovers look identical
+in `docker images`.

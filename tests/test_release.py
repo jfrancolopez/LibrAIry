@@ -35,6 +35,29 @@ def test_the_version_has_exactly_one_source() -> None:
     assert project["tool"]["hatch"]["version"]["path"] == "src/librairy/__init__.py"
 
 
+def test_the_image_label_cannot_drift_from_the_package() -> None:
+    """A fourth place the version lived, and the one that made the published
+    image hard to identify afterwards.
+
+    `pyproject.toml` and `librairy/__init__.py` were unified; the Dockerfile's
+    `org.opencontainers.image.version` label was not, so every image built from
+    `main` is stamped with whatever that line last said — regardless of what the
+    code in it reports. Pinning them together is enough: nothing plumbs the
+    value through, so the failure mode to prevent is a bump in one place only.
+    """
+    import re
+
+    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+    label = re.search(
+        r'org\.opencontainers\.image\.version="([^"]+)"', dockerfile
+    )
+
+    assert label, "the image no longer declares a version"
+    assert label.group(1) == __version__, (
+        f"Dockerfile says {label.group(1)}, the package says {__version__}"
+    )
+
+
 def test_every_surface_that_shows_the_version_shows_the_same_one(tmp_path: Path) -> None:
     """The web footer and the CLI, against the one literal."""
     import subprocess
