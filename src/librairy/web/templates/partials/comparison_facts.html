@@ -1,0 +1,37 @@
+{# What was measured about each representation, side by side.
+
+   Every row here is a fact a tool reported: container, codec, resolution,
+   bitrate, duration, size. There is no verdict column and there is not going
+   to be one — "best" would mean LibrAIry deciding whether lossless matters
+   more than the space it costs, which is the exact question the person is
+   here to answer. Differences are marked so they are findable, not so one
+   side wins. #}
+<div class="comparison-facts">
+  {% if facts.labels %}
+  <div class="table-scroll">
+    <table class="comparison-table">
+      <thead>
+        <tr>
+          <th scope="col">Measured</th>
+          {% for member in facts.members %}
+          <th scope="col">{{ member.name }}</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for line in facts.rows %}
+        <tr class="{{ 'differs' if line.differs else '' }}">
+          <th scope="row">{{ line.label }}</th>
+          {% for value in line.cells %}
+          <td class="mono">{{ value }}</td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="muted">{{ facts.note }}</p>
+  {% else %}
+  <p class="muted">{{ facts.note }}</p>
+  {% endif %}
+</div>

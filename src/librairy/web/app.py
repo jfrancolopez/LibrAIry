@@ -75,6 +75,7 @@ from librairy.settings_service import (
     set_ollama_enabled,
     settings_page_data,
 )
+from librairy.similar_media import resolve as resolve_comparison
 from librairy.taxonomy import CATEGORIES as REVIEW_CATEGORIES
 from librairy.web.access import access_data
 from librairy.web.activity import activity
@@ -127,6 +128,7 @@ from librairy.web.review import (
     apply_opportunity_action,
     apply_queue_action,
     apply_review_action,
+    comparison_facts,
     duplicate_comparison,
     edit_proposal,
     filters_from_query,
@@ -989,6 +991,48 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         return RedirectResponse(
             f"/review?focus={finding_id}#finding-{finding_id}", status_code=303
         )
+
+    @app.get("/review/audit/{finding_id}/comparison", include_in_schema=False)
+    def review_audit_comparison(request: Request, finding_id: int) -> HTMLResponse:
+        """The measured table for one similar-media comparison.
+
+        Fetched when the panel opens rather than rendered with Review, because
+        this is where the `ffprobe` and `exiftool` calls are: forty comparisons
+        on one page would be eighty subprocesses to draw it. Read-only in both
+        senses — no database write, and nothing asked of anything outside this
+        machine.
+        """
+        try:
+            facts = comparison_facts(conn, settings, finding_id)
+        except CorrectionRefused as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return TEMPLATES.TemplateResponse(
+            request, "partials/comparison_facts.html", {"facts": facts}
+        )
+
+    @app.post("/review/audit/{finding_id}/comparison", include_in_schema=False)
+    def review_audit_resolve_comparison(
+        request: Request,  # noqa: ARG001
+        finding_id: int,
+        keep: Annotated[list[str], Form()] = [],  # noqa: B006 - starlette form list
+    ) -> RedirectResponse:
+        """Say which of these representations you want, and set the rest aside.
+
+        Every member named in `keep` stays exactly where it is; the others are
+        approved for Quarantine as one decision. Keeping all of them is a real
+        answer that produces no plan at all — there is no filesystem work in
+        leaving things alone, and a no-op plan in Commit, History and Undo
+        would be three lies for the sake of a uniform workflow.
+
+        The refusal that matters is an empty `keep`. Setting aside every
+        representation would leave the library without a recording somebody
+        has, in the name of tidying up the fact that they had two of it.
+        """
+        try:
+            resolve_comparison(conn, settings, finding_id, list(keep))
+        except CorrectionRefused as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return RedirectResponse("/review#library-audit", status_code=303)
 
     @app.post("/review/audit/{finding_id}/destination", include_in_schema=False)
     def review_audit_destination(

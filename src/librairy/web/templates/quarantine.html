@@ -195,7 +195,8 @@
             <p class="qrow-why">{{ entry.reason_text|capitalize }}.
               {# Which file. "A copy of something you already have" without
                  saying what is not enough to decide whether to restore it. #}
-              {% if entry.duplicate_of %}<span class="muted">It matches</span>
+              {% if entry.duplicate_of %}<span class="muted">{{ 'It was compared with'
+                if entry.reason_tag == 'similar' else 'It matches' }}</span>
               <span class="mono">{{ entry.duplicate_of }}</span>{% endif %}</p>
 
             {% if entry.preserved_original %}

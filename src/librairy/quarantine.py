@@ -50,14 +50,48 @@ def marked_for_deletion(relpath: str | None) -> bool:
 
 
 def _duplicate_of(conn: sqlite3.Connection, op: sqlite3.Row) -> int | None:
-    """The library file this one is a copy of, when that is why it is here."""
+    """The library file this one is a copy of, when that is why it is here.
+
+    Two ways to be here for a reason involving another file, and they resolve
+    differently because they mean different things. An exact duplicate is
+    matched by fingerprint — the same bytes are somewhere else. A similar
+    representation is not: the bytes differ, and the file it points at is one
+    of the representations the person kept.
+    """
     from librairy.inbox_duplicates import twins_of
+    from librairy.similar_media import companion_of
 
     item_id = op["item_id"]
-    if item_id is None or quarantine_reason(conn, int(item_id)) != "exact_duplicate":
+    if item_id is None:
+        return None
+    reason = _plan_reason(conn, op) or quarantine_reason(conn, int(item_id))
+    if reason == "similar_media":
+        return companion_of(conn, int(item_id))
+    if reason != "exact_duplicate":
         return None
     twins = twins_of(conn, int(item_id))
     return twins[0].item_id if twins else None
+
+
+def _plan_reason(conn: sqlite3.Connection, op: sqlite3.Row) -> str:
+    """`similar_media` when this quarantine came from a comparison.
+
+    Read off the plan's finding rather than stored a second time. A library
+    file set aside from Review has no proposal to read evidence from, so
+    `quarantine_reason` would fall through to `user` — "you said you did not
+    want it" — over a file that was set aside after comparing two encodes.
+    """
+    from librairy.similar_media import KIND
+
+    plan_id = op["plan_id"]
+    if not plan_id:
+        return ""
+    found = conn.execute(
+        "SELECT f.kind FROM plans p JOIN audit_findings f ON f.id = p.audit_finding_id"
+        " WHERE p.id=?",
+        (plan_id,),
+    ).fetchone()
+    return "similar_media" if found is not None and found["kind"] == KIND else ""
 
 
 def quarantine_reason(conn: sqlite3.Connection, item_id: int) -> str:
@@ -100,7 +134,7 @@ def record_quarantine_entry(conn: sqlite3.Connection, op: sqlite3.Row) -> None:
         """,
         (
             op["item_id"],
-            quarantine_reason(conn, op["item_id"]),
+            _plan_reason(conn, op) or quarantine_reason(conn, op["item_id"]),
             #  Which file this is a copy of. The column has existed since the
             #  first release and was written as NULL, so the Quarantine page
             #  could say "exact duplicate" and not say of *what* — which is the

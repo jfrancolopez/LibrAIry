@@ -131,8 +131,10 @@ def _execute_plan_unlocked(
     # it is not what the user approved. Ordinary inbox plans are unaffected —
     # their operations are genuinely independent of one another.
     if plan["audit_finding_id"] is not None:
-        blocked = _incoherent_ops(rows, settings) or _occupied_destinations(
-            conn, plan_id, rows, settings
+        blocked = (
+            _incoherent_ops(rows, settings)
+            or _occupied_destinations(conn, plan_id, rows, settings)
+            or _comparison_expired(conn, plan_id, rows, settings)
         )
         if blocked:
             for row in rows:
@@ -388,6 +390,41 @@ def _occupied_destinations(
             continue
         if validate_relpath(library, row["dest_relpath"], kind="destination").exists():
             return {row["id"]: "refused_collision" for row in rows}
+    return {}
+
+
+def _comparison_expired(
+    conn: sqlite3.Connection, plan_id: str, rows: list[sqlite3.Row], settings: Settings
+) -> dict[int, str]:
+    """Empty unless a representation this comparison kept is no longer there.
+
+    The answer to a similar-media comparison is a statement about a snapshot:
+    *given these four encodes, keep this one.* `_incoherent_ops` already checks
+    the ones being set aside, because they are the plan's sources. The kept one
+    is not in the plan at all — and it is the whole reason the others are safe
+    to move. If it was deleted, replaced or re-encoded between approval and
+    Commit, quarantining the alternatives acts on a choice nobody made about
+    the files as they now are.
+
+    All-or-nothing, like every other correction group: half a comparison
+    applied is not a state anybody approved.
+    """
+    from librairy.similar_media import kept_members
+
+    kept = kept_members(conn, plan_id, rows)
+    if not kept:
+        return {}
+    library = _root_path(settings, "library")
+    for relpath in kept:
+        path = validate_relpath(library, relpath, kind="source")
+        indexed = conn.execute(
+            "SELECT fingerprint FROM items WHERE root='library' AND relpath=?",
+            (relpath,),
+        ).fetchone()
+        if not path.exists() or indexed is None or not indexed["fingerprint"]:
+            return {row["id"]: "skipped_missing" for row in rows}
+        if blake2b_file(path) != indexed["fingerprint"]:
+            return {row["id"]: "skipped_changed" for row in rows}
     return {}
 
 

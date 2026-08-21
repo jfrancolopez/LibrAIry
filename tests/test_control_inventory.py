@@ -197,6 +197,12 @@ ACTION_MAY_HAVE_SEVERAL_LABELS = {
     #  the artist in, which is the entire content of the decision. `Use this
     #  one` would be one label and would say nothing.
     "POST /review/audit/{finding_id}/destination",
+    #  Two kinds at once, both legitimate. `Keep 01 - Death on Two Legs.flac`
+    #  names the representation it keeps, which is the whole decision. And
+    #  `Keep all of them` is a different answer to the same question, posted to
+    #  the same route because keeping everything is still an answer — it just
+    #  happens to be the one with no filesystem work in it.
+    "POST /review/audit/{finding_id}/comparison",
     #  The link is the plan's own identifier.
     "GET /history/plans/{plan_id}",
     #  Scope is the difference and the label is where it is said: auditing one

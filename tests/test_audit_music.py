@@ -370,10 +370,14 @@ def test_no_music_reconciliation_finding_is_executable(kind: str) -> None:
 
     `split-album` used to be on this list and is not any more: `merge.py` can
     expand it, and the collisions it cannot resolve alone are asked about rather
-    than guessed. The rest still may not acquire a button by accident — an
-    `artist-split` proposes no destination at all, and which of two sections an
-    artist belongs in is a judgement about how somebody wants their library
-    arranged rather than a collision anyone can resolve by looking at two files.
+    than guessed. The rest still may not acquire a button by accident.
+
+    `artist-split` is the interesting one to keep here. It *can* be corrected
+    now — see `destination_choice.py` — but only after a person has said which
+    section the artist belongs in, and it still carries no `dest_relpath` of its
+    own. Staying out of this set is what keeps it out of `is_executable`, and
+    therefore out of `approve all confident`: the row earns its own Approve by
+    being answered, never by being selected.
     """
     assert kind in KINDS, "a finding kind with no label renders as a bare slug"
     assert kind not in EXECUTABLE_KINDS

@@ -20,9 +20,9 @@ mean inventing the answer.
 So the finding asks. The row lists the folders that really exist, with what is
 in each, and the person presses one. Two rules keep that honest:
 
-* **No folder is invented.** Every candidate is a directory the library
-  already has, discovered from the index — never `Music/Other/Prince`, never a
-  genre a catalog suggested.
+* **No folder is invented.** The sections come from the detector's own
+  evidence and the folders inside them come from the index — never
+  `Music/Other/Prince`, never a genre a catalog suggested.
 * **No candidate is recommended.** The counts are shown because they are
   facts; they are not scored, ranked or starred. "27 files here and 12 there"
   is a reason a person might choose, not a reason LibrAIry has chosen.
@@ -99,59 +99,89 @@ def subject(row: sqlite3.Row) -> str:
 
 
 def candidates(conn: sqlite3.Connection, row: sqlite3.Row) -> tuple[Candidate, ...]:
-    """Every folder this artist actually has, read from the index.
+    """Every folder this artist has, among the sections the finding named.
 
-    Not from the finding's evidence, which is a statement about the moment the
-    audit ran. A folder emptied by hand since then is not somewhere to put
-    anything, and one created since is a real alternative the row should offer.
-    The evidence supplies the *name*; the index supplies the folders.
+    Two halves, and the split is the point. The **sections** come from the
+    finding's evidence, which is where `audit_music` recorded the branches it
+    actually found the artist under — so nothing is invented and no third home
+    appears out of a rule. The **folders and their contents** come from the
+    index, read now, so a section whose folder was emptied or renamed since the
+    audit stops being offered rather than being offered and then refusing.
+
+    Deliberately not a scan of everything under `Music/`. That answers the same
+    question and reads the whole music half of the index once per row on a page
+    that can hold fifty of them; these are prefix queries against the
+    `(root, relpath)` index, bounded by the number of sections in the evidence.
     """
     name = subject(row)
     if not name:
         return ()
-    folders: dict[str, list[str]] = {}
-    for item in conn.execute(
-        "SELECT relpath, size FROM items"
-        " WHERE root='library' AND missing_since IS NULL AND relpath LIKE 'Music/%'"
-    ):
-        folder = _artist_folder(str(item["relpath"]), name)
-        if folder:
-            folders.setdefault(folder, []).append(str(item["relpath"]))
-    found = [
-        Candidate(
-            relpath=folder,
-            files=len(members),
-            albums=len({_album_of(folder, member) for member in members}),
-            bytes=_bytes_under(conn, folder),
-        )
-        for folder, members in sorted(folders.items())
+    found: list[Candidate] = []
+    for section in _sections(row):
+        folder = _artist_folder_under(conn, section, name)
+        if not folder or any(candidate.relpath == folder for candidate in found):
+            continue
+        counted = _contents(conn, folder)
+        if counted is not None:
+            found.append(counted)
+    found.sort(key=lambda candidate: candidate.relpath)
+    #  Too many is not "show the first six": six of twelve is a choice with the
+    #  other half hidden. A split that wide is a question about the layout of
+    #  the whole library, and the row goes back to reporting it.
+    return () if len(found) > MAX_CANDIDATES else tuple(found)
+
+
+def _sections(row: sqlite3.Row) -> list[str]:
+    """`Music/Pop`, `Music/Rock` — the branches the detector reported.
+
+    Plus the branch of the finding's own path, which is the one it is anchored
+    at and which the evidence does not always repeat.
+    """
+    sections = [
+        str(entry.detail)
+        for entry in _evidence(row)
+        if entry.field in {"mostly under", "also under"} and entry.detail
     ]
-    return tuple(found) if len(found) <= MAX_CANDIDATES else ()
+    parts = str(row["relpath"]).split("/")
+    if len(parts) >= 3:
+        sections.append("/".join(parts[:-2]))
+    return list(dict.fromkeys(sections))
 
 
-def _artist_folder(relpath: str, name: str) -> str:
-    """`Music/Pop/Prince/Album/01.flac` -> `Music/Pop/Prince`, if it is theirs."""
+def _artist_folder_under(conn: sqlite3.Connection, section: str, name: str) -> str:
+    """The artist's folder inside one section, spelled as the disk spells it."""
     from librairy.audit_music import key
 
-    parts = relpath.split("/")
-    for depth in range(2, len(parts)):
-        if key(parts[depth - 1]) == key(name):
-            return "/".join(parts[:depth])
+    for item in conn.execute(
+        "SELECT relpath FROM items"
+        " WHERE root='library' AND missing_since IS NULL AND relpath LIKE ?"
+        " ORDER BY relpath",
+        (f"{section}/%",),
+    ):
+        parts = str(item["relpath"]).split("/")
+        depth = len(section.split("/"))
+        if len(parts) > depth and key(parts[depth]) == key(name):
+            return "/".join(parts[: depth + 1])
     return ""
 
 
-def _album_of(folder: str, relpath: str) -> str:
-    rest = relpath[len(folder) + 1 :].split("/")
-    return rest[0] if len(rest) > 1 else ""
-
-
-def _bytes_under(conn: sqlite3.Connection, folder: str) -> int:
-    found = conn.execute(
-        "SELECT COALESCE(SUM(size), 0) AS total FROM items"
+def _contents(conn: sqlite3.Connection, folder: str) -> Candidate | None:
+    files = 0
+    albums: set[str] = set()
+    total = 0
+    for item in conn.execute(
+        "SELECT relpath, size FROM items"
         " WHERE root='library' AND missing_since IS NULL AND relpath LIKE ?",
         (f"{folder}/%",),
-    ).fetchone()
-    return int(found["total"] or 0)
+    ):
+        files += 1
+        total += int(item["size"] or 0)
+        rest = str(item["relpath"])[len(folder) + 1 :].split("/")
+        if len(rest) > 1:
+            albums.add(rest[0])
+    if not files:
+        return None
+    return Candidate(relpath=folder, files=files, albums=len(albums), bytes=total)
 
 
 # --- the answer ---------------------------------------------------------------------

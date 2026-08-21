@@ -404,6 +404,9 @@ def test_commit_shows_one_decision(tmp_path: Path) -> None:
     assert rows[0]["subject"] == "Bring Prince together"
     assert rows[0]["is_file"] is False
     assert rows[0]["after"].endswith(POP)
+    #  The folder that moves, not the album the finding is anchored at — which
+    #  after this choice sits inside the destination and is going nowhere.
+    assert rows[0]["current"].endswith(ROCK)
 
 
 def test_committing_merges_into_the_chosen_folder(tmp_path: Path) -> None:

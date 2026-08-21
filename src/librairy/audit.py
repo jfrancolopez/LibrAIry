@@ -83,6 +83,11 @@ KINDS = {
     "music-video-misfiled": "Music video in the wrong place",
     "music-video-personal": "Personal clip under Music Videos",
     "music-video-unreadable": "Music video nobody can be sure about",
+    # Not a duplicate and never described as one: the bytes differ. czkawka
+    # paired these by what they look or sound like, and the question is which
+    # representation you want. See `audit_duplicates` for the byte-identical
+    # case, which is a different question with a different answer.
+    "similar-media": "The same thing, encoded twice",
 }
 
 # Kinds whose correction is a concrete, deterministic filesystem move that
@@ -413,6 +418,12 @@ def detect(
         findings.extend(audit_music.detect(view, collections=collections))
         if conn is not None:
             findings.extend(_catalog_tier(conn, view, run))
+    if conn is not None and "similar-media" not in skip:
+        #  Needs the connection and nothing else: czkawka already did the
+        #  comparing, in its own pass, and this only reads what it wrote.
+        from librairy import similar_media
+
+        findings.extend(similar_media.detect(conn))
     for finding in findings:
         row = view.indexed.get(finding.relpath)
         if row is not None:

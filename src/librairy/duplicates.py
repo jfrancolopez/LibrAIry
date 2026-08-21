@@ -334,8 +334,11 @@ def _read_media(path: Path, settings: Settings) -> dict[str, str]:
     if audio:
         if audio.get("codec_name"):
             facts["Audio codec"] = str(audio["codec_name"])
-        if audio.get("sample_rate"):
-            facts["Sample rate"] = f"{int(audio['sample_rate']) // 1000} kHz"
+        #  Guarded against rounding to nothing: a stream reporting 800 Hz, or a
+        #  file ffprobe half-read, produced "0 kHz" — which is not a missing
+        #  fact, it is a wrong one, printed beside the real measurements.
+        if _khz(audio.get("sample_rate")):
+            facts["Sample rate"] = f"{_khz(audio['sample_rate'])} kHz"
         if audio.get("channels"):
             facts["Channels"] = str(audio["channels"])
     # ffprobe's format-level bit_rate is dropped by our parser, and the stream
@@ -367,6 +370,13 @@ def _read_image(path: Path, settings: Settings) -> dict[str, str]:
     if result.data.get("gps_latitude") is not None:
         facts["Location"] = "recorded in the file"
     return facts
+
+
+def _khz(value: Any) -> int:
+    try:
+        return int(value) // 1000
+    except (TypeError, ValueError):
+        return 0
 
 
 def _first_stream(streams: Any, codec_type: str) -> dict[str, Any] | None:

@@ -2587,6 +2587,55 @@ summary.timeline-head::-webkit-details-marker { display: none; }
 .audit-conflict-answer { margin: 0 0 var(--space-1); font-size: var(--text-sm); }
 .audit-conflict-options { display: flex; gap: var(--space-1); flex-wrap: wrap; }
 
+/* One artist, two folders. Each candidate is a line saying what is really in
+   it — counted, never ranked, and never marked as the one to pick. */
+.audit-destination { margin: 0 0 var(--space-2); }
+.audit-candidate {
+  display: flex;
+  gap: var(--space-2);
+  align-items: baseline;
+  flex-wrap: wrap;
+  padding: var(--space-1) 0;
+  font-size: var(--text-sm);
+}
+
+/* Several encodes of one thing. The measured table is the wide part, so it
+   scrolls inside its own box rather than pushing the page sideways. */
+.audit-comparison { margin: 0 0 var(--space-2); }
+.audit-comparison-options {
+  display: flex;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+  align-items: center;
+}
+.audit-comparison-member {
+  display: flex;
+  gap: var(--space-1);
+  align-items: baseline;
+  flex-wrap: wrap;
+  font-size: var(--text-sm);
+  width: 100%;
+}
+.comparison-details summary { cursor: pointer; }
+.comparison-facts { margin: var(--space-2) 0; }
+.table-scroll { overflow-x: auto; max-width: 100%; }
+.comparison-table {
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+  min-width: 100%;
+}
+.comparison-table th,
+.comparison-table td {
+  text-align: left;
+  padding: var(--space-1) var(--space-2) var(--space-1) 0;
+  vertical-align: baseline;
+  white-space: nowrap;
+}
+/* Marked so a difference is findable, never so one side reads as the winner:
+   both cells are emphasised, and neither is coloured "good" or "bad". */
+.comparison-table tr.differs th,
+.comparison-table tr.differs td { border-bottom: 1px solid var(--border); }
+
 /* One line per identical copy, each with its own decision on it. */
 .audit-copies { margin: 0 0 var(--space-2); }
 .audit-copy {

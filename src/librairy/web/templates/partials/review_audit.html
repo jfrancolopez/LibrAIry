@@ -349,6 +349,77 @@
     </div>
     {% endif %}
 
+    {# The same recording, encoded twice. Not the same bytes — no fingerprint
+       pairs these — so there is nothing to "resolve": there is a comparison,
+       and a person who knows whether lossless matters more to them than the
+       space it costs. The measured table is fetched when this is opened, not
+       rendered with the page: that is where the ffprobe calls are. #}
+    {% if finding.comparison %}
+    <div class="audit-comparison">
+      <p class="audit-scale">
+        <span class="muted">{{ finding.comparison.count }} representations of the
+          same thing.</span>
+        <span class="muted">Nothing is deleted — whatever you do not keep goes to
+          Quarantine.</span>
+      </p>
+      <details class="comparison-details">
+        <summary>Compare them</summary>
+        {# `toggle`, not `revealed`: the panel is inside a closed `<details>`,
+           and "has this scrolled into view" is not the same question as "has
+           this been opened". The first one fires when the row happens to be
+           near the viewport, which is how a page of forty comparisons would
+           quietly start forty ffprobes nobody asked for. #}
+        <div hx-get="/review/audit/{{ finding.id }}/comparison"
+             hx-trigger="toggle once from:closest details" hx-swap="outerHTML">
+          <p class="muted">Measuring…</p>
+        </div>
+      </details>
+      {% if finding.comparison.pair %}
+      {# Two of them, so each button names the one it keeps. `Keep FLAC` says
+         what happens; a checkbox and a submit button says it in two steps. #}
+      <div class="audit-comparison-options">
+        {% for member in finding.comparison.members %}
+        <form method="post" action="/review/audit/{{ finding.id }}/comparison">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="keep" value="{{ member.relpath }}">
+          <button type="submit">Keep {{ member.name }}</button>
+        </form>
+        {% endfor %}
+        <form method="post" action="/review/audit/{{ finding.id }}/comparison">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          {% for member in finding.comparison.members %}
+          <input type="hidden" name="keep" value="{{ member.relpath }}">
+          {% endfor %}
+          <button type="submit">Keep all of them</button>
+        </form>
+      </div>
+      {% else %}
+      {# More than two, so the answer is a set rather than a name. At least one
+         has to be kept, and the route refuses an empty selection however the
+         request arrived. #}
+      <form method="post" action="/review/audit/{{ finding.id }}/comparison"
+            class="audit-comparison-options">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        {% for member in finding.comparison.members %}
+        <label class="audit-comparison-member">
+          <input type="checkbox" name="keep" value="{{ member.relpath }}">
+          <span class="mono">{{ member.folder }}/</span><strong>{{ member.name }}</strong>
+          <span class="muted">{{ member.size }}</span>
+        </label>
+        {% endfor %}
+        <button type="submit">Keep the ticked ones</button>
+      </form>
+      <form method="post" action="/review/audit/{{ finding.id }}/comparison">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        {% for member in finding.comparison.members %}
+        <input type="hidden" name="keep" value="{{ member.relpath }}">
+        {% endfor %}
+        <button type="submit">Keep all of them</button>
+      </form>
+      {% endif %}
+    </div>
+    {% endif %}
+
     {# Two identical files, and the one thing LibrAIry will not do is choose
        between them. There is no measurable difference to appeal to — the bytes
        are the same — so the difference is what the folders mean to the person

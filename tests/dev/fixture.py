@@ -19,6 +19,7 @@ from pathlib import Path, PurePosixPath
 
 from fastapi.testclient import TestClient
 
+from librairy import similar_media
 from librairy.audit import Finding, record_findings
 from librairy.config import Settings
 from librairy.corrections import accept_correction
@@ -66,6 +67,13 @@ FILES: dict[str, bytes | None] = {
     "Music/Rock/Queen/Hot Space/cover.jpg": b"the sleeve filed under Rock",
     "Music/Pop/Queen/Hot Space/01 - Staying Power.flac": b"q2",
     "Music/Pop/Queen/Hot Space/cover.jpg": b"a different scan of the sleeve",
+    # 10b. the same recording twice, and the same picture at three sizes. No
+    #      hash pairs any of these — czkawka does, and the question is which
+    #      representation you want rather than which file is correct.
+    "Music/Rock/Queen/A Night at the Opera/01 - Death on Two Legs.mp3": b"a smaller rip",
+    "Photos/2022/Sunset/IMG_5000.jpg": None,
+    "Photos/2022/Sunset/IMG_5000-1600.jpg": b"a resize for the web",
+    "Photos/2022/Sunset/IMG_5000-800.jpg": b"a smaller resize",
     # 11. one file per extension the shared `?` control explains, so every
     #     surface that lists files has a control to press. These were the gap:
     #     Search, History and Quarantine had no rows at all, so the repaired
@@ -447,6 +455,8 @@ def build_app(root: Path):  # noqa: ANN201
         None,
         [EvidenceEntry("filesystem", "name", "IMG_4099.MOV", 0.85)],
     )
+    _similar_representations(conn)
+    batch.extend(similar_media.detect(conn))
     record_findings(conn, batch)
 
     # 7 goes stale: the bytes change after the audit looked at them.
@@ -466,6 +476,46 @@ def build_app(root: Path):  # noqa: ANN201
     _a_file_nobody_scanned(settings)
 
     return create_app(settings, conn)
+
+
+def _similar_representations(conn) -> None:  # noqa: ANN001
+    """The czkawka pairings, written exactly as `dedup` writes them.
+
+    A stand-in for the tool rather than a stand-in for the finding: the
+    workflow reads these rows and nothing else, so a fixture that wrote the
+    findings by hand would prove the page and not the pipeline.
+    """
+    from librairy.planner import utc_now
+
+    def item(relpath: str) -> int:
+        return int(
+            conn.execute(
+                "SELECT id FROM items WHERE root='library' AND relpath=?", (relpath,)
+            ).fetchone()["id"]
+        )
+
+    pairs = [
+        (
+            "Music/Rock/Queen/A Night at the Opera/01 - Death on Two Legs.flac",
+            "Music/Rock/Queen/A Night at the Opera/01 - Death on Two Legs.mp3",
+            "audio",
+            0.97,
+        ),
+        ("Photos/2022/Sunset/IMG_5000.jpg", "Photos/2022/Sunset/IMG_5000-1600.jpg", "image", 0.94),
+        (
+            "Photos/2022/Sunset/IMG_5000-1600.jpg",
+            "Photos/2022/Sunset/IMG_5000-800.jpg",
+            "image",
+            0.92,
+        ),
+    ]
+    for left, right, kind, score in pairs:
+        first, second = sorted((item(left), item(right)))
+        conn.execute(
+            "INSERT OR IGNORE INTO similar_media_flags(item_id, similar_item_id, kind,"
+            " score, created_at) VALUES (?, ?, ?, ?, ?)",
+            (first, second, kind, score, utc_now()),
+        )
 
 
 def _an_inbox_music_video(conn, settings: Settings) -> None:  # noqa: ANN001

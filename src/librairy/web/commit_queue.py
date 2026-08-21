@@ -612,7 +612,12 @@ def _folder_subject(
     Read from the finding rather than from the plan's operations: the finding is
     what somebody approved, and the operations are how it is carried out.
     """
-    from librairy.destination_choice import DESTINATION_KINDS, chosen, subject
+    from librairy.destination_choice import (
+        DESTINATION_KINDS,
+        candidates,
+        chosen,
+        subject,
+    )
     from librairy.merge import MERGE_KINDS
     from librairy.subtree import SUBTREE_KINDS
 
@@ -633,9 +638,18 @@ def _folder_subject(
         destination = chosen(conn, int(found["id"]))
         if not destination:
             return None
+        #  The folders that move, not the folder the finding is anchored at.
+        #  The anchor is one album somewhere in the split, and after the choice
+        #  it is quite often inside the *destination* — so printing it as
+        #  "Current" would show a path that is not going anywhere.
+        moving = [c.relpath for c in candidates(conn, found) if c.relpath != destination]
         return {
             "subject": f"Bring {subject(found)} together",
-            "current": f"library/{found['relpath']}",
+            "current": (
+                f"library/{moving[0]}"
+                if len(moving) == 1
+                else f"{len(moving)} folders under library/"
+            ),
             "after": f"library/{destination}",
             "verb": "Into",
         }
@@ -661,13 +675,38 @@ def _folder_subject(
     }
 
 
+def _kept_representations(
+    conn: sqlite3.Connection, row: sqlite3.Row, found: sqlite3.Row
+) -> str:
+    """The representations a similar-media comparison left in the library."""
+    from librairy.similar_media import KIND, kept_members
+
+    if found["kind"] != KIND:
+        return ""
+    ops = conn.execute(
+        "SELECT src_root, src_relpath FROM plan_ops WHERE plan_id=?", (row["plan_id"],)
+    ).fetchall()
+    names = [PurePosixPath(name).name for name in kept_members(conn, row["plan_id"], ops)]
+    return ", ".join(names)
+
+
 def _reason(conn: sqlite3.Connection, row: sqlite3.Row, kind: str) -> str:
     """Why this is waiting, in the words of the decision that made it."""
     if kind in (CORRECTION, SET_ASIDE) and row["audit_finding_id"]:
         found = conn.execute(
-            "SELECT summary FROM audit_findings WHERE id=?", (row["audit_finding_id"],)
+            "SELECT kind, summary FROM audit_findings WHERE id=?",
+            (row["audit_finding_id"],),
         ).fetchone()
-        return found["summary"] if found else "Approved in Library Review."
+        if found is None:
+            return "Approved in Library Review."
+        kept = _kept_representations(conn, row, found)
+        if kept:
+            #  The finding's summary says what was found; on this page the
+            #  useful sentence is what survives it. A card headed by the file
+            #  that is leaving has to name the one that is staying, or "set
+            #  aside 2 of 3" is a count with no reassurance in it.
+            return f"You kept {kept}. Nothing is deleted."
+        return found["summary"]
     if kind == DELETE_QUEUE:
         return "You chose Delete queue. Nothing is deleted."
     if kind == RESTORE and row["quarantine_entry_id"]:

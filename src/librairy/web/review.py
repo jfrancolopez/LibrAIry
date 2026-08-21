@@ -1093,6 +1093,85 @@ def _merge_row(view, settings: Settings) -> dict[str, object]:  # noqa: ANN001, 
     }
 
 
+def comparison_facts(
+    conn: sqlite3.Connection, settings: Settings, finding_id: int
+) -> dict[str, object]:
+    """The measured table for one comparison, built on demand.
+
+    Fetched rather than rendered with the page, because this is where the
+    `ffprobe` calls are. Nothing is written and nothing is fetched from
+    outside the machine: the readers are the same ones the inbox comparison
+    panel has always used, and they ask the file, not the internet.
+    """
+    from librairy.corrections import load_finding
+    from librairy.similar_media import compare
+
+    view = compare(conn, settings, load_finding(conn, finding_id), measure=True)
+    if view is None:
+        return {"labels": (), "members": [], "rows": [], "note": "There is only one of these left."}
+    differences = set(view.differences)
+    rows = [
+        {
+            "label": label,
+            #  `cells`, not `values`: Jinja resolves `line.values` on a dict to
+            #  the dict's own `values` method and renders nothing, with no
+            #  error until something tries to iterate it.
+            "cells": view.values(label),
+            "differs": label in differences,
+        }
+        for label in view.labels
+    ]
+    return {
+        "labels": view.labels,
+        "members": [{"name": member.name, "relpath": member.relpath} for member in view.members],
+        "rows": rows,
+        #  Said plainly, because the absence of a recommendation is itself the
+        #  thing a person needs told. A table with no verdict column looks like
+        #  a table that has not finished loading.
+        "note": (
+            "Measured from the files themselves — nothing here is a recommendation. "
+            "Which representation you want is a decision about your library, not "
+            "about the numbers."
+            if rows
+            else "Neither file could be measured: the media tools are not available."
+        ),
+    }
+
+
+def _comparison_row(
+    conn: sqlite3.Connection, settings: Settings | None, row: sqlite3.Row
+) -> dict[str, object] | None:
+    """Two or more encodes of one thing, without the measurements.
+
+    Deliberately without them. Rendering Review must not run an `ffprobe` per
+    member per row — forty comparisons would be eighty subprocesses to draw a
+    page — and it must not write, which rules out filling the metadata cache
+    on the way past. So the row shows what the index already knows, and the
+    measured table is fetched when somebody opens it. See
+    `/review/audit/{id}/comparison`.
+    """
+    from librairy.similar_media import compare
+
+    if settings is None:
+        return None
+    view = compare(conn, settings, row, measure=False)
+    if view is None:
+        return None
+    return {
+        "members": [
+            {
+                "relpath": member.relpath,
+                "name": member.name,
+                "folder": member.folder,
+                "size": human_size(member.size),
+            }
+            for member in view.members
+        ],
+        "count": len(view.members),
+        "pair": len(view.members) == 2,
+    }
+
+
 def _destination_view(  # noqa: ANN201
     conn: sqlite3.Connection, settings: Settings | None, row: sqlite3.Row
 ):
@@ -1237,6 +1316,10 @@ def _audit_row(
         if settings is not None and not accepted
         else []
     )
+    #  And the third duplicate class: the same recording, encoded twice. Not
+    #  the same bytes, so no fingerprint pairs them and no rule ranks them —
+    #  see `librairy/similar_media.py` for why nothing here says "best".
+    comparison = _comparison_row(conn, settings, row) if not accepted else None
     views = humanize_evidence(row["evidence"]) if row["evidence"] else []
     # One value, and every control on the row derives from it. See
     # `web/actionability.py` for why inferring this from button presence was
@@ -1253,7 +1336,8 @@ def _audit_row(
         #  whole content is a decision only they could make.
         choices=any(copy.removable for copy in duplicates)
         or bool(merge and merge.unresolved)
-        or destination is not None,
+        or destination is not None
+        or comparison is not None,
     )
     status_label = ACTION_LABEL[status_kind]
     # A stale observation is still a true observation. Only a finding that
@@ -1327,6 +1411,9 @@ def _audit_row(
         # Which folder this artist should use. Present only on a destination
         # choice; `None` everywhere else, so no other row can grow buttons.
         "destination": _destination_row(destination, row) if destination is not None else None,
+        # Several encodes of one thing, and the measured table that is fetched
+        # rather than rendered. `None` for every other kind of finding.
+        "comparison": comparison,
         # The explicit Approve a resolved choice earns, and never bulk. See the
         # `choices` argument above for why the two are separate.
         "approve_choice": bool(destination is not None and merge is not None and merge.settled),
