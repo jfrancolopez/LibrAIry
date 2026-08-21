@@ -651,11 +651,20 @@ def _folder_subject(
         #  was approved and no single folder describes it: the tracks are going
         #  to two or three different albums, and some of them are not going
         #  anywhere at all.
+        #
+        #  The After has to be the albums and not the artist folder. Printing
+        #  the artist folder on both lines made the card read "Music/Rock/Queen
+        #  → Music/Rock/Queen", which is a decision that appears to do nothing.
+        albums = _filing_albums(conn, row["plan_id"])
         return {
             "subject": "File loose tracks",
             "current": f"library/{found['relpath']}",
-            "after": f"library/{found['relpath']}",
-            "verb": "Into albums under",
+            "after": (
+                f"library/{albums[0]}"
+                if len(albums) == 1
+                else f"{len(albums)} albums under library/{found['relpath']}"
+            ),
+            "verb": "Into",
         }
     if found["kind"] in DESTINATION_KINDS:
         #  A destination choice has no `dest_relpath` of its own — that is the
@@ -718,6 +727,50 @@ def _kept_representations(
     return ", ".join(names)
 
 
+def _filing_left_behind(conn: sqlite3.Connection, row: sqlite3.Row) -> str:
+    """What a filing decision leaves alone, which the summary cannot say.
+
+    The finding's own sentence counts the loose tracks it found. The decision
+    is about what happens to each of them, and "3 found" beside a card that
+    moves one of them is the audit talking over the answer.
+    """
+    from librairy.destination_choice import answers
+    from librairy.track_filing import KIND as FILING_KIND
+
+    found = conn.execute(
+        "SELECT kind FROM audit_findings WHERE id=?", (row["audit_finding_id"],)
+    ).fetchone()
+    if found is None or found["kind"] != FILING_KIND:
+        return ""
+    given = answers(conn, int(row["audit_finding_id"]))
+    moving = sum(1 for destination in given.values() if destination)
+    staying = sum(1 for destination in given.values() if destination is None)
+    if not moving:
+        return ""
+    tracks = f"{moving} track{'' if moving == 1 else 's'}"
+    if not staying:
+        return f"You chose where {tracks} should go."
+    return (
+        f"You chose where {tracks} should go. {staying} "
+        f"{'is' if staying == 1 else 'are'} staying where {'it' if staying == 1 else 'they'} "
+        f"{'is' if staying == 1 else 'are'}."
+    )
+
+
+def _filing_albums(conn: sqlite3.Connection, plan_id: str) -> list[str]:
+    """The album folders this filing decision actually puts tracks into."""
+    return sorted(
+        {
+            str(PurePosixPath(str(op["dest_relpath"])).parent)
+            for op in conn.execute(
+                "SELECT dest_relpath FROM plan_ops WHERE plan_id=? AND op_type='move'"
+                " AND dest_root='library'",
+                (plan_id,),
+            )
+        }
+    )
+
+
 def _comparison_reason(conn: sqlite3.Connection, row: sqlite3.Row) -> str:
     """Why an arriving representation is waiting, and what it will preserve."""
     preserved = conn.execute(
@@ -763,6 +816,10 @@ def _reason(conn: sqlite3.Connection, row: sqlite3.Row, kind: str) -> str:
     """Why this is waiting, in the words of the decision that made it."""
     if kind in (CORRECTION, SET_ASIDE) and not row["audit_finding_id"] and row["plan_id"]:
         return _comparison_reason(conn, row)
+    if kind == CORRECTION and row["audit_finding_id"]:
+        staying = _filing_left_behind(conn, row)
+        if staying:
+            return staying
     if kind in (CORRECTION, SET_ASIDE) and row["audit_finding_id"]:
         found = conn.execute(
             "SELECT kind, summary FROM audit_findings WHERE id=?",

@@ -43,6 +43,7 @@ from librairy.quarantine import (
     QuarantineError,
     is_preserved_original,
     marked_for_deletion,
+    remember_restored_comparison,
 )
 
 # What the user chose, derived from where the plan points rather than stored a
@@ -320,10 +321,21 @@ def settle_quarantine_plan(conn: sqlite3.Connection, plan_id: str) -> None:
     if op is None:
         return
     if intent_of(op["dest_root"], op["dest_relpath"]) == RESTORE:
+        entry = conn.execute(
+            "SELECT * FROM quarantine_entries WHERE id=?",
+            (plan["quarantine_entry_id"],),
+        ).fetchone()
         conn.execute(
             "UPDATE quarantine_entries SET restored_at=? WHERE id=?",
             (utc_now(), plan["quarantine_entry_id"]),
         )
+        if entry is not None:
+            #  The same memory the direct restore records, and this is the path
+            #  the product actually takes: pressing Restore makes a *request*,
+            #  and the file moves when the person commits it. Hooking only the
+            #  direct call left the suppression working in tests and never once
+            #  in the application.
+            remember_restored_comparison(conn, entry, int(entry["item_id"]))
 
 
 def verify_unchanged(settings: Settings, relpath: str, fingerprint: str) -> bool:

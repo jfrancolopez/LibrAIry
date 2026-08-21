@@ -562,6 +562,27 @@ def test_restoring_a_set_aside_representation_answers_the_comparison(
     assert [f for f in detect(_view(conn, settings), conn=conn) if f.kind == KIND] == []
 
 
+def test_the_deferred_restore_remembers_it_too(tmp_path: Path) -> None:
+    """Pressing Restore makes a *request*; the file moves when you commit it.
+
+    Hooking only the direct call left the memory working in tests and never
+    once in the application — the browser found it by pressing the button.
+    """
+    from librairy.quarantine_requests import request_restore
+
+    conn, settings = two_encodes(tmp_path)
+    finding = finding_for(conn, settings)
+    plan_id = resolve(conn, settings, finding["id"], [FLAC])
+    execute_plan(conn, plan_id, settings)
+    entry = conn.execute("SELECT * FROM quarantine_entries").fetchone()
+
+    restore_plan = request_restore(conn, settings, int(entry["id"]))
+    execute_plan(conn, restore_plan, settings)
+
+    assert tree(settings.library_dir) == [FLAC, MP3]
+    assert [f for f in detect(_view(conn, settings), conn=conn) if f.kind == KIND] == []
+
+
 def test_both_representations_are_present_after_the_restore(tmp_path: Path) -> None:
     from librairy.quarantine import restore_entry
 

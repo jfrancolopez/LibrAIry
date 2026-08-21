@@ -66,6 +66,16 @@ def _duplicate_of(conn: sqlite3.Connection, op: sqlite3.Row) -> int | None:
         return None
     reason = _plan_reason(conn, op) or quarantine_reason(conn, int(item_id))
     if reason == "similar_media":
+        if _replaced_by_an_arrival(conn, op):
+            #  Not a copy of anything: the file that took its place. Naming it
+            #  is the whole content of the row — "replaced" without saying by
+            #  what leaves nobody able to judge whether to put it back.
+            arrived = conn.execute(
+                "SELECT item_id FROM plan_ops WHERE plan_id=? AND op_type='move'"
+                " AND src_root='inbox' ORDER BY seq LIMIT 1",
+                (op["plan_id"],),
+            ).fetchone()
+            return int(arrived["item_id"]) if arrived and arrived["item_id"] else None
         if op["src_root"] == "inbox":
             #  An arrival set aside after a comparison. The file it points at
             #  is the filed copy it was compared with, which is recorded in the
@@ -193,7 +203,7 @@ def record_quarantine_entry(conn: sqlite3.Connection, op: sqlite3.Row) -> None:
     )
 
 
-def _remember_restored_comparison(
+def remember_restored_comparison(
     conn: sqlite3.Connection, entry, item_id: int
 ) -> None:  # noqa: ANN001
     """An explicit Restore is the person saying they want both of these.
@@ -335,7 +345,7 @@ def _restore_entry_unlocked(
         ),
     )
     sync_search_item(conn, item["id"])
-    _remember_restored_comparison(conn, entry, item["id"])
+    remember_restored_comparison(conn, entry, item["id"])
     conn.execute("UPDATE quarantine_entries SET restored_at=? WHERE id=?", (utc_now(), entry_id))
     conn.execute(
         """

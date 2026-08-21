@@ -281,6 +281,32 @@ def test_the_replaced_copy_is_called_a_previous_representation(tmp_path: Path) -
     assert is_previous_representation(conn, entry) is True
 
 
+def test_the_quarantine_row_says_replaced_rather_than_similar(tmp_path: Path) -> None:
+    """It did not leave because it looked like something. It was replaced.
+
+    "Close enough to something you already have to be worth a look" describes
+    an invitation to compare; this file left because a comparison was already
+    answered.
+    """
+    from librairy.web.quarantine import quarantine_data
+
+    conn, settings = compared(tmp_path)
+    plan_id = resolve(conn, settings, arrival_id(conn), USE_ARRIVAL)
+    execute_plan(conn, plan_id, settings)
+
+    row = next(
+        entry
+        for entry in quarantine_data(conn, settings)["entries"]
+        if "Death on Two Legs.mp3" in str(entry["original_relpath"])
+    )
+
+    assert row["reason_tag"] == "replaced"
+    assert "replaced" in row["reason_text"]
+    #  And by what. "Replaced" without saying by what leaves nobody able to
+    #  judge whether to put it back.
+    assert row["duplicate_of"].endswith(LANDING)
+
+
 def test_using_the_arrival_is_one_decision_that_cannot_half_happen(
     tmp_path: Path,
 ) -> None:

@@ -604,8 +604,14 @@ def _an_arriving_representation(conn, settings: Settings) -> None:  # noqa: ANN0
     """
     from librairy.planner import utc_now  # noqa: PLC0415
 
-    filed = "Music/Rock/Queen/A Night at the Opera/01 - Death on Two Legs.mp3"
-    arrival = settings.inbox_dir / "Death on Two Legs.flac"
+    #  Paired with a filed track that has no sibling of the arriving format, so
+    #  choosing the arrival is the in-place case: same path, different bytes,
+    #  and the copy being replaced is preserved before anything lands. Pointing
+    #  it at a stem that already has a `.flac` beside it is a different and
+    #  equally real case — a third file standing at the destination — and the
+    #  workflow refuses that one rather than renumbering it.
+    filed = "Music/Pop/Queen/Hot Space/01 - Staying Power.flac"
+    arrival = settings.inbox_dir / "Staying Power.flac"
     arrival.parent.mkdir(parents=True, exist_ok=True)
     arrival.write_bytes(b"a lossless rip of something you already have")
     scan_root(conn, "inbox", settings.inbox_dir, settings)
@@ -616,7 +622,7 @@ def _an_arriving_representation(conn, settings: Settings) -> None:  # noqa: ANN0
         ).fetchone()
         return int(row["id"]) if row else None
 
-    incoming = item("inbox", "Death on Two Legs.flac")
+    incoming = item("inbox", "Staying Power.flac")
     existing = item("library", filed)
     if incoming is None or existing is None:
         return
@@ -626,8 +632,8 @@ def _an_arriving_representation(conn, settings: Settings) -> None:  # noqa: ANN0
         " VALUES (?, 'music', ?, ?, 0.72, 'proposed', 'move', 'library', ?, ?, ?)",
         (
             incoming,
-            "Death on Two Legs.flac",
-            "Music/Rock/Queen/Death on Two Legs.flac",
+            "Staying Power.flac",
+            "Music/Pop/Queen/Staying Power.flac",
             '[{"source": "tags", "field": "artist", "detail": "Queen", '
             '"weight": 0.72}]',
             utc_now(),

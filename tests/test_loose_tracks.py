@@ -399,6 +399,16 @@ def test_commit_shows_one_decision(tmp_path: Path) -> None:
     assert len(rows) == 1
     assert rows[0]["subject"] == "File loose tracks"
     assert rows[0]["is_file"] is False
+    #  The After is the albums, not the artist folder. Printing the artist
+    #  folder on both lines made the card read `Queen -> Queen`, which is a
+    #  decision that appears to do nothing at all.
+    assert rows[0]["current"] != rows[0]["after"]
+    assert rows[0]["after"] == f"2 albums under library/{ARTIST}"
+    #  And the reason is the answer, not the question. The finding's sentence
+    #  counts what was found; this card is about what was decided.
+    assert rows[0]["reason"] == (
+        "You chose where 2 tracks should go. 1 is staying where it is."
+    )
 
 
 def test_the_details_list_every_track_and_its_destination(tmp_path: Path) -> None:

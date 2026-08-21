@@ -26,8 +26,10 @@ from librairy.planner import utc_now
 from librairy.quarantine import (
     DELETE_PILE,
     PRESERVED_ORIGINAL,
+    PREVIOUS_REPRESENTATION,
     QuarantineError,
     is_preserved_original,
+    is_previous_representation,
     mark_entry_for_deletion,
     marked_for_deletion,
     quarantine_effective_reason,
@@ -61,6 +63,11 @@ REASONS = {
     #  from the optimization job the entry is linked to, so the page and every
     #  non-UI consumer read the same answer from the same function.
     PRESERVED_ORIGINAL: "preserved when an optimized version was adopted",
+    #  Also not a value the column can hold, and derived the same way — from
+    #  the plan rather than the job. "Close enough to be worth a look" is what
+    #  the row said about a file that left because a version the person chose
+    #  took its place, which is not a look, it is a decision they made.
+    PREVIOUS_REPRESENTATION: "the version you replaced when you chose another one",
 }
 UNWANTED = "you sent it here from Review"
 
@@ -429,9 +436,15 @@ def _entries(
     return [
         {
             **dict(row),
-            "reason_text": reason_text(quarantine_effective_reason(row)),
-            "reason_tag": REASON_TAGS.get(
-                quarantine_effective_reason(row), "set aside"
+            "reason_text": (
+                REASONS[PREVIOUS_REPRESENTATION]
+                if is_previous_representation(conn, row)
+                else reason_text(quarantine_effective_reason(row))
+            ),
+            "reason_tag": (
+                "replaced"
+                if is_previous_representation(conn, row)
+                else REASON_TAGS.get(quarantine_effective_reason(row), "set aside")
             ),
             #  Which file it is a copy of. "Byte-for-byte copy of a file you
             #  already have" is the sentence this page has said for a year, and
