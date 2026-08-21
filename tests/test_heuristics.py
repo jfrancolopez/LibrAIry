@@ -125,7 +125,7 @@ def test_untagged_album_positive_and_negative(tmp_path: Path) -> None:
 
     assert result is not None
     assert result.category == "music"
-    assert result.dest_relpath == "Music/General/Unknown-Artist/Unknown-Album/Unknown-Album"
+    assert result.dest_relpath == "Music/General/Unknown Artist/Unknown-Album/Unknown-Album"
     assert classify_path(plain, settings_for(tmp_path)) is None
 
 

@@ -151,10 +151,25 @@ def test_the_destination_is_still_contained() -> None:
 # --- the blast radius ---------------------------------------------------------------
 
 
-def test_exactly_one_category_is_exempt_from_house_style() -> None:
+def test_exactly_two_categories_are_exempt_from_house_style() -> None:
     """Widening this is a decision about how a whole library reads, and would
-    change the name of every file filed under whatever is added."""
-    assert set(PARSED_FILENAME_CATEGORIES) == {"music_videos"}
+    change the name of every file filed under whatever is added.
+
+    Music joined music videos once Music organisation had both a destination
+    side and a per-track choice — the filename was the half left doing damage.
+    """
+    assert set(PARSED_FILENAME_CATEGORIES) == {"music_videos", "music"}
+
+
+def test_music_keeps_the_spelling_a_track_list_shows() -> None:
+    """The folders say who and what; the filename says which track and what it
+    is called, and that is the string a player puts in front of a person."""
+    assert render_destination(
+        "music",
+        {"genre": "Rock", "artist": "Queen", "album": "A Night at the Opera",
+         "clean_name": "01 - Death on Two Legs.flac"},
+        library_root=ROOT,
+    ).relpath == "Music/Rock/Queen/A Night at the Opera/01 - Death on Two Legs.flac"
 
 
 @pytest.mark.parametrize(
@@ -171,12 +186,6 @@ def test_exactly_one_category_is_exempt_from_house_style() -> None:
             {"genre": "Drama", "show": "The Wire", "season": 1,
              "clean_name": "S01E01 - The Target.mkv"},
             "Shows/Drama/The-Wire/Season-01/S01E01-The-Target.mkv",
-        ),
-        (
-            "music",
-            {"genre": "Rock", "artist": "Queen", "album": "A Night at the Opera",
-             "clean_name": "01 - Death on Two Legs.flac"},
-            "Music/Rock/Queen/A-Night-at-the-Opera/01-Death-on-Two-Legs.flac",
         ),
         (
             "photos",

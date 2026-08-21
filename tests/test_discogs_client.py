@@ -144,7 +144,7 @@ def test_untagged_file_with_artist_in_the_name_resolves(tmp_path: Path) -> None:
     assert result.fields["album"] == "OK Computer"
     assert result.fields["title"] == "Karma Police"
     assert result.confidence == 0.8
-    assert result.dest_relpath == "Music/Rock/Radiohead/OK-Computer/Karma-Police.mp3"
+    assert result.dest_relpath == "Music/Rock/Radiohead/OK Computer/Karma Police.mp3"
 
 
 def test_opaque_filename_is_never_searched(tmp_path: Path) -> None:

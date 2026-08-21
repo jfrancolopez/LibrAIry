@@ -8,7 +8,8 @@ from typing import Any
 
 from librairy.config import Settings
 from librairy.models import EvidenceEntry
-from librairy.taxonomy import RenderResult, clean_name_from_title, render_destination
+from librairy.musicnames import canonical_name, parse
+from librairy.taxonomy import RenderResult, render_destination
 
 AUDIO_EXTS = {".mp3", ".flac", ".m4a", ".aac", ".ogg", ".wav"}
 
@@ -128,14 +129,23 @@ def classify_music(
 
 
 def _fields_from_tags(path: PurePosixPath, tags: dict[str, str]) -> dict[str, object]:
-    title = tags.get("title") or path.stem
+    read = parse(path.name)
+    #  A file with a track tag and no title tag takes its title from the
+    #  filename — and for a file LibrAIry itself named, the filename already
+    #  starts with the track number. Using the stem whole produced
+    #  `01 - 01 - Death on Two Legs.flac`, the number written twice, which is
+    #  what a grammar you can read back exists to prevent.
+    title = tags.get("title") or read.title or path.stem
+    disc, discs = _disc(tags)
     return {
+        "disc": disc or read.disc,
+        "discs": discs,
         "artist": tags.get("artist") or tags.get("album_artist"),
         "album": tags.get("album") or "Singles",
         "title": title,
         "year": _year(tags.get("date") or tags.get("year")) or 0,
         "genre": tags.get("genre") or "General",
-        "track": _track(tags.get("track") or tags.get("tracknumber")),
+        "track": _track(tags.get("track") or tags.get("tracknumber")) or read.track,
     }
 
 
@@ -205,11 +215,14 @@ def _fallback_fields(path: PurePosixPath) -> dict[str, object]:
 
 
 def _clean_music_name(fields: dict[str, object], ext: str) -> str:
-    track = int(fields.get("track") or 0)
-    title = str(fields.get("title") or "Untitled")
-    if track > 0:
-        return clean_name_from_title(f"{track:02d} - {title}", ext)
-    return clean_name_from_title(title, ext)
+    """`01 - Death on Two Legs.flac`. See `musicnames` for why it reads like that."""
+    return canonical_name(
+        str(fields.get("title") or "Untitled"),
+        ext,
+        track=int(fields.get("track") or 0),
+        disc=int(fields.get("disc") or 0),
+        discs=int(fields.get("discs") or 0),
+    )
 
 
 def _render_if_confident(
@@ -250,3 +263,21 @@ def _track(value: str | None) -> int:
         return 0
     first = value.split("/", 1)[0]
     return int(first) if first.isdigit() else 0
+
+
+def _disc(tags: dict[str, str]) -> tuple[int, int]:
+    """Which disc this is, and how many there are — `2/3`, or two separate tags.
+
+    Both halves matter and only together. A disc number on its own cannot say
+    whether the album has more than one disc, and a filename prefixed `1-` on a
+    single-disc rip is a distinction nobody made.
+    """
+    raw = tags.get("discnumber") or tags.get("disc") or tags.get("disk") or ""
+    number, _, total = raw.partition("/")
+    discs = total.strip() or tags.get("disctotal") or tags.get("totaldiscs") or ""
+    return _digits(number), _digits(discs)
+
+
+def _digits(value: str | None) -> int:
+    text = (value or "").strip()
+    return int(text) if text.isdigit() else 0

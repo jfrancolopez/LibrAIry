@@ -22,7 +22,7 @@ CATEGORIES = (
     "projects",
     "misc",
 )
-#  Categories whose filename is an identity rather than a description.
+#  Categories whose filename is read rather than merely stored.
 #
 #  A music video is named `Artist - Title (Version).ext` and `musicvideo.parse`
 #  reads exactly that back — which is what makes two pool spellings of one file
@@ -31,9 +31,19 @@ CATEGORIES = (
 #  dash and destroys the separator the whole scheme rests on, so this category
 #  is made *safe* rather than restyled. See `naming.media_filename`.
 #
-#  One member, deliberately. Widening it is a decision about how a library reads
-#  and would change the name of every file filed under whatever is added.
-PARSED_FILENAME_CATEGORIES = frozenset({"music_videos"})
+#  Music joined it for a related but distinct reason, and only once the rest of
+#  Music organisation was finished. A track's identity is in its folders —
+#  `Music/Rock/Queen/A Night at the Opera/` says artist and album — so the
+#  filename carries the one thing left, which is the part a person reads in a
+#  player's track list. `01-Death-on-Two-Legs.flac` is safe and unreadable, and
+#  the unreadability bought nothing: `media_filename` already refuses every
+#  character a filesystem, a shell or an SMB share objects to. The grammar the
+#  names follow, in both directions, is `musicnames.py`.
+#
+#  Two members, deliberately, and this is the whole of the list. Adding a third
+#  is a decision about how a library reads and changes the name of every file
+#  filed under whatever is added — it is not a refactor.
+PARSED_FILENAME_CATEGORIES = frozenset({"music_videos", "music"})
 
 DEFAULT_STYLE = "conventional"
 DEFAULT_STYLES = {

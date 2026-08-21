@@ -85,7 +85,7 @@ def test_normal_music_still_has_its_album() -> None:
             "album": "Saturday Night Fever",
             "clean_name": "01 - Night Fever.flac",
         },
-    ) == "Music/Disco/Bee-Gees/Saturday-Night-Fever/01-Night-Fever.flac"
+    ) == "Music/Disco/Bee Gees/Saturday Night Fever/01 - Night Fever.flac"
 
 
 def test_the_two_policies_cannot_quietly_become_one() -> None:

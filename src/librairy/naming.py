@@ -28,7 +28,9 @@ same hygiene, none of the restyling, so what goes in comes back out.
                        otherwise left alone.
 
 `taxonomy.PARSED_FILENAME_CATEGORIES` is the list of categories on the second
-side of that line, and it has one member. Widening it is a product decision
+side of that line, and it has two: music videos, whose filename *is* their
+identity, and music, whose filename is what a person reads in a track list
+while the folders carry the identity. Widening it again is a product decision
 about how a library reads, not a refactor.
 """
 
