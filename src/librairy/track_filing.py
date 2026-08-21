@@ -33,11 +33,29 @@ be asked again. Moving one track from one album to another says nothing about
 any other track, and clearing the rest would be the software punishing somebody
 for changing their mind.
 
-**Nothing is invented.** Every candidate is an album folder that already exists
-under this artist, read from the index. `Unknown Album`, `Album (2)` and `Misc`
-are the destinations a rule would produce to make the row actionable, and a row
-that is actionable because it invented somewhere to put things is worse than an
-observation.
+**Nothing is invented.** Every candidate is either an album folder that already
+exists under this artist, read from the index, or one the file itself names in
+its own tags. `Unknown Album`, `Album (2)` and `Misc` are the destinations a
+rule would produce to make the row actionable, and a row that is actionable
+because it invented somewhere to put things is worse than an observation.
+
+That second kind of candidate — a folder that does not exist yet — is the one
+addition, and it is the common case rather than an edge one. A shelf of loose
+Queen tracks tagged `A Night at the Opera` with no such folder is what a messy
+library actually looks like, and refusing it means the feature only works for
+libraries already half-organised. The line it does not cross is evidence: an
+**embedded album tag that agrees with the artist folder it is sitting in** is
+the file saying where it belongs, recorded by `audit_music` at the pass that
+already read it. A filename, a title resemblance and a model's opinion are not,
+and none of them will create a folder here. If the evidence is not there, the
+track keeps the candidates that exist and `Leave here`, and nothing is offered
+that somebody would have to undo.
+
+Creating the folder is not an operation. A move already makes its parent
+directory, so `Album/01 - Song.flac` brings `Album/` into being as a
+consequence of the file arriving — there is no `mkdir` in any plan, nothing to
+roll back separately, and an approved plan that turns out to move no files
+leaves nothing behind.
 
 What happens to one track once it has a destination is not new either. A track
 whose destination is free is an ordinary move; a track whose destination is
@@ -69,6 +87,11 @@ MAX_TRACKS = 25
 # word, so the value can never collide with a real relative path.
 LEAVE = ""
 
+# How `audit_music` records one loose track's album tag, and how it is read
+# back. The filename follows the prefix, because that is what identifies the
+# track inside a finding anchored at the artist folder.
+_ALBUM_OF = "album of "
+
 
 @dataclass(frozen=True)
 class Album:
@@ -80,6 +103,26 @@ class Album:
     @property
     def name(self) -> str:
         return PurePosixPath(self.relpath).name
+
+
+@dataclass(frozen=True)
+class ProposedAlbum:
+    """An album folder this artist does not have, named by the tracks themselves.
+
+    `tracks` is which loose files carry the tag, and it is the whole warrant
+    for offering the folder: the button appears on those rows and nowhere else,
+    and the page can say how many files agree without anything having to be
+    counted twice.
+    """
+
+    relpath: str
+    name: str
+    tracks: tuple[str, ...]
+
+    @property
+    def files(self) -> int:
+        """Nothing is in it. It does not exist."""
+        return 0
 
 
 @dataclass(frozen=True)
@@ -124,6 +167,14 @@ class FilingView:
     artist: str
     albums: tuple[Album, ...]
     tracks: tuple[Track, ...]
+    #  Folders that would come into being if somebody chose them. Empty when
+    #  the tags said nothing, said something useless, or named a folder the
+    #  artist already has — in which case it is an ordinary candidate above.
+    proposed: tuple[ProposedAlbum, ...] = ()
+
+    def offered(self, track: Track) -> tuple[ProposedAlbum, ...]:
+        """The new folders this particular track's own tags asked for."""
+        return tuple(album for album in self.proposed if track.relpath in album.tracks)
 
     @property
     def moving(self) -> tuple[Track, ...]:
@@ -177,16 +228,98 @@ def plan_filing(
         return None
     if len(found) > MAX_ALBUMS or len(loose) > MAX_TRACKS:
         return None
+    proposed = _proposed(row, artist, loose, found)
     given = answers(conn, int(row["id"]))
-    valid = {album.relpath for album in found}
+    valid = {album.relpath for album in found} | {album.relpath for album in proposed}
     collisions = merge_choices(conn, int(row["id"]))
     tracks = tuple(
         _with_answer(conn, settings, track, given, valid, collisions, verify=verify)
         for track in loose
     )
     return FilingView(
-        finding_id=int(row["id"]), artist=artist, albums=found, tracks=tracks
+        finding_id=int(row["id"]),
+        artist=artist,
+        albums=found,
+        tracks=tracks,
+        proposed=proposed,
     )
+
+
+def _proposed(
+    row: sqlite3.Row, artist: str, loose: tuple[Track, ...], found: tuple[Album, ...]
+) -> tuple[ProposedAlbum, ...]:
+    """Album folders the loose tracks name in their own tags and do not have.
+
+    The evidence is `audit_music`'s, written when it had the files open. Three
+    things happen to it here and each one is a way of not inventing something:
+
+    * an album whose folder now exists is dropped, because the folder is a
+      candidate already and offering to create it would be a lie about the
+      library;
+    * spellings that differ only in case and punctuation are one album, with
+      the spelling most of the tracks used — so three tracks answering
+      separately cannot produce `A Night at the Opera` beside
+      `A Night At The Opera`;
+    * spellings that differ in **words** stay separate. `Night at the Opera`
+      and `A Night at the Opera` are close strings, and close is not the same
+      release. Two candidates is honest; silently merging them is a guess with
+      a folder in it.
+    """
+    from librairy.audit_music import key
+    from librairy.naming import tidy_component
+
+    tagged: dict[str, str] = {}
+    for entry in _evidence(row):
+        if entry.source == "tags" and entry.field.startswith(_ALBUM_OF):
+            tagged[entry.field[len(_ALBUM_OF) :]] = str(entry.detail)
+    if not tagged:
+        return ()
+    existing = {key(album.name) for album in found}
+    groups: dict[str, list[tuple[str, str]]] = {}
+    for track in loose:
+        album = tagged.get(track.name, "").strip()
+        if not album or key(album) in existing:
+            continue
+        groups.setdefault(key(album), []).append((album, track.relpath))
+    proposed = []
+    for members in groups.values():
+        spelling = _commonest(spelling for spelling, _ in members)
+        name = tidy_component(spelling)
+        if not name:
+            continue
+        proposed.append(
+            ProposedAlbum(
+                relpath=f"{artist}/{name}",
+                name=name,
+                tracks=tuple(relpath for _, relpath in members),
+            )
+        )
+    proposed.sort(key=lambda album: album.relpath)
+    #  The cap is about the width of the row, so it counts every button on it.
+    if len(found) + len(proposed) > MAX_ALBUMS:
+        return ()
+    return tuple(proposed)
+
+
+def _commonest(spellings) -> str:  # noqa: ANN001
+    """The spelling most tracks used, and the first alphabetically on a tie.
+
+    Deterministic on purpose: the folder a plan creates must not depend on the
+    order rows came back in.
+    """
+    counted: dict[str, int] = {}
+    for spelling in spellings:
+        counted[spelling] = counted.get(spelling, 0) + 1
+    return sorted(counted.items(), key=lambda item: (-item[1], item[0]))[0][0]
+
+
+def _evidence(row: sqlite3.Row) -> list:
+    from librairy.proposals import decode_evidence
+
+    try:
+        return decode_evidence(row["evidence"]) if row["evidence"] else []
+    except (TypeError, ValueError):
+        return []
 
 
 def _with_answer(
@@ -331,14 +464,31 @@ def answer(
         #  about its destination is about a question that no longer exists.
         _forget_collision(conn, finding_id, relpath)
         return
-    if not any(album.relpath == dest_relpath for album in view.albums):
-        raise CorrectionRefused("that is not one of this artist's album folders")
+    if not _may_use(view, relpath, dest_relpath):
+        raise CorrectionRefused("that is not one of this track's album folders")
     previous = next((t for t in view.tracks if t.relpath == relpath), None)
     if previous is not None and previous.chosen and previous.chosen != dest_relpath:
         #  The destination moved, so what was at the old one is no longer what
         #  this track collides with. Only this track's collision answer goes.
         _forget_collision(conn, finding_id, relpath)
     record(conn, finding_id, relpath, dest_relpath)
+
+
+def _may_use(view: FilingView, relpath: str, dest_relpath: str) -> bool:
+    """Whether this track may be sent to this folder.
+
+    An existing album folder is available to every track under the artist. A
+    folder that does not exist yet is available only to the tracks whose own
+    tags named it — otherwise one track's evidence would be creating a folder
+    for a file that never claimed to belong in it, which is the invention this
+    whole feature is built not to do.
+    """
+    if any(album.relpath == dest_relpath for album in view.albums):
+        return True
+    return any(
+        album.relpath == dest_relpath and relpath in album.tracks
+        for album in view.proposed
+    )
 
 
 def _forget_collision(

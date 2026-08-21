@@ -268,6 +268,9 @@
           <span class="badge">{{ track.chosen_name }}</span>
           {% endif %}
         </p>
+        {% if track.proposed %}
+        <p class="audit-track-note muted">Albums this artist already has</p>
+        {% endif %}
         <div class="audit-track-options">
           {% for album in track.albums %}
           {% if album.relpath != track.chosen %}
@@ -290,6 +293,32 @@
           </form>
           {% endif %}
         </div>
+        {# A folder that does not exist yet, named by this track's own tags.
+           Deliberately its own block with its own words: a button that says
+           `Use` where nothing is, next to buttons that say `Use` where files
+           are, would be the software describing an invention as a discovery. #}
+        {% for album in track.proposed %}
+        <div class="audit-track-new">
+          <p class="audit-track-note">
+            <span class="muted">Album from this track's tags —</span>
+            <strong>{{ album.name }}</strong>
+            <span class="badge">New folder</span>
+          </p>
+          <p class="audit-track-note muted">
+            Nothing is there yet — filing a track into it is what creates it.
+            {% if album.agreeing > 1 %}{{ album.agreeing }} of these tracks name
+            this album in their tags.{% else %}This track names it in its tags.{% endif %}
+          </p>
+          <div class="audit-track-options">
+            <form method="post" action="/review/audit/{{ finding.id }}/file-track">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="hidden" name="relpath" value="{{ track.relpath }}">
+              <input type="hidden" name="dest_relpath" value="{{ album.relpath }}">
+              <button type="submit">Create and use {{ album.name }}</button>
+            </form>
+          </div>
+        </div>
+        {% endfor %}
         {% if track.conflict %}
         {# The chosen album already holds a file of this name. Same three
            outcomes as a folder merge, because it is the same problem. #}

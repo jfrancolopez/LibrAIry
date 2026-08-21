@@ -72,6 +72,10 @@ FILES: dict[str, bytes | None] = {
     #      exists for.
     "Music/Rock/Queen/Death on Two Legs.flac": b"a loose track",
     "Music/Rock/Queen/Spread Your Wings.flac": b"another loose track",
+    #  Two of these are tagged with an album this artist has no folder for, so
+    #  the row can offer to create it — the common case in a library that was
+    #  never organised, and the one thing a destination choice could not do.
+    "Music/Rock/Queen/We Will Rock You.flac": b"a third loose track",
     # 10b. the same recording twice, and the same picture at three sizes. No
     #      hash pairs any of these — czkawka does, and the question is which
     #      representation you want rather than which file is correct.
@@ -398,12 +402,25 @@ def build_app(root: Path):  # noqa: ANN201
     finding(
         "Music/Rock/Queen",
         "loose-tracks",
-        "2 track(s) sit directly in this artist folder, which otherwise uses "
+        "3 track(s) sit directly in this artist folder, which otherwise uses "
         "2 album folder(s).",
         None,
         [
-            EvidenceEntry("filesystem", "loose tracks", "2", 0.9),
+            EvidenceEntry("filesystem", "loose tracks", "3", 0.9),
             EvidenceEntry("library-pattern", "album folders here", "2", 0.85),
+            #  What each track's own tags say, recorded by the audit pass that
+            #  had the files open. `A Night at the Opera` exists and is an
+            #  ordinary candidate; `News of the World` does not, and is the
+            #  folder two of these tracks can ask for.
+            EvidenceEntry(
+                "tags", "album of Death on Two Legs.flac", "A Night at the Opera", 0.9
+            ),
+            EvidenceEntry(
+                "tags", "album of Spread Your Wings.flac", "News of the World", 0.9
+            ),
+            EvidenceEntry(
+                "tags", "album of We Will Rock You.flac", "News of the World", 0.9
+            ),
         ],
     )
     finding(

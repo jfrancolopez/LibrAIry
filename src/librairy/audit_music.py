@@ -560,11 +560,27 @@ def _example(tracks: list[str]) -> str:
     return PurePosixPath(sorted(tracks)[0]).name
 
 
+# What a tagger writes into `album` when it has nothing to say. None of these
+# is an album anybody would create a folder for.
+PLACEHOLDER_ALBUMS = {
+    "", "singles", "unknown", "unknownalbum", "misc", "miscellaneous",
+    "various", "variousartists", "untitled", "none", "na",
+}
+
+
 def _loose_tracks(view: LibraryView, albums: list[Album]) -> list[Finding]:
     """Tracks lying directly in an artist folder that otherwise uses albums.
 
     The convention is this artist's own. An artist whose every track is loose
     is filed consistently, and consistency is not a finding.
+
+    The finding carries each loose track's *album tag* where the file has a
+    trustworthy one, because that is the difference between a question with
+    only existing folders to offer and one that can offer to create the album
+    the file says it belongs to. Recorded here rather than read later for the
+    same reason `artist-split` records its branches: this is the pass that has
+    already opened every file, and re-probing twenty-five tracks to render a
+    Review row is not a thing to do on a page that holds fifty of them.
     """
     from librairy.audit import Finding
 
@@ -595,6 +611,7 @@ def _loose_tracks(view: LibraryView, albums: list[Album]) -> list[Finding]:
                     EvidenceEntry(
                         "library-pattern", "album folders here", str(len(nested)), 0.85
                     ),
+                    *_album_tags(view, tracks, nested),
                 ],
             )
         )
@@ -610,3 +627,36 @@ def key(value: str) -> str:
 
 def same(left: str, right: str) -> bool:
     return key(left) == key(right)
+
+
+def _album_tags(
+    view: LibraryView, tracks: tuple[str, ...], nested: list[Album]
+) -> list[EvidenceEntry]:
+    """Which album each loose track says it belongs to, where it says so.
+
+    Only tags, and only tags that agree with the folder the file is already in.
+    A track whose `artist` tag names somebody else is evidence about a
+    different artist, and an `album` of `Singles` or `Unknown Album` is a
+    tagger's placeholder rather than a release. Nothing here is derived from
+    the filename: a name is what somebody typed, and the whole point of this
+    entry is to be stronger than that.
+
+    Albums the artist already has a folder for are left out — those are already
+    candidates, and repeating them as evidence would make an existing folder
+    look like a discovery.
+    """
+    artist = PurePosixPath(tracks[0]).parent.name if tracks else ""
+    existing = {key(PurePosixPath(album.folder).name) for album in nested}
+    found: list[EvidenceEntry] = []
+    for track in sorted(tracks):
+        tags = view.tags.get(track) or {}
+        album = (tags.get("album") or "").strip()
+        if key(album) in PLACEHOLDER_ALBUMS or key(album) in existing:
+            continue
+        tagged = (tags.get("album_artist") or tags.get("artist") or "").strip()
+        if tagged and artist and not same(tagged, artist):
+            continue
+        found.append(
+            EvidenceEntry("tags", f"album of {PurePosixPath(track).name}", album, 0.9)
+        )
+    return found

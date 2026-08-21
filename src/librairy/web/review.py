@@ -1263,6 +1263,14 @@ def _filing_row(view, settings: Settings) -> dict[str, object]:  # noqa: ANN001,
     return {
         "artist": PurePosixPath(view.artist).name,
         "albums": albums,
+        "proposed": [
+            {
+                "relpath": album.relpath,
+                "name": album.name,
+                "agreeing": len(album.tracks),
+            }
+            for album in view.proposed
+        ],
         "moving": len(view.moving),
         "leaving": len(view.leaving),
         "unresolved": len(view.unresolved),
@@ -1277,6 +1285,18 @@ def _filing_row(view, settings: Settings) -> dict[str, object]:  # noqa: ANN001,
                 "leaving": track.leaving,
                 "answered": track.answered,
                 "albums": albums,
+                #  Folders that do not exist. Kept separate from `albums` all
+                #  the way to the template, because a control that offers to
+                #  create something must not look like one that found it.
+                "proposed": [
+                    {
+                        "relpath": album.relpath,
+                        "name": album.name,
+                        "agreeing": len(album.tracks),
+                    }
+                    for album in view.offered(track)
+                    if album.relpath != track.chosen
+                ],
                 #  Present only when the chosen album already holds a file of
                 #  this name. Same three outcomes as a folder merge, same
                 #  words, same storage — see `librairy/merge.py`.
