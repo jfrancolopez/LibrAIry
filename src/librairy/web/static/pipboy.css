@@ -2587,6 +2587,24 @@ summary.timeline-head::-webkit-details-marker { display: none; }
 .audit-conflict-answer { margin: 0 0 var(--space-1); font-size: var(--text-sm); }
 .audit-conflict-options { display: flex; gap: var(--space-1); flex-wrap: wrap; }
 
+/* Loose tracks, one question each. Each track is its own block so the answer
+   for one is visibly the answer for one. */
+.audit-filing { margin: 0 0 var(--space-2); }
+.audit-track {
+  border-left: 2px solid var(--border);
+  padding: var(--space-1) 0 var(--space-1) var(--space-2);
+  margin: var(--space-1) 0;
+}
+.audit-track-head { margin: 0 0 var(--space-1); font-size: var(--text-sm); }
+.audit-track-options { display: flex; gap: var(--space-1); flex-wrap: wrap; }
+
+/* An arriving file against the filed one it resembles. */
+.row-similar { margin: var(--space-1) 0 var(--space-2); }
+
+/* On a Commit card, under the buttons that inspect and above the ones that
+   act. Full width, because a picture in a narrow column is a stamp. */
+.commit-preview:not(:empty) { margin: var(--space-2) 0; }
+
 /* One artist, two folders. Each candidate is a line saying what is really in
    it — counted, never ranked, and never marked as the one to pick. */
 .audit-destination { margin: 0 0 var(--space-2); }

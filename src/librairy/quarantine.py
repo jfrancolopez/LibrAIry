@@ -66,6 +66,14 @@ def _duplicate_of(conn: sqlite3.Connection, op: sqlite3.Row) -> int | None:
         return None
     reason = _plan_reason(conn, op) or quarantine_reason(conn, int(item_id))
     if reason == "similar_media":
+        if op["src_root"] == "inbox":
+            #  An arrival set aside after a comparison. The file it points at
+            #  is the filed copy it was compared with, which is recorded in the
+            #  proposal's own evidence rather than found by fingerprint —
+            #  these two do not share bytes, which is the whole point.
+            from librairy.arrival_comparison import compared_with
+
+            return compared_with(conn, int(item_id))
         return companion_of(conn, int(item_id))
     if reason != "exact_duplicate":
         return None
@@ -81,6 +89,7 @@ def _plan_reason(conn: sqlite3.Connection, op: sqlite3.Row) -> str:
     `quarantine_reason` would fall through to `user` — "you said you did not
     want it" — over a file that was set aside after comparing two encodes.
     """
+    from librairy.arrival_comparison import is_similar_proposal
     from librairy.similar_media import KIND
 
     plan_id = op["plan_id"]
@@ -91,7 +100,35 @@ def _plan_reason(conn: sqlite3.Connection, op: sqlite3.Row) -> str:
         " WHERE p.id=?",
         (plan_id,),
     ).fetchone()
-    return "similar_media" if found is not None and found["kind"] == KIND else ""
+    if found is not None and found["kind"] == KIND:
+        return "similar_media"
+    if op["item_id"] is not None and is_similar_proposal(conn, int(op["item_id"])):
+        return "similar_media"
+    if _replaced_by_an_arrival(conn, op):
+        return "similar_media"
+    return ""
+
+
+def _replaced_by_an_arrival(conn: sqlite3.Connection, op: sqlite3.Row) -> bool:
+    """Is this filed copy leaving because an arriving version took its place?
+
+    True only for the library half of a cross-root comparison: a coherent plan
+    that quarantines something from the library and moves something from the
+    inbox into it. `PREVIOUS_REPRESENTATION` is what the page then calls it —
+    "you did not want it" would be the opposite of what happened, and "exact
+    duplicate" would be a claim about bytes that differ.
+    """
+    if op["src_root"] != "library":
+        return False
+    return (
+        conn.execute(
+            "SELECT 1 FROM plans p JOIN plan_ops o ON o.plan_id = p.id"
+            " WHERE p.id=? AND p.coherent=1 AND o.op_type='move' AND o.src_root='inbox'"
+            " LIMIT 1",
+            (op["plan_id"],),
+        ).fetchone()
+        is not None
+    )
 
 
 def quarantine_reason(conn: sqlite3.Connection, item_id: int) -> str:
@@ -116,6 +153,11 @@ def quarantine_reason(conn: sqlite3.Connection, item_id: int) -> str:
 #  `quarantine_entries.reason` is CHECK-constrained to three strings and SQLite
 #  cannot widen a CHECK, so the fourth kind is carried by the job link instead.
 PRESERVED_ORIGINAL = "preserved_original"
+
+#  The filed copy an arriving version replaced. Carried the same way and for
+#  the same reason: the CHECK on `reason` allows three values and SQLite cannot
+#  widen one, so the fourth and fifth kinds are derived from the plan.
+PREVIOUS_REPRESENTATION = "previous_representation"
 
 
 def record_quarantine_entry(conn: sqlite3.Connection, op: sqlite3.Row) -> None:
@@ -151,6 +193,32 @@ def record_quarantine_entry(conn: sqlite3.Connection, op: sqlite3.Row) -> None:
     )
 
 
+def _remember_restored_comparison(
+    conn: sqlite3.Connection, entry, item_id: int
+) -> None:  # noqa: ANN001
+    """An explicit Restore is the person saying they want both of these.
+
+    Bringing a set-aside representation back and then being asked the identical
+    comparison on the next audit is the software forgetting a decision it just
+    watched somebody make. So the restore answers it: the pairs between this
+    file and whatever it was compared with are dismissed, recorded against the
+    two fingerprints, so a later re-encode of either one is a new question
+    rather than a suppressed one.
+
+    Only for similar media. A byte-identical duplicate restored to the inbox is
+    redundant with the library again, and saying so is useful — that workflow
+    is deliberately left exactly as it was.
+    """
+    from librairy.similar_media import dismiss_between
+
+    if entry["reason"] != "similar_media":
+        return
+    partner = entry["duplicate_of"]
+    if partner is None:
+        return
+    dismiss_between(conn, [int(item_id), int(partner)])
+
+
 def quarantine_effective_reason(entry) -> str:
     """Why this file is really here, which is not always what `reason` says.
 
@@ -172,6 +240,32 @@ def quarantine_effective_reason(entry) -> str:
     if job_id is not None:
         return PRESERVED_ORIGINAL
     return str(entry["reason"] or "")
+
+
+def is_previous_representation(conn: sqlite3.Connection, entry) -> bool:  # noqa: ANN001
+    """Did this filed copy leave because an arriving version took its place?
+
+    Needs the connection, which is why it is not folded into
+    `quarantine_effective_reason`: the entry row alone cannot tell the library
+    half of a *cross-root* comparison from the library half of a
+    library-to-library one. Both are a library file with a `similar_media`
+    reason; only the plan says whether something arrived to replace it.
+    """
+    try:
+        plan_id = entry["plan_id"]
+    except (KeyError, IndexError):
+        return False
+    if not plan_id or entry["reason"] != "similar_media":
+        return False
+    return (
+        conn.execute(
+            "SELECT 1 FROM plans p JOIN plan_ops o ON o.plan_id = p.id"
+            " WHERE p.id=? AND p.coherent=1 AND o.op_type='move' AND o.src_root='inbox'"
+            " LIMIT 1",
+            (plan_id,),
+        ).fetchone()
+        is not None
+    )
 
 
 def is_preserved_original(entry) -> bool:
@@ -241,6 +335,7 @@ def _restore_entry_unlocked(
         ),
     )
     sync_search_item(conn, item["id"])
+    _remember_restored_comparison(conn, entry, item["id"])
     conn.execute("UPDATE quarantine_entries SET restored_at=? WHERE id=?", (utc_now(), entry_id))
     conn.execute(
         """

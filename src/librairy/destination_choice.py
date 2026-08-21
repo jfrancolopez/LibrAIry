@@ -211,27 +211,71 @@ def choose(
     previous = chosen(conn, finding_id)
     if previous and previous != dest_relpath:
         clear_choices(conn, finding_id)
+    record(conn, finding_id, str(row["relpath"]), dest_relpath)
+
+
+# --- the storage, shared with per-item choice ---------------------------------------
+#
+#  `destination_choices` holds one answer per *thing being placed*: the
+#  finding's own folder for a whole-finding choice, one file for a per-item one.
+#  A NULL destination means "leave this where it is", which `loose-tracks` needs
+#  and `artist-split` never writes.
+
+
+def record(
+    conn: sqlite3.Connection, finding_id: int, relpath: str, dest_relpath: str | None
+) -> None:
     conn.execute(
-        "INSERT INTO destination_choices(audit_finding_id, dest_relpath, decided_at)"
-        " VALUES (?, ?, ?)"
-        " ON CONFLICT(audit_finding_id)"
+        "INSERT INTO destination_choices(audit_finding_id, relpath, dest_relpath, decided_at)"
+        " VALUES (?, ?, ?, ?)"
+        " ON CONFLICT(audit_finding_id, relpath)"
         " DO UPDATE SET dest_relpath=excluded.dest_relpath, decided_at=excluded.decided_at",
-        (finding_id, dest_relpath, utc_now()),
+        (finding_id, relpath, dest_relpath, utc_now()),
     )
 
 
+def answers(conn: sqlite3.Connection, finding_id: int) -> dict[str, str | None]:
+    """Every answer given for this finding, keyed by what it is about."""
+    return {
+        str(row["relpath"]): (
+            str(row["dest_relpath"]) if row["dest_relpath"] is not None else None
+        )
+        for row in conn.execute(
+            "SELECT relpath, dest_relpath FROM destination_choices WHERE audit_finding_id=?",
+            (finding_id,),
+        )
+    }
+
+
+def forget(conn: sqlite3.Connection, finding_id: int, relpath: str = "") -> None:
+    """Drop one answer, or all of this finding's answers when unnamed."""
+    if relpath:
+        conn.execute(
+            "DELETE FROM destination_choices WHERE audit_finding_id=? AND relpath=?",
+            (finding_id, relpath),
+        )
+        return
+    conn.execute("DELETE FROM destination_choices WHERE audit_finding_id=?", (finding_id,))
+
+
 def chosen(conn: sqlite3.Connection, finding_id: int) -> str:
+    """The one answer a whole-finding choice has, whatever it is keyed by.
+
+    Keyed by the finding's own relpath, but read without naming it: the caller
+    that asks this has a plan row and not a finding row, and a `LIMIT 1` over a
+    table that holds exactly one row for this kind is the honest query.
+    """
     found = conn.execute(
-        "SELECT dest_relpath FROM destination_choices WHERE audit_finding_id=?",
+        "SELECT dest_relpath FROM destination_choices WHERE audit_finding_id=? LIMIT 1",
         (finding_id,),
     ).fetchone()
-    return str(found["dest_relpath"]) if found else ""
+    return str(found["dest_relpath"]) if found and found["dest_relpath"] else ""
 
 
 def clear(conn: sqlite3.Connection, finding_id: int) -> None:
     from librairy.merge import clear_choices
 
-    conn.execute("DELETE FROM destination_choices WHERE audit_finding_id=?", (finding_id,))
+    forget(conn, finding_id)
     clear_choices(conn, finding_id)
 
 

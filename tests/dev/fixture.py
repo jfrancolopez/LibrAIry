@@ -67,6 +67,11 @@ FILES: dict[str, bytes | None] = {
     "Music/Rock/Queen/Hot Space/cover.jpg": b"the sleeve filed under Rock",
     "Music/Pop/Queen/Hot Space/01 - Staying Power.flac": b"q2",
     "Music/Pop/Queen/Hot Space/cover.jpg": b"a different scan of the sleeve",
+    # 10c. loose tracks beside album folders — the per-item question, where
+    #      one answer for the group would be wrong in exactly the case it
+    #      exists for.
+    "Music/Rock/Queen/Death on Two Legs.flac": b"a loose track",
+    "Music/Rock/Queen/Spread Your Wings.flac": b"another loose track",
     # 10b. the same recording twice, and the same picture at three sizes. No
     #      hash pairs any of these — czkawka does, and the question is which
     #      representation you want rather than which file is correct.
@@ -391,6 +396,17 @@ def build_app(root: Path):  # noqa: ANN201
         ],
     )
     finding(
+        "Music/Rock/Queen",
+        "loose-tracks",
+        "2 track(s) sit directly in this artist folder, which otherwise uses "
+        "2 album folder(s).",
+        None,
+        [
+            EvidenceEntry("filesystem", "loose tracks", "2", 0.9),
+            EvidenceEntry("library-pattern", "album folders here", "2", 0.85),
+        ],
+    )
+    finding(
         "Music/Pop/Lipps Inc.",
         "naming-inconsistency",
         "Ends in a dot, which Windows silently drops.",
@@ -473,6 +489,7 @@ def build_app(root: Path):  # noqa: ANN201
     _an_inbox_music_video(conn, settings)
     _an_arriving_duplicate(conn, settings)
     _pending_decisions(conn, settings)
+    _an_arriving_representation(conn, settings)
     _a_file_nobody_scanned(settings)
 
     return create_app(settings, conn)
@@ -573,6 +590,55 @@ def _an_arriving_duplicate(conn, settings: Settings) -> None:  # noqa: ANN001
 
     _stage_quarantine_proposals(
         conn, detect_exact_duplicates(conn, settings, rmlint_check=agreed)
+    )
+
+
+def _an_arriving_representation(conn, settings: Settings) -> None:  # noqa: ANN001
+    """A better encode of something already filed, arriving in the inbox.
+
+    Not a duplicate: the bytes differ, so no fingerprint pairs these and the
+    exact-duplicate workflow never sees them. czkawka does, and the question it
+    raises has three answers rather than one — keep what is filed, use the
+    arriving one, or keep both. Written the way `dedup` writes a pairing, for
+    the same reason the library-to-library ones are.
+    """
+    from librairy.planner import utc_now  # noqa: PLC0415
+
+    filed = "Music/Rock/Queen/A Night at the Opera/01 - Death on Two Legs.mp3"
+    arrival = settings.inbox_dir / "Death on Two Legs.flac"
+    arrival.parent.mkdir(parents=True, exist_ok=True)
+    arrival.write_bytes(b"a lossless rip of something you already have")
+    scan_root(conn, "inbox", settings.inbox_dir, settings)
+
+    def item(root: str, relpath: str) -> int | None:
+        row = conn.execute(
+            "SELECT id FROM items WHERE root=? AND relpath=?", (root, relpath)
+        ).fetchone()
+        return int(row["id"]) if row else None
+
+    incoming = item("inbox", "Death on Two Legs.flac")
+    existing = item("library", filed)
+    if incoming is None or existing is None:
+        return
+    conn.execute(
+        "INSERT INTO proposals(item_id, category, clean_name, dest_relpath, confidence,"
+        " status, action, dest_root, evidence, created_at, updated_at)"
+        " VALUES (?, 'music', ?, ?, 0.72, 'proposed', 'move', 'library', ?, ?, ?)",
+        (
+            incoming,
+            "Death on Two Legs.flac",
+            "Music/Rock/Queen/Death on Two Legs.flac",
+            '[{"source": "tags", "field": "artist", "detail": "Queen", '
+            '"weight": 0.72}]',
+            utc_now(),
+            utc_now(),
+        ),
+    )
+    first, second = sorted((incoming, existing))
+    conn.execute(
+        "INSERT OR IGNORE INTO similar_media_flags(item_id, similar_item_id, kind,"
+        " score, created_at) VALUES (?, ?, 'audio', 0.96, ?)",
+        (first, second, utc_now()),
     )
 
 

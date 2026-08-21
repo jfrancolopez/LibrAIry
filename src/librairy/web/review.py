@@ -5,6 +5,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+from librairy.arrival_comparison import describe as describe_arrival
 from librairy.audit import FOLDER_KINDS, KINDS, findings_with_status
 from librairy.audit_duplicates import copies as duplicate_copies
 from librairy.audit_job import progress as audit_progress
@@ -150,7 +151,7 @@ class ReviewFilters:
 def review_data(
     conn: sqlite3.Connection, filters: ReviewFilters, settings: Settings | None = None
 ) -> dict[str, object]:
-    rows = _proposal_rows(conn, filters)
+    rows = _proposal_rows(conn, filters, settings=settings)
     total = _proposal_count(conn, filters)
     audit_groups = audit_view(conn, settings)
     return {
@@ -468,6 +469,7 @@ def _proposal_rows(
     filters: ReviewFilters,
     *,
     proposal_ids: list[int] | None = None,
+    settings: Settings | None = None,
 ) -> list[dict[str, Any]]:
     where, params = _where(filters)
     if proposal_ids:
@@ -522,6 +524,15 @@ def _proposal_rows(
             # is useless without saying where, and where is the only thing
             # that decides whether this arrival is worth keeping.
             "duplicate_of": describe_duplicate(conn, int(row["item_id"])),
+            # Not the same bytes, and the same recording. A different question
+            # with three different answers — see
+            # `librairy/arrival_comparison.py` for why the cross-root version
+            # of "which of these do you want" is not the library-to-library one.
+            "similar_to": (
+                describe_arrival(conn, settings, int(row["item_id"]))
+                if settings is not None
+                else None
+            ),
             # Re-analyse puts the item back to 'discovered' and leaves the old
             # guess on screen until the worker replaces it in place. Without
             # saying so, pressing it looks like it did nothing.
@@ -1138,6 +1149,55 @@ def comparison_facts(
     }
 
 
+def arrival_facts(
+    conn: sqlite3.Connection, settings: Settings, item_id: int
+) -> dict[str, object]:
+    """The measured table for one arriving file against the copy it resembles.
+
+    The same shape and the same readers as the library-to-library comparison,
+    so a FLAC is described identically wherever it is standing. Only the column
+    headings differ, because here one side is filed and the other is arriving
+    and that is the difference the person is deciding about.
+    """
+    from librairy.arrival_comparison import similar_arrival
+    from librairy.similar_media import technical_facts
+
+    arrival = similar_arrival(conn, settings, item_id)
+    if arrival is None:
+        return {
+            "labels": (),
+            "members": [],
+            "rows": [],
+            "note": "There is nothing to compare this with.",
+        }
+    left = dict(technical_facts(settings, arrival.relpath, root="inbox"))
+    right = dict(technical_facts(settings, arrival.twin.relpath))
+    labels = list(left) + [label for label in right if label not in left]
+    rows = [
+        {
+            "label": label,
+            "cells": (left.get(label, "—"), right.get(label, "—")),
+            "differs": left.get(label, "—") != right.get(label, "—"),
+        }
+        for label in labels
+    ]
+    return {
+        "labels": tuple(labels),
+        "members": [
+            {"name": f"Arriving: {arrival.name}", "relpath": arrival.relpath},
+            {"name": f"Filed: {arrival.twin.name}", "relpath": arrival.twin.relpath},
+        ],
+        "rows": rows,
+        "note": (
+            "Measured from the files themselves — nothing here is a recommendation. "
+            "Which representation you want is a decision about your library, not "
+            "about the numbers."
+            if rows
+            else "Neither file could be measured: the media tools are not available."
+        ),
+    }
+
+
 def _comparison_row(
     conn: sqlite3.Connection, settings: Settings | None, row: sqlite3.Row
 ) -> dict[str, object] | None:
@@ -1169,6 +1229,83 @@ def _comparison_row(
         ],
         "count": len(view.members),
         "pair": len(view.members) == 2,
+    }
+
+
+def _filing_view(  # noqa: ANN201
+    conn: sqlite3.Connection, settings: Settings | None, row: sqlite3.Row
+):
+    """Loose tracks and the albums they could go to, or None.
+
+    Refusals come back as None for the same reason every other planner's do on
+    this page: a question LibrAIry cannot ask cleanly today is a row that shows
+    what it found, not an error page over the whole of Review.
+    """
+    from librairy.corrections import CorrectionRefused
+    from librairy.track_filing import plan_filing
+
+    if settings is None:
+        return None
+    try:
+        return plan_filing(conn, settings, row, verify=False)
+    except CorrectionRefused:
+        return None
+
+
+def _filing_row(view, settings: Settings) -> dict[str, object]:  # noqa: ANN001, ARG001
+    """One filing question, as the page reads it: per track, never per group."""
+    from librairy.merge import CHOICE_LABEL, CHOICE_NOTE
+
+    albums = [
+        {"relpath": album.relpath, "name": album.name, "files": album.files}
+        for album in view.albums
+    ]
+    return {
+        "artist": PurePosixPath(view.artist).name,
+        "albums": albums,
+        "moving": len(view.moving),
+        "leaving": len(view.leaving),
+        "unresolved": len(view.unresolved),
+        "settled": view.settled,
+        "tracks": [
+            {
+                "relpath": track.relpath,
+                "name": track.name,
+                "size": human_size(track.size),
+                "chosen": track.chosen,
+                "chosen_name": PurePosixPath(track.chosen).name if track.chosen else "",
+                "leaving": track.leaving,
+                "answered": track.answered,
+                "albums": albums,
+                #  Present only when the chosen album already holds a file of
+                #  this name. Same three outcomes as a folder merge, same
+                #  words, same storage — see `librairy/merge.py`.
+                "conflict": (
+                    {
+                        "choice": track.member.choice,
+                        "choice_label": CHOICE_LABEL.get(track.member.choice, ""),
+                        "identical": track.member.state == "identical",
+                        "size": human_size(track.member.size),
+                        "occupant_size": human_size(track.member.occupant_size),
+                        "keep_both_name": PurePosixPath(
+                            track.member.keep_both_relpath
+                        ).name,
+                        "options": [
+                            {
+                                "value": option,
+                                "label": CHOICE_LABEL[option],
+                                "note": CHOICE_NOTE[option],
+                                "chosen": option == track.member.choice,
+                            }
+                            for option in track.member.options
+                        ],
+                    }
+                    if track.member is not None and track.member.needs_choice
+                    else None
+                ),
+            }
+            for track in view.tracks
+        ],
     }
 
 
@@ -1258,6 +1395,9 @@ def _audit_row(
     #  files. Answering it turns the row into a merge, planned by the same
     #  planner — so the destination is read first and the merge asked for
     #  second, with the direction it just supplied.
+    #  And the per-item shape: one answer per loose track, which is the whole
+    #  reason `loose-tracks` could never be a folder correction.
+    filing = _filing_view(conn, settings, row) if not accepted else None
     destination = _destination_view(conn, settings, row) if not accepted else None
     if destination is not None:
         merge = _destination_merge(conn, settings, row)
@@ -1337,7 +1477,8 @@ def _audit_row(
         choices=any(copy.removable for copy in duplicates)
         or bool(merge and merge.unresolved)
         or destination is not None
-        or comparison is not None,
+        or comparison is not None
+        or filing is not None,
     )
     status_label = ACTION_LABEL[status_kind]
     # A stale observation is still a true observation. Only a finding that
@@ -1414,9 +1555,14 @@ def _audit_row(
         # Several encodes of one thing, and the measured table that is fetched
         # rather than rendered. `None` for every other kind of finding.
         "comparison": comparison,
+        # Loose tracks, one question each. `None` for everything else.
+        "filing": _filing_row(filing, settings) if filing is not None else None,
         # The explicit Approve a resolved choice earns, and never bulk. See the
         # `choices` argument above for why the two are separate.
-        "approve_choice": bool(destination is not None and merge is not None and merge.settled),
+        "approve_choice": bool(
+            (destination is not None and merge is not None and merge.settled)
+            or (filing is not None and filing.settled and filing.moving)
+        ),
         # What the correction is, in facts, above the fold. A folder rename
         # whose scale is only visible after opening an expander is a decision
         # made without the number that matters most.

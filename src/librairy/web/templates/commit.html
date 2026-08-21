@@ -206,6 +206,21 @@
                   </ul>
                 </details>
               {% endif %}
+              {# Look at it before you commit it. Every other page that moves
+                 files offers this, and Commit — the one page where the move
+                 actually happens — did not: you could read a path and press a
+                 button, and the only way to see what the file *was* was to go
+                 back to Review. Loaded on demand, one card at a time, so a
+                 queue of two hundred still renders as a queue. #}
+              {% if row.item_id %}
+              <div class="button-row">
+                <button type="button" class="btn-ghost" data-preview-toggle
+                        data-preview-url="/preview/items/{{ row.item_id }}"
+                        data-preview-target="cpreview-{{ row.item_id }}-{{ loop.index }}"
+                        aria-expanded="false">Preview</button>
+              </div>
+              <div id="cpreview-{{ row.item_id }}-{{ loop.index }}" class="commit-preview"></div>
+              {% endif %}
               <div class="button-row">
                 {% if row.plan_id and not row.applying and not row.stale %}
                   <form method="post" action="/commit/execute/{{ row.plan_id }}">
@@ -311,4 +326,12 @@
   {% if last_plan %}
     <p class="muted">Last commit: <a href="/history/plans/{{ last_plan.id }}" class="mono">{{ last_plan.id[:8] }}</a> finished {{ last_plan.finished_at }}.</p>
   {% endif %}
+
+  {# The preview card carries an expand control, so the page that renders one
+     has to carry the viewer it opens — and the button that opens the card
+     needs its own script. Quarantine shipped that button without this line
+     once, and every Preview on the page was inert markup that nothing
+     listened to. #}
+  {% include "partials/lightbox.html" %}
+  <script src="/static/previews.js" defer></script>
 {% endblock %}

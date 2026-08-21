@@ -130,7 +130,12 @@ def _execute_plan_unlocked(
     # album in its new home and half in the old one is worse than either, and
     # it is not what the user approved. Ordinary inbox plans are unaffected —
     # their operations are genuinely independent of one another.
-    if plan["audit_finding_id"] is not None:
+    #
+    # `coherent` says the same thing for a plan that is one decision without
+    # being an audit finding. The cross-root comparison is the first: it
+    # preserves the filed copy and then lands the arrival, and the preserving
+    # half must not happen on its own.
+    if plan["audit_finding_id"] is not None or plan["coherent"]:
         blocked = (
             _incoherent_ops(rows, settings)
             or _occupied_destinations(conn, plan_id, rows, settings)
@@ -338,15 +343,18 @@ def _duplicate_evidence_expired(
 def _is_merge_plan(conn: sqlite3.Connection, plan_id: str) -> bool:
     """Was this plan produced by the merge planner, whichever door it came in?
 
-    Two kinds reach it. `split-album` is a merge from the start; `artist-split`
-    becomes one once somebody has chosen which folder the artist lives in. They
-    execute identically — same operations, same ordering, same destination
-    preflight — so the question here is about the planner, not the finding.
+    Three kinds reach it. `split-album` is a merge from the start;
+    `artist-split` becomes one once somebody has chosen which folder the artist
+    lives in; `loose-tracks` reuses the same per-file collision model one track
+    at a time. All three execute identically — same operations, same ordering,
+    same destination preflight — so the question here is about the planner, not
+    the finding.
     """
     from librairy.destination_choice import DESTINATION_KINDS
     from librairy.merge import MERGE_KINDS
+    from librairy.track_filing import KIND as FILING_KIND
 
-    kinds = sorted(MERGE_KINDS | DESTINATION_KINDS)
+    kinds = sorted(MERGE_KINDS | DESTINATION_KINDS | {FILING_KIND})
     placeholders = ",".join("?" * len(kinds))
     return (
         conn.execute(

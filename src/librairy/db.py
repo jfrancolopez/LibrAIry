@@ -9,7 +9,7 @@ from pathlib import Path
 from librairy.config import Settings
 
 LOGGER = logging.getLogger(__name__)
-SCHEMA_VERSION = 31
+SCHEMA_VERSION = 34
 
 
 class DatabaseVersionError(RuntimeError):
@@ -850,6 +850,72 @@ CREATE TABLE destination_choices (
 );
 """
 
+#  One answer per *thing being placed*, rather than one per finding.
+#
+#  Migration 031 gave `destination_choices` a single row per finding, because
+#  the only question it answered was "which of these two folders does this
+#  artist use". `loose-tracks` asks the same question — where does this belong
+#  — once per track, and one answer for the group is the wrong answer: five
+#  loose tracks are commonly five different albums.
+#
+#  So the table grows a subject instead of gaining a sibling. An `artist-split`
+#  row names the finding's own path and a `loose-tracks` row names one track,
+#  and neither needs a magic value to say which it is. A NULL destination is
+#  the one thing per-item choice adds: "leave this one where it is" is a real
+#  answer, and it is not a move.
+MIGRATION_032 = """
+CREATE TABLE destination_choices_new (
+  id               INTEGER PRIMARY KEY,
+  audit_finding_id INTEGER NOT NULL REFERENCES audit_findings(id),
+  -- What is being placed: the folder for a whole-finding choice, one file for
+  -- a per-item one.
+  relpath          TEXT NOT NULL,
+  -- NULL means "leave it where it is", which is an answer and not an absence.
+  dest_relpath     TEXT,
+  decided_at       TEXT NOT NULL,
+  UNIQUE (audit_finding_id, relpath)
+);
+INSERT INTO destination_choices_new(audit_finding_id, relpath, dest_relpath, decided_at)
+  SELECT c.audit_finding_id, f.relpath, c.dest_relpath, c.decided_at
+  FROM destination_choices c JOIN audit_findings f ON f.id = c.audit_finding_id;
+DROP TABLE destination_choices;
+ALTER TABLE destination_choices_new RENAME TO destination_choices;
+CREATE INDEX idx_destination_choices_finding ON destination_choices(audit_finding_id);
+"""
+
+#  "All of this runs, or none of it does", said as a property of the plan.
+#
+#  The executor has always had this rule and has always inferred it from
+#  `audit_finding_id IS NOT NULL` — a proxy that was true for every coherent
+#  plan that existed at the time. A comparison between an arriving file and the
+#  library copy it resembles is the first one that is not an audit finding and
+#  still must not half-apply: quarantining the filed copy without landing the
+#  arrival would leave somebody with the recording in Quarantine and nothing in
+#  the library.
+#
+#  So the property gets a column instead of a third proxy. The existing rule is
+#  left exactly as it was; this widens it rather than replacing it.
+MIGRATION_033 = """
+ALTER TABLE plans ADD COLUMN coherent INTEGER NOT NULL DEFAULT 0;
+"""
+
+#  What a dismissal was actually about.
+#
+#  "Keep both" and an explicit Restore both mean the same thing — the person
+#  wants these two representations — and both have to stop the next audit
+#  asking again. Marking the czkawka pair `dismissed` does that, and on its own
+#  it does it forever: re-encode one of the two files and the answer given about
+#  the old pair silently covers a pair nobody has ever seen.
+#
+#  So the dismissal records *which two files* it was about. The pair is
+#  suppressed while both are still those bytes and becomes a live comparison
+#  again the moment either of them materially changes. Old dismissals, which
+#  recorded nothing, stay dismissed: a NULL here means "dismissed the old way",
+#  not "dismissed about nothing".
+MIGRATION_034 = """
+ALTER TABLE similar_media_flags ADD COLUMN dismissed_fingerprints TEXT;
+"""
+
 MIGRATIONS = {
     1: MIGRATION_001,
     2: MIGRATION_002,
@@ -882,6 +948,9 @@ MIGRATIONS = {
     29: MIGRATION_029,
     30: MIGRATION_030,
     31: MIGRATION_031,
+    32: MIGRATION_032,
+    33: MIGRATION_033,
+    34: MIGRATION_034,
 }
 
 

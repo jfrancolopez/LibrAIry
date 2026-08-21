@@ -120,6 +120,61 @@ class Comparison:
         return len(self.members) >= 2
 
 
+def _pair_key(left: str = "a", right: str = "b") -> str:
+    """The two fingerprints of a pair, in a fixed order, as one SQL string."""
+    return (
+        f"(CASE WHEN {left}.fingerprint < {right}.fingerprint"
+        f" THEN {left}.fingerprint || '|' || {right}.fingerprint"
+        f" ELSE {right}.fingerprint || '|' || {left}.fingerprint END)"
+    )
+
+
+def active_clause(left: str = "a", right: str = "b", flag: str = "f") -> str:
+    """Is this pair still a live question?
+
+    Two ways to be live. Never answered, or answered about two files that are
+    no longer these two — because "keep both" was a statement about the bytes
+    somebody was looking at, and a re-encode since then is a comparison nobody
+    has been asked about.
+
+    A dismissal that recorded no fingerprints predates this and stays
+    dismissed. NULL means "answered the old way", not "answered about nothing".
+    """
+    return (
+        f"({flag}.status='review' OR ({flag}.dismissed_fingerprints IS NOT NULL"
+        f" AND {flag}.dismissed_fingerprints <> {_pair_key(left, right)}))"
+    )
+
+
+def dismiss_between(conn: sqlite3.Connection, item_ids: list[int]) -> int:
+    """Answer every pair among these items with "keep them all".
+
+    Records the fingerprints as well as the answer, so the suppression is about
+    two specific files rather than about two rows that will still be there
+    after somebody replaces one of them.
+    """
+    if len(item_ids) < 2:
+        return 0
+    slots = ",".join("?" * len(item_ids))
+    cursor = conn.execute(
+        f"""
+        UPDATE similar_media_flags
+        SET status='dismissed',
+            dismissed_fingerprints = (
+              SELECT CASE WHEN a.fingerprint < b.fingerprint
+                          THEN a.fingerprint || '|' || b.fingerprint
+                          ELSE b.fingerprint || '|' || a.fingerprint END
+              FROM items a, items b
+              WHERE a.id = similar_media_flags.item_id
+                AND b.id = similar_media_flags.similar_item_id
+            )
+        WHERE item_id IN ({slots}) AND similar_item_id IN ({slots})
+        """,  # noqa: S608 - the placeholders are counted from the argument
+        (*item_ids, *item_ids),
+    )
+    return cursor.rowcount
+
+
 # --- finding the groups -------------------------------------------------------------
 
 
@@ -147,7 +202,7 @@ def detect(conn: sqlite3.Connection) -> list:
         FROM similar_media_flags f
         JOIN items a ON a.id = f.item_id
         JOIN items b ON b.id = f.similar_item_id
-        WHERE f.status = 'review'
+        WHERE {active_clause()}
           AND f.kind IN ({",".join("?" * len(SIMILAR_KINDS))})
           AND a.root = 'library' AND b.root = 'library'
           AND a.missing_since IS NULL AND b.missing_since IS NULL
@@ -289,10 +344,12 @@ def _connected(conn: sqlite3.Connection, item_id: int) -> list[int]:
         current = frontier.pop()
         for row in conn.execute(
             f"""
-            SELECT CASE WHEN item_id=? THEN similar_item_id ELSE item_id END AS other
-            FROM similar_media_flags
-            WHERE status='review' AND kind IN ({",".join("?" * len(SIMILAR_KINDS))})
-              AND (item_id=? OR similar_item_id=?)
+            SELECT CASE WHEN f.item_id=? THEN f.similar_item_id ELSE f.item_id END AS other
+            FROM similar_media_flags f
+            JOIN items a ON a.id = f.item_id
+            JOIN items b ON b.id = f.similar_item_id
+            WHERE {active_clause()} AND f.kind IN ({",".join("?" * len(SIMILAR_KINDS))})
+              AND (f.item_id=? OR f.similar_item_id=?)
             """,  # noqa: S608 - the placeholders are the constant above
             (current, *SIMILAR_KINDS, current, current),
         ):
@@ -303,7 +360,9 @@ def _connected(conn: sqlite3.Connection, item_id: int) -> list[int]:
     return sorted(seen)
 
 
-def technical_facts(settings: Settings, relpath: str) -> tuple[tuple[str, str], ...]:
+def technical_facts(
+    settings: Settings, relpath: str, *, root: str = "library"
+) -> tuple[tuple[str, str], ...]:
     """Container, codec, resolution, bitrate, duration — measured, not judged.
 
     The same readers the inbox comparison panel has always used, so a FLAC is
@@ -316,7 +375,7 @@ def technical_facts(settings: Settings, relpath: str) -> tuple[tuple[str, str], 
     from librairy.humanize import human_bytes
     from librairy.mediakind import kind_for
 
-    path = settings.library_dir / relpath
+    path = (settings.inbox_dir if root == "inbox" else settings.library_dir) / relpath
     facts: list[tuple[str, str]] = [("Size", human_bytes(_size(path)))]
     kind = kind_for(path)
     if kind in {"audio", "video", "image"}:
@@ -411,13 +470,7 @@ def _keep_all(conn: sqlite3.Connection, view: Comparison, finding_id: int) -> st
     audit rewrites a finding's status to `open`, so suppressing the *evidence*
     is what makes the answer stick.
     """
-    ids = [member.item_id for member in view.members]
-    slots = ",".join("?" * len(ids))
-    conn.execute(
-        f"UPDATE similar_media_flags SET status='dismissed'"  # noqa: S608
-        f" WHERE item_id IN ({slots}) AND similar_item_id IN ({slots})",
-        (*ids, *ids),
-    )
+    dismiss_between(conn, [member.item_id for member in view.members])
     conn.execute(
         "UPDATE audit_findings SET status='kept', updated_at=? WHERE id=?",
         (utc_now(), finding_id),

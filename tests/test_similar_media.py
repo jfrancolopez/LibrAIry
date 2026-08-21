@@ -538,6 +538,97 @@ def test_undo_puts_every_representation_back(tmp_path: Path) -> None:
     assert tree(settings.library_dir) == before
 
 
+# --- the memory ---------------------------------------------------------------------
+
+
+def test_restoring_a_set_aside_representation_answers_the_comparison(
+    tmp_path: Path,
+) -> None:
+    """Restore is somebody saying they want both of these.
+
+    Bringing the MP3 back and then being asked FLAC-versus-MP3 again on the
+    next audit is the software forgetting a decision it just watched them make.
+    """
+    from librairy.quarantine import restore_entry
+
+    conn, settings = two_encodes(tmp_path)
+    finding = finding_for(conn, settings)
+    plan_id = resolve(conn, settings, finding["id"], [FLAC])
+    execute_plan(conn, plan_id, settings)
+    entry = conn.execute("SELECT * FROM quarantine_entries").fetchone()
+
+    restore_entry(conn, int(entry["id"]), settings)
+
+    assert [f for f in detect(_view(conn, settings), conn=conn) if f.kind == KIND] == []
+
+
+def test_both_representations_are_present_after_the_restore(tmp_path: Path) -> None:
+    from librairy.quarantine import restore_entry
+
+    conn, settings = two_encodes(tmp_path)
+    finding = finding_for(conn, settings)
+    plan_id = resolve(conn, settings, finding["id"], [FLAC])
+    execute_plan(conn, plan_id, settings)
+    entry = conn.execute("SELECT * FROM quarantine_entries").fetchone()
+
+    restore_entry(conn, int(entry["id"]), settings)
+
+    assert tree(settings.library_dir) == [FLAC, MP3]
+
+
+def test_re_encoding_one_side_makes_it_a_live_comparison_again(tmp_path: Path) -> None:
+    """The answer was about two files. Replace one and nobody has been asked."""
+    conn, settings = two_encodes(tmp_path)
+    finding = finding_for(conn, settings)
+    resolve(conn, settings, finding["id"], [FLAC, MP3])
+
+    (settings.library_dir / MP3).write_text("re-encoded at a higher bitrate")
+    scan_root(conn, "library", settings.library_dir, settings)
+
+    assert [f for f in detect(_view(conn, settings), conn=conn) if f.kind == KIND]
+
+
+def test_the_suppression_is_not_by_filename(tmp_path: Path) -> None:
+    conn, settings = two_encodes(tmp_path)
+    finding = finding_for(conn, settings)
+    resolve(conn, settings, finding["id"], [FLAC, MP3])
+    (settings.library_dir / FLAC).write_text("a different master, same name")
+    scan_root(conn, "library", settings.library_dir, settings)
+
+    assert [f for f in detect(_view(conn, settings), conn=conn) if f.kind == KIND]
+
+
+def test_an_exact_duplicate_restored_is_still_a_duplicate(tmp_path: Path) -> None:
+    """Deliberately unchanged. A byte-identical copy back in the library is
+    redundant again, and saying so is useful — that workflow keeps its own
+    semantics rather than inheriting this one's."""
+    from librairy.quarantine import restore_entry
+
+    conn, settings = library(tmp_path, {FLAC: "same bytes", MP3: "same bytes"})
+    from librairy.audit_duplicates import set_aside
+
+    finding = conn.execute(
+        "SELECT * FROM audit_findings WHERE kind='duplicate'"
+    ).fetchone()
+    if finding is None:
+        from librairy.audit import record_findings
+
+        record_findings(
+            conn, [f for f in detect(_view(conn, settings), conn=conn) if f.kind == "duplicate"]
+        )
+        finding = conn.execute(
+            "SELECT * FROM audit_findings WHERE kind='duplicate'"
+        ).fetchone()
+    plan_id = set_aside(conn, settings, finding["id"], MP3)
+    execute_plan(conn, plan_id, settings)
+    entry = conn.execute("SELECT * FROM quarantine_entries").fetchone()
+
+    restore_entry(conn, int(entry["id"]), settings)
+
+    kinds = {f.kind for f in detect(_view(conn, settings), conn=conn)}
+    assert "duplicate" in kinds
+
+
 def test_a_comparison_already_answered_cannot_be_answered_twice(tmp_path: Path) -> None:
     conn, settings = two_encodes(tmp_path)
     finding = finding_for(conn, settings)

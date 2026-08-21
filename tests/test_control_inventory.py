@@ -156,6 +156,11 @@ LABEL_MAY_REPEAT = {
     #  they get the same word rather than a second one invented per page.
     "Quarantine",
     "Dismiss suggestion",
+    #  "Do not get rid of any of these." Reached from a comparison between two
+    #  filed representations and from one between a filed copy and an arriving
+    #  one — different subjects, identical promise, so the same word rather
+    #  than a second one invented for the second surface.
+    "Keep all of them",
 }
 
 
@@ -197,6 +202,10 @@ ACTION_MAY_HAVE_SEVERAL_LABELS = {
     #  the artist in, which is the entire content of the decision. `Use this
     #  one` would be one label and would say nothing.
     "POST /review/audit/{finding_id}/destination",
+    #  The same, one track at a time, plus `Leave here` — which is a different
+    #  answer to the same question rather than a different question, and posts
+    #  to the same route because "where does this go" is what it answers.
+    "POST /review/audit/{finding_id}/file-track",
     #  Two kinds at once, both legitimate. `Keep 01 - Death on Two Legs.flac`
     #  names the representation it keeps, which is the whole decision. And
     #  `Keep all of them` is a different answer to the same question, posted to

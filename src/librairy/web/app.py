@@ -23,6 +23,8 @@ from librairy.ai.lmstudio import is_chat_model, normalize_host
 from librairy.ai.lmstudio import probe as lmstudio_probe
 from librairy.ai.lmstudio import try_classify as lmstudio_try_classify
 from librairy.alternatives import options_for_proposal
+from librairy.arrival_comparison import resolve as resolve_arrival
+from librairy.arrival_comparison import withdraw as withdraw_comparison
 from librairy.audit import audit_library, keep_as_is, sanitize_scope
 from librairy.audit_duplicates import set_aside as set_copy_aside
 from librairy.backup import request_backup_now
@@ -77,6 +79,7 @@ from librairy.settings_service import (
 )
 from librairy.similar_media import resolve as resolve_comparison
 from librairy.taxonomy import CATEGORIES as REVIEW_CATEGORIES
+from librairy.track_filing import answer as file_track
 from librairy.web.access import access_data
 from librairy.web.activity import activity
 from librairy.web.auth import (
@@ -128,6 +131,7 @@ from librairy.web.review import (
     apply_opportunity_action,
     apply_queue_action,
     apply_review_action,
+    arrival_facts,
     comparison_facts,
     duplicate_comparison,
     edit_proposal,
@@ -992,6 +996,58 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             f"/review?focus={finding_id}#finding-{finding_id}", status_code=303
         )
 
+    @app.post("/commit/withdraw/{plan_id}", include_in_schema=False)
+    def commit_withdraw(
+        request: Request,  # noqa: ARG001
+        plan_id: str,
+    ) -> RedirectResponse:
+        """Take back one comparison decision that has not run yet.
+
+        Not Undo: nothing has moved. The arrival goes back to being an ordinary
+        Review row and the comparison becomes a live question again — an answer
+        withdrawn must not leave the question suppressed, or the row would come
+        back with nothing to decide.
+        """
+        try:
+            withdraw_comparison(conn, settings, plan_id)
+        except CorrectionRefused as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return RedirectResponse("/review", status_code=303)
+
+    @app.get("/review/items/{item_id}/comparison", include_in_schema=False)
+    def review_item_comparison(request: Request, item_id: int) -> HTMLResponse:
+        """The measured table for one arrival against the copy it resembles.
+
+        Same partial and same readers as the library-to-library comparison, so
+        a FLAC is described identically wherever it is standing. Fetched when
+        the panel opens for the same two reasons: rendering Review must not
+        write, and a page of fifty arrivals must not run a hundred probes.
+        """
+        return TEMPLATES.TemplateResponse(
+            request,
+            "partials/comparison_facts.html",
+            {"facts": arrival_facts(conn, settings, item_id)},
+        )
+
+    @app.post("/review/items/{item_id}/comparison", include_in_schema=False)
+    def review_item_resolve_comparison(
+        request: Request,  # noqa: ARG001
+        item_id: int,
+        choice: str = Form(...),
+    ) -> RedirectResponse:
+        """Answer one arriving-versus-filed comparison.
+
+        Three answers and none of them overwrites anything. `use-arrival` is
+        two operations in one plan — the filed copy is preserved in Quarantine
+        *first*, and only then does the arrival take its place — marked
+        coherent so neither half can happen without the other.
+        """
+        try:
+            resolve_arrival(conn, settings, item_id, choice)
+        except CorrectionRefused as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return RedirectResponse("/review", status_code=303)
+
     @app.get("/review/audit/{finding_id}/comparison", include_in_schema=False)
     def review_audit_comparison(request: Request, finding_id: int) -> HTMLResponse:
         """The measured table for one similar-media comparison.
@@ -1033,6 +1089,32 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         except CorrectionRefused as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         return RedirectResponse("/review#library-audit", status_code=303)
+
+    @app.post("/review/audit/{finding_id}/file-track", include_in_schema=False)
+    def review_audit_file_track(
+        request: Request,  # noqa: ARG001
+        finding_id: int,
+        relpath: str = Form(...),
+        dest_relpath: str = Form(""),
+    ) -> RedirectResponse:
+        """Say where one loose track goes, or that it stays where it is.
+
+        One track, one answer, and nothing else is touched. Reversing an
+        artist-split clears every collision answer because the folders swapped
+        roles; moving one track from one album to another says nothing about
+        the next track, and clearing the rest would punish somebody for
+        changing their mind.
+
+        An empty `dest_relpath` is `Leave here` — an answer, not an absence,
+        and one that produces no filesystem operation at all.
+        """
+        try:
+            file_track(conn, settings, finding_id, relpath, dest_relpath)
+        except CorrectionRefused as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return RedirectResponse(
+            f"/review?focus={finding_id}#finding-{finding_id}", status_code=303
+        )
 
     @app.post("/review/audit/{finding_id}/destination", include_in_schema=False)
     def review_audit_destination(

@@ -90,6 +90,8 @@ def test_fresh_db_migrates_to_current_schema(tmp_path: Path) -> None:
         "idx_quarantine_optimization_job",
         # One answer per conflicting file per merge.
         "idx_merge_choices_finding",
+        # One answer per thing being placed: a folder, or one loose track.
+        "idx_destination_choices_finding",
     }
 
     columns = {row[1] for row in conn.execute("PRAGMA table_info(provider_status)")}
@@ -175,10 +177,13 @@ def test_migration_011_closes_proposals_for_files_already_filed(tmp_path: Path) 
         -- of them point at.
         DROP INDEX IF EXISTS idx_merge_choices_finding;
         DROP TABLE IF EXISTS merge_choices;
+        DROP INDEX IF EXISTS idx_destination_choices_finding;
         DROP TABLE IF EXISTS destination_choices;
         -- On a table migration 010 created, so it outlives the drops above
         -- and has to come off by name.
         ALTER TABLE backup_queue DROP COLUMN verified;
+        ALTER TABLE similar_media_flags DROP COLUMN dismissed_fingerprints;
+        ALTER TABLE plans DROP COLUMN coherent;
         ALTER TABLE plans DROP COLUMN optimization_job_id;
         ALTER TABLE quarantine_entries DROP COLUMN optimization_job_id;
         ALTER TABLE plans DROP COLUMN quarantine_entry_id;

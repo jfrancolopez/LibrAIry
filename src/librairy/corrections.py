@@ -204,7 +204,10 @@ def resolve_group(
     from librairy.destination_choice import is_destination_finding
     from librairy.merge import is_merge_finding
     from librairy.subtree import is_subtree_finding
+    from librairy.track_filing import is_filing_finding
 
+    if is_filing_finding(row):
+        return resolve_filing_group(conn, settings, row, verify=verify)
     if is_destination_finding(row):
         return resolve_destination_group(conn, settings, row, verify=verify)
     if is_merge_finding(row):
@@ -272,6 +275,45 @@ def resolve_destination_group(
     if view is None:
         raise CorrectionRefused("choose which folder this artist should use first")
     return _merge_group(row, view)
+
+
+def resolve_filing_group(
+    conn: sqlite3.Connection,
+    settings: Settings,
+    row: sqlite3.Row,
+    *,
+    verify: bool = True,
+) -> CorrectionGroup:
+    """Loose tracks filed into the albums somebody chose, one track at a time.
+
+    Only the tracks that move are in the group. A track answered `Leave here`
+    is answered — it is just not a file operation, and putting a no-op in the
+    plan so the counts looked symmetrical would mean Commit reporting work it
+    did not do and Undo offering to reverse it.
+    """
+    from librairy.track_filing import operations, plan_filing
+
+    view = plan_filing(conn, settings, row, verify=verify)
+    if view is None:
+        raise CorrectionRefused("there is nothing left to file here")
+    specs = operations(view)
+    return CorrectionGroup(
+        finding_id=int(row["id"]),
+        files=tuple(
+            Affected(
+                relpath=spec.src_relpath,
+                dest_relpath=spec.dest_relpath,
+                role="displaced" if spec.op_type == "quarantine" else "member",
+                reason=(
+                    "set aside so the track could be filed"
+                    if spec.op_type == "quarantine"
+                    else f"filed into {PurePosixPath(spec.dest_relpath).parent.name}"
+                ),
+            )
+            for spec in specs
+        ),
+        subject="filing",
+    )
 
 
 def _merge_group(row: sqlite3.Row, view) -> CorrectionGroup:  # noqa: ANN001
@@ -479,7 +521,9 @@ def accept_correction(conn: sqlite3.Connection, settings: Settings, finding_id: 
     if row["status"] == "corrected":
         raise CorrectionRefused("this correction has already been applied")
     state = finding_state(settings, row)
-    if _is_destination_choice(row):
+    if _is_per_item_choice(row):
+        _assert_filing_settled(conn, settings, row, state)
+    elif _is_destination_choice(row):
         # A destination choice is never `executable` in the allowlist sense:
         # its kind proposes no destination, deliberately, because the
         # destination is the question. What makes it approvable is that the
@@ -521,6 +565,36 @@ def accept_correction(conn: sqlite3.Connection, settings: Settings, finding_id: 
         (plan_id, utc_now(), finding_id),
     )
     return plan_id
+
+
+def _is_per_item_choice(row: sqlite3.Row) -> bool:
+    from librairy.track_filing import is_filing_finding
+
+    return is_filing_finding(row)
+
+
+def _assert_filing_settled(
+    conn: sqlite3.Connection, settings: Settings, row: sqlite3.Row, state: str
+) -> None:
+    """Every track answered, and every answer still true of the library now.
+
+    `plan_filing` re-reads the album folders rather than trusting the stored
+    answers, so a destination renamed or emptied since it was chosen comes back
+    as the question again instead of as an approval nobody could review.
+    """
+    from librairy.track_filing import plan_filing
+
+    if state == MISSING:
+        raise CorrectionRefused(_refusal(row, state))
+    view = plan_filing(conn, settings, row, verify=True)
+    if view is None:
+        raise CorrectionRefused("there is nothing left to file here")
+    if not view.settled:
+        raise CorrectionRefused(
+            f"{len(view.unresolved)} of these tracks still need an answer"
+        )
+    if not view.moving:
+        raise CorrectionRefused("every one of these tracks is staying where it is")
 
 
 def _is_destination_choice(row: sqlite3.Row) -> bool:
@@ -567,7 +641,14 @@ def _specs_for(
     from librairy.destination_choice import is_destination_finding
     from librairy.destination_choice import plan_for as plan_destination
     from librairy.merge import is_merge_finding, operations, plan_merge
+    from librairy.track_filing import is_filing_finding, plan_filing
+    from librairy.track_filing import operations as filing_operations
 
+    if is_filing_finding(row):
+        filing = plan_filing(conn, settings, row, verify=True)
+        if filing is None:
+            raise CorrectionRefused("there is nothing left to file here")
+        return filing_operations(filing)
     if is_destination_finding(row):
         view = plan_destination(conn, settings, row, verify=True)
         if view is None:

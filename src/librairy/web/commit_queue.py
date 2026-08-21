@@ -129,7 +129,7 @@ PREVIEW_SIZE = 10
 #  library-to-library move in it at all: nothing is being rearranged, something
 #  is leaving.
 _SET_ASIDE_CASE = """
-              WHEN p.audit_finding_id IS NOT NULL AND NOT EXISTS (
+              WHEN (p.audit_finding_id IS NOT NULL OR p.coherent=1) AND NOT EXISTS (
                 SELECT 1 FROM plan_ops m WHERE m.plan_id = p.id
                   AND m.op_type='move' AND m.dest_root='library'
               ) THEN 'set-aside'
@@ -177,7 +177,7 @@ def queue_summary(conn: sqlite3.Connection) -> dict[str, Any]:
             CASE
               WHEN p.optimization_job_id IS NOT NULL THEN 'optimization'
               {_SET_ASIDE_CASE}
-              WHEN p.audit_finding_id IS NOT NULL THEN 'correction'
+              WHEN p.audit_finding_id IS NOT NULL OR p.coherent=1 THEN 'correction'
               WHEN o.dest_root='quarantine' AND o.dest_relpath LIKE '_to-delete/%'
                 THEN 'delete-queue'
               ELSE 'restore'
@@ -187,7 +187,7 @@ def queue_summary(conn: sqlite3.Connection) -> dict[str, Any]:
           LEFT JOIN items i ON i.id = o.item_id
           WHERE p.status IN ('approved','executing')
             AND (p.audit_finding_id IS NOT NULL OR p.quarantine_entry_id IS NOT NULL
-                 OR p.optimization_job_id IS NOT NULL)
+                 OR p.optimization_job_id IS NOT NULL OR p.coherent=1)
         )
         GROUP BY kind
         """  # noqa: S608 - one interpolated constant, no user input
@@ -309,6 +309,7 @@ def _inbox_rows(
             #  page-wide withdrawal: "send this one back" sent all of them back,
             #  and the card carried no label at all to warn anybody.
             "back_id": row["id"],
+            "item_id": row["item_id"],
         }
         for row in rows
     ]
@@ -339,8 +340,12 @@ def _plan_rows(
     offset: int,
 ) -> list[dict[str, Any]]:
     where = {
-        CORRECTION: f"p.audit_finding_id IS NOT NULL AND {_HAS_LIBRARY_MOVE}",
-        SET_ASIDE: f"p.audit_finding_id IS NOT NULL AND NOT {_HAS_LIBRARY_MOVE}",
+        CORRECTION: (
+            f"(p.audit_finding_id IS NOT NULL OR p.coherent=1) AND {_HAS_LIBRARY_MOVE}"
+        ),
+        SET_ASIDE: (
+            f"(p.audit_finding_id IS NOT NULL OR p.coherent=1) AND NOT {_HAS_LIBRARY_MOVE}"
+        ),
         DELETE_QUEUE: (
             "p.quarantine_entry_id IS NOT NULL AND o.dest_root='quarantine'"
             " AND o.dest_relpath LIKE '_to-delete/%'"
@@ -355,7 +360,7 @@ def _plan_rows(
         f"""
         SELECT p.id AS plan_id, p.status, p.approved_at,
                p.audit_finding_id, p.quarantine_entry_id, p.optimization_job_id,
-               o.src_root, o.src_relpath, o.dest_root, o.dest_relpath,
+               o.src_root, o.src_relpath, o.dest_root, o.dest_relpath, o.item_id,
                (SELECT COUNT(*) FROM plan_ops WHERE plan_id=p.id) AS op_count,
                (SELECT COALESCE(SUM(i2.size), 0) FROM plan_ops o2
                   LEFT JOIN items i2 ON i2.id = o2.item_id
@@ -408,7 +413,7 @@ def _plan_row(
         #  Whether this card is about a file. A folder rename and a folder
         #  merge are not, and the extension badge beside the title has nothing
         #  to explain about a directory.
-        "is_file": folder is None,
+        "is_file": folder is None or bool(folder.get("is_file")),
         #  "After Commit" for everything but a merge, which goes *into* a folder
         #  that is already there.
         "after_label": (folder or {}).get("verb", ""),
@@ -436,7 +441,11 @@ def _plan_row(
         # Where "send this back" goes for this kind of decision. One row
         # component, one attribute, rather than a chain of ifs in the template.
         "back_url": (
-            f"/review/audit/{row['audit_finding_id']}/unapprove"
+            (
+                f"/review/audit/{row['audit_finding_id']}/unapprove"
+                if row["audit_finding_id"]
+                else f"/commit/withdraw/{row['plan_id']}"
+            )
             if kind in (CORRECTION, SET_ASIDE)
             else (
                 #  The same withdrawal the optimization page's Cancel request
@@ -465,6 +474,11 @@ def _plan_row(
         # is one decision and twelve moves, and "twelve files" is a number
         # until you can see which twelve.
         "files": _files(conn, row["plan_id"]) if int(row["op_count"]) > 1 else [],
+        #  So the card can show you the thing rather than its path. Resolved
+        #  from the plan's first operation, which is the file the card is
+        #  headed by; a decision over several files says so under Files and the
+        #  preview follows the one being named.
+        "item_id": row["item_id"],
     }
 
 
@@ -620,15 +634,29 @@ def _folder_subject(
     )
     from librairy.merge import MERGE_KINDS
     from librairy.subtree import SUBTREE_KINDS
+    from librairy.track_filing import KIND as FILING_KIND
 
-    if kind != CORRECTION or not row["audit_finding_id"]:
+    if kind not in (CORRECTION, SET_ASIDE):
         return None
+    if not row["audit_finding_id"]:
+        return _arrival_subject(conn, row)
     found = conn.execute(
         "SELECT id, kind, relpath, dest_relpath, evidence FROM audit_findings WHERE id=?",
         (row["audit_finding_id"],),
     ).fetchone()
     if found is None:
         return None
+    if found["kind"] == FILING_KIND:
+        #  Named after the artist, because "File loose tracks / Queen" is what
+        #  was approved and no single folder describes it: the tracks are going
+        #  to two or three different albums, and some of them are not going
+        #  anywhere at all.
+        return {
+            "subject": "File loose tracks",
+            "current": f"library/{found['relpath']}",
+            "after": f"library/{found['relpath']}",
+            "verb": "Into albums under",
+        }
     if found["kind"] in DESTINATION_KINDS:
         #  A destination choice has no `dest_relpath` of its own — that is the
         #  whole point of it — so the folder it is going into is the one the
@@ -690,8 +718,51 @@ def _kept_representations(
     return ", ".join(names)
 
 
+def _comparison_reason(conn: sqlite3.Connection, row: sqlite3.Row) -> str:
+    """Why an arriving representation is waiting, and what it will preserve."""
+    preserved = conn.execute(
+        "SELECT src_relpath FROM plan_ops WHERE plan_id=? AND op_type='quarantine'"
+        " AND src_root='library' ORDER BY seq LIMIT 1",
+        (row["plan_id"],),
+    ).fetchone()
+    if preserved is None:
+        return "You chose this version after comparing it with the one you have."
+    return (
+        f"You chose this version. {PurePosixPath(str(preserved['src_relpath'])).name} "
+        f"goes to Quarantine first — nothing is overwritten and nothing is deleted."
+    )
+
+
+def _arrival_subject(
+    conn: sqlite3.Connection, row: sqlite3.Row
+) -> dict[str, str] | None:
+    """A comparison the arriving file won, headed by the arriving file.
+
+    The plan's first operation preserves the copy being replaced, so reading
+    the card off it would head "you chose the FLAC" with the name of the MP3
+    that is leaving. The move is the decision; the quarantine is how the
+    decision is carried out without losing anything.
+    """
+    move = conn.execute(
+        "SELECT src_root, src_relpath, dest_relpath FROM plan_ops"
+        " WHERE plan_id=? AND op_type='move' AND src_root='inbox' ORDER BY seq LIMIT 1",
+        (row["plan_id"],),
+    ).fetchone()
+    if move is None:
+        return None
+    return {
+        "subject": PurePosixPath(str(move["src_relpath"])).name,
+        "current": f"inbox/{move['src_relpath']}",
+        "after": f"library/{move['dest_relpath']}",
+        "verb": "",
+        "is_file": "yes",
+    }
+
+
 def _reason(conn: sqlite3.Connection, row: sqlite3.Row, kind: str) -> str:
     """Why this is waiting, in the words of the decision that made it."""
+    if kind in (CORRECTION, SET_ASIDE) and not row["audit_finding_id"] and row["plan_id"]:
+        return _comparison_reason(conn, row)
     if kind in (CORRECTION, SET_ASIDE) and row["audit_finding_id"]:
         found = conn.execute(
             "SELECT kind, summary FROM audit_findings WHERE id=?",

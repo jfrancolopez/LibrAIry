@@ -80,6 +80,53 @@
       </div>
       {% endif %}
 
+      {# Not the same bytes, and the same recording. Three answers, and they do
+         not mean what the library-to-library ones mean: one of these is filed
+         and one is arriving, so "keep this" and "use that" are different
+         actions rather than mirror images. Nothing is overwritten in any of
+         them — see `librairy/arrival_comparison.py`. #}
+      {% if proposal.similar_to %}
+      <div class="row-similar audit-comparison">
+        <p class="row-duplicate">
+          <span class="badge badge-info">SIMILAR</span>
+          <span class="muted">You already have a version of this:</span>
+          <span class="mono">{{ proposal.similar_to.match }}</span>
+          <span class="muted">· arriving {{ proposal.similar_to.arrival_size }},
+            filed {{ proposal.similar_to.twin_size }} · the bytes are different.</span>
+        </p>
+        <details class="comparison-details">
+          <summary>Compare them</summary>
+          <div hx-get="/review/items/{{ proposal.item_id }}/comparison"
+               hx-trigger="toggle once from:closest details" hx-swap="outerHTML">
+            <p class="muted">Measuring…</p>
+          </div>
+        </details>
+        <div class="audit-comparison-options">
+          <form method="post" action="/review/items/{{ proposal.item_id }}/comparison">
+            <input type="hidden" name="csrf_token" value="{{ csrf }}">
+            <input type="hidden" name="choice" value="keep-library">
+            <button type="submit"
+              title="{{ proposal.similar_to.notes['keep-library'] }}">Keep the filed copy</button>
+          </form>
+          <form method="post" action="/review/items/{{ proposal.item_id }}/comparison">
+            <input type="hidden" name="csrf_token" value="{{ csrf }}">
+            <input type="hidden" name="choice" value="use-arrival">
+            <button type="submit"
+              title="{{ proposal.similar_to.notes['use-arrival'] }}">Use this one instead</button>
+          </form>
+          <form method="post" action="/review/items/{{ proposal.item_id }}/comparison">
+            <input type="hidden" name="csrf_token" value="{{ csrf }}">
+            <input type="hidden" name="choice" value="keep-both">
+            <button type="submit"
+              title="{{ proposal.similar_to.notes['keep-both'] }}">Keep all of them</button>
+          </form>
+        </div>
+        <p class="muted">Choosing this one files it as
+          <span class="mono">{{ proposal.similar_to.destination }}</span>, and the copy
+          you have now goes to Quarantine first. Nothing is overwritten.</p>
+      </div>
+      {% endif %}
+
       <div class="proposal-actions">
         {# Look before you leap, then leap: the two inspect buttons sit left of
            the decisions, in the order you would use them. #}

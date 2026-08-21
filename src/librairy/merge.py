@@ -168,7 +168,7 @@ class MergeView:
         than counting files, because operations are what the plan holds and
         what a person reads before approving it.
         """
-        return sum(len(_specs_for(member)) for member in self.members)
+        return sum(len(specs_for(member)) for member in self.members)
 
 
 # --- reading the merge -------------------------------------------------------------
@@ -272,7 +272,6 @@ def _members(
     *,
     verify: bool,
 ) -> list[Member]:
-    from librairy.corrections import CorrectionRefused
     from librairy.subtree import plan_moves
 
     #  The subtree planner already answers "every file under this folder, with
@@ -283,31 +282,49 @@ def _members(
     #  since the audit, files already waiting for Commit, disc structures.
     row = _as_finding_row(source, target)
     moves = plan_moves(conn, settings, row, verify=verify, merging=True)
-    members: list[Member] = []
-    for relpath, dest_relpath in moves:
-        size = _indexed_size(conn, relpath)
-        try:
-            destination = validate_dest(settings.library_dir, dest_relpath)
-        except (PathValidationError, ValueError) as exc:
-            raise CorrectionRefused(
-                f"{PurePosixPath(relpath).name} has no safe destination: {exc}"
-            ) from exc
-        if not destination.exists():
-            members.append(Member(relpath, dest_relpath, FREE, size))
-            continue
-        occupant_size = destination.stat().st_size
-        same = _same_bytes(settings, relpath, destination, occupant_size, verify=verify)
-        members.append(
-            Member(
-                relpath=relpath,
-                dest_relpath=dest_relpath,
-                state=IDENTICAL if same else CONFLICT,
-                size=size,
-                occupant_size=occupant_size,
-                keep_both_relpath=_relative(settings, resolve_collision(destination)),
-            )
-        )
-    return members
+    return [
+        classify(conn, settings, relpath, dest_relpath, verify=verify)
+        for relpath, dest_relpath in moves
+    ]
+
+
+def classify(
+    conn: sqlite3.Connection,
+    settings: Settings,
+    relpath: str,
+    dest_relpath: str,
+    *,
+    verify: bool,
+) -> Member:
+    """One file, its destination, and what is waiting for it there.
+
+    The whole of what a merge knows about a single file, and the reason it is a
+    function rather than a loop body: `loose-tracks` asks the same question one
+    track at a time. Two files wanting one name is the same problem however the
+    two of them came to be pointed at it, so it gets the same three answers and
+    the same storage rather than a second collision model.
+    """
+    from librairy.corrections import CorrectionRefused
+
+    size = _indexed_size(conn, relpath)
+    try:
+        destination = validate_dest(settings.library_dir, dest_relpath)
+    except (PathValidationError, ValueError) as exc:
+        raise CorrectionRefused(
+            f"{PurePosixPath(relpath).name} has no safe destination: {exc}"
+        ) from exc
+    if not destination.exists():
+        return Member(relpath, dest_relpath, FREE, size)
+    occupant_size = destination.stat().st_size
+    same = _same_bytes(settings, relpath, destination, occupant_size, verify=verify)
+    return Member(
+        relpath=relpath,
+        dest_relpath=dest_relpath,
+        state=IDENTICAL if same else CONFLICT,
+        size=size,
+        occupant_size=occupant_size,
+        keep_both_relpath=_relative(settings, resolve_collision(destination)),
+    )
 
 
 def _same_bytes(
@@ -478,12 +495,12 @@ def operations(view: MergeView) -> list[OperationSpec]:
     quarantines: list[OperationSpec] = []
     moves: list[OperationSpec] = []
     for member in view.members:
-        for spec in _specs_for(member):
+        for spec in specs_for(member):
             (quarantines if spec.op_type == "quarantine" else moves).append(spec)
     return [*quarantines, *moves]
 
 
-def _specs_for(member: Member) -> list[OperationSpec]:
+def specs_for(member: Member) -> list[OperationSpec]:
     if not member.needs_choice:
         return [_move(member.relpath, member.dest_relpath)]
     if member.choice == KEEP_EXISTING:

@@ -123,7 +123,8 @@
           {% elif finding.approve_choice %}
           <form method="post" action="/review/audit/{{ finding.id }}/accept">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <button type="submit" class="btn-primary">Approve merge</button>
+            <button type="submit" class="btn-primary">{{ 'Approve filing'
+              if finding.filing else 'Approve merge' }}</button>
           </form>
           {% elif finding.offer_reaudit %}
           <form method="post" action="/review/audit/{{ finding.id }}/reaudit">
@@ -237,6 +238,97 @@
         {% endfor %}
       </ul>
     </details>
+    {% endif %}
+
+    {# Loose tracks beside album folders, and one answer for the group would be
+       wrong in exactly the case this exists for: two loose tracks beside two
+       albums are commonly two different albums. So every track gets its own
+       question, and `Leave here` is one of the answers rather than the absence
+       of one. #}
+    {% if finding.filing %}
+    <div class="audit-filing">
+      <p class="audit-scale">
+        <strong>{{ finding.filing.artist }}</strong>
+        <span class="muted">— where should each of these tracks go?</span>
+        {% if finding.filing.moving %}
+        <span class="muted">· {{ finding.filing.moving }} to file</span>
+        {% endif %}
+        {% if finding.filing.leaving %}
+        <span class="muted">· {{ finding.filing.leaving }} staying here</span>
+        {% endif %}
+      </p>
+      {% for track in finding.filing.tracks %}
+      <div class="audit-track">
+        <p class="audit-track-head">
+          <strong>{{ track.name }}</strong>
+          <span class="muted">{{ track.size }}</span>
+          {% if track.leaving %}
+          <span class="badge">Staying here</span>
+          {% elif track.chosen %}
+          <span class="badge">{{ track.chosen_name }}</span>
+          {% endif %}
+        </p>
+        <div class="audit-track-options">
+          {% for album in track.albums %}
+          {% if album.relpath != track.chosen %}
+          <form method="post" action="/review/audit/{{ finding.id }}/file-track">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="relpath" value="{{ track.relpath }}">
+            <input type="hidden" name="dest_relpath" value="{{ album.relpath }}">
+            <button type="submit">Use {{ album.name }}</button>
+          </form>
+          {% endif %}
+          {% endfor %}
+          {% if not track.leaving %}
+          {# An answer, not a refusal to answer. A track somebody put beside the
+             albums on purpose is filed correctly already. #}
+          <form method="post" action="/review/audit/{{ finding.id }}/file-track">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="relpath" value="{{ track.relpath }}">
+            <input type="hidden" name="dest_relpath" value="">
+            <button type="submit">Leave here</button>
+          </form>
+          {% endif %}
+        </div>
+        {% if track.conflict %}
+        {# The chosen album already holds a file of this name. Same three
+           outcomes as a folder merge, because it is the same problem. #}
+        <div class="audit-conflict">
+          <p class="audit-conflict-head">
+            <span class="muted">{{ track.chosen_name }} already has a
+              {{ track.name }}</span>
+            {% if track.conflict.identical %}
+            <span class="muted">— the bytes are identical ({{ track.conflict.size }})</span>
+            {% else %}
+            <span class="muted">— this one {{ track.conflict.size }}, already there
+              {{ track.conflict.occupant_size }}</span>
+            {% endif %}
+          </p>
+          <div class="audit-conflict-options">
+            {% for option in track.conflict.options %}
+            <form method="post" action="/review/audit/{{ finding.id }}/merge-choice">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="hidden" name="relpath" value="{{ track.relpath }}">
+              <input type="hidden" name="choice" value="{{ option.value }}">
+              <button type="submit" class="{{ 'btn-primary' if option.chosen else 'btn-ghost' }}"
+                title="{{ option.note }}">{{ option.label }}{% if option.value == 'keep-both' %}
+                as {{ track.conflict.keep_both_name }}{% endif %}</button>
+            </form>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+      </div>
+      {% endfor %}
+      {% if finding.filing.unresolved %}
+      <p class="audit-actionability">{{ finding.filing.unresolved }} of these still
+        need{{ 's' if finding.filing.unresolved == 1 else '' }} an answer before this
+        can be approved.</p>
+      {% elif not finding.filing.moving %}
+      <p class="audit-actionability">Every one of these is staying where it is, so
+        there is nothing to approve. Dismiss the suggestion to close it.</p>
+      {% endif %}
+    </div>
     {% endif %}
 
     {# One artist, two folders, and no fact in either of them says which is
