@@ -9,7 +9,7 @@ from pathlib import Path
 from librairy.config import Settings
 
 LOGGER = logging.getLogger(__name__)
-SCHEMA_VERSION = 30
+SCHEMA_VERSION = 31
 
 
 class DatabaseVersionError(RuntimeError):
@@ -833,6 +833,23 @@ CREATE TABLE merge_choices (
 CREATE INDEX idx_merge_choices_finding ON merge_choices(audit_finding_id);
 """
 
+#  The other shape of choice, and it needed its own two columns rather than a
+#  row in `merge_choices`. That table answers "which of these two files wins",
+#  keyed by the incoming file; this one answers "which of these folders is the
+#  one this artist lives in", and there is exactly one answer per finding. A
+#  single table spanning both would have to leave half its columns empty for
+#  whichever kind of question it was holding.
+MIGRATION_031 = """
+CREATE TABLE destination_choices (
+  audit_finding_id INTEGER PRIMARY KEY REFERENCES audit_findings(id),
+  -- One of the candidate folders the finding itself named. Validated against
+  -- them again when it is read, because a folder can be renamed or emptied
+  -- between choosing and approving.
+  dest_relpath     TEXT NOT NULL,
+  decided_at       TEXT NOT NULL
+);
+"""
+
 MIGRATIONS = {
     1: MIGRATION_001,
     2: MIGRATION_002,
@@ -864,6 +881,7 @@ MIGRATIONS = {
     28: MIGRATION_028,
     29: MIGRATION_029,
     30: MIGRATION_030,
+    31: MIGRATION_031,
 }
 
 

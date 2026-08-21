@@ -116,6 +116,15 @@
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <button type="submit" class="btn-primary">Approve change</button>
           </form>
+          {# A choice the person resolved themselves, approved by the same
+             person. It is deliberately not `can_approve`: that is what bulk
+             Approve reads, and bulk must never reach a row whose entire
+             content is a decision only the owner could make. #}
+          {% elif finding.approve_choice %}
+          <form method="post" action="/review/audit/{{ finding.id }}/accept">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button type="submit" class="btn-primary">Approve merge</button>
+          </form>
           {% elif finding.offer_reaudit %}
           <form method="post" action="/review/audit/{{ finding.id }}/reaudit">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -228,6 +237,48 @@
         {% endfor %}
       </ul>
     </details>
+    {% endif %}
+
+    {# One artist, two folders, and no fact in either of them says which is
+       right. So the row shows what is really in each — counted, never scored,
+       never recommended — and the person presses one. Choosing sets the
+       direction of a perfectly ordinary merge, which is why the conflict block
+       below this one is the same block a `split-album` merge uses. #}
+    {% if finding.destination %}
+    <div class="audit-destination">
+      <p class="audit-scale">
+        <strong>{{ finding.destination.artist }}</strong>
+        <span class="muted">— choose the folder this artist should use.</span>
+      </p>
+      {% for candidate in finding.destination.candidates %}
+      <div class="audit-candidate">
+        <span class="mono">{{ candidate.relpath }}/</span>
+        <span class="muted">{{ candidate.files }}
+          file{{ '' if candidate.files == 1 else 's' }} ·
+          {{ candidate.albums }} album{{ '' if candidate.albums == 1 else 's' }} ·
+          {{ candidate.size }}</span>
+        {% if candidate.chosen %}
+        <span class="badge">Chosen</span>
+        {% else %}
+        <form method="post" action="/review/audit/{{ finding.id }}/destination">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="dest_relpath" value="{{ candidate.relpath }}">
+          {# Named after the section, because the section is the difference.
+             `Use Music/Pop` says what changes; `Use this one` does not. #}
+          <button type="submit">Use {{ candidate.section }}</button>
+        </form>
+        {% endif %}
+      </div>
+      {% endfor %}
+      {% if finding.destination.chosen %}
+      <p class="audit-actionability">Everything else moves into
+        <span class="mono">{{ finding.destination.chosen }}</span>. Choosing a different
+        folder starts the questions again — an answer about one direction does not
+        describe the other.</p>
+      {% else %}
+      <p class="audit-actionability">Nothing moves until you choose.</p>
+      {% endif %}
+    </div>
     {% endif %}
 
     {# Two folders becoming one. What moves without a question is a number;

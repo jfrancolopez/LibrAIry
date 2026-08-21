@@ -38,6 +38,7 @@ does not have an operation that loses bytes.
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from pathlib import PurePosixPath
 
@@ -183,6 +184,8 @@ def plan_merge(
     row: sqlite3.Row,
     *,
     verify: bool,
+    target: str = "",
+    sources: Sequence[str] | None = None,
 ) -> MergeView:
     """What this merge would do, with every collision found and classified.
 
@@ -194,18 +197,23 @@ def plan_merge(
     """
     from librairy.corrections import CorrectionRefused
 
-    target = row["dest_relpath"]
+    #  `target` and `sources` are supplied by `destination_choice.py`, which is
+    #  the only caller that knows them: a `split-album` finding proposes its own
+    #  destination, and an `artist-split` finding deliberately proposes none
+    #  because the answer is a person's. Everything after this line is the same
+    #  merge either way — the direction is the only thing the choice decides.
+    target = target or row["dest_relpath"]
     if not target:
         raise CorrectionRefused("there is no single folder to merge these into")
-    sources = _sources(row, target)
-    if not sources:
+    folders = list(sources) if sources is not None else _sources(row, target)
+    if not folders:
         raise CorrectionRefused("these are already in one folder")
-    _refuse_topology(sources, target)
-    _refuse_protected(conn, [*sources, target])
+    _refuse_topology(folders, target)
+    _refuse_protected(conn, [*folders, target])
 
     answers = choices_for(conn, int(row["id"]))
     members: list[Member] = []
-    for source in sources:
+    for source in folders:
         members.extend(_members(conn, settings, source, target, verify=verify))
     members = [
         replace(member, choice=answers.get(member.relpath, ""))
@@ -217,7 +225,7 @@ def plan_merge(
     view = MergeView(
         finding_id=int(row["id"]),
         target=target,
-        sources=tuple(sources),
+        sources=tuple(folders),
         members=tuple(members),
     )
     if not view.members:

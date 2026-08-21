@@ -1093,6 +1093,71 @@ def _merge_row(view, settings: Settings) -> dict[str, object]:  # noqa: ANN001, 
     }
 
 
+def _destination_view(  # noqa: ANN201
+    conn: sqlite3.Connection, settings: Settings | None, row: sqlite3.Row
+):
+    """The folders this artist could live in, and which one was picked.
+
+    None for every other kind of finding. `()` candidates — one folder left,
+    or too many to be a choice — also come back as None, so the row falls
+    through to the observation it has always been rather than offering a
+    question with no answers in it.
+    """
+    from librairy.destination_choice import candidates, is_destination_finding, selected
+
+    if settings is None or not is_destination_finding(row):
+        return None
+    found = candidates(conn, row)
+    if len(found) < 2:
+        return None
+    return found, selected(conn, row)
+
+
+def _destination_merge(  # noqa: ANN201
+    conn: sqlite3.Connection, settings: Settings, row: sqlite3.Row
+):
+    """The merge the chosen direction produces, or None while it is unchosen.
+
+    Refusals come back as None for the same reason `_merge_view`'s do: a
+    direction LibrAIry cannot plan today is a row that shows the choice and no
+    merge, not an error page over the whole of Review.
+    """
+    from librairy.corrections import CorrectionRefused
+    from librairy.destination_choice import plan_for
+
+    try:
+        return plan_for(conn, settings, row, verify=False)
+    except CorrectionRefused:
+        return None
+
+
+def _destination_row(view, row: sqlite3.Row) -> dict[str, object]:  # noqa: ANN001
+    """One destination choice, as the page reads it.
+
+    The counts are facts and are shown as facts. Nothing here sorts by them,
+    marks one, or calls one recommended — see `librairy/destination_choice.py`.
+    """
+    from librairy.destination_choice import subject
+
+    found, answer = view
+    return {
+        "artist": subject(row),
+        "chosen": answer,
+        "candidates": [
+            {
+                "relpath": candidate.relpath,
+                "section": candidate.section,
+                "name": candidate.name,
+                "files": candidate.files,
+                "albums": candidate.albums,
+                "size": human_size(candidate.bytes),
+                "chosen": candidate.relpath == answer,
+            }
+            for candidate in found
+        ],
+    }
+
+
 def _audit_row(
     conn: sqlite3.Connection, settings: Settings | None, row: sqlite3.Row
 ) -> dict[str, object]:
@@ -1110,11 +1175,19 @@ def _audit_row(
     #  choice *is* the action — pressing a copy approves it. A merge's choices
     #  are prerequisites: answer them all, then one Approve. So this one can
     #  stop being a CHOICE and become approvable, and a duplicate never does.
-    merge = (
-        _merge_view(conn, settings, row)
-        if settings is not None and not accepted
-        else None
-    )
+    #  And the third shape: a choice between two *folders* rather than two
+    #  files. Answering it turns the row into a merge, planned by the same
+    #  planner — so the destination is read first and the merge asked for
+    #  second, with the direction it just supplied.
+    destination = _destination_view(conn, settings, row) if not accepted else None
+    if destination is not None:
+        merge = _destination_merge(conn, settings, row)
+    else:
+        merge = (
+            _merge_view(conn, settings, row)
+            if settings is not None and not accepted
+            else None
+        )
     if merge is not None and merge.unresolved:
         # A merge that still has questions is not resolvable into a group, and
         # asking would raise. Its files are listed by the conflict rows.
@@ -1174,8 +1247,13 @@ def _audit_row(
         executable=executable,
         blocked=blocked,
         plan=plan,
+        #  A destination choice stays a CHOICE even once it is fully answered.
+        #  The person resolved it themselves and may approve it themselves —
+        #  what must not happen is "approve all confident" reaching a row whose
+        #  whole content is a decision only they could make.
         choices=any(copy.removable for copy in duplicates)
-        or bool(merge and merge.unresolved),
+        or bool(merge and merge.unresolved)
+        or destination is not None,
     )
     status_label = ACTION_LABEL[status_kind]
     # A stale observation is still a true observation. Only a finding that
@@ -1246,6 +1324,12 @@ def _audit_row(
         # Two folders becoming one: what moves cleanly, and every collision
         # with the answers already given. Empty for everything else.
         "merge": _merge_row(merge, settings) if merge is not None else None,
+        # Which folder this artist should use. Present only on a destination
+        # choice; `None` everywhere else, so no other row can grow buttons.
+        "destination": _destination_row(destination, row) if destination is not None else None,
+        # The explicit Approve a resolved choice earns, and never bulk. See the
+        # `choices` argument above for why the two are separate.
+        "approve_choice": bool(destination is not None and merge is not None and merge.settled),
         # What the correction is, in facts, above the fold. A folder rename
         # whose scale is only visible after opening an expander is a decision
         # made without the number that matters most.

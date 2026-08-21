@@ -612,16 +612,34 @@ def _folder_subject(
     Read from the finding rather than from the plan's operations: the finding is
     what somebody approved, and the operations are how it is carried out.
     """
+    from librairy.destination_choice import DESTINATION_KINDS, chosen, subject
     from librairy.merge import MERGE_KINDS
     from librairy.subtree import SUBTREE_KINDS
 
     if kind != CORRECTION or not row["audit_finding_id"]:
         return None
     found = conn.execute(
-        "SELECT kind, relpath, dest_relpath FROM audit_findings WHERE id=?",
+        "SELECT id, kind, relpath, dest_relpath, evidence FROM audit_findings WHERE id=?",
         (row["audit_finding_id"],),
     ).fetchone()
-    if found is None or not found["dest_relpath"]:
+    if found is None:
+        return None
+    if found["kind"] in DESTINATION_KINDS:
+        #  A destination choice has no `dest_relpath` of its own — that is the
+        #  whole point of it — so the folder it is going into is the one the
+        #  person picked. Named after the artist rather than after a folder,
+        #  because "Bring Prince together" is what was approved and
+        #  `Music/Pop/Prince` is only where.
+        destination = chosen(conn, int(found["id"]))
+        if not destination:
+            return None
+        return {
+            "subject": f"Bring {subject(found)} together",
+            "current": f"library/{found['relpath']}",
+            "after": f"library/{destination}",
+            "verb": "Into",
+        }
+    if not found["dest_relpath"]:
         return None
     if found["kind"] in MERGE_KINDS:
         #  A merge is one decision however many operations carry it out — 76 is

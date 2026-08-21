@@ -32,6 +32,7 @@ from librairy.config import Settings
 from librairy.corrections import CorrectionRefused, accept_correction
 from librairy.db import connect, impatient, is_locked
 from librairy.dedup import DedupConfigError
+from librairy.destination_choice import choose as choose_destination
 from librairy.filetypes import aria_label as ext_aria_label
 from librairy.filetypes import extension_info, next_ext_id
 from librairy.lifecycle import forget_vanished
@@ -983,6 +984,31 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         """
         try:
             record_merge_choice(conn, finding_id, relpath, choice)
+        except CorrectionRefused as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return RedirectResponse(
+            f"/review?focus={finding_id}#finding-{finding_id}", status_code=303
+        )
+
+    @app.post("/review/audit/{finding_id}/destination", include_in_schema=False)
+    def review_audit_destination(
+        request: Request,  # noqa: ARG001
+        finding_id: int,
+        dest_relpath: str = Form(...),
+    ) -> RedirectResponse:
+        """Say which of an artist's folders is the one they should be in.
+
+        Nothing is approved by this and nothing moves. It answers the first of
+        two questions — the direction — and the merge that follows asks about
+        any collisions the chosen direction turns out to have.
+
+        Choosing again clears those collision answers. `Keep existing` names
+        the file at the destination, and the destination has just changed
+        sides; keeping the old answer would apply the person's words to a
+        question they were never asked.
+        """
+        try:
+            choose_destination(conn, settings, finding_id, dest_relpath)
         except CorrectionRefused as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         return RedirectResponse(

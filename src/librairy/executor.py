@@ -334,14 +334,23 @@ def _duplicate_evidence_expired(
 
 
 def _is_merge_plan(conn: sqlite3.Connection, plan_id: str) -> bool:
+    """Was this plan produced by the merge planner, whichever door it came in?
+
+    Two kinds reach it. `split-album` is a merge from the start; `artist-split`
+    becomes one once somebody has chosen which folder the artist lives in. They
+    execute identically — same operations, same ordering, same destination
+    preflight — so the question here is about the planner, not the finding.
+    """
+    from librairy.destination_choice import DESTINATION_KINDS
     from librairy.merge import MERGE_KINDS
 
-    placeholders = ",".join("?" * len(MERGE_KINDS))
+    kinds = sorted(MERGE_KINDS | DESTINATION_KINDS)
+    placeholders = ",".join("?" * len(kinds))
     return (
         conn.execute(
             f"SELECT 1 FROM plans p JOIN audit_findings f ON f.id = p.audit_finding_id"  # noqa: S608
             f" WHERE p.id=? AND f.kind IN ({placeholders}) LIMIT 1",
-            (plan_id, *sorted(MERGE_KINDS)),
+            (plan_id, *kinds),
         ).fetchone()
         is not None
     )

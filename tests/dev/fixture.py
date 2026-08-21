@@ -59,9 +59,13 @@ FILES: dict[str, bytes | None] = {
     "Music/Disco/Bee Gees/Road Trip Classics/02 - More Than A Woman.flac": b"bg1",
     "Music/Disco/Abba/Road Trip Classics/36 - SOS.flac": b"abba1",
     "Music/Disco/Chic/Road Trip Classics/14 - Le Freak.flac": b"chic1",
-    # 10. an artist filed under two sections
+    # 10. an artist filed under two sections, with one collision waiting in
+    #     whichever direction is chosen — the second stage of a destination
+    #     choice, and the reason switching direction has to start again.
     "Music/Rock/Queen/A Night at the Opera/01 - Death on Two Legs.flac": b"q1",
+    "Music/Rock/Queen/Hot Space/cover.jpg": b"the sleeve filed under Rock",
     "Music/Pop/Queen/Hot Space/01 - Staying Power.flac": b"q2",
+    "Music/Pop/Queen/Hot Space/cover.jpg": b"a different scan of the sleeve",
     # 11. one file per extension the shared `?` control explains, so every
     #     surface that lists files has a control to press. These were the gap:
     #     Search, History and Quarantine had no rows at all, so the repaired

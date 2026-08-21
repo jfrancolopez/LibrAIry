@@ -193,6 +193,10 @@ ACTION_MAY_HAVE_SEVERAL_LABELS = {
     "POST /settings/providers/ollama/{name}/remove",
     "POST /settings/providers/ollama/{name}/toggle",
     "POST /settings/providers/order/{kind}/{direction}",
+    #  Named for the subject, again: each button names the folder it would put
+    #  the artist in, which is the entire content of the decision. `Use this
+    #  one` would be one label and would say nothing.
+    "POST /review/audit/{finding_id}/destination",
     #  The link is the plan's own identifier.
     "GET /history/plans/{plan_id}",
     #  Scope is the difference and the label is where it is said: auditing one

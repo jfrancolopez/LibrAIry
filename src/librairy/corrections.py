@@ -201,9 +201,12 @@ def resolve_group(
     action.
     """
     from librairy.audit import _in_dvd_structure
+    from librairy.destination_choice import is_destination_finding
     from librairy.merge import is_merge_finding
     from librairy.subtree import is_subtree_finding
 
+    if is_destination_finding(row):
+        return resolve_destination_group(conn, settings, row, verify=verify)
     if is_merge_finding(row):
         return resolve_merge_group(conn, settings, row, verify=verify)
     if is_subtree_finding(row):
@@ -244,9 +247,36 @@ def resolve_merge_group(
     `librairy/merge.py`. An unanswered merge raises, which is what keeps a
     half-decided merge from becoming a plan however the request arrived.
     """
-    from librairy.merge import operations, plan_merge
+    from librairy.merge import plan_merge
 
-    view = plan_merge(conn, settings, row, verify=verify)
+    return _merge_group(row, plan_merge(conn, settings, row, verify=verify))
+
+
+def resolve_destination_group(
+    conn: sqlite3.Connection,
+    settings: Settings,
+    row: sqlite3.Row,
+    *,
+    verify: bool = True,
+) -> CorrectionGroup:
+    """An artist consolidated into the folder the owner picked.
+
+    There is nothing here but the direction. Once `destination_choice` has
+    said which folder is the destination, this *is* a merge, and it is the
+    same merge planner that produces the operations — see
+    `librairy/destination_choice.py` for why that was the whole design.
+    """
+    from librairy.destination_choice import plan_for
+
+    view = plan_for(conn, settings, row, verify=verify)
+    if view is None:
+        raise CorrectionRefused("choose which folder this artist should use first")
+    return _merge_group(row, view)
+
+
+def _merge_group(row: sqlite3.Row, view) -> CorrectionGroup:  # noqa: ANN001
+    from librairy.merge import operations
+
     specs = operations(view)
     return CorrectionGroup(
         finding_id=int(row["id"]),
@@ -449,7 +479,14 @@ def accept_correction(conn: sqlite3.Connection, settings: Settings, finding_id: 
     if row["status"] == "corrected":
         raise CorrectionRefused("this correction has already been applied")
     state = finding_state(settings, row)
-    if not is_executable(row, state):
+    if _is_destination_choice(row):
+        # A destination choice is never `executable` in the allowlist sense:
+        # its kind proposes no destination, deliberately, because the
+        # destination is the question. What makes it approvable is that the
+        # question has been answered — and that is asked here, on the way in,
+        # rather than trusted from whichever page drew the button.
+        _assert_destination_settled(conn, settings, row, state)
+    elif not is_executable(row, state):
         raise CorrectionRefused(_refusal(row, state))
 
     group = resolve_group(conn, settings, row)
@@ -486,6 +523,36 @@ def accept_correction(conn: sqlite3.Connection, settings: Settings, finding_id: 
     return plan_id
 
 
+def _is_destination_choice(row: sqlite3.Row) -> bool:
+    from librairy.destination_choice import is_destination_finding
+
+    return is_destination_finding(row)
+
+
+def _assert_destination_settled(
+    conn: sqlite3.Connection, settings: Settings, row: sqlite3.Row, state: str
+) -> None:
+    """Both stages answered, and both still true of the library as it is now.
+
+    `plan_for` re-reads the candidate folders rather than trusting the stored
+    answer, so a destination that has been renamed or emptied since it was
+    chosen comes back unanswered instead of coming back approvable. The merge
+    it returns then refuses on its own account if a collision appeared after
+    the last question was answered.
+    """
+    from librairy.destination_choice import plan_for
+
+    if state == MISSING:
+        raise CorrectionRefused(_refusal(row, state))
+    view = plan_for(conn, settings, row, verify=True)
+    if view is None:
+        raise CorrectionRefused("choose which folder this artist should use first")
+    if not view.settled:
+        raise CorrectionRefused(
+            f"{len(view.unresolved)} of these files still need your choice"
+        )
+
+
 def _specs_for(
     conn: sqlite3.Connection, settings: Settings, row: sqlite3.Row, group: CorrectionGroup
 ) -> list[OperationSpec]:
@@ -497,8 +564,15 @@ def _specs_for(
     only that order. So the merge planner produces its own operations and this
     asks it rather than guessing from the group it produced.
     """
+    from librairy.destination_choice import is_destination_finding
+    from librairy.destination_choice import plan_for as plan_destination
     from librairy.merge import is_merge_finding, operations, plan_merge
 
+    if is_destination_finding(row):
+        view = plan_destination(conn, settings, row, verify=True)
+        if view is None:
+            raise CorrectionRefused("choose which folder this artist should use first")
+        return operations(view)
     if is_merge_finding(row):
         return operations(plan_merge(conn, settings, row, verify=True))
     return [
