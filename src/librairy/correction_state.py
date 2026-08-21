@@ -149,7 +149,15 @@ def plan_drift(conn: sqlite3.Connection, settings: Settings, plan_id: str) -> st
         (plan_id,),
     ).fetchall()
     for row in rows:
-        root = settings.library_dir if row["src_root"] == "library" else settings.inbox_dir
+        #  Every root a plan can read from, by name. Folding "not library" into
+        #  "inbox" was fine while only those two could be sources; a decision
+        #  that brings a held file back reads from Quarantine, and looking for
+        #  it in the inbox reported a perfectly good approval as outdated.
+        root = {
+            "library": settings.library_dir,
+            "inbox": settings.inbox_dir,
+            "quarantine": settings.quarantine_dir,
+        }.get(str(row["src_root"]), settings.inbox_dir)
         try:
             path = validate_relpath(root, row["src_relpath"], kind="source")
         except Exception:

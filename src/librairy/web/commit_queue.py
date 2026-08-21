@@ -329,7 +329,25 @@ def _inbox_reason(conn: sqlite3.Connection, kind: str, row: sqlite3.Row) -> str:
     described = describe(conn, int(row["item_id"]))
     if described and described["match"]:
         return f"Identical to {described['match']}, which you already have."
+    compared = _compared_with(conn, int(row["item_id"]))
+    if compared:
+        #  Not the same sentence as an identical copy, and not the vague one
+        #  either: this file was measured against a version already filed and
+        #  that version is the reason it is leaving. Saying "you sent it here"
+        #  loses the comparison the person actually made.
+        return f"You kept {compared} after comparing the two. Nothing is deleted."
     return "You sent this to Quarantine from Review."
+
+
+def _compared_with(conn: sqlite3.Connection, item_id: int) -> str:
+    """The filed version this arrival was compared with, by name."""
+    from librairy.arrival_comparison import compared_with
+
+    twin = compared_with(conn, item_id)
+    if twin is None:
+        return ""
+    row = conn.execute("SELECT relpath FROM items WHERE id=?", (twin,)).fetchone()
+    return PurePosixPath(str(row["relpath"])).name if row else ""
 
 
 def _plan_rows(
@@ -346,13 +364,17 @@ def _plan_rows(
         SET_ASIDE: (
             f"(p.audit_finding_id IS NOT NULL OR p.coherent=1) AND NOT {_HAS_LIBRARY_MOVE}"
         ),
+        #  `coherent=0` on both: a plan about a held file that has to run as a
+        #  unit is a replacement, and it is counted and listed as a correction.
+        #  Without this it appeared twice — once truthfully, and once under
+        #  `Restores`, which is the one word it must not be called.
         DELETE_QUEUE: (
-            "p.quarantine_entry_id IS NOT NULL AND o.dest_root='quarantine'"
-            " AND o.dest_relpath LIKE '_to-delete/%'"
+            "p.quarantine_entry_id IS NOT NULL AND p.coherent=0"
+            " AND o.dest_root='quarantine' AND o.dest_relpath LIKE '_to-delete/%'"
         ),
         RESTORE: (
-            "p.quarantine_entry_id IS NOT NULL AND NOT (o.dest_root='quarantine'"
-            " AND o.dest_relpath LIKE '_to-delete/%')"
+            "p.quarantine_entry_id IS NOT NULL AND p.coherent=0"
+            " AND NOT (o.dest_root='quarantine' AND o.dest_relpath LIKE '_to-delete/%')"
         ),
         OPTIMIZATION: "p.optimization_job_id IS NOT NULL",
     }[kind]
@@ -444,7 +466,15 @@ def _plan_row(
             (
                 f"/review/audit/{row['audit_finding_id']}/unapprove"
                 if row["audit_finding_id"]
-                else f"/commit/withdraw/{row['plan_id']}"
+                #  A replacement decided on the Quarantine page is recalled
+                #  there. Sending it through the comparison withdrawal would
+                #  turn a held file back into an inbox Review row, which is a
+                #  place it is not and cannot be filed from.
+                else (
+                    f"/quarantine/cancel/{row['quarantine_entry_id']}"
+                    if row["quarantine_entry_id"]
+                    else f"/commit/withdraw/{row['plan_id']}"
+                )
             )
             if kind in (CORRECTION, SET_ASIDE)
             else (
@@ -461,7 +491,9 @@ def _plan_row(
             "Remove old approval"
             if stale
             else (
-                "Send back to Review"
+                "Cancel request"
+                if kind in (CORRECTION, SET_ASIDE) and row["quarantine_entry_id"]
+                else "Send back to Review"
                 if kind in (CORRECTION, SET_ASIDE)
                 #  The optimization card posts to the same handler the
                 #  optimization page's `Cancel request` posts to, and said so
@@ -789,23 +821,29 @@ def _comparison_reason(conn: sqlite3.Connection, row: sqlite3.Row) -> str:
 def _arrival_subject(
     conn: sqlite3.Connection, row: sqlite3.Row
 ) -> dict[str, str] | None:
-    """A comparison the arriving file won, headed by the arriving file.
+    """A comparison one representation won, headed by that representation.
 
     The plan's first operation preserves the copy being replaced, so reading
     the card off it would head "you chose the FLAC" with the name of the MP3
     that is leaving. The move is the decision; the quarantine is how the
     decision is carried out without losing anything.
+
+    Either direction. The version taking the slot may be arriving from the
+    inbox, or it may be one that was set aside earlier and is being brought
+    back in the filed copy's place — the same decision, made on a different
+    page, and the card says the same true thing about it.
     """
     move = conn.execute(
         "SELECT src_root, src_relpath, dest_relpath FROM plan_ops"
-        " WHERE plan_id=? AND op_type='move' AND src_root='inbox' ORDER BY seq LIMIT 1",
+        " WHERE plan_id=? AND op_type='move' AND src_root IN ('inbox', 'quarantine')"
+        " ORDER BY seq LIMIT 1",
         (row["plan_id"],),
     ).fetchone()
     if move is None:
         return None
     return {
         "subject": PurePosixPath(str(move["src_relpath"])).name,
-        "current": f"inbox/{move['src_relpath']}",
+        "current": f"{move['src_root']}/{move['src_relpath']}",
         "after": f"library/{move['dest_relpath']}",
         "verb": "",
         "is_file": "yes",

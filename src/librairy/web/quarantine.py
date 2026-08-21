@@ -430,6 +430,7 @@ def _entries(
     )
     # One query for the whole page rather than one per row: a request lookup
     # inside the loop is the N+1 that makes fifty rows fifty-one queries.
+    from librairy.quarantine_replace import describe as replacement_describe
     from librairy.quarantine_requests import pending_requests
 
     requests = pending_requests(conn)
@@ -460,6 +461,11 @@ def _entries(
             "disposal_state": _disposal_state(conn, row),
             "state_label": STATE_LABEL.get(_disposal_state(conn, row), ""),
             "active_version": _active_version(conn, row),
+            #  The reciprocal of Restore, where the provenance supports it:
+            #  this representation taking the place of the filed one it was
+            #  compared with. None for every other held file, and the row
+            #  draws no button at all rather than one that can only refuse.
+            "replacement": replacement_describe(conn, row),
             "preserved_storage": _preserved_storage(conn, row),
             "marked": marked_for_deletion(row["item_relpath"]),
             "size_label": human_size(row["item_size"]),

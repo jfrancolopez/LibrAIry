@@ -66,13 +66,13 @@ def _duplicate_of(conn: sqlite3.Connection, op: sqlite3.Row) -> int | None:
         return None
     reason = _plan_reason(conn, op) or quarantine_reason(conn, int(item_id))
     if reason == "similar_media":
-        if _replaced_by_an_arrival(conn, op):
+        if _replaced_by_another_representation(conn, op):
             #  Not a copy of anything: the file that took its place. Naming it
             #  is the whole content of the row — "replaced" without saying by
             #  what leaves nobody able to judge whether to put it back.
             arrived = conn.execute(
                 "SELECT item_id FROM plan_ops WHERE plan_id=? AND op_type='move'"
-                " AND src_root='inbox' ORDER BY seq LIMIT 1",
+                " AND src_root IN ('inbox', 'quarantine') ORDER BY seq LIMIT 1",
                 (op["plan_id"],),
             ).fetchone()
             return int(arrived["item_id"]) if arrived and arrived["item_id"] else None
@@ -114,27 +114,33 @@ def _plan_reason(conn: sqlite3.Connection, op: sqlite3.Row) -> str:
         return "similar_media"
     if op["item_id"] is not None and is_similar_proposal(conn, int(op["item_id"])):
         return "similar_media"
-    if _replaced_by_an_arrival(conn, op):
+    if _replaced_by_another_representation(conn, op):
         return "similar_media"
     return ""
 
 
-def _replaced_by_an_arrival(conn: sqlite3.Connection, op: sqlite3.Row) -> bool:
-    """Is this filed copy leaving because an arriving version took its place?
+def _replaced_by_another_representation(
+    conn: sqlite3.Connection, op: sqlite3.Row
+) -> bool:
+    """Is this filed copy leaving because another version took its place?
 
-    True only for the library half of a cross-root comparison: a coherent plan
-    that quarantines something from the library and moves something from the
-    inbox into it. `PREVIOUS_REPRESENTATION` is what the page then calls it —
-    "you did not want it" would be the opposite of what happened, and "exact
+    True only for the library half of a replacement: a coherent plan that
+    quarantines something from the library and moves another representation
+    into it. `PREVIOUS_REPRESENTATION` is what the page then calls it — "you
+    did not want it" would be the opposite of what happened, and "exact
     duplicate" would be a claim about bytes that differ.
+
+    Both directions count. The version taking its place may be arriving from
+    the inbox, or it may be one that was set aside earlier and is being brought
+    back in this file's stead — the same swap, decided from the other page.
     """
     if op["src_root"] != "library":
         return False
     return (
         conn.execute(
             "SELECT 1 FROM plans p JOIN plan_ops o ON o.plan_id = p.id"
-            " WHERE p.id=? AND p.coherent=1 AND o.op_type='move' AND o.src_root='inbox'"
-            " LIMIT 1",
+            " WHERE p.id=? AND p.coherent=1 AND o.op_type='move'"
+            " AND o.src_root IN ('inbox', 'quarantine') LIMIT 1",
             (op["plan_id"],),
         ).fetchone()
         is not None
@@ -270,8 +276,8 @@ def is_previous_representation(conn: sqlite3.Connection, entry) -> bool:  # noqa
     return (
         conn.execute(
             "SELECT 1 FROM plans p JOIN plan_ops o ON o.plan_id = p.id"
-            " WHERE p.id=? AND p.coherent=1 AND o.op_type='move' AND o.src_root='inbox'"
-            " LIMIT 1",
+            " WHERE p.id=? AND p.coherent=1 AND o.op_type='move'"
+            " AND o.src_root IN ('inbox', 'quarantine') LIMIT 1",
             (plan_id,),
         ).fetchone()
         is not None

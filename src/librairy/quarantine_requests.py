@@ -51,16 +51,25 @@ from librairy.quarantine import (
 # disagree; one cannot.
 DELETE_QUEUE = "delete-queue"
 RESTORE = "restore"
+#  A held representation taking the place of the filed one it was compared
+#  with. Two operations and one decision, which is exactly what `coherent`
+#  means — so the intent is read off that rather than off a destination. A
+#  replacement's first operation quarantines a *library* file, and reading only
+#  that would call the whole thing a restore, which is the one word it must not
+#  be called at the last moment before bytes move.
+REPLACE = "replace"
 
 # Said to a person, once, so the row, the Commit card and the confirmation all
 # use the same words.
 LABEL = {
     DELETE_QUEUE: "Move to delete queue",
     RESTORE: "Restore",
+    REPLACE: "Use this instead",
 }
 OUTCOME = {
     DELETE_QUEUE: "Will move to the delete queue. Nothing is deleted.",
     RESTORE: "Will go back where it came from.",
+    REPLACE: "Will take the place of the filed version, which is preserved first.",
 }
 
 
@@ -92,14 +101,27 @@ def intent_of(dest_root: str, dest_relpath: str) -> str:
     return RESTORE
 
 
+def _intent(row: sqlite3.Row) -> str:
+    """Which decision this plan is, from the plan rather than from one row.
+
+    Coherent means the plan's operations are one decision that must happen
+    together, and the only such decision about a held file is a replacement.
+    Everything else is a single move and says what it is by where it points.
+    """
+    if row["coherent"]:
+        return REPLACE
+    return intent_of(row["dest_root"], row["dest_relpath"])
+
+
 def pending_request(conn: sqlite3.Connection, entry_id: int) -> Request | None:
     """The decision waiting on this held file, if there is one."""
     placeholders = ",".join("?" * len(ACTIVE_PLAN_STATUSES))
     row = conn.execute(
         f"""
-        SELECT p.id, p.status, o.src_relpath, o.dest_root, o.dest_relpath
+        SELECT p.id, p.status, p.coherent, o.src_relpath, o.dest_root, o.dest_relpath
         FROM plans p JOIN plan_ops o ON o.plan_id = p.id
         WHERE p.quarantine_entry_id = ? AND p.status IN ({placeholders})
+          AND o.src_root = 'quarantine'
         ORDER BY o.seq LIMIT 1
         """,  # noqa: S608 — placeholders are a module constant, never input
         (entry_id, *ACTIVE_PLAN_STATUSES),
@@ -109,7 +131,7 @@ def pending_request(conn: sqlite3.Connection, entry_id: int) -> Request | None:
     return Request(
         plan_id=row["id"],
         entry_id=entry_id,
-        intent=intent_of(row["dest_root"], row["dest_relpath"]),
+        intent=_intent(row),
         src_relpath=row["src_relpath"],
         dest_root=row["dest_root"],
         dest_relpath=row["dest_relpath"],
@@ -127,10 +149,11 @@ def pending_requests(conn: sqlite3.Connection) -> dict[int, Request]:
     placeholders = ",".join("?" * len(ACTIVE_PLAN_STATUSES))
     rows = conn.execute(
         f"""
-        SELECT p.id, p.status, p.quarantine_entry_id AS entry_id,
+        SELECT p.id, p.status, p.coherent, p.quarantine_entry_id AS entry_id,
                o.src_relpath, o.dest_root, o.dest_relpath
         FROM plans p JOIN plan_ops o ON o.plan_id = p.id
         WHERE p.quarantine_entry_id IS NOT NULL AND p.status IN ({placeholders})
+          AND o.src_root = 'quarantine'
         ORDER BY o.seq
         """,  # noqa: S608 — placeholders are a module constant, never input
         ACTIVE_PLAN_STATUSES,
@@ -139,7 +162,7 @@ def pending_requests(conn: sqlite3.Connection) -> dict[int, Request]:
         int(row["entry_id"]): Request(
             plan_id=row["id"],
             entry_id=int(row["entry_id"]),
-            intent=intent_of(row["dest_root"], row["dest_relpath"]),
+            intent=_intent(row),
             src_relpath=row["src_relpath"],
             dest_root=row["dest_root"],
             dest_relpath=row["dest_relpath"],
@@ -314,12 +337,20 @@ def settle_quarantine_plan(conn: sqlite3.Connection, plan_id: str) -> None:
         return
     if plan["status"] != "done":
         return
+    #  The operation that moves the held file *out* of Quarantine, which is
+    #  what settles the entry. A replacement's first operation moves a library
+    #  file in the other direction, and reading that one would settle the wrong
+    #  half of the decision.
     op = conn.execute(
-        "SELECT dest_root, dest_relpath FROM plan_ops WHERE plan_id=? ORDER BY seq LIMIT 1",
+        "SELECT dest_root, dest_relpath FROM plan_ops"
+        " WHERE plan_id=? AND src_root='quarantine' ORDER BY seq LIMIT 1",
         (plan_id,),
     ).fetchone()
     if op is None:
         return
+    #  A replacement's quarantine-side operation is also a move back into the
+    #  library, so it settles the entry by the same rule: the file is no longer
+    #  held, whether it came back beside the other one or in its place.
     if intent_of(op["dest_root"], op["dest_relpath"]) == RESTORE:
         entry = conn.execute(
             "SELECT * FROM quarantine_entries WHERE id=?",

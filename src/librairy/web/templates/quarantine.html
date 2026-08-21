@@ -361,10 +361,27 @@
                   {% if entry.restorable %}
                     <form method="post" action="/quarantine/restore/{{ entry.id }}">
                       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                      <button type="submit">Restore</button>
+                      {# Two answers to one comparison, and they end differently:
+                         this one leaves both representations active, the one
+                         beside it leaves exactly one. On a row where only this
+                         exists, `Restore` says everything there is to say. #}
+                      <button type="submit">{{ 'Restore both' if entry.replacement
+                        else 'Restore' }}</button>
                     </form>
                   {% else %}
                     <span class="muted">Restore location needs review</span>
+                  {% endif %}
+                  {% if entry.replacement %}
+                    {# The reciprocal decision: not "bring this back as well"
+                       but "use this one in its place". The filed version is
+                       preserved first, so nothing is overwritten. #}
+                    <form method="post" action="/quarantine/use-instead/{{ entry.id }}">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                      <button type="submit"
+                        title="{{ entry.replacement.active_name }} goes to Quarantine and
+                          this one takes its place at {{ entry.replacement.dest_relpath }}."
+                        >{{ entry.replacement.label }}</button>
+                    </form>
                   {% endif %}
                   {% if not entry.marked %}
                     <form method="post" action="/quarantine/delete-queue/{{ entry.id }}">

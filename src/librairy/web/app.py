@@ -1488,6 +1488,29 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             request, "Restore requested. It moves back when you commit.", view="waiting"
         )
 
+    @app.post("/quarantine/use-instead/{entry_id}", response_class=HTMLResponse)
+    def quarantine_use_instead(request: Request, entry_id: int) -> HTMLResponse:
+        """Put this representation back *in place of* the one now filed.
+
+        Not Restore. Restore moves one file and leaves the other where it is,
+        so both end up active; this moves two, preserving the filed copy before
+        the held one takes its slot, and exactly one ends up active. One
+        coherent plan, revalidated as a unit, carried out at Commit like every
+        other decision that moves a file.
+        """
+        from librairy.quarantine_replace import request_replacement
+
+        try:
+            request_replacement(conn, settings, entry_id)
+        except QuarantineError as exc:
+            return _quarantine_page(request, str(exc), status_code=409)
+        return _quarantine_page(
+            request,
+            "It takes the place of the filed version when you commit. That one "
+            "is preserved first.",
+            view="waiting",
+        )
+
     @app.post("/quarantine/delete-queue/{entry_id}", response_class=HTMLResponse)
     def quarantine_delete_queue(request: Request, entry_id: int) -> HTMLResponse:
         """Ask for this file to join the delete queue. Never deletes anything.

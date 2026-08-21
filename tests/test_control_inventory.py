@@ -212,6 +212,11 @@ ACTION_MAY_HAVE_SEVERAL_LABELS = {
     #  the same route because keeping everything is still an answer — it just
     #  happens to be the one with no filesystem work in it.
     "POST /review/audit/{finding_id}/comparison",
+    #  `Restore` on its own means bring this back; on a row that also offers
+    #  `Use this instead`, the two answers end differently — both
+    #  representations active, or exactly one — so the first one says which it
+    #  is. Same request either way: the file comes out of Quarantine.
+    "POST /quarantine/restore/{entry_id}",
     #  The link is the plan's own identifier.
     "GET /history/plans/{plan_id}",
     #  Scope is the difference and the label is where it is said: auditing one
