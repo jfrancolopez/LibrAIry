@@ -380,7 +380,7 @@ def _plan_rows(
     }[kind]
     rows = conn.execute(
         f"""
-        SELECT p.id AS plan_id, p.status, p.approved_at,
+        SELECT p.id AS plan_id, p.status, p.approved_at, p.coherent,
                p.audit_finding_id, p.quarantine_entry_id, p.optimization_job_id,
                o.src_root, o.src_relpath, o.dest_root, o.dest_relpath, o.item_id,
                (SELECT COUNT(*) FROM plan_ops WHERE plan_id=p.id) AS op_count,
@@ -671,7 +671,16 @@ def _folder_subject(
     if kind not in (CORRECTION, SET_ASIDE):
         return None
     if not row["audit_finding_id"]:
-        return _arrival_subject(conn, row)
+        return _renaming_subject(conn, row) or _arrival_subject(conn, row)
+    if row["coherent"]:
+        #  A comparison answered by *replacement* rather than by setting one
+        #  aside. Both shapes come from the same finding, and reading this one
+        #  as a set-aside heads the card with the version that is leaving and
+        #  an After of `quarantine/…` — the wrong half of the decision, at the
+        #  last moment before bytes move.
+        replaced = _arrival_subject(conn, row)
+        if replaced is not None:
+            return replaced
     found = conn.execute(
         "SELECT id, kind, relpath, dest_relpath, evidence FROM audit_findings WHERE id=?",
         (row["audit_finding_id"],),
@@ -818,6 +827,50 @@ def _comparison_reason(conn: sqlite3.Connection, row: sqlite3.Row) -> str:
     )
 
 
+def _renaming_subject(
+    conn: sqlite3.Connection, row: sqlite3.Row
+) -> dict[str, str] | None:
+    """A folder whose filenames are being tidied, headed by the folder.
+
+    Read off the plan's own shape rather than a stored kind: every operation is
+    a library-to-library move that changes the filename and not the folder, and
+    nothing else in LibrAIry produces that. Titling this card with its first
+    file would describe one ninth of what pressing Commit does, which is the
+    same defect a folder rename had.
+    """
+    ops = conn.execute(
+        "SELECT op_type, src_root, src_relpath, dest_root, dest_relpath FROM plan_ops"
+        " WHERE plan_id=?",
+        (row["plan_id"],),
+    ).fetchall()
+    if not ops:
+        return None
+    folders = set()
+    for op in ops:
+        if op["op_type"] != "move" or op["src_root"] != "library":
+            return None
+        if op["dest_root"] != "library":
+            return None
+        source, destination = (
+            PurePosixPath(str(op["src_relpath"])),
+            PurePosixPath(str(op["dest_relpath"])),
+        )
+        if source.parent != destination.parent or source.name == destination.name:
+            return None
+        folders.add(str(source.parent))
+    if len(folders) != 1:
+        return None
+    folder = folders.pop()
+    return {
+        "subject": "Tidy filenames",
+        "current": f"library/{folder}",
+        "after": (
+            f"{len(ops)} filename{'s' if len(ops) != 1 else ''} under library/{folder}"
+        ),
+        "verb": "Changing",
+    }
+
+
 def _arrival_subject(
     conn: sqlite3.Connection, row: sqlite3.Row
 ) -> dict[str, str] | None:
@@ -828,14 +881,18 @@ def _arrival_subject(
     that is leaving. The move is the decision; the quarantine is how the
     decision is carried out without losing anything.
 
-    Either direction. The version taking the slot may be arriving from the
-    inbox, or it may be one that was set aside earlier and is being brought
-    back in the filed copy's place — the same decision, made on a different
-    page, and the card says the same true thing about it.
+    Every direction. The version taking the slot may be arriving from the
+    inbox, may be one set aside earlier and brought back in the filed copy's
+    place, or may be another copy already filed somewhere else in the library —
+    the same decision, made on three different pages, and the card says the
+    same true thing about all of them.
     """
+    #  The operation that puts something *into* the library, wherever it came
+    #  from. That is the decision; the quarantine before it is how the decision
+    #  is carried out without losing anything.
     move = conn.execute(
         "SELECT src_root, src_relpath, dest_relpath FROM plan_ops"
-        " WHERE plan_id=? AND op_type='move' AND src_root IN ('inbox', 'quarantine')"
+        " WHERE plan_id=? AND op_type='move' AND dest_root='library'"
         " ORDER BY seq LIMIT 1",
         (row["plan_id"],),
     ).fetchone()
@@ -852,7 +909,17 @@ def _arrival_subject(
 
 def _reason(conn: sqlite3.Connection, row: sqlite3.Row, kind: str) -> str:
     """Why this is waiting, in the words of the decision that made it."""
+    if kind in (CORRECTION, SET_ASIDE) and row["coherent"] and row["audit_finding_id"]:
+        #  Same reason as the subject above: this is a replacement, so the
+        #  sentence is about what takes the slot and what is preserved, not
+        #  about what was kept out of a set.
+        return _comparison_reason(conn, row)
     if kind in (CORRECTION, SET_ASIDE) and not row["audit_finding_id"] and row["plan_id"]:
+        if _renaming_subject(conn, row) is not None:
+            return (
+                "You asked for these filenames to match the current Music naming. "
+                "Only the names change."
+            )
         return _comparison_reason(conn, row)
     if kind == CORRECTION and row["audit_finding_id"]:
         staying = _filing_left_behind(conn, row)

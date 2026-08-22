@@ -72,7 +72,7 @@ def _duplicate_of(conn: sqlite3.Connection, op: sqlite3.Row) -> int | None:
             #  what leaves nobody able to judge whether to put it back.
             arrived = conn.execute(
                 "SELECT item_id FROM plan_ops WHERE plan_id=? AND op_type='move'"
-                " AND src_root IN ('inbox', 'quarantine') ORDER BY seq LIMIT 1",
+                " AND dest_root='library' ORDER BY seq LIMIT 1",
                 (op["plan_id"],),
             ).fetchone()
             return int(arrived["item_id"]) if arrived and arrived["item_id"] else None
@@ -130,9 +130,10 @@ def _replaced_by_another_representation(
     did not want it" would be the opposite of what happened, and "exact
     duplicate" would be a claim about bytes that differ.
 
-    Both directions count. The version taking its place may be arriving from
-    the inbox, or it may be one that was set aside earlier and is being brought
-    back in this file's stead — the same swap, decided from the other page.
+    Every direction counts. The version taking its place may be arriving from
+    the inbox, may be one set aside earlier and brought back in this file's
+    stead, or may be another copy already filed somewhere else in the library —
+    the same swap, decided on three different pages.
     """
     if op["src_root"] != "library":
         return False
@@ -140,7 +141,7 @@ def _replaced_by_another_representation(
         conn.execute(
             "SELECT 1 FROM plans p JOIN plan_ops o ON o.plan_id = p.id"
             " WHERE p.id=? AND p.coherent=1 AND o.op_type='move'"
-            " AND o.src_root IN ('inbox', 'quarantine') LIMIT 1",
+            " AND o.dest_root='library' LIMIT 1",
             (op["plan_id"],),
         ).fetchone()
         is not None
@@ -277,7 +278,7 @@ def is_previous_representation(conn: sqlite3.Connection, entry) -> bool:  # noqa
         conn.execute(
             "SELECT 1 FROM plans p JOIN plan_ops o ON o.plan_id = p.id"
             " WHERE p.id=? AND p.coherent=1 AND o.op_type='move'"
-            " AND o.src_root IN ('inbox', 'quarantine') LIMIT 1",
+            " AND o.dest_root='library' LIMIT 1",
             (plan_id,),
         ).fetchone()
         is not None

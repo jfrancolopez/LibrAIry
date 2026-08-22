@@ -786,8 +786,42 @@ def settle_plan(
         "UPDATE audit_findings SET status=?, updated_at=? WHERE id=? AND status='accepted'",
         (status, utc_now(), plan["audit_finding_id"]),
     )
+    if plan["status"] == "done":
+        _remember_comparison(conn, plan_id, int(plan["audit_finding_id"]))
     if settings is not None and plan["status"] == "done":
         _remove_emptied_directories(conn, settings, plan_id)
+
+
+def _remember_comparison(
+    conn: sqlite3.Connection, plan_id: str, finding_id: int
+) -> None:
+    """A comparison answered by a replacement is not asked again.
+
+    Only once the plan has actually run. Dismissing at approval would leave the
+    pair suppressed if the approval were sent back — and a finding that came
+    back to Review with its evidence suppressed is a row that disappears at the
+    next audit instead of being decided.
+
+    The pair is recorded against the two fingerprints, so a re-encode of either
+    side is a live question again. Same rule as every other comparison memory
+    in the program — see `similar_media.dismiss_between`.
+    """
+    from librairy.similar_media import KIND, dismiss_between
+
+    found = conn.execute(
+        "SELECT kind FROM audit_findings WHERE id=?", (finding_id,)
+    ).fetchone()
+    if found is None or found["kind"] != KIND:
+        return
+    items = [
+        int(row["item_id"])
+        for row in conn.execute(
+            "SELECT item_id FROM plan_ops WHERE plan_id=? AND item_id IS NOT NULL",
+            (plan_id,),
+        )
+    ]
+    if len(items) >= 2:
+        dismiss_between(conn, items)
 
 
 def _remove_emptied_directories(

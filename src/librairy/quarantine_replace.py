@@ -53,8 +53,8 @@ from pathlib import PurePosixPath
 from librairy.config import Settings
 from librairy.fingerprint import blake2b_file
 from librairy.paths import PathValidationError, validate_dest, validate_relpath
-from librairy.planner import OperationSpec, approve_plan, create_plan
-from librairy.quarantine import QuarantineError, quarantine_operation
+from librairy.quarantine import QuarantineError
+from librairy.replacement import approve_coherent, swap_specs
 
 #  What the Commit card and the Quarantine row both call it. One decision, one
 #  word, and deliberately not `Restore` — see the module docstring.
@@ -227,37 +227,20 @@ def request_replacement(
             f"{PurePosixPath(found.dest_relpath).name} already exists and is not "
             f"the copy you are replacing"
         )
-    specs = [
-        _preserve(found.active_relpath),
-        OperationSpec(
-            op_type="move",
-            src_root="quarantine",
-            src_relpath=found.held_relpath,
-            dest_root="library",
-            dest_relpath=found.dest_relpath,
-        ),
-    ]
-    plan_id = create_plan(conn, specs, settings)
-    conn.execute(
-        "UPDATE plans SET coherent=1, quarantine_entry_id=? WHERE id=?",
-        (entry_id, plan_id),
+    specs = swap_specs(
+        preserve=found.active_relpath,
+        source_root="quarantine",
+        source_relpath=found.held_relpath,
+        dest_relpath=found.dest_relpath,
     )
-    try:
-        approve_plan(conn, plan_id, settings)
-    except sqlite3.IntegrityError as exc:
-        conn.execute("DELETE FROM plan_ops WHERE plan_id=?", (plan_id,))
-        conn.execute("DELETE FROM plans WHERE id=?", (plan_id,))
-        raise QuarantineError(
-            "a decision on one of these files was recorded a moment ago"
-        ) from exc
-    return plan_id
-
-
-def _preserve(relpath: str) -> OperationSpec:
-    """The filed copy, into Quarantine, before anything arrives."""
-    from dataclasses import replace as _replace
-
-    return _replace(quarantine_operation(relpath), src_root="library")
+    return approve_coherent(
+        conn,
+        settings,
+        specs,
+        error=QuarantineError,
+        clash="a decision on one of these files was recorded a moment ago",
+        entry_id=entry_id,
+    )
 
 
 def _claimed(conn: sqlite3.Connection, found: Replacement) -> bool:

@@ -76,6 +76,21 @@ FILES: dict[str, bytes | None] = {
     #  the row can offer to create it — the common case in a library that was
     #  never organised, and the one thing a destination choice could not do.
     "Music/Rock/Queen/We Will Rock You.flac": b"a third loose track",
+    #  Nothing in its name, nothing in its tags, and no folder it obviously
+    #  belongs to — the dead end that `Identify track` exists for.
+    "Music/Rock/Queen/track 07.flac": b"unidentified audio",
+    # 10d. an album filed the old way, before filenames were readable. Nothing
+    #      reports it, and nothing changes it unless somebody asks.
+    "Music/Rock/Bowie/Hunky Dory/01-Changes.flac": b"bowie one",
+    "Music/Rock/Bowie/Hunky Dory/02-Oh-You-Pretty-Things.flac": b"bowie two",
+    "Music/Rock/Bowie/Hunky Dory/03-Life-on-Mars.flac": b"bowie three",
+    "Music/Rock/Bowie/Hunky Dory/cover.jpg": b"a sleeve",
+    # 10e. the same recording filed twice, in two folders — the pair that can
+    #      swap which one is the active version.
+    "Music/Rock/Queen/A Night at the Opera/"
+    "02 - Lazing on a Sunday Afternoon.mp3": b"the filed mp3",
+    "Music/Rock/Queen/A Night at the Opera/alternate/"
+    "02 - Lazing on a Sunday Afternoon.flac": b"a lossless rip of the same recording",
     # 10b. the same recording twice, and the same picture at three sizes. No
     #      hash pairs any of these — czkawka does, and the question is which
     #      representation you want rather than which file is correct.
@@ -141,6 +156,11 @@ def settings_for(root: Path) -> Settings:
         QUARANTINE_DIR=root / "quarantine",
         FILE_STABILITY_SECONDS=0,
         AUTH_REQUIRED=False,
+        #  So the fixture can show the identification workflow at all. Nothing
+        #  in a fixture reaches AcoustID — `dev_providers` replaces the lookup
+        #  with a fixed answer — but the key is what decides whether the button
+        #  may be offered, and a demo with no button demonstrates nothing.
+        ACOUSTID_KEY="fixture-key-not-a-real-one",
         _env_file=None,
     )
     for directory in (settings.inbox_dir, settings.library_dir, settings.quarantine_dir):
@@ -402,11 +422,11 @@ def build_app(root: Path):  # noqa: ANN201
     finding(
         "Music/Rock/Queen",
         "loose-tracks",
-        "3 track(s) sit directly in this artist folder, which otherwise uses "
+        "4 track(s) sit directly in this artist folder, which otherwise uses "
         "2 album folder(s).",
         None,
         [
-            EvidenceEntry("filesystem", "loose tracks", "3", 0.9),
+            EvidenceEntry("filesystem", "loose tracks", "4", 0.9),
             EvidenceEntry("library-pattern", "album folders here", "2", 0.85),
             #  What each track's own tags say, recorded by the audit pass that
             #  had the files open. `A Night at the Opera` exists and is an
@@ -507,6 +527,7 @@ def build_app(root: Path):  # noqa: ANN201
     _an_arriving_duplicate(conn, settings)
     _pending_decisions(conn, settings)
     _an_arriving_representation(conn, settings)
+    _identified_recordings(conn)
     _a_file_nobody_scanned(settings)
 
     return create_app(settings, conn)
@@ -534,6 +555,16 @@ def _similar_representations(conn) -> None:  # noqa: ANN001
             "Music/Rock/Queen/A Night at the Opera/01 - Death on Two Legs.mp3",
             "audio",
             0.97,
+        ),
+        (
+            #  Two folders, one recording — the pair where the answer might be
+            #  "put the FLAC where the MP3 is" rather than "set one aside".
+            "Music/Rock/Queen/A Night at the Opera/"
+            "02 - Lazing on a Sunday Afternoon.mp3",
+            "Music/Rock/Queen/A Night at the Opera/alternate/"
+            "02 - Lazing on a Sunday Afternoon.flac",
+            "audio",
+            0.96,
         ),
         ("Photos/2022/Sunset/IMG_5000.jpg", "Photos/2022/Sunset/IMG_5000-1600.jpg", "image", 0.94),
         (
@@ -608,6 +639,43 @@ def _an_arriving_duplicate(conn, settings: Settings) -> None:  # noqa: ANN001
     _stage_quarantine_proposals(
         conn, detect_exact_duplicates(conn, settings, rmlint_check=agreed)
     )
+
+
+def _identified_recordings(conn) -> None:  # noqa: ANN001
+    """Two filed versions already identified as the same recording.
+
+    Written as `track_identity` rows because that is what the fingerprint
+    lookup persists — the replacement workflow reads this and nothing else, so
+    a fixture that wrote the buttons instead would prove the page rather than
+    the rule. Without these two rows the same pair is only *similar*, and only
+    set-aside is offered.
+    """
+    from librairy.track_identity import Identity, remember
+
+    for relpath in (
+        "Music/Rock/Queen/A Night at the Opera/02 - Lazing on a Sunday Afternoon.mp3",
+        "Music/Rock/Queen/A Night at the Opera/alternate/"
+        "02 - Lazing on a Sunday Afternoon.flac",
+    ):
+        row = conn.execute(
+            "SELECT id, fingerprint FROM items WHERE root='library' AND relpath=?",
+            (relpath,),
+        ).fetchone()
+        if row is None:
+            continue
+        remember(
+            conn,
+            Identity(
+                item_id=int(row["id"]),
+                provider="acoustid+musicbrainz",
+                recording_id="9f1c2a44-0000-4000-8000-000000000001",
+                artist="Queen",
+                title="Lazing on a Sunday Afternoon",
+                releases=(),
+                fingerprint=str(row["fingerprint"] or ""),
+                score=0.96,
+            ),
+        )
 
 
 def _an_arriving_representation(conn, settings: Settings) -> None:  # noqa: ANN001
@@ -1204,3 +1272,59 @@ def stage_inbox(conn, settings: Settings, count: int) -> None:
         #  The item moves with its proposal, or every one of these ninety-five
         #  rows is a row whose Approve button raises.
         transition_item(conn, int(row["id"]), "proposed")
+
+
+def dev_providers() -> None:
+    """Fixed answers where the real ones would be network calls or ffprobe.
+
+    Dev harness only, and never imported by anything in `src/librairy` — the
+    same terms as the rest of this file. Two seams, and both of them are seams
+    the tests already drive:
+
+    * the fingerprint lookup, so `Identify track` has something to identify
+      with. No request leaves the machine, and the answer is the same every
+      time, which is what makes a browser workflow a workflow rather than a
+      coin toss.
+    * the tag reader behind the filename cleanup, because the fixture's files
+      are a few bytes of text with no tags in them at all. A real library's
+      tracks carry the titles this reads; a fixture's cannot.
+    """
+    from librairy import normalize_names
+    from librairy.tools import acoustid, musicbrainz
+
+    recording = "7a1b9d20-0000-4000-8000-00000000beef"
+
+    def lookup(_fingerprint, _duration, **_kwargs):  # noqa: ANN001, ANN202
+        return {"score": 0.94, "recording_id": recording}
+
+    def printed(_path, _settings):  # noqa: ANN001, ANN202
+        return 214, "a-fixture-fingerprint"
+
+    def detail(mbid: str, **_kwargs):  # noqa: ANN003
+        return {
+            "recording_id": mbid,
+            "title": "Sheer Heart Attack",
+            "artist": "Queen",
+            "artist_id": "0383dadf-2a4e-4d10-a46a-e9e041da8eb3",
+            "releases": [
+                {"id": "r-news", "title": "News of the World", "group_id": "g-news",
+                 "year": 1977, "kind": "Album"},
+                {"id": "r-hits", "title": "Greatest Hits", "group_id": "g-hits",
+                 "year": 1981, "kind": "Compilation"},
+            ],
+        }
+
+    acoustid.lookup = lookup  # type: ignore[assignment]
+    acoustid._fingerprint_file = printed  # type: ignore[assignment]
+    musicbrainz.recording_detail = detail  # type: ignore[assignment]
+
+    titles = {
+        "01-Changes.flac": {"title": "Changes", "track": "1"},
+        "02-Oh-You-Pretty-Things.flac": {"title": "Oh! You Pretty Things", "track": "2"},
+        "03-Life-on-Mars.flac": {"title": "Life on Mars?", "track": "3"},
+    }
+
+    def tags_of(_settings, relpath: str) -> dict[str, str]:  # noqa: ANN001
+        return titles.get(relpath.rsplit("/", 1)[-1], {})
+
+    normalize_names._tags_of = tags_of  # type: ignore[assignment]

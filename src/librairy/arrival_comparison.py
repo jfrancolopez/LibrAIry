@@ -43,7 +43,7 @@ evidence. Its own extension is kept, because a FLAC is not an MP3.
 from __future__ import annotations
 
 import sqlite3
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import PurePosixPath
 
 from librairy.config import Settings
@@ -280,16 +280,14 @@ def _use_arrival(
             f"{PurePosixPath(arrival.dest_relpath).name} already exists and is not "
             f"the copy you are replacing"
         )
-    specs = [
-        replace(quarantine_operation(arrival.twin.relpath), src_root="library"),
-        OperationSpec(
-            op_type="move",
-            src_root="inbox",
-            src_relpath=arrival.relpath,
-            dest_root="library",
-            dest_relpath=arrival.dest_relpath,
-        ),
-    ]
+    from librairy.replacement import swap_specs
+
+    specs = swap_specs(
+        preserve=arrival.twin.relpath,
+        source_root="inbox",
+        source_relpath=arrival.relpath,
+        dest_relpath=arrival.dest_relpath,
+    )
     plan_id = _approved_plan(conn, settings, specs, coherent=True)
     _close_proposal(conn, arrival.item_id)
     return plan_id

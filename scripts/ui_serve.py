@@ -61,7 +61,7 @@ def main(argv: list[str] | None = None) -> int:
         sys.path.insert(0, str(REPO))
     import uvicorn  # noqa: PLC0415
 
-    from tests.dev.fixture import build_app, stage_inbox  # noqa: PLC0415
+    from tests.dev.fixture import build_app, dev_providers, stage_inbox  # noqa: PLC0415
 
     root = Path(tempfile.mkdtemp(prefix="librairy-ui-"))
 
@@ -90,6 +90,11 @@ def main(argv: list[str] | None = None) -> int:
         signal.signal(received, stop)
 
     try:
+        #  Fixed answers where the real ones would leave the machine or read a
+        #  real audio file. A fixture track is a few bytes of text: it has no
+        #  tags and no fingerprint, and asking AcoustID about one from a
+        #  development harness would be both useless and rude.
+        dev_providers()
         app = build_app(root)
         if args.inbox:
             stage_inbox(app.state.conn, app.state.settings, args.inbox)

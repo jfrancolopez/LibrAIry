@@ -212,6 +212,10 @@ ACTION_MAY_HAVE_SEVERAL_LABELS = {
     #  the same route because keeping everything is still an answer — it just
     #  happens to be the one with no filesystem work in it.
     "POST /review/audit/{finding_id}/comparison",
+    #  Each button names the version it would make active, which is the whole
+    #  content of the decision — and the two are a FLAC and an MP3 of one
+    #  recording, so `Use this one` would be one label saying nothing.
+    "POST /review/audit/{finding_id}/make-active",
     #  `Restore` on its own means bring this back; on a row that also offers
     #  `Use this instead`, the two answers end differently — both
     #  representations active, or exactly one — so the first one says which it
