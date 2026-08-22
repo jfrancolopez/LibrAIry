@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block content %}
+  <h1>Filename cleanup</h1>
+  <p class="muted"><span class="mono">{{ folder }}</span></p>
+
+  {# Nothing has happened. This page read the folder and worked out what the
+     current Music naming would call each file; approving is a second press,
+     and the renames themselves happen at Commit like every other move. #}
+  <p>Nothing has moved. This is what would change.</p>
+
+  {% if renaming %}
+  <section class="card">
+    <h2>{{ renaming|length }} filename{{ 's' if renaming|length != 1 else '' }} would change</h2>
+    <ul class="rename-list">
+      {% for member in renaming %}
+      <li>
+        <span class="mono">{{ member.name }}</span>
+        <span aria-hidden="true">→</span>
+        <span class="mono"><strong>{{ member.proposed }}</strong></span>
+        <span class="muted">from {{ member.source }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+    <form method="post" action="/browse/normalize/approve">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="scope" value="{{ folder }}">
+      <button type="submit" class="btn-primary">Approve these renames</button>
+      <span class="muted">They happen when you commit, and can be undone from History.</span>
+    </form>
+  </section>
+  {% else %}
+  <section class="card">
+    <h2>Nothing to change</h2>
+    <p>These filenames already match the current Music convention, or LibrAIry
+      does not know enough to improve them. Either way there is nothing to
+      approve.</p>
+  </section>
+  {% endif %}
+
+  {% if blocked %}
+  <section class="card">
+    {# Refused rather than renumbered. A rename that lands on another file is
+       not a rename, and picking a winner is a decision nobody asked for. #}
+    <h2>{{ blocked|length }} refused</h2>
+    <ul class="rename-list">
+      {% for member in blocked %}
+      <li>
+        <span class="mono">{{ member.name }}</span>
+        <span class="muted">{{ member.reason }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+
+  {% if unknown %}
+  <section class="card">
+    <h2>{{ unknown|length }} left alone</h2>
+    <p class="muted">A filename cannot be read back into a title LibrAIry can
+      trust — house style turned spaces into dashes and dropped apostrophes, so
+      guessing would produce a worse name than the one already there.</p>
+    <ul class="rename-list">
+      {% for member in unknown %}
+      <li><span class="mono">{{ member.name }}</span></li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+
+  {% if unchanged %}
+  <section class="card">
+    <h2>{{ unchanged|length }} already correct</h2>
+    <p class="muted">These are spelled the way LibrAIry spells them now.</p>
+  </section>
+  {% endif %}
+
+  <p><a href="/browse">Back to Browse</a></p>
+{% endblock %}

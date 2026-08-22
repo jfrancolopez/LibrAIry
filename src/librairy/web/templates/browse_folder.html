@@ -14,6 +14,17 @@
         <button type="submit">Audit this folder</button>
         <span class="muted">Reads your files and reports what looks out of place. Changes nothing.</span>
       </form>
+      {# Music only, and asked for. New files are named the current way; this is
+         how somebody says they want the old ones brought into line too. It
+         shows exactly what would change before anything is approved. #}
+      {% if top == 'Music' and folder %}
+      <form method="post" action="/browse/normalize" class="audit-trigger">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="scope" value="{{ top ~ '/' ~ folder }}">
+        <button type="submit">Preview filename cleanup</button>
+        <span class="muted">Shows what the current Music naming would call these files. Moves nothing.</span>
+      </form>
+      {% endif %}
 
   <div class="explorer" id="explorer">
     <section class="explorer-pane" data-pane="0" aria-label="Categories">

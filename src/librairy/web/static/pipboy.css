@@ -2597,6 +2597,12 @@ summary.timeline-head::-webkit-details-marker { display: none; }
 }
 .audit-track-head { margin: 0 0 var(--space-1); font-size: var(--text-sm); }
 .audit-track-options { display: flex; gap: var(--space-1); flex-wrap: wrap; }
+.rename-list { list-style: none; padding: 0; margin: var(--space-1) 0; }
+.rename-list li {
+  display: flex; flex-wrap: wrap; gap: var(--space-1);
+  align-items: baseline; padding: calc(var(--space-1) / 2) 0;
+  border-bottom: 1px solid var(--border);
+}
 .audit-track-note { margin: var(--space-1) 0 calc(var(--space-1) / 2); font-size: var(--text-sm); }
 /* A destination that does not exist yet. Set apart from the folders that do,
    because "create this" and "use that" are different promises. */
