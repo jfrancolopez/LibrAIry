@@ -92,6 +92,12 @@ LEAVE = ""
 # track inside a finding anchored at the artist folder.
 _ALBUM_OF = "album of "
 
+#  Where a proposed folder's name came from. Two sources, both recorded rather
+#  than inferred, and the difference is worth showing: one is the file saying
+#  what it is, the other is a catalog saying what the audio is.
+TAGGED = "tags"
+IDENTIFIED = "catalog"
+
 
 @dataclass(frozen=True)
 class Album:
@@ -118,6 +124,34 @@ class ProposedAlbum:
     relpath: str
     name: str
     tracks: tuple[str, ...]
+    #  Where the name came from: the files' own tags, or a catalog identity
+    #  somebody asked for. Both are recorded evidence and neither is a guess,
+    #  and the page says which so nobody has to wonder.
+    source: str = TAGGED
+    note: str = ""
+    #  Per track, because two tracks can arrive at one album by different
+    #  routes: one has the tag, the other was identified by its audio. A row
+    #  that told the second one it had a tag would be describing the first
+    #  one's evidence as its own.
+    notes: tuple[tuple[str, str], ...] = ()
+    sources: tuple[tuple[str, str], ...] = ()
+
+    def note_for(self, relpath: str) -> str:
+        """Why *this* track is offered this folder."""
+        return dict(self.notes).get(relpath, self.note)
+
+    def source_for(self, relpath: str) -> str:
+        return dict(self.sources).get(relpath, self.source)
+
+    def agreeing(self, relpath: str) -> int:
+        """How many tracks say so *the same way* this one does.
+
+        Counted per source, because "on three of these tracks" is a claim about
+        tags and must not silently include a track that was identified by its
+        audio instead.
+        """
+        source = self.source_for(relpath)
+        return sum(1 for _, kind in self.sources if kind == source)
 
     @property
     def files(self) -> int:
@@ -131,6 +165,20 @@ class Track:
 
     relpath: str
     size: int
+    item_id: int = 0
+    #  What a catalog said this recording is, if anybody has asked. Persisted
+    #  and read back — identifying a track is an action, never something a
+    #  page render does. See `track_identity`.
+    identity: object | None = None
+    #  Set when the catalog's artist is not the artist whose folder this file
+    #  is sitting in. Shown rather than acted on: the disagreement is the
+    #  useful part, and silently filing on either reading would hide it.
+    conflict: str = ""
+    #  Whether anything already says where this track belongs — an album tag
+    #  inside the file, whether or not that album turned out to be a folder
+    #  the artist already has. A track with an answer does not need a
+    #  fingerprint and a network round trip to be asked the same question.
+    evidenced: bool = False
     #  "" when unanswered, the destination folder when answered to move, and
     #  `LEAVE` is indistinguishable from "" by design — so `answered` is a
     #  separate flag rather than a test on this string.
@@ -228,6 +276,10 @@ def plan_filing(
         return None
     if len(found) > MAX_ALBUMS or len(loose) > MAX_TRACKS:
         return None
+    claimed = {claim.relpath for claim in _tag_claims(row, loose)}
+    loose = tuple(
+        replace(track, evidenced=track.relpath in claimed) for track in loose
+    )
     proposed = _proposed(row, artist, loose, found)
     given = answers(conn, int(row["id"]))
     valid = {album.relpath for album in found} | {album.relpath for album in proposed}
@@ -248,10 +300,15 @@ def plan_filing(
 def _proposed(
     row: sqlite3.Row, artist: str, loose: tuple[Track, ...], found: tuple[Album, ...]
 ) -> tuple[ProposedAlbum, ...]:
-    """Album folders the loose tracks name in their own tags and do not have.
+    """Album folders the tracks have real evidence for and this artist lacks.
 
-    The evidence is `audit_music`'s, written when it had the files open. Three
-    things happen to it here and each one is a way of not inventing something:
+    Two sources, both recorded rather than inferred: the album tag inside the
+    file, written down by `audit_music` when it had the file open, and a
+    catalog identity somebody asked for, resolved from the audio itself. A
+    filename that looks like an album title is neither and creates nothing.
+
+    Four things happen to the claims, and each one is a way of not inventing
+    something:
 
     * an album whose folder now exists is dropped, because the folder is a
       candidate already and offering to create it would be a lie about the
@@ -263,35 +320,35 @@ def _proposed(
     * spellings that differ in **words** stay separate. `Night at the Opera`
       and `A Night at the Opera` are close strings, and close is not the same
       release. Two candidates is honest; silently merging them is a guess with
-      a folder in it.
+      a folder in it;
+    * a claim the tags and the catalog both make is one candidate, credited to
+      the tags — the stronger rung, and the one that needed no network.
     """
     from librairy.audit_music import key
     from librairy.naming import tidy_component
 
-    tagged: dict[str, str] = {}
-    for entry in _evidence(row):
-        if entry.source == "tags" and entry.field.startswith(_ALBUM_OF):
-            tagged[entry.field[len(_ALBUM_OF) :]] = str(entry.detail)
-    if not tagged:
-        return ()
     existing = {key(album.name) for album in found}
-    groups: dict[str, list[tuple[str, str]]] = {}
-    for track in loose:
-        album = tagged.get(track.name, "").strip()
-        if not album or key(album) in existing:
+    groups: dict[str, list[_Claim]] = {}
+    for claim in [*_tag_claims(row, loose), *_catalog_claims(loose)]:
+        if key(claim.album) in existing:
             continue
-        groups.setdefault(key(album), []).append((album, track.relpath))
+        groups.setdefault(key(claim.album), []).append(claim)
     proposed = []
     for members in groups.values():
-        spelling = _commonest(spelling for spelling, _ in members)
+        spelling = _commonest(claim.album for claim in members)
         name = tidy_component(spelling)
         if not name:
             continue
+        tagged = [claim for claim in members if claim.source == TAGGED]
         proposed.append(
             ProposedAlbum(
                 relpath=f"{artist}/{name}",
                 name=name,
-                tracks=tuple(relpath for _, relpath in members),
+                tracks=tuple(dict.fromkeys(claim.relpath for claim in members)),
+                source=TAGGED if tagged else IDENTIFIED,
+                note=_commonest(claim.note for claim in (tagged or members)),
+                notes=tuple((claim.relpath, claim.note) for claim in members),
+                sources=tuple((claim.relpath, claim.source) for claim in members),
             )
         )
     proposed.sort(key=lambda album: album.relpath)
@@ -299,6 +356,57 @@ def _proposed(
     if len(found) + len(proposed) > MAX_ALBUMS:
         return ()
     return tuple(proposed)
+
+
+@dataclass(frozen=True)
+class _Claim:
+    """One track saying it belongs to one album, and what said so."""
+
+    relpath: str
+    album: str
+    source: str
+    note: str
+
+
+def _tag_claims(row: sqlite3.Row, loose: tuple[Track, ...]) -> list[_Claim]:
+    """What each track's own tags say, off the finding's evidence."""
+    tagged: dict[str, str] = {}
+    for entry in _evidence(row):
+        if entry.source == "tags" and entry.field.startswith(_ALBUM_OF):
+            tagged[entry.field[len(_ALBUM_OF) :]] = str(entry.detail)
+    found = []
+    for track in loose:
+        album = tagged.get(track.name, "").strip()
+        if album:
+            found.append(
+                _Claim(track.relpath, album, TAGGED, "Album tag inside the file")
+            )
+    return found
+
+
+def _catalog_claims(loose: tuple[Track, ...]) -> list[_Claim]:
+    """Every release a track's stored identity says its recording is on.
+
+    Several per track on purpose. A recording is on the original album, on a
+    greatest-hits and on a remaster, and the difference between them is a fact
+    about somebody's library rather than about the file — so all of them are
+    offered and none is picked. A track whose catalog artist disagrees with the
+    folder it is in contributes nothing: that disagreement is shown on the row
+    and is not quietly resolved in either direction.
+    """
+    found = []
+    for track in loose:
+        identity = track.identity
+        if identity is None or track.conflict or not getattr(identity, "matched", False):
+            continue
+        for release in identity.releases:
+            if not release.title:
+                continue
+            note = "Acoustic fingerprint, MusicBrainz release"
+            if release.detail:
+                note = f"{note} · {release.detail}"
+            found.append(_Claim(track.relpath, release.title, IDENTIFIED, note))
+    return found
 
 
 def _commonest(spellings) -> str:  # noqa: ANN001
@@ -409,11 +517,14 @@ def _loose(
     conn: sqlite3.Connection, settings: Settings, artist: str
 ) -> tuple[Track, ...]:
     """Files sitting directly in the artist folder, as the index has them now."""
+    from librairy.audit_music import same
     from librairy.mediakind import kind_for
+    from librairy.track_identity import recall
 
+    name = PurePosixPath(artist).name
     found: list[Track] = []
     for item in conn.execute(
-        "SELECT relpath, size FROM items"
+        "SELECT id, relpath, size, fingerprint FROM items"
         " WHERE root='library' AND missing_since IS NULL AND relpath LIKE ?"
         " ORDER BY relpath",
         (f"{artist}/%",),
@@ -428,7 +539,24 @@ def _loose(
             continue
         if not (settings.library_dir / relpath).is_file():
             continue
-        found.append(Track(relpath=relpath, size=int(item["size"] or 0)))
+        #  Read, never asked for. Identification is an action somebody takes;
+        #  a page that fingerprinted twenty-five files to draw itself would be
+        #  a page nobody opens twice.
+        identity = recall(
+            conn, int(item["id"]), fingerprint=str(item["fingerprint"] or "")
+        )
+        conflict = ""
+        if identity is not None and identity.artist and not same(identity.artist, name):
+            conflict = identity.artist
+        found.append(
+            Track(
+                relpath=relpath,
+                size=int(item["size"] or 0),
+                item_id=int(item["id"]),
+                identity=identity,
+                conflict=conflict,
+            )
+        )
     return tuple(found)
 
 

@@ -9,7 +9,7 @@ from pathlib import Path
 from librairy.config import Settings
 
 LOGGER = logging.getLogger(__name__)
-SCHEMA_VERSION = 34
+SCHEMA_VERSION = 35
 
 
 class DatabaseVersionError(RuntimeError):
@@ -916,6 +916,43 @@ MIGRATION_034 = """
 ALTER TABLE similar_media_flags ADD COLUMN dismissed_fingerprints TEXT;
 """
 
+MIGRATION_035 = """
+-- What one *file* was identified as, which is not what `catalog_identity`
+-- holds. That table answers "what release is this folder?", keyed by folder,
+-- one row per provider — right for an album, and unable to say anything about
+-- a track lying loose in an artist folder alongside eleven others that belong
+-- to different releases.
+--
+-- Two things a track needs that a folder does not:
+--
+--   * **item scope.** The identity belongs to the file. Its folder is shared
+--     with every other loose track under the same artist.
+--   * **several releases.** A recording appears on the original album, on a
+--     greatest-hits, and on a remaster, and picking the first one the API
+--     returned is exactly the invention this whole feature refuses to make.
+--     They are candidates, and choosing between them is the person's job.
+--
+-- `fingerprint` is the file's content hash at the moment it was identified.
+-- A re-encode is a different file, and an identity recorded against bytes
+-- that no longer exist is not evidence about the bytes that do.
+CREATE TABLE track_identity (
+  item_id      INTEGER PRIMARY KEY REFERENCES items(id),
+  fingerprint  TEXT NOT NULL DEFAULT '',
+  provider     TEXT NOT NULL,
+  -- Empty means "asked, and nothing came back". Kept, so the same fruitless
+  -- lookup is not run again on the next click; `looked_up_at` expires it.
+  recording_id TEXT NOT NULL DEFAULT '',
+  artist       TEXT NOT NULL DEFAULT '',
+  artist_id    TEXT NOT NULL DEFAULT '',
+  title        TEXT NOT NULL DEFAULT '',
+  score        REAL,
+  -- JSON array of {id, title, group_id, year, kind}. A list because a
+  -- recording has one identity and many places it was released.
+  releases     TEXT NOT NULL DEFAULT '[]',
+  looked_up_at TEXT NOT NULL
+);
+"""
+
 MIGRATIONS = {
     1: MIGRATION_001,
     2: MIGRATION_002,
@@ -951,6 +988,7 @@ MIGRATIONS = {
     32: MIGRATION_032,
     33: MIGRATION_033,
     34: MIGRATION_034,
+    35: MIGRATION_035,
 }
 
 

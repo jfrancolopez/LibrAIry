@@ -39,11 +39,18 @@ def lookup_recording(mbid: str, *, opener=urlopen) -> dict[str, Any] | None:
     Returns `{"artist", "album", "title", "year", "track", "release_id"}`.
     None when unidentified or unreachable.
     """
+    payload = _recording_payload(mbid, opener=opener)
+    return _fields(payload) if payload is not None else None
+
+
+def _recording_payload(mbid: str, *, opener=urlopen) -> dict[str, Any] | None:
+    """The raw recording response, cached, shared by both readings of it."""
     mbid = mbid.strip()
     if not mbid:
         return None
-    if mbid in _CACHE:
-        return _CACHE[mbid]
+    cache_key = f"recording|{mbid}"
+    if cache_key in _CACHE:
+        return _CACHE[cache_key]
 
     params = {"inc": "artists+releases", "fmt": "json"}
     request = Request(  # noqa: S310 - fixed https host, params are url-encoded
@@ -54,12 +61,75 @@ def lookup_recording(mbid: str, *, opener=urlopen) -> dict[str, Any] | None:
         with opener(request, timeout=TIMEOUT_SECONDS) as response:
             payload = json.loads(response.read().decode("utf-8"))
     except Exception:  # noqa: BLE001 - any failure degrades to heuristics
-        _CACHE[mbid] = None
+        _CACHE[cache_key] = None
         return None
+    payload = payload if isinstance(payload, dict) else None
+    _CACHE[cache_key] = payload
+    return payload
 
-    fields = _fields(payload)
-    _CACHE[mbid] = fields
-    return fields
+
+def recording_detail(mbid: str, *, opener=urlopen) -> dict[str, Any] | None:
+    """The same recording lookup, keeping every release rather than one.
+
+    `lookup_recording` flattens to the earliest release because a proposal
+    needs one album name. Identifying a loose track is the opposite problem:
+    the recording is on the original album, on a greatest-hits and on a
+    remaster, and choosing between those is the person's decision — so the
+    caller gets all of them, in the order MusicBrainz lists them, with the
+    dates that let a reader tell them apart.
+
+    One request and one cache entry, shared with `lookup_recording`, so
+    identifying a track and classifying it do not ask twice.
+    """
+    payload = _recording_payload(mbid, opener=opener)
+    if payload is None:
+        return None
+    title = str(payload.get("title") or "").strip()
+    if not title:
+        return None
+    return {
+        "recording_id": str(payload.get("id") or mbid),
+        "title": title,
+        "artist": _artist(payload),
+        "artist_id": _artist_id(payload),
+        "releases": [
+            _release_summary(release)
+            for release in (payload.get("releases") or [])
+            if isinstance(release, dict) and release.get("id")
+        ],
+    }
+
+
+def _release_summary(release: dict[str, Any]) -> dict[str, Any]:
+    """One release a recording appears on, in the words a person would read.
+
+    `kind` comes from the release group when MusicBrainz sends one — `Album`,
+    `Compilation`, `Live` — and is empty when it does not. Empty is honest;
+    guessing "album" would turn a greatest-hits into an original release on
+    the page.
+    """
+    group = release.get("release-group")
+    group = group if isinstance(group, dict) else {}
+    secondary = group.get("secondary-types") or []
+    kind = str(group.get("primary-type") or "")
+    if isinstance(secondary, list) and secondary:
+        kind = str(secondary[0] or "") or kind
+    return {
+        "id": str(release["id"]),
+        "title": str(release.get("title") or "").strip(),
+        "group_id": str(group.get("id") or ""),
+        "year": _year(release.get("date")),
+        "kind": kind,
+    }
+
+
+def _artist_id(payload: dict[str, Any]) -> str:
+    for credit in payload.get("artist-credit") or []:
+        if isinstance(credit, dict):
+            inner = credit.get("artist")
+            if isinstance(inner, dict) and inner.get("id"):
+                return str(inner["id"])
+    return ""
 
 
 def search_release(artist: str, album: str, *, opener=urlopen, sleeper=time.sleep) -> str | None:

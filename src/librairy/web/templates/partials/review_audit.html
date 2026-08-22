@@ -268,6 +268,28 @@
           <span class="badge">{{ track.chosen_name }}</span>
           {% endif %}
         </p>
+        {% if track.artist_conflict %}
+        {# The catalog and the folder disagree about who this is. Shown, not
+           resolved: filing on either reading would hide the disagreement, and
+           the disagreement is the useful part. #}
+        <p class="audit-track-note">
+          <span class="badge badge-warn">Check this</span>
+          The catalog says this recording is by
+          <strong>{{ track.artist_conflict }}</strong>, not the artist whose
+          folder it is in. No destination is offered from that.
+        </p>
+        {% endif %}
+        {% if track.identity %}
+        <details class="audit-track-identity">
+          <summary>What the catalog said</summary>
+          <ul class="facts">
+            {% for fact in track.identity.facts %}
+            <li><span class="badge badge-info">{{ fact.label }}</span>
+              <span class="mono">{{ fact.value }}</span></li>
+            {% endfor %}
+          </ul>
+        </details>
+        {% endif %}
         {% if track.proposed %}
         <p class="audit-track-note muted">Albums this artist already has</p>
         {% endif %}
@@ -293,6 +315,31 @@
           </form>
           {% endif %}
         </div>
+        {% if track.identify %}
+        {# Nowhere real to send this one yet. Rather than an observation with
+           no way forward, the audio itself can be asked what it is — a
+           deliberate action, because it reads the whole file and goes out to
+           a catalog, and neither is something a page render may do. #}
+        <div class="audit-track-new">
+          <p class="audit-track-note">
+            <span class="muted">No album destination is known for this track
+              yet.</span>
+          </p>
+          {% if track.identify_blocked %}
+          <p class="audit-track-note muted">{{ track.identify_blocked }}</p>
+          {% else %}
+          <div class="audit-track-options">
+            <form method="post" action="/review/audit/{{ finding.id }}/identify">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="hidden" name="relpath" value="{{ track.relpath }}">
+              <button type="submit">Identify track</button>
+            </form>
+          </div>
+          <p class="audit-track-note muted">Reads the audio, asks AcoustID and
+            MusicBrainz what it is, and moves nothing.</p>
+          {% endif %}
+        </div>
+        {% endif %}
         {# A folder that does not exist yet, named by this track's own tags.
            Deliberately its own block with its own words: a button that says
            `Use` where nothing is, next to buttons that say `Use` where files
@@ -300,14 +347,16 @@
         {% for album in track.proposed %}
         <div class="audit-track-new">
           <p class="audit-track-note">
-            <span class="muted">Album from this track's tags —</span>
+            <span class="muted">{{ "Album from this track's tags —"
+              if album.source == 'tags'
+              else 'A release this recording is on —' }}</span>
             <strong>{{ album.name }}</strong>
             <span class="badge">New folder</span>
           </p>
           <p class="audit-track-note muted">
             Nothing is there yet — filing a track into it is what creates it.
-            {% if album.agreeing > 1 %}{{ album.agreeing }} of these tracks name
-            this album in their tags.{% else %}This track names it in its tags.{% endif %}
+            {{ album.note }}{% if album.agreeing > 1 %},
+            on {{ album.agreeing }} of these tracks{% endif %}.
           </p>
           <div class="audit-track-options">
             <form method="post" action="/review/audit/{{ finding.id }}/file-track">
@@ -514,6 +563,28 @@
           <button type="submit">Keep all of them</button>
         </form>
       </div>
+      {% if finding.comparison.swaps %}
+      {# A different answer from `Keep`, and deliberately its own control.
+         Keeping one sets the other aside and leaves the survivor where it is;
+         this puts the chosen one in the other's place and preserves the other.
+         Offered only where both files are known to be the same recording. #}
+      <div class="audit-swap">
+        <p class="audit-track-note muted">Both are filed, and they are the same
+          recording. One of them can take the other's place instead.</p>
+        <div class="audit-comparison-options">
+          {% for swap in finding.comparison.swaps %}
+          <form method="post" action="/review/audit/{{ finding.id }}/make-active">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="relpath" value="{{ swap.relpath }}">
+            <button type="submit"
+              title="{{ swap.name }} moves to {{ swap.dest_relpath }} and
+                {{ swap.displaced }} is preserved in Quarantine."
+              >Use {{ swap.name }} as the active version</button>
+          </form>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
       {% else %}
       {# More than two, so the answer is a set rather than a name. At least one
          has to be kept, and the route refuses an empty selection however the

@@ -1198,6 +1198,17 @@ def arrival_facts(
     }
 
 
+def _swaps(conn: sqlite3.Connection, settings: Settings, row: sqlite3.Row):  # noqa: ANN201
+    """Replacement options for a filed pair, or none. Never raises on a page."""
+    from librairy.corrections import CorrectionRefused
+    from librairy.filed_replace import swaps_for
+
+    try:
+        return swaps_for(conn, settings, row)
+    except CorrectionRefused:
+        return ()
+
+
 def _comparison_row(
     conn: sqlite3.Connection, settings: Settings | None, row: sqlite3.Row
 ) -> dict[str, object] | None:
@@ -1229,6 +1240,21 @@ def _comparison_row(
         ],
         "count": len(view.members),
         "pair": len(view.members) == 2,
+        #  The other answer, where the evidence supports it: not "set this one
+        #  aside" but "make this one the version that lives at the other's
+        #  path". Empty for every pair that is only *similar* — see
+        #  `filed_replace` for what is strong enough to move a file into a path.
+        "swaps": [
+            {
+                "relpath": swap.chosen.relpath,
+                "name": swap.chosen.name,
+                "displaced": swap.displaced.name,
+                "displaced_relpath": swap.displaced.relpath,
+                "dest_relpath": swap.dest_relpath,
+                "same_path": swap.same_path,
+            }
+            for swap in _swaps(conn, settings, row)
+        ],
     }
 
 
@@ -1252,9 +1278,16 @@ def _filing_view(  # noqa: ANN201
         return None
 
 
-def _filing_row(view, settings: Settings) -> dict[str, object]:  # noqa: ANN001, ARG001
+def _filing_row(view, settings: Settings, conn=None) -> dict[str, object]:  # noqa: ANN001, ARG001
     """One filing question, as the page reads it: per track, never per group."""
     from librairy.merge import CHOICE_LABEL, CHOICE_NOTE
+    from librairy.track_identity import unavailable
+
+    #  Whether the row may offer to identify a track at all, asked once for the
+    #  whole finding rather than once per track. Empty means it can; anything
+    #  else is the reason, said out loud instead of a button that is silently
+    #  missing.
+    blocked = unavailable(conn, settings) if conn is not None and settings else "unknown"
 
     albums = [
         {"relpath": album.relpath, "name": album.name, "files": album.files}
@@ -1292,11 +1325,50 @@ def _filing_row(view, settings: Settings) -> dict[str, object]:  # noqa: ANN001,
                     {
                         "relpath": album.relpath,
                         "name": album.name,
-                        "agreeing": len(album.tracks),
+                        #  This track's own evidence, not the group's. Two
+                        #  tracks can reach one album by different routes and
+                        #  a row that credited the wrong one would be telling
+                        #  somebody their file has a tag it does not have.
+                        "agreeing": album.agreeing(track.relpath),
+                        "source": album.source_for(track.relpath),
+                        "note": album.note_for(track.relpath),
                     }
                     for album in view.offered(track)
                     if album.relpath != track.chosen
                 ],
+                #  What a catalog said this recording is, if anybody asked.
+                #  Facts only: an identifier, a name and AcoustID's own score.
+                #  No invented percentage, and no claim the row cannot show
+                #  the working for.
+                "identity": (
+                    {
+                        "artist": track.identity.artist,
+                        "title": track.identity.title,
+                        "facts": [
+                            {"label": label, "value": value}
+                            for label, value in track.identity.evidence
+                        ],
+                        "releases": len(track.identity.releases),
+                    }
+                    if track.identity is not None and track.identity.matched
+                    else None
+                ),
+                #  Not the collision below — that is two files wanting one
+                #  name. This is the catalog naming a different artist from the
+                #  folder the file is in, which is a disagreement to show
+                #  rather than resolve.
+                "artist_conflict": track.conflict,
+                #  Offered only where there is nothing else to go on. An album
+                #  folder that already exists is a better answer than a network
+                #  round trip, and a track that has been asked about is not
+                #  asked again by pressing the same button twice.
+                "identify": (
+                    not view.offered(track)
+                    and not track.evidenced
+                    and not track.answered
+                    and not _identity_asked(conn, track)
+                ),
+                "identify_blocked": blocked,
                 #  Present only when the chosen album already holds a file of
                 #  this name. Same three outcomes as a folder merge, same
                 #  words, same storage — see `librairy/merge.py`.
@@ -1327,6 +1399,19 @@ def _filing_row(view, settings: Settings) -> dict[str, object]:  # noqa: ANN001,
             for track in view.tracks
         ],
     }
+
+
+def _identity_asked(conn, track) -> bool:  # noqa: ANN001
+    """Whether this file has already been asked about, match or no match.
+
+    A second press of `Identify track` on a file the catalog had nothing for
+    would spend a fingerprint and a request to be told the same thing. The
+    stored miss expires on its own; until it does, the row says what happened
+    instead of offering the button again.
+    """
+    from librairy.track_identity import asked
+
+    return bool(conn is not None and track.item_id and asked(conn, track.item_id))
 
 
 def _destination_view(  # noqa: ANN201
@@ -1576,7 +1661,7 @@ def _audit_row(
         # rather than rendered. `None` for every other kind of finding.
         "comparison": comparison,
         # Loose tracks, one question each. `None` for everything else.
-        "filing": _filing_row(filing, settings) if filing is not None else None,
+        "filing": _filing_row(filing, settings, conn) if filing is not None else None,
         # The explicit Approve a resolved choice earns, and never bulk. See the
         # `choices` argument above for why the two are separate.
         "approve_choice": bool(

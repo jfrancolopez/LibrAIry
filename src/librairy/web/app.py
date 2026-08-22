@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import sqlite3
 from html import escape
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Annotated
 
 from fastapi import FastAPI, Form, HTTPException, Request
@@ -1066,6 +1066,27 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             request, "partials/comparison_facts.html", {"facts": facts}
         )
 
+    @app.post("/review/audit/{finding_id}/make-active", include_in_schema=False)
+    def review_audit_make_active(
+        request: Request,  # noqa: ARG001
+        finding_id: int,
+        relpath: Annotated[str, Form()] = "",
+    ) -> RedirectResponse:
+        """Make one of two filed versions the active one, in the other's slot.
+
+        Not `Keep`. Keeping one sets the other aside and leaves the survivor
+        where it is — which for a good file in a folder called `alternate`
+        leaves it in the folder called `alternate`. This moves it into the
+        other's place and preserves the other, as one coherent decision.
+        """
+        from librairy.filed_replace import make_active
+
+        try:
+            make_active(conn, settings, finding_id, relpath)
+        except CorrectionRefused as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return RedirectResponse("/commit?type=correction", status_code=303)
+
     @app.post("/review/audit/{finding_id}/comparison", include_in_schema=False)
     def review_audit_resolve_comparison(
         request: Request,  # noqa: ARG001
@@ -1089,6 +1110,34 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         except CorrectionRefused as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         return RedirectResponse("/review#library-audit", status_code=303)
+
+    @app.post("/review/audit/{finding_id}/identify", include_in_schema=False)
+    def review_audit_identify(
+        request: Request,  # noqa: ARG001
+        finding_id: int,
+        relpath: str = Form(...),
+    ) -> RedirectResponse:
+        """Ask what one loose track actually is, from the audio itself.
+
+        Deliberately a POST and deliberately a button. Fingerprinting reads the
+        whole file and the answer comes off the network, so it cannot be
+        something a page does to draw itself — a Review with fifty rows would
+        be fifty `fpcalc` runs and fifty outbound requests, and opening Details
+        would be a lookup. What renders afterwards is the stored answer.
+
+        It moves nothing and approves nothing. A successful identification adds
+        candidate releases to the row; an unsuccessful one leaves the track
+        exactly as it was, with `Leave here` still the honest answer.
+        """
+        from librairy.track_identity import identify
+
+        try:
+            identify(conn, settings, relpath)
+        except CorrectionRefused as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return RedirectResponse(
+            f"/review?focus={finding_id}#finding-{finding_id}", status_code=303
+        )
 
     @app.post("/review/audit/{finding_id}/file-track", include_in_schema=False)
     def review_audit_file_track(
@@ -1209,6 +1258,69 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
 
         cancel(conn)
         return RedirectResponse("/review#library-audit", status_code=303)
+
+    @app.post("/browse/normalize", response_class=HTMLResponse, include_in_schema=False)
+    def browse_normalize(
+        request: Request,
+        scope: Annotated[str, Form()] = "",
+    ) -> HTMLResponse:
+        """What the current Music naming would call the files in one folder.
+
+        A POST rather than a GET because it reads every file in the folder to
+        find their tags, which is work somebody asks for rather than something
+        a page does to draw itself. It moves nothing: what comes back is a list
+        of exact before-and-after names, and approving it is a second press.
+        """
+        from librairy.normalize_names import NormalizeError, preview
+
+        try:
+            clean = sanitize_scope(scope, settings.library_dir)
+            found = preview(conn, settings, clean)
+        except (PathValidationError, NormalizeError) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return TEMPLATES.TemplateResponse(
+            request,
+            "normalize.html",
+            {"title": "Filename cleanup", **_normalize_data(found)},
+        )
+
+    def _normalize_data(found) -> dict:  # noqa: ANN001
+        """The preview in the words the page prints, and no other facts."""
+        return {
+            "folder": found.folder,
+            "album": PurePosixPath(found.folder).name,
+            "renaming": [
+                {"name": member.name, "proposed": member.proposed,
+                 "source": member.source}
+                for member in found.renaming
+            ],
+            "unchanged": [{"name": member.name} for member in found.unchanged],
+            "unknown": [
+                {"name": member.name, "reason": member.reason}
+                for member in found.unknown
+            ],
+            "blocked": [
+                {"name": member.name, "proposed": member.proposed,
+                 "reason": member.reason}
+                for member in found.blocked
+            ],
+            "anything_to_do": found.anything_to_do,
+        }
+
+    @app.post("/browse/normalize/approve", include_in_schema=False)
+    def browse_normalize_approve(
+        request: Request,  # noqa: ARG001
+        scope: Annotated[str, Form()] = "",
+    ) -> RedirectResponse:
+        """Approve the renames. They happen at Commit, like every other move."""
+        from librairy.normalize_names import NormalizeError, plan_normalization
+
+        try:
+            clean = sanitize_scope(scope, settings.library_dir)
+            plan_normalization(conn, settings, clean)
+        except (PathValidationError, NormalizeError) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return RedirectResponse("/commit?type=correction", status_code=303)
 
     @app.post("/browse/audit", include_in_schema=False)
     def browse_audit(

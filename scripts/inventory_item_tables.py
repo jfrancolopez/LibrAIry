@@ -64,6 +64,14 @@ CLASSIFIED = {
         "byte", "no",
         "Same: a claim about a pair of files, scored from their bytes.",
     ),
+    "track_identity": (
+        "byte", "no",
+        "What one audio file was identified as, recorded against the exact"
+        " bytes it was identified from. The recording is arguably the same"
+        " work after a re-encode — but the row is only read when its"
+        " fingerprint still matches, so a carried copy would be a dead row"
+        " that looks like evidence. Re-identifying is one deliberate action.",
+    ),
     "backup_queue": (
         "byte", "no",
         "A request to copy specific bytes to a remote. The executor makes one"

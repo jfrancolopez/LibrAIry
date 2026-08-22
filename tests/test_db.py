@@ -159,6 +159,7 @@ def test_migration_011_closes_proposals_for_files_already_filed(tmp_path: Path) 
         DROP TABLE IF EXISTS audit_runs;
         DROP TABLE IF EXISTS optimization_jobs;
         DROP TABLE IF EXISTS optimization_opportunities;
+        DROP TABLE IF EXISTS track_identity;
         DROP INDEX IF EXISTS idx_catalog_identity_scope;
         DROP TABLE IF EXISTS catalog_identity;
         DROP INDEX IF EXISTS idx_plans_audit_finding;
