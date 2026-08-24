@@ -9,7 +9,7 @@ from pathlib import Path
 from librairy.config import Settings
 
 LOGGER = logging.getLogger(__name__)
-SCHEMA_VERSION = 35
+SCHEMA_VERSION = 36
 
 
 class DatabaseVersionError(RuntimeError):
@@ -953,6 +953,33 @@ CREATE TABLE track_identity (
 );
 """
 
+MIGRATION_036 = """
+-- Which members of one visual group the person wants to keep.
+--
+-- A comparison of two files needs no storage: the answer is one press and the
+-- plan is made on the spot. A group of thirty-seven photographs is different
+-- in kind — the answer is a *set*, built up a page at a time, and it has to
+-- survive scrolling, sorting and coming back after lunch. Holding it in hidden
+-- form fields would mean one mis-click discards a decision somebody spent ten
+-- minutes making.
+--
+-- Absence means keep. That is the conservative direction on purpose: a group
+-- opens with everything kept and the person unticks what they want set aside,
+-- so a half-finished session that is approved by accident sets aside only what
+-- was explicitly chosen. `keep` is stored too, rather than deleting the row,
+-- so "I looked at this and decided to keep it" is distinguishable from "I
+-- never got to it" for anything that later wants to know.
+CREATE TABLE similar_media_choices (
+  audit_finding_id INTEGER NOT NULL REFERENCES audit_findings(id),
+  item_id          INTEGER NOT NULL REFERENCES items(id),
+  decision         TEXT NOT NULL CHECK (decision IN ('keep','set-aside')),
+  created_at       TEXT NOT NULL,
+  PRIMARY KEY (audit_finding_id, item_id)
+);
+CREATE INDEX idx_similar_media_choices_finding
+  ON similar_media_choices(audit_finding_id);
+"""
+
 MIGRATIONS = {
     1: MIGRATION_001,
     2: MIGRATION_002,
@@ -989,6 +1016,7 @@ MIGRATIONS = {
     33: MIGRATION_033,
     34: MIGRATION_034,
     35: MIGRATION_035,
+    36: MIGRATION_036,
 }
 
 

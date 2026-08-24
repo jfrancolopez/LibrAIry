@@ -59,11 +59,35 @@ from librairy.quarantine import quarantine_operation
 
 KIND = "similar-media"
 
-# A group bigger than this is not a comparison any more. Four encodes of one
-# song is a decision; forty near-identical frames from a burst is a different
-# feature, and reading forty technical tables to answer one question is not
-# something a row should ask anybody to do.
-MAX_MEMBERS = 8
+# The size the technical table suits. Four encodes of one song is a row you can
+# read: container, codec, bitrate, six numbers, done.
+#
+# Forty near-identical photographs is not that, and for one release this module
+# answered it by **dropping the group entirely** — no finding, no row, nothing
+# at all. That is the worst of the three possible answers. A photo library
+# produces these constantly (bursts, exports, edits, resized copies), and a
+# tool that silently says nothing about thirty-seven files is a tool that
+# quietly hides work from the person who owns them.
+#
+# So the number no longer decides whether a group exists. It decides which
+# *shape* the group is presented in: at or below this, the technical table;
+# above it, a visual surface with a bounded page of thumbnails. See
+# `shape_of`.
+SMALL_GROUP = 8
+
+# How many members one page of a large group shows. The whole scale argument
+# lives here: a five-hundred-member group is five hundred rows in the database
+# and twenty-four pictures on the screen.
+PAGE_MEMBERS = 24
+
+# A finding's evidence names the other members. For a pair that is one line;
+# for five hundred it would be five hundred rows of evidence describing a
+# decision nobody makes from a list of paths. Past this the evidence says how
+# many rather than which, and the group page is where the members are.
+MAX_NAMED = 6
+
+SMALL = "small"
+LARGE = "large"
 
 # What czkawka was comparing when it paired them. Its `duplicate` mode finds
 # identical bytes, which is the exact-duplicate workflow's question and not
@@ -214,10 +238,10 @@ def detect(conn: sqlite3.Connection) -> list:
     paths: dict[int, str] = {}
     scores: dict[int, float | None] = {}
     kinds: dict[int, str] = {}
+    prints: dict[int, str] = {}
     for edge in edges:
-        if edge["a_fp"] and edge["a_fp"] == edge["b_fp"]:
-            continue
         left, right = int(edge["a_id"]), int(edge["b_id"])
+        prints[left], prints[right] = str(edge["a_fp"] or ""), str(edge["b_fp"] or "")
         paths[left], paths[right] = str(edge["a_path"]), str(edge["b_path"])
         merged = groups.get(left, {left}) | groups.get(right, {right})
         for member in merged:
@@ -228,20 +252,29 @@ def detect(conn: sqlite3.Connection) -> list:
 
     findings = []
     for members in {id(group): group for group in groups.values()}.values():
-        if len(members) > MAX_MEMBERS:
+        if len({prints.get(item, "") for item in members}) < 2:
+            #  Every member has the same bytes. That is the exact-duplicate
+            #  workflow's question, and it can answer it properly — it knows
+            #  what rmlint said and can say so.
+            #
+            #  The test used to be on the *edge*, which was wrong the moment a
+            #  group had more than two members: two identical photographs each
+            #  resembling a third were dropped out of the component, so the
+            #  finding described twenty-three files and the page found
+            #  twenty-five. A group is exact or it is not; a pair inside it is
+            #  a fact about that pair, and `photo_group` labels it.
             continue
         ordered = sorted(members, key=lambda item: paths[item])
         anchor = min(members)
         keep, *rest = ordered
+        kind = kinds.get(anchor, "media")
+        named = rest[:MAX_NAMED]
         findings.append(
             Finding(
                 relpath=paths[keep],
                 kind=KIND,
                 severity="review",
-                summary=(
-                    f"Looks like the same {kinds.get(anchor, 'media')} as "
-                    f"{len(rest)} other file(s), encoded differently."
-                ),
+                summary=_summary(kind, len(rest)),
                 evidence=[
                     EvidenceEntry(
                         "czkawka",
@@ -251,14 +284,42 @@ def detect(conn: sqlite3.Connection) -> list:
                         else "similar",
                         0.7,
                     ),
+                    #  Bounded. A five-hundred-member group would otherwise
+                    #  write five hundred rows of evidence nobody reads, and
+                    #  the members are on the group's own page anyway.
                     *[
                         EvidenceEntry("filesystem", "compared with", paths[item], 0.9)
-                        for item in rest
+                        for item in named
                     ],
+                    *(
+                        [
+                            EvidenceEntry(
+                                "filesystem",
+                                "and others",
+                                f"{len(rest) - len(named)} more",
+                                0.9,
+                            )
+                        ]
+                        if len(rest) > len(named)
+                        else []
+                    ),
                 ],
             )
         )
     return findings
+
+
+def _summary(kind: str, others: int) -> str:
+    """What the row says before anybody opens anything.
+
+    A large group gets its own sentence rather than the same one with a bigger
+    number in it: "the same image as 36 other file(s), encoded differently" is
+    a claim about encoding that thirty-seven photographs from one afternoon do
+    not support. They look alike; what they *are* is the question.
+    """
+    if kind == "image" and others + 1 > SMALL_GROUP:
+        return f"{others + 1} photos here look alike."
+    return f"Looks like the same {kind} as {others} other file(s), encoded differently."
 
 
 def is_similar_finding(row: sqlite3.Row) -> bool:
@@ -537,16 +598,34 @@ def kept_members(
     return sorted(relpath for relpath in members if relpath not in going)
 
 
-def companion_of(conn: sqlite3.Connection, item_id: int) -> int | None:
-    """A library member of the same comparison, for the Quarantine row to name.
+def companion_of(
+    conn: sqlite3.Connection, item_id: int, *, plan_id: str = ""
+) -> int | None:
+    """A member of the same comparison that was **kept**, for Quarantine to name.
 
     "Set aside after comparing it with…" needs something to point at, and the
     honest answer is one of the representations that stayed. Never called an
     exact duplicate: these files do not have the same bytes, and saying they do
     would be the one claim this workflow exists to avoid making.
+
+    `plan_id` is what makes the answer true rather than merely plausible.
+    Without it this asked "which member is still in the library", and the
+    entry is written *while the plan is running* — so for the first file set
+    aside out of eighteen, seventeen of its fellow evictees were still filed
+    and any of them could be named as a photograph somebody kept. With a pair
+    that could not happen; with a group it happens to all but the last one.
     """
+    going: set[int] = set()
+    if plan_id:
+        going = {
+            int(row["item_id"])
+            for row in conn.execute(
+                "SELECT item_id FROM plan_ops WHERE plan_id=? AND item_id IS NOT NULL",
+                (plan_id,),
+            )
+        }
     for other in _connected(conn, item_id):
-        if other == item_id:
+        if other == item_id or other in going:
             continue
         row = conn.execute(
             "SELECT id FROM items WHERE id=? AND root='library' AND missing_since IS NULL",

@@ -92,6 +92,8 @@ def test_fresh_db_migrates_to_current_schema(tmp_path: Path) -> None:
         "idx_merge_choices_finding",
         # One answer per thing being placed: a folder, or one loose track.
         "idx_destination_choices_finding",
+        # One answer per photograph in one visual group.
+        "idx_similar_media_choices_finding",
     }
 
     columns = {row[1] for row in conn.execute("PRAGMA table_info(provider_status)")}
@@ -159,6 +161,8 @@ def test_migration_011_closes_proposals_for_files_already_filed(tmp_path: Path) 
         DROP TABLE IF EXISTS audit_runs;
         DROP TABLE IF EXISTS optimization_jobs;
         DROP TABLE IF EXISTS optimization_opportunities;
+        DROP INDEX IF EXISTS idx_similar_media_choices_finding;
+        DROP TABLE IF EXISTS similar_media_choices;
         DROP TABLE IF EXISTS track_identity;
         DROP INDEX IF EXISTS idx_catalog_identity_scope;
         DROP TABLE IF EXISTS catalog_identity;

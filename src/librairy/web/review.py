@@ -1228,6 +1228,13 @@ def _comparison_row(
     view = compare(conn, settings, row, measure=False)
     if view is None:
         return None
+    #  Too many to compare in a table, which for one release meant the group
+    #  did not exist at all. It exists now, and the row says what it is and
+    #  where to go and look at it — the member list, the technical panel and
+    #  the checkboxes all belong to the small shape and are not drawn here.
+    large = _large_group(conn, settings, row, view)
+    if large is not None:
+        return large
     return {
         "members": [
             {
@@ -1256,6 +1263,75 @@ def _comparison_row(
             for swap in _swaps(conn, settings, row)
         ],
     }
+
+
+def _large_group(conn, settings, row, view) -> dict[str, object] | None:  # noqa: ANN001
+    """A visual group too big for the table, summarised in facts and a link.
+
+    Everything here comes from columns the index already has — how many, how
+    many share bytes, which formats — so a Review page holding several of
+    these costs several queries rather than several hundred file reads. The
+    pictures live on the group's own page, which is the one place worth
+    spending a thumbnail on.
+    """
+    from librairy.mediakind import kind_for
+    from librairy.photo_group import SET_ASIDE, choices
+    from librairy.similar_media import SMALL_GROUP
+
+    if len(view.members) <= SMALL_GROUP:
+        return None
+    photos = sum(
+        1 for member in view.members if kind_for(member.relpath) == "image"
+    )
+    #  One query, not one per member: this runs while Review draws its list,
+    #  and a five-hundred-member group would otherwise be five hundred
+    #  round trips to print a count of copies.
+    ids = [member.item_id for member in view.members]
+    fingerprints: dict[str, int] = {}
+    for found in conn.execute(
+        f"SELECT fingerprint FROM items WHERE id IN ({','.join('?' * len(ids))})",  # noqa: S608
+        ids,
+    ):
+        key = str(found["fingerprint"] or "")
+        if key:
+            fingerprints[key] = fingerprints.get(key, 0) + 1
+    formats = sorted(
+        {PurePosixPath(member.relpath).suffix.lstrip(".").upper() for member in view.members}
+    )
+    chosen = choices(conn, int(row["id"]))
+    return {
+        "large": True,
+        #  `photos` only when they really are photographs. A group of thirty
+        #  video files is the same scale problem and is not called photos.
+        "photos": photos == len(view.members),
+        "count": len(view.members),
+        "pair": False,
+        "members": [],
+        "swaps": [],
+        "exact_sets": sum(1 for count in fingerprints.values() if count > 1),
+        "exact_members": sum(count for count in fingerprints.values() if count > 1),
+        "formats": formats,
+        "folder": _common_folder([member.relpath for member in view.members]),
+        "set_aside": sum(1 for value in chosen.values() if value == SET_ASIDE),
+    }
+
+
+def _common_folder(relpaths: list[str]) -> str:
+    """The deepest folder every member is under, or "" when they are scattered.
+
+    Shown because "37 photos · Photos/2024/Backyard" is most of what somebody
+    needs to recognise a group; when they are spread across folders there is no
+    honest one-line answer and the row says nothing rather than picking one.
+    """
+    if not relpaths:
+        return ""
+    parts = [str(PurePosixPath(relpath).parent).split("/") for relpath in relpaths]
+    shared: list[str] = []
+    for pieces in zip(*parts, strict=False):
+        if len(set(pieces)) != 1:
+            break
+        shared.append(pieces[0])
+    return "/".join(shared)
 
 
 def _filing_view(  # noqa: ANN201

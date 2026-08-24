@@ -672,6 +672,9 @@ def _folder_subject(
         return None
     if not row["audit_finding_id"]:
         return _renaming_subject(conn, row) or _arrival_subject(conn, row)
+    group = _photo_group_subject(conn, row)
+    if group is not None:
+        return group
     if row["coherent"]:
         #  A comparison answered by *replacement* rather than by setting one
         #  aside. Both shapes come from the same finding, and reading this one
@@ -762,6 +765,59 @@ def _folder_subject(
     }
 
 
+#  Past this a list of kept filenames stops being reassurance and starts being
+#  a wall. A large photo group routinely keeps a dozen.
+MAX_NAMED_KEPT = 6
+
+
+def _photo_group_subject(
+    conn: sqlite3.Connection, row: sqlite3.Row
+) -> dict[str, str] | None:
+    """A visual group answered as a set, headed by the set rather than a file.
+
+    Reading a twenty-nine-file decision as twenty-nine set-asides would be
+    right about the operations and wrong about the decision: one person made
+    one comparison, and a card headed `IMG_5108.jpg` invites them to check the
+    wrong thing. Only for groups too large to be a table — a pair keeps the
+    card it has, where naming the file that is leaving is exactly right.
+    """
+    from librairy.similar_media import KIND, SMALL_GROUP, kept_members
+
+    found = conn.execute(
+        "SELECT kind, relpath FROM audit_findings WHERE id=?",
+        (row["audit_finding_id"],),
+    ).fetchone()
+    if found is None or found["kind"] != KIND or row["coherent"]:
+        return None
+    ops = conn.execute(
+        "SELECT src_root, src_relpath FROM plan_ops WHERE plan_id=?", (row["plan_id"],)
+    ).fetchall()
+    kept = kept_members(conn, row["plan_id"], ops)
+    going = [op for op in ops if op["src_root"] == "library"]
+    if len(kept) + len(going) <= SMALL_GROUP:
+        return None
+    folder = _shared_folder([str(op["src_relpath"]) for op in going])
+    return {
+        "subject": f"Set aside {len(going)} of {len(kept) + len(going)} similar files",
+        "current": f"library/{folder}" if folder else "library",
+        "after": "Quarantine",
+        "verb": "Into",
+    }
+
+
+def _shared_folder(relpaths: list[str]) -> str:
+    """The deepest folder all of these are under, or "" when they are scattered."""
+    if not relpaths:
+        return ""
+    parts = [str(PurePosixPath(relpath).parent).split("/") for relpath in relpaths]
+    shared: list[str] = []
+    for pieces in zip(*parts, strict=False):
+        if len(set(pieces)) != 1:
+            break
+        shared.append(pieces[0])
+    return "/".join(shared)
+
+
 def _kept_representations(
     conn: sqlite3.Connection, row: sqlite3.Row, found: sqlite3.Row
 ) -> str:
@@ -774,6 +830,11 @@ def _kept_representations(
         "SELECT src_root, src_relpath FROM plan_ops WHERE plan_id=?", (row["plan_id"],)
     ).fetchall()
     names = [PurePosixPath(name).name for name in kept_members(conn, row["plan_id"], ops)]
+    if len(names) > MAX_NAMED_KEPT:
+        #  Eight filenames is a sentence. Twenty-nine is a paragraph nobody
+        #  reads, on a card whose job is to say what is about to happen in one
+        #  line — so past a handful the reassurance is the count.
+        return f"{len(names)} of them"
     return ", ".join(names)
 
 

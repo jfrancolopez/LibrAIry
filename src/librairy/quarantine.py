@@ -84,7 +84,10 @@ def _duplicate_of(conn: sqlite3.Connection, op: sqlite3.Row) -> int | None:
             from librairy.arrival_comparison import compared_with
 
             return compared_with(conn, int(item_id))
-        return companion_of(conn, int(item_id))
+        #  The plan, so the file named is one the decision *kept*. Without it
+        #  the first of eighteen photographs set aside would be told it was
+        #  compared with the second — which is also on its way out.
+        return companion_of(conn, int(item_id), plan_id=str(op["plan_id"] or ""))
     if reason != "exact_duplicate":
         return None
     twins = twins_of(conn, int(item_id))

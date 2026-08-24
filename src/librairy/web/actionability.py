@@ -80,7 +80,15 @@ LABEL = {
 EXPLANATION = {
     READY: "",
     BLOCKED: "",
-    CHOICE: "Both files are identical, so only you can say which one to keep.",
+    #  Written for exact duplicates, and said on every CHOICE row — which is
+    #  now four other shapes as well: two folders one artist should live in,
+    #  a loose track and the albums it could join, several encodes of one
+    #  recording, and thirty-seven photographs that merely look alike. On all
+    #  of those "both files are identical" is simply false, and it was the one
+    #  sentence promising the row could not choose for you. So it says the
+    #  thing that is true of all of them; the identical bytes are a fact about
+    #  a duplicate and are stated on the duplicate's own row.
+    CHOICE: "This one is yours to decide — nothing here can choose for you.",
     OBSERVATION: "No automatic correction is available for this.",
     NEEDS_ANALYSIS: "The file changed after this was found, so the suggestion "
     "no longer describes it.",

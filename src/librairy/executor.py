@@ -417,11 +417,31 @@ def _comparison_expired(
     All-or-nothing, like every other correction group: half a comparison
     applied is not a state anybody approved.
     """
-    from librairy.similar_media import kept_members
+    from librairy.similar_media import KIND, kept_members
 
+    finding = conn.execute(
+        "SELECT f.kind FROM plans p JOIN audit_findings f ON f.id = p.audit_finding_id"
+        " WHERE p.id=?",
+        (plan_id,),
+    ).fetchone()
+    if finding is None or finding["kind"] != KIND:
+        return {}
+    #  A comparison answered by *replacement* rather than by setting one aside
+    #  moves one member into the other's slot, so both are plan sources and
+    #  "what stays" is genuinely empty. That plan is coherent and revalidated
+    #  by `_incoherent_ops`; the emptiness below is only meaningful for the
+    #  set-aside shape, where something is supposed to remain untouched.
+    if any(row["dest_root"] == "library" and row["op_type"] == "move" for row in rows):
+        return {}
     kept = kept_members(conn, plan_id, rows)
     if not kept:
-        return {}
+        #  A comparison plan whose kept members cannot be found at all. Empty
+        #  used to mean "not a comparison", which is also what it means when
+        #  every survivor has been deleted or unindexed since approval — and
+        #  in that case running the plan sets aside every remaining copy and
+        #  leaves the library with none of them. The plan is about a snapshot;
+        #  if the half that made it safe is gone, so is the decision.
+        return {row["id"]: "skipped_missing" for row in rows}
     library = _root_path(settings, "library")
     for relpath in kept:
         path = validate_relpath(library, relpath, kind="source")

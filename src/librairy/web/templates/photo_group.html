@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% block content %}
+  <header class="page-head">
+    <div>
+      <h1>{{ group.total }} {{ 'photos' if group.photos else 'files' }} that look alike</h1>
+      <p class="muted">
+        {% if group.folder %}<span class="mono">{{ group.folder }}</span> · {% endif %}
+        {{ group.kept }} kept · {{ group.set_aside }} to set aside
+      </p>
+    </div>
+  </header>
+
+  {# The direction of the question is the whole design. `Keep A / Keep B` does
+     not scale to thirty-seven: asking it thirty-six times is data entry, not a
+     decision. So everything starts kept and you untick what should go — which
+     is also the conservative direction, because a half-finished selection that
+     gets approved sets aside only what somebody actually chose. #}
+  <p>Everything here is kept unless you untick it. Nothing is deleted — what
+    you untick goes to Quarantine when you commit, and can be restored.</p>
+
+  <section class="metric wide">
+    <h2>What is in this group</h2>
+    <ul class="facts">
+      <li><span class="badge badge-info">{{ group.total }}</span> files</li>
+      {% if group.exact_sets %}
+      {# Stronger than similarity, and kept distinct from it. Two files with the
+         same fingerprint are not a question about which one looks better. #}
+      <li><span class="badge badge-info">{{ group.exact_sets }}</span>
+        set{{ 's' if group.exact_sets != 1 else '' }} of byte-identical copies,
+        {{ group.exact_members }} files in all</li>
+      {% endif %}
+      {% for format in group.formats %}
+      <li><span class="badge badge-info">{{ format.count }}</span> {{ format.name }}</li>
+      {% endfor %}
+    </ul>
+  </section>
+
+  <div class="photo-controls">
+    <span class="muted">Order by</span>
+    {% for sort in group.sorts %}
+    {% if sort.current %}
+    <span class="badge">{{ sort.label }}</span>
+    {% else %}
+    <a href="{{ sort.href }}">{{ sort.label }}</a>
+    {% endif %}
+    {% endfor %}
+    {% if group.exact_sets %}
+    <span class="muted">·</span>
+    {% if group.only == 'exact' %}
+    <a href="{{ group.all_href }}">Show all {{ group.total }}</a>
+    {% else %}
+    <a href="{{ group.exact_href }}">Only byte-identical copies</a>
+    {% endif %}
+    {% endif %}
+  </div>
+
+  <form method="post" action="/review/audit/{{ group.finding_id }}/photos/select"
+        class="photo-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="page" value="{{ group.page }}">
+    <input type="hidden" name="sort" value="{{ group.sort }}">
+    <input type="hidden" name="only" value="{{ group.only }}">
+    {# Which members this page is answering for. Without it a submission would
+       be indistinguishable from "set aside every member not on this page". #}
+    {% for photo in group.members %}
+    <input type="hidden" name="shown" value="{{ photo.item_id }}">
+    {% endfor %}
+
+    <ul class="photo-grid">
+      {% for photo in group.members %}
+      <li class="photo-cell{{ ' is-going' if not photo.kept else '' }}">
+        <label class="photo-keep">
+          <input type="checkbox" name="keep" value="{{ photo.item_id }}"
+                 {{ 'checked' if photo.kept else '' }}>
+          <span>Keep</span>
+        </label>
+        {# Lazy on purpose: the browser fetches the pictures it is about to
+           show, and the route renders one thumbnail per request. A page never
+           asks for more than it displays, and a group never asks for more than
+           a page. #}
+        <img src="/preview/items/{{ photo.item_id }}/thumb" alt="{{ photo.name }}"
+             loading="lazy" decoding="async" width="320">
+        <p class="photo-name mono">{{ photo.name }}</p>
+        {# The shared Preview control, not a second image viewer: a thumbnail is
+           not enough to judge focus or expression, and the full one opens the
+           same way it opens everywhere else in this program. #}
+        <button type="button" class="btn-ghost" data-preview-toggle
+                data-preview-url="/preview/items/{{ photo.item_id }}"
+                data-preview-target="photo-preview-{{ photo.item_id }}"
+                aria-expanded="false">Preview</button>
+        <div id="photo-preview-{{ photo.item_id }}" class="photo-preview"></div>
+        <p class="photo-facts muted">
+          {{ photo.format }} · {{ photo.size }}
+          {% for fact in photo.facts %}
+          · {{ fact.value }}
+          {% endfor %}
+          {% if photo.file_date %}· File date {{ photo.file_date }}{% endif %}
+        </p>
+        {% if photo.exact_set %}
+        <p class="photo-facts"><span class="badge">Exact copy · set {{ photo.exact_set }}</span></p>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+
+    <div class="photo-tray">
+      <button type="submit" class="btn-primary">Save this page</button>
+      <span class="muted">{{ group.kept }} kept, {{ group.set_aside }} to set
+        aside across the whole group.</span>
+    </div>
+  </form>
+
+  {% if group.pages > 1 %}
+  <div class="button-row">
+    {% if group.page > 1 %}
+    <a class="btn" href="{{ group.prev_href }}">Previous</a>
+    {% endif %}
+    <span class="muted">Page {{ group.page }} of {{ group.pages }}</span>
+    {% if group.has_next %}
+    <a class="btn" href="{{ group.next_href }}">Next</a>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% include "partials/lightbox.html" %}
+
+  <section class="metric wide">
+    <h2>When you are done</h2>
+    {% if group.set_aside %}
+    <p>{{ group.kept }} stay where they are. {{ group.set_aside }} go to
+      Quarantine after you commit — nothing is deleted, and Undo puts them
+      back.</p>
+    <div class="button-row">
+      <form method="post" action="/review/audit/{{ group.finding_id }}/photos/approve">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button type="submit" class="btn-primary">Approve this selection</button>
+      </form>
+      <form method="post" action="/review/audit/{{ group.finding_id }}/photos/keep-all">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button type="submit" class="btn-ghost">Keep all of them</button>
+      </form>
+    </div>
+    {% else %}
+    {# An answer, and one with no filesystem work in it. No plan is made: an
+       empty plan would appear on Commit, in History and in Undo saying a
+       decision was carried out. #}
+    <p>Nothing is ticked to set aside. You can leave them all exactly as they
+      are, and this group will stop being asked about.</p>
+    <form method="post" action="/review/audit/{{ group.finding_id }}/photos/keep-all">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button type="submit" class="btn-primary">Keep all of them</button>
+    </form>
+    {% endif %}
+  </section>
+
+  <p><a href="/review#library-audit">Back to Review</a></p>
+{% endblock %}

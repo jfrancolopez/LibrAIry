@@ -108,6 +108,19 @@ FILES: dict[str, bytes | None] = {
     #      hash pairs any of these — czkawka does, and the question is which
     #      representation you want rather than which file is correct.
     "Music/Rock/Queen/A Night at the Opera/01 - Death on Two Legs.mp3": b"a smaller rip",
+    # 10g. a burst: twenty-five photographs that look alike, three of them
+    #      byte-identical copies. Too many for the technical table, which is
+    #      what used to make the whole group disappear.
+    **{
+        f"Photos/2024/Backyard/IMG_{5100 + number}.jpg": (
+            #  Real JPEG bytes so a thumbnail is a picture, with a trailing
+            #  comment that makes each file distinct — otherwise `None` writes
+            #  the one shared JPEG and all twenty-five are byte-identical,
+            #  which is a different finding entirely.
+            JPEG + b"burst" if number < 3 else JPEG + f"frame {number}".encode()
+        )
+        for number in range(25)
+    },
     "Photos/2022/Sunset/IMG_5000.jpg": None,
     "Photos/2022/Sunset/IMG_5000-1600.jpg": b"a resize for the web",
     "Photos/2022/Sunset/IMG_5000-800.jpg": b"a smaller resize",
@@ -540,6 +553,11 @@ def build_app(root: Path):  # noqa: ANN201
         [EvidenceEntry("filesystem", "name", "IMG_4099.MOV", 0.85)],
     )
     _similar_representations(conn)
+    #  Before the detector runs, because the burst is czkawka evidence and the
+    #  finding is derived from it — writing the flags afterwards would leave
+    #  twenty-five paired photographs with no row, which is the exact bug this
+    #  pass exists to remove.
+    _a_burst_of_photographs(conn)
     batch.extend(similar_media.detect(conn))
     record_findings(conn, batch)
 
@@ -707,6 +725,33 @@ def _identified_recordings(conn) -> None:  # noqa: ANN001
                 fingerprint=str(row["fingerprint"] or ""),
                 score=0.96,
             ),
+        )
+
+
+def _a_burst_of_photographs(conn) -> None:  # noqa: ANN001
+    """Twenty-five photographs czkawka paired with one another.
+
+    Written as `similar_media_flags` because that is the only thing this
+    workflow reads — a fixture that wrote the finding would prove the page
+    rather than the grouping. A star rather than a clique: czkawka pairs what
+    it pairs, and the connected component is what makes them one group, which
+    is also the sparsest shape a real burst arrives in.
+    """
+    from librairy.planner import utc_now  # noqa: PLC0415
+
+    ids = [
+        int(row["id"])
+        for row in conn.execute(
+            "SELECT id FROM items WHERE root='library'"
+            " AND relpath LIKE 'Photos/2024/Backyard/%' ORDER BY relpath"
+        )
+    ]
+    for other in ids[1:]:
+        first, second = sorted((ids[0], other))
+        conn.execute(
+            "INSERT OR IGNORE INTO similar_media_flags(item_id, similar_item_id,"
+            " kind, score, created_at) VALUES (?, ?, 'image', 0.96, ?)",
+            (first, second, utc_now()),
         )
 
 

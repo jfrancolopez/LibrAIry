@@ -64,6 +64,14 @@ CLASSIFIED = {
         "byte", "no",
         "Same: a claim about a pair of files, scored from their bytes.",
     ),
+    "similar_media_choices": (
+        "byte", "no",
+        "A half-made selection inside one visual group: which photographs the"
+        " person wants to keep. Attached to a finding about specific files, and"
+        " an optimized copy is not one of them — carrying the row would mean an"
+        " answer somebody gave about a picture applied to a picture they never"
+        " saw.",
+    ),
     "track_identity": (
         "byte", "no",
         "What one audio file was identified as, recorded against the exact"

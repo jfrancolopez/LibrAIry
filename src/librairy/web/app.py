@@ -5,6 +5,7 @@ import sqlite3
 from html import escape
 from pathlib import Path, PurePosixPath
 from typing import Annotated
+from urllib.parse import urlencode
 
 from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import (
@@ -1086,6 +1087,211 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         except CorrectionRefused as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         return RedirectResponse("/commit?type=correction", status_code=303)
+
+    @app.get("/review/audit/{finding_id}/photos", response_class=HTMLResponse,
+             include_in_schema=False)
+    def review_audit_photos(
+        request: Request,
+        finding_id: int,
+        page: PageNumber = 1,
+        sort: str = "",
+        only: str = "",
+    ) -> HTMLResponse:
+        """One visual group, a page of pictures at a time.
+
+        A dedicated page rather than a block in Review, and the reason is the
+        decision rather than the layout: choosing between thirty-seven
+        photographs is inherently visual and inherently long, and a list of
+        findings is neither. The row in Review still owns the lifecycle — this
+        is where the looking happens.
+
+        Reads only. One query per member for the counts, one exiftool call for
+        the page, and the thumbnails are fetched by the browser from the route
+        that already renders them. No AI, no network, no catalog.
+        """
+        from librairy.corrections import load_finding
+        from librairy.photo_group import load
+
+        try:
+            row = load_finding(conn, finding_id)
+        except CorrectionRefused as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        found = load(conn, settings, row, page=page, sort=sort, only=only)
+        if found is None:
+            raise HTTPException(
+                status_code=404, detail="there is nothing left to compare here"
+            )
+        return TEMPLATES.TemplateResponse(
+            request,
+            "photo_group.html",
+            {"title": "Similar photos", "group": _photo_data(conn, settings, found, row)},
+        )
+
+    def _photo_data(conn, settings, found, row) -> dict:  # noqa: ANN001, ARG001
+        """The group as the page prints it, and no fact it does not print."""
+        from librairy.mediakind import kind_for
+        from librairy.photo_group import SORTS
+        from librairy.web.quarantine import human_size
+        from librairy.web.review import _common_folder
+
+        def href(**changes: object) -> str:
+            values = {"sort": found.sort, "only": found.only, "page": found.page}
+            values.update(changes)
+            query = urlencode(
+                {key: value for key, value in values.items() if value and value != 1}
+            )
+            base = f"/review/audit/{found.finding_id}/photos"
+            return f"{base}?{query}" if query else base
+
+        return {
+            "finding_id": found.finding_id,
+            "total": found.total,
+            "kept": found.kept,
+            "set_aside": found.set_aside,
+            "exact_sets": found.exact_sets,
+            "exact_members": found.exact_members,
+            "photos": all(
+                kind_for(photo.relpath) == "image" for photo in found.members
+            ),
+            "folder": _common_folder([photo.relpath for photo in found.members]),
+            "formats": [
+                {"name": name, "count": count} for name, count in found.formats
+            ],
+            "members": [
+                {
+                    "item_id": photo.item_id,
+                    "relpath": photo.relpath,
+                    "name": photo.name,
+                    "size": human_size(photo.size),
+                    "format": photo.format,
+                    "file_date": photo.file_date,
+                    "exact_set": photo.exact_set,
+                    "kept": photo.kept,
+                    #  Measured, and shown as measurements. Nothing here is a
+                    #  judgement about a photograph — see `photo_group`.
+                    "facts": [
+                        {"label": label, "value": value} for label, value in photo.facts
+                    ],
+                }
+                for photo in found.members
+            ],
+            "page": found.page,
+            "pages": found.pages,
+            "has_next": found.has_next,
+            "sort": found.sort,
+            "only": found.only,
+            "sorts": [
+                {
+                    "key": key,
+                    "label": label,
+                    "current": key == found.sort,
+                    "href": href(sort=key, page=1),
+                }
+                for key, label in SORTS.items()
+            ],
+            "exact_href": href(only="exact", page=1),
+            "all_href": href(only="", page=1),
+            "next_href": href(page=found.page + 1),
+            "prev_href": href(page=found.page - 1),
+        }
+
+    @app.post("/review/audit/{finding_id}/photos/select", include_in_schema=False)
+    def review_audit_photos_select(
+        request: Request,  # noqa: ARG001
+        finding_id: int,
+        keep: Annotated[list[int], Form()] = [],  # noqa: B006 - starlette form list
+        shown: Annotated[list[int], Form()] = [],  # noqa: B006 - starlette form list
+        page: Annotated[int, Form()] = 1,
+        sort: Annotated[str, Form()] = "",
+        only: Annotated[str, Form()] = "",
+    ) -> RedirectResponse:
+        """Record this page's answers, and only this page's.
+
+        `shown` is what makes that possible: without it an unticked box and a
+        member on another page look identical, and saving one page would set
+        aside every photograph somebody had not scrolled to. The selection is
+        stored rather than carried in the form, so sorting, filtering and
+        coming back tomorrow do not throw away ten minutes of choosing.
+
+        Nothing is approved and nothing moves.
+        """
+        from librairy.photo_group import KEEP, SET_ASIDE, choose
+
+        kept = set(keep)
+        try:
+            for item_id in shown:
+                choose(
+                    conn,
+                    settings,
+                    finding_id,
+                    int(item_id),
+                    KEEP if item_id in kept else SET_ASIDE,
+                )
+        except CorrectionRefused as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        query = urlencode(
+            {
+                key: value
+                for key, value in {"sort": sort, "only": only, "page": page}.items()
+                if value and value != 1
+            }
+        )
+        target = f"/review/audit/{finding_id}/photos"
+        return RedirectResponse(
+            f"{target}?{query}" if query else target, status_code=303
+        )
+
+    @app.post("/review/audit/{finding_id}/photos/approve", include_in_schema=False)
+    def review_audit_photos_approve(
+        request: Request,  # noqa: ARG001
+        finding_id: int,
+    ) -> RedirectResponse:
+        """Turn the selection into the ordinary comparison decision.
+
+        One decision, however many files it moves. There is no photo planner
+        and no photo executor: this is `similar_media.resolve` with a longer
+        list, so the Commit card, the journal entry and the Undo are the ones
+        that already worked.
+        """
+        from librairy.photo_group import approve
+
+        try:
+            approve(conn, settings, finding_id)
+        except CorrectionRefused as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return RedirectResponse("/commit?type=correction", status_code=303)
+
+    @app.post("/review/audit/{finding_id}/photos/keep-all", include_in_schema=False)
+    def review_audit_photos_keep_all(
+        request: Request,  # noqa: ARG001
+        finding_id: int,
+    ) -> RedirectResponse:
+        """Leave every one of them alone, and stop being asked.
+
+        No plan: there is no filesystem work in leaving things as they are, and
+        an empty plan would put a no-op in Commit, in History and in Undo. What
+        it does instead is dismiss the czkawka pairs behind this group, which
+        is what stops the next audit asking again — and a pair whose files are
+        replaced later becomes a live question again on its own.
+        """
+        from librairy.corrections import load_finding
+        from librairy.photo_group import forget
+        from librairy.similar_media import compare, resolve
+
+        try:
+            row = load_finding(conn, finding_id)
+            view = compare(conn, settings, row, measure=False)
+            if view is None:
+                raise HTTPException(
+                    status_code=404, detail="there is nothing left to compare here"
+                )
+            resolve(
+                conn, settings, finding_id, [member.relpath for member in view.members]
+            )
+            forget(conn, finding_id)
+        except CorrectionRefused as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return RedirectResponse("/review#library-audit", status_code=303)
 
     @app.post("/review/audit/{finding_id}/comparison", include_in_schema=False)
     def review_audit_resolve_comparison(

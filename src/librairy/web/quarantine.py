@@ -232,6 +232,31 @@ def _duplicate_of_path(conn: sqlite3.Connection, row: sqlite3.Row) -> str:
     return f"{found['root']}/{found['relpath']}" if found else ""
 
 
+def _kept_alongside(conn: sqlite3.Connection, row: sqlite3.Row) -> int:
+    """Other files the same comparison kept, besides the one this row names.
+
+    Zero for a pair, which is the ordinary case and where naming the single
+    survivor says everything. Only computed for a held file that came from a
+    comparison at all.
+    """
+    from librairy.similar_media import KIND, kept_members
+
+    plan_id = row["plan_id"]
+    if not plan_id:
+        return 0
+    found = conn.execute(
+        "SELECT f.kind FROM plans p JOIN audit_findings f ON f.id = p.audit_finding_id"
+        " WHERE p.id=?",
+        (plan_id,),
+    ).fetchone()
+    if found is None or found["kind"] != KIND:
+        return 0
+    ops = conn.execute(
+        "SELECT src_root, src_relpath FROM plan_ops WHERE plan_id=?", (plan_id,)
+    ).fetchall()
+    return max(0, len(kept_members(conn, plan_id, ops)) - 1)
+
+
 def reason_text(reason: str | None) -> str:
     return REASONS.get(str(reason or ""), str(reason or "no reason recorded"))
 
@@ -452,6 +477,11 @@ def _entries(
             #  it does not say *which* — which is the only part that decides
             #  whether restoring this one is worth doing.
             "duplicate_of": _duplicate_of_path(conn, row),
+            #  How many representations the comparison kept, when it kept more
+            #  than the one this row names. "Compared with IMG_5100.jpg" is
+            #  true of a photo set aside from a group of thirty-seven and says
+            #  a thirty-seventh of what happened; the count is the rest.
+            "kept_alongside": _kept_alongside(conn, row),
             #  A preserved original is not a rejection, and its controls are not
             #  the generic ones. Restore means undo the adoption, and the delete
             #  queue is a two-plan dependency rather than a move — which is why

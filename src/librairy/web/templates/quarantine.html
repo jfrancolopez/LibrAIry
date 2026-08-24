@@ -199,7 +199,10 @@
                 if entry.reason_tag == 'replaced'
                 else ('It was compared with' if entry.reason_tag == 'similar'
                       else 'It matches') }}</span>
-              <span class="mono">{{ entry.duplicate_of }}</span>{% endif %}</p>
+              <span class="mono">{{ entry.duplicate_of }}</span>{% if entry.kept_alongside %}
+              <span class="muted">and {{ entry.kept_alongside }} other
+                {{ 'files' if entry.kept_alongside != 1 else 'file' }} you
+                kept</span>{% endif %}{% endif %}</p>
 
             {% if entry.preserved_original %}
               {# The question a person actually has in front of this row: then

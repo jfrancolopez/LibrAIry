@@ -356,6 +356,10 @@ PAGES = {
     "history": "/history",
     "search": "/browse?q=IMG_4021",
     "item": "/items/1",
+    # Twenty-five photographs that look alike: the thumbnail grid, the facts
+    # under each picture, the tray, and the selection controls. Finding 25 is
+    # the burst in the dev fixture — stable, the same way `/items/1` is.
+    "photo-group": "/review/audit/25/photos",
     # A filed track with a stored catalog identity: five facts, a 128-character
     # fingerprint and two releases, which is the widest thing the item page has
     # ever had to hold on a phone.

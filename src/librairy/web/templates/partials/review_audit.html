@@ -606,7 +606,45 @@
        and a person who knows whether lossless matters more to them than the
        space it costs. The measured table is fetched when this is opened, not
        rendered with the page: that is where the ffprobe calls are. #}
-    {% if finding.comparison %}
+    {% if finding.comparison and finding.comparison.large %}
+    {# Too many to lay out as a table, and for one release that meant the group
+       was dropped entirely — no row, no finding, nothing. It is a row now, and
+       the decision itself happens on its own page: this is one of the few
+       decisions that is genuinely visual, and thirty-seven thumbnails do not
+       belong inside a list of findings. #}
+    <div class="audit-comparison">
+      <p class="audit-scale">
+        <strong>{{ finding.comparison.count }}
+          {{ 'photos' if finding.comparison.photos else 'files' }}</strong>
+        <span class="muted">look alike.</span>
+        {% if finding.comparison.folder %}
+        <span class="muted mono">{{ finding.comparison.folder }}</span>
+        {% endif %}
+      </p>
+      <ul class="facts">
+        {% if finding.comparison.exact_sets %}
+        {# Exact copies inside a similar group. The hashes have already
+           answered these, and making somebody eyeball them would be asking a
+           question that is not open. #}
+        <li><span class="badge badge-info">{{ finding.comparison.exact_sets }}</span>
+          set{{ 's' if finding.comparison.exact_sets != 1 else '' }} of
+          byte-identical copies, {{ finding.comparison.exact_members }} files in all</li>
+        {% endif %}
+        <li><span class="badge badge-info">{{ finding.comparison.formats|length }}</span>
+          format{{ 's' if finding.comparison.formats|length != 1 else '' }}:
+          {{ finding.comparison.formats|join(', ') }}</li>
+        {% if finding.comparison.set_aside %}
+        <li><span class="badge badge-info">{{ finding.comparison.set_aside }}</span>
+          already chosen to set aside</li>
+        {% endif %}
+      </ul>
+      <p class="audit-actionability">Nothing is deleted — whatever you do not
+        keep goes to Quarantine.</p>
+      <div class="audit-comparison-options">
+        <a class="btn-primary" href="/review/audit/{{ finding.id }}/photos">{{ 'Review photos' if finding.comparison.photos else 'Review these files' }}</a>
+      </div>
+    </div>
+    {% elif finding.comparison %}
     <div class="audit-comparison">
       <p class="audit-scale">
         <span class="muted">{{ finding.comparison.count }} representations of the

@@ -2612,6 +2612,49 @@ summary.timeline-head::-webkit-details-marker { display: none; }
   margin: var(--space-1) 0;
 }
 
+/* Thirty-seven photographs, and a decision that is genuinely visual. The grid
+   is the page's whole content: pictures big enough to tell apart, the facts
+   underneath in the size facts belong in, and a tick that is the answer. */
+.photo-grid {
+  list-style: none; padding: 0; margin: var(--space-2) 0;
+  display: grid; gap: var(--space-2);
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+}
+.photo-cell {
+  border: var(--border-thin) solid var(--border);
+  border-radius: var(--radius-ui);
+  padding: var(--space-1);
+  background: var(--bg-metric);
+  display: grid; gap: calc(var(--space-1) / 2);
+  align-content: start;
+}
+/* Unticked reads as *going*, and it has to be visible at a glance across a
+   grid — a lone unchecked box in a corner is not a state anybody can scan. */
+.photo-cell.is-going { opacity: 0.55; border-style: dashed; }
+.photo-cell img {
+  width: 100%; height: auto; display: block;
+  border-radius: var(--radius-ui); background: var(--bg-input);
+}
+.photo-keep { display: flex; gap: var(--space-1); align-items: center; font-size: var(--text-sm); }
+.photo-name { margin: 0; font-size: var(--text-sm); overflow-wrap: anywhere; }
+.photo-facts { margin: 0; font-size: var(--text-sm); }
+.photo-controls {
+  display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-2);
+  align-items: baseline; font-size: var(--text-sm); margin: var(--space-2) 0;
+}
+/* The count of what is about to happen, kept with the button that does it —
+   on a long page the tray is the only place the whole answer is visible. */
+.photo-tray {
+  display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-2);
+  align-items: baseline; margin: var(--space-2) 0;
+}
+.photo-preview:not(:empty) { margin: var(--space-2) 0; }
+@media (max-width: 600px) {
+  /* Two across on a phone: one is a scroll, three is a contact sheet nobody
+     can judge a photograph from. */
+  .photo-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+}
+
 /* An artist's albums, counted rather than read. One row per album: name,
    size, whether it is already current, and a fold that reads the tags when
    somebody opens it. No paths in a collapsed row — a narrow screen has no
