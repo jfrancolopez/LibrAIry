@@ -44,6 +44,32 @@
       </span>
     </header>
 
+    {# What the document says it is. `PDF → Documents` was the whole row for a
+       643-page manual; this is the handful of facts that make it recognisable,
+       read out of the file at analysis time. Deliberately not the extracted
+       text: a list of rows is not the place to print a bank statement. #}
+    {% if proposal.document %}
+    <p class="proposal-identity">
+      <span class="badge badge-info">{{ proposal.document.type }}</span>
+      {% if proposal.document.title %}
+      <strong>{{ proposal.document.title }}</strong>
+      {% endif %}
+      {% if proposal.document.author %}
+      <span class="muted">{{ proposal.document.author }}</span>
+      {% endif %}
+      {% if proposal.document.isbn %}
+      <span class="muted mono">ISBN {{ proposal.document.isbn }}</span>
+      {% endif %}
+      {% if proposal.document.doi %}
+      <span class="muted mono">DOI {{ proposal.document.doi }}</span>
+      {% endif %}
+      {% if proposal.document.scanned %}
+      <span class="badge badge-warn" title="LibrAIry has no OCR, so nothing was
+        read from the pages">No text layer — this is a scan</span>
+      {% endif %}
+    </p>
+    {% endif %}
+
     <div class="proposal-line">
       {# The destination is the control that changes it. A "Change…" link beside
          a path is a second thing to aim at for the same job. #}
@@ -91,9 +117,19 @@
           <span class="badge badge-info">SIMILAR</span>
           <span class="muted">You already have a version of this:</span>
           <span class="mono">{{ proposal.similar_to.match }}</span>
-          <span class="muted">· arriving {{ proposal.similar_to.arrival_size }},
-            filed {{ proposal.similar_to.twin_size }} · the bytes are different.</span>
+          <span class="muted">· arriving {{ proposal.similar_to.arrival_format }}
+            {{ proposal.similar_to.arrival_size }}, filed
+            {{ proposal.similar_to.twin_format }} {{ proposal.similar_to.twin_size }}
+            · the bytes are different.</span>
         </p>
+        {% if proposal.similar_to.preference %}
+        {# The owner's own preference, named as theirs. It starts the answer
+           off; nothing moves until one of these buttons is pressed. #}
+        <p class="audit-track-note">
+          <span class="badge">Your preference</span>
+          {{ proposal.similar_to.preference }}
+        </p>
+        {% endif %}
         <details class="comparison-details">
           <summary>Compare them</summary>
           <div hx-get="/review/items/{{ proposal.item_id }}/comparison"
@@ -106,13 +142,17 @@
             <input type="hidden" name="csrf_token" value="{{ csrf }}">
             <input type="hidden" name="choice" value="keep-library">
             <button type="submit"
-              title="{{ proposal.similar_to.notes['keep-library'] }}">Keep the filed copy</button>
+              class="{{ 'btn-primary' if proposal.similar_to.preferred == 'keep-library' else '' }}"
+              title="{{ proposal.similar_to.notes['keep-library'] }}">Keep the filed copy{%
+              if proposal.similar_to.preferred == 'keep-library' %} — preferred{% endif %}</button>
           </form>
           <form method="post" action="/review/items/{{ proposal.item_id }}/comparison">
             <input type="hidden" name="csrf_token" value="{{ csrf }}">
             <input type="hidden" name="choice" value="use-arrival">
             <button type="submit"
-              title="{{ proposal.similar_to.notes['use-arrival'] }}">Use this one instead</button>
+              class="{{ 'btn-primary' if proposal.similar_to.preferred == 'use-arrival' else '' }}"
+              title="{{ proposal.similar_to.notes['use-arrival'] }}">Use this one instead{%
+              if proposal.similar_to.preferred == 'use-arrival' %} — preferred{% endif %}</button>
           </form>
           <form method="post" action="/review/items/{{ proposal.item_id }}/comparison">
             <input type="hidden" name="csrf_token" value="{{ csrf }}">

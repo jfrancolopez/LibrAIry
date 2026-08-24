@@ -181,20 +181,39 @@ def describe(
     endpoint the library-to-library comparison uses. This is the sentence above
     it and the three buttons under it.
     """
+    from librairy.format_preference import label_for, prefer_among, sentence
     from librairy.humanize import human_bytes
 
     arrival = similar_arrival(conn, settings, item_id)
     if arrival is None:
         return None
+    #  The workflow has already decided these two are representations of one
+    #  thing — that is what the row is — so the only question left is which
+    #  representation, which is exactly what the preference is about. It
+    #  preselects a button and moves nothing.
+    wanted = prefer_among(conn, [arrival.relpath, arrival.twin.relpath])
     return {
         "item_id": arrival.item_id,
         "twin_item_id": arrival.twin.item_id,
         "match": arrival.twin.relpath,
         "arrival_size": human_bytes(arrival.size),
         "twin_size": human_bytes(arrival.twin.size),
+        "arrival_format": label_for(conn, arrival.relpath),
+        "twin_format": label_for(conn, arrival.twin.relpath),
         "destination": arrival.dest_relpath,
         "in_place": arrival.replaces_in_place,
         "notes": CHOICE_NOTE,
+        #  Which of the three buttons the owner's stated preference points at,
+        #  or "". `keep-both` is never preferred by a format preference: it is
+        #  an answer about how many copies to have, not about which format.
+        "preferred": (
+            USE_ARRIVAL
+            if wanted and wanted == arrival.relpath
+            else KEEP_LIBRARY
+            if wanted and wanted == arrival.twin.relpath
+            else ""
+        ),
+        "preference": sentence(conn) if wanted else "",
     }
 
 

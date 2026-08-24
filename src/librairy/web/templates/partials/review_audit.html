@@ -664,6 +664,15 @@
           <p class="muted">Measuring…</p>
         </div>
       </details>
+      {% if finding.comparison.preference %}
+      {# The owner's own preference, named as theirs. Not a quality claim, and
+         not a decision — it starts the answer off and Commit still has to
+         happen. See `format_preference.py`. #}
+      <p class="audit-track-note">
+        <span class="badge">Your preference</span>
+        {{ finding.comparison.preference }}
+      </p>
+      {% endif %}
       {% if finding.comparison.pair %}
       {# Two of them, so each button names the one it keeps. `Keep FLAC` says
          what happens; a checkbox and a submit button says it in two steps. #}
@@ -672,7 +681,8 @@
         <form method="post" action="/review/audit/{{ finding.id }}/comparison">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <input type="hidden" name="keep" value="{{ member.relpath }}">
-          <button type="submit">Keep {{ member.name }}</button>
+          <button type="submit" class="{{ 'btn-primary' if member.preferred else '' }}"
+            >Keep {{ member.name }}{% if member.preferred %} — preferred{% endif %}</button>
         </form>
         {% endfor %}
         <form method="post" action="/review/audit/{{ finding.id }}/comparison">
@@ -696,10 +706,11 @@
           <form method="post" action="/review/audit/{{ finding.id }}/make-active">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <input type="hidden" name="relpath" value="{{ swap.relpath }}">
-            <button type="submit"
+            <button type="submit" class="{{ 'btn-primary' if swap.preferred else '' }}"
               title="{{ swap.name }} moves to {{ swap.dest_relpath }} and
                 {{ swap.displaced }} is preserved in Quarantine."
-              >Use {{ swap.name }} as the active version</button>
+              >Use {{ swap.name }} as the active version{% if swap.preferred %}
+                — preferred{% endif %}</button>
           </form>
           {% endfor %}
         </div>
@@ -714,9 +725,13 @@
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         {% for member in finding.comparison.members %}
         <label class="audit-comparison-member">
-          <input type="checkbox" name="keep" value="{{ member.relpath }}">
+          {# Ticked where the preference points, and only there. Everything
+             else starts unticked exactly as it did, and the person decides. #}
+          <input type="checkbox" name="keep" value="{{ member.relpath }}"
+                 {{ 'checked' if member.preferred else '' }}>
           <span class="mono">{{ member.folder }}/</span><strong>{{ member.name }}</strong>
-          <span class="muted">{{ member.size }}</span>
+          <span class="muted">{{ member.format }} · {{ member.size }}</span>
+          {% if member.preferred %}<span class="badge">Preferred</span>{% endif %}
         </label>
         {% endfor %}
         <button type="submit">Keep the ticked ones</button>

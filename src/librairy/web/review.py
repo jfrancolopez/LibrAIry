@@ -464,6 +464,39 @@ def filters_from_query(
     )
 
 
+def _document_row(row: sqlite3.Row) -> dict[str, object] | None:
+    """A document's identity for the Review row, or None.
+
+    Read off the evidence the analysis wrote — the same evidence Why shows —
+    rather than by opening the file again. `PDF → Documents` was the whole row
+    for a scanned manual; this is the three or four facts that make it
+    recognisable, and no more. The extracted text is not among them: a row is
+    not the place to print somebody's bank statement.
+    """
+    from librairy.docmeta import TYPE_LABEL
+
+    entries = [
+        entry
+        for entry in (decode_evidence(row["evidence"]) if row["evidence"] else [])
+        if entry.source == "document"
+    ]
+    if not entries:
+        return None
+    found = {entry.field: str(entry.detail) for entry in entries}
+    kind = found.get("type", "")
+    return {
+        "type": kind or TYPE_LABEL["document"],
+        "title": found.get("pdf title metadata") or found.get("epub metadata") or "",
+        "author": found.get("pdf author metadata") or found.get("epub author") or "",
+        "isbn": found.get("isbn") or found.get("epub identifier", ""),
+        "doi": found.get("doi in the text", ""),
+        #  Said plainly rather than hidden. There is no OCR here, so a scan is
+        #  a document LibrAIry has looked at and could not read.
+        "scanned": "no text layer" in found.get("text", ""),
+        "from_first_page": found.get("first page", ""),
+    }
+
+
 def _proposal_rows(
     conn: sqlite3.Connection,
     filters: ReviewFilters,
@@ -505,6 +538,10 @@ def _proposal_rows(
             # receipt, not a photo" is say it and leave the file alone.
             "vision_disagrees": vision_disagrees(looked, row["category"]),
             "evidence_lines": evidence_lines(row["evidence"]),
+            #  What the document said about itself, read at analysis time and
+            #  printed here from the stored evidence. Never a lookup: this page
+            #  does not open a PDF to draw a row.
+            "document": _document_row(row),
             "evidence_views": (views := humanize_evidence(row["evidence"])),
             # The score broken into where it came from. A bar of one length
             # says how sure; the same bar in pieces says why, which is what
@@ -1235,6 +1272,8 @@ def _comparison_row(
     large = _large_group(conn, settings, row, view)
     if large is not None:
         return large
+    from librairy.format_preference import label_for, sentence
+
     return {
         "members": [
             {
@@ -1242,9 +1281,20 @@ def _comparison_row(
                 "name": member.name,
                 "folder": member.folder,
                 "size": human_size(member.size),
+                #  The format, printed as a fact beside the size. `FLAC · 31 MB`
+                #  is what the reader is choosing between.
+                "format": label_for(conn, member.relpath),
+                #  Ticked to start with, where the owner's declared preference
+                #  points here. A starting point, not a decision: nothing moves
+                #  until Approve and Commit.
+                "preferred": member.relpath == view.preferred,
             }
             for member in view.members
         ],
+        #  Whose preference it is, said out loud. Never "MP3 is better" — see
+        #  `format_preference` for why the wording is part of the feature.
+        "preference": sentence(conn) if view.preferred else "",
+        "preferred": view.preferred,
         "count": len(view.members),
         "pair": len(view.members) == 2,
         #  The other answer, where the evidence supports it: not "set this one
@@ -1259,6 +1309,7 @@ def _comparison_row(
                 "displaced_relpath": swap.displaced.relpath,
                 "dest_relpath": swap.dest_relpath,
                 "same_path": swap.same_path,
+                "preferred": swap.preferred,
             }
             for swap in _swaps(conn, settings, row)
         ],

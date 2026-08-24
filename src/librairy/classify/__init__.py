@@ -169,6 +169,16 @@ def classify_item(
         return disc
     heuristic = classify_path(path, settings)
     if heuristic is not None:
+        #  The name-only pass is fast and usually right, and for a document it
+        #  was confidently wrong: `dune.epub` answered `Books/Unknown-Author/
+        #  dune/` at 0.85 — above the threshold, so nothing ever opened the
+        #  file that had `Frank Herbert` written inside it. A document that
+        #  names itself outranks a guess from its filename, so it gets the
+        #  chance to. Only for formats there is a reader for, and only when it
+        #  actually said something; everything else keeps the answer it had.
+        spoke = _document_result(path, relpath, settings, conn)
+        if spoke is not None:
+            return _enriched(conn, settings, item, ai_state, spoke)
         return _enriched(conn, settings, item, ai_state, heuristic)
     suffix = Path(relpath).suffix.lower()
     if suffix in AUDIO_EXTS:
@@ -207,7 +217,13 @@ def classify_item(
             item,
             ai_state,
             classify_document_like(
-                relpath, settings=settings, book_lookup=_book_lookup(conn)
+                relpath,
+                settings=settings,
+                book_lookup=_book_lookup(conn),
+                #  Read from the document, the same way music reads its tags
+                #  from the file rather than from its name. Analysis-time work
+                #  — never a page render. See `docmeta`.
+                facts=_document_facts(path, relpath, settings),
             ),
         )
     return _enriched(conn, settings, item, ai_state, _unknown(relpath))
@@ -396,6 +412,38 @@ def _lastfm_lookup(conn, settings):
     from librairy.tools.lastfm import lookup_for_settings
 
     return lookup_for_settings(settings)
+
+
+def _document_result(path: Path, relpath: str, settings, conn):  # noqa: ANN001, ANN202
+    """The document's own answer, or None when it had nothing to say."""
+    from librairy.docmeta import readable
+
+    if not readable(relpath):
+        return None
+    facts = _document_facts(path, relpath, settings)
+    if facts is None or not facts.identified:
+        return None
+    return classify_document_like(
+        relpath, settings=settings, book_lookup=_book_lookup(conn), facts=facts
+    )
+
+
+def _document_facts(path: Path, relpath: str, settings):  # noqa: ANN001, ANN202
+    """What a PDF or EPUB says about itself. `None` for everything else.
+
+    Best-effort in exactly the way `_audio_tags` is: an encrypted PDF, a
+    missing poppler, a file that is not really a document — all of them come
+    back as no facts, and classification falls through to the filename it has
+    always used.
+    """
+    from librairy.docmeta import facts_for, readable
+
+    if not readable(relpath):
+        return None
+    try:
+        return facts_for(path, settings)
+    except Exception:  # noqa: BLE001 - identity is best-effort, like tags
+        return None
 
 
 def _audio_tags(path: Path, settings) -> dict[str, str]:

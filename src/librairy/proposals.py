@@ -39,6 +39,12 @@ LOCAL_EVIDENCE_SOURCES = frozenset(
         # — subtitles, playlists, .nfo. Its own source because Review says
         # "Companion file", not "Cover art", when it explains one.
         "companion",
+        # What a document said about itself: the title out of a PDF's Info
+        # dictionary, an EPUB's OPF, an ISBN or a DOI in the front matter. Its
+        # own source rather than "heuristic", because it is not one — it is the
+        # file speaking — and because `ai.redact` drops exactly this source
+        # before anything leaves the machine.
+        "document",
     }
 )
 # Every catalog is a legal evidence source by definition, derived from the

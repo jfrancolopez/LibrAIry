@@ -72,6 +72,11 @@ class Swap:
     chosen: Side
     displaced: Side
     dest_relpath: str
+    #  Where the owner's declared music format preference points. These two are
+    #  already known to be the same MusicBrainz recording — that is what makes
+    #  this control exist at all — so a preference about containers is applying
+    #  what somebody said rather than deciding what something is.
+    preferred: bool = False
 
     @property
     def same_path(self) -> bool:
@@ -109,12 +114,16 @@ def swaps_for(
     first, second = sides  # type: ignore[misc]
     if not _same_recording(first, second):
         return ()
+    from librairy.format_preference import prefer_among
+
+    wanted = prefer_among(conn, [first.relpath, second.relpath])
     swaps = []
     for chosen, displaced in ((first, second), (second, first)):
         swap = Swap(
             chosen=chosen,
             displaced=displaced,
             dest_relpath=_slot(displaced.relpath, chosen.relpath),
+            preferred=bool(wanted) and chosen.relpath == wanted,
         )
         if not swap.pointless:
             swaps.append(swap)

@@ -576,6 +576,7 @@ def build_app(root: Path):  # noqa: ANN201
     _an_arriving_duplicate(conn, settings)
     _pending_decisions(conn, settings)
     _an_arriving_representation(conn, settings)
+    _documents_in_the_inbox(conn, settings)
     _identified_recordings(conn)
     _agreeing_loose_tracks(conn)
     _a_file_nobody_scanned(settings)
@@ -726,6 +727,65 @@ def _identified_recordings(conn) -> None:  # noqa: ANN001
                 score=0.96,
             ),
         )
+
+
+def _documents_in_the_inbox(conn, settings: Settings) -> None:  # noqa: ANN001
+    """Three real documents, analysed the way the worker analyses them.
+
+    Real files rather than `b"%PDF-1.4 router"`: the whole point of the
+    document work is that LibrAIry opens them, and a placeholder would prove a
+    template instead. One manual that names itself, one scan with no text
+    layer at all, and one EPUB whose OPF carries a title, an author and an
+    ISBN.
+    """
+    from librairy.classify import classify_item  # noqa: PLC0415
+    from librairy.lifecycle import transition_item  # noqa: PLC0415
+    from librairy.proposals import upsert_proposal  # noqa: PLC0415
+    from tests.support.documents import build_pdf, write_epub  # noqa: PLC0415
+
+    (settings.inbox_dir / "scan-0473.pdf").write_bytes(
+        build_pdf(
+            title="2024 CR-V Owner's Manual",
+            author="Honda Motor Co.",
+            lines=(
+                "2024 CR-V Owner's Manual",
+                "American Honda Motor Co., Inc.",
+                "Read this manual before operating the vehicle.",
+            ),
+            pages=3,
+        )
+    )
+    #  No text on any page: this is what a photocopy looks like to a program
+    #  with no OCR, and the row has to say so rather than guess a title.
+    (settings.inbox_dir / "IMG_20240612_0001.pdf").write_bytes(build_pdf(pages=2))
+    write_epub(
+        settings.inbox_dir / "dune.epub",
+        title="Dune",
+        author="Frank Herbert",
+        identifier="urn:isbn:9780441013593",
+        date="1965-08-01",
+    )
+    scan_root(conn, "inbox", settings.inbox_dir, settings)
+    for name in ("scan-0473.pdf", "IMG_20240612_0001.pdf", "dune.epub"):
+        row = conn.execute(
+            "SELECT id FROM items WHERE root='inbox' AND relpath=?", (name,)
+        ).fetchone()
+        if row is None:
+            continue
+        result = classify_item(settings.inbox_dir / name, name, settings)
+        upsert_proposal(
+            conn,
+            item_id=int(row["id"]),
+            category=result.category,
+            clean_name=result.clean_name,
+            dest_relpath=result.dest_relpath,
+            confidence=result.confidence,
+            evidence=list(result.evidence),
+        )
+        #  The state the worker leaves an analysed item in. Without it the row
+        #  renders perfectly and Approve answers 500: `discovered -> approved`
+        #  is not a legal transition, and it should not be.
+        transition_item(conn, int(row["id"]), "proposed")
 
 
 def _a_burst_of_photographs(conn) -> None:  # noqa: ANN001

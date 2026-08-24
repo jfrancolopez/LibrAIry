@@ -119,6 +119,12 @@ class Comparison:
 
     finding_id: int
     members: tuple[Member, ...]
+    #  The member the owner's declared format preference points at, or "".
+    #  A starting point for an answer and nothing else: no plan exists
+    #  because this is set, and the person can tick anything they like. See
+    #  `format_preference` for why it is a named policy rather than a rule
+    #  hidden in here.
+    preferred: str = ""
 
     @property
     def labels(self) -> tuple[str, ...]:
@@ -359,7 +365,38 @@ def compare(
             replace(member, facts=technical_facts(settings, member.relpath))
             for member in members
         ]
-    return Comparison(finding_id=int(row["id"]), members=tuple(members))
+    return Comparison(
+        finding_id=int(row["id"]),
+        members=tuple(members),
+        preferred=preferred_member(conn, members),
+    )
+
+
+def preferred_member(conn: sqlite3.Connection, members) -> str:  # noqa: ANN001
+    """Which of these the owner has said they want, or "".
+
+    Two gates, and the first one is the important one. **Identity outranks
+    format**: the preference is applied only where LibrAIry already knows
+    these are the same recording, from a catalog identity or from its own
+    naming. A studio FLAC beside a live MP3 is two recordings, and no
+    preference about containers is allowed to answer a question about takes.
+    """
+    from librairy.format_preference import equivalent, prefer_among
+    from librairy.track_identity import recall
+
+    relpaths = [member.relpath for member in members]
+    recordings = []
+    for member in members:
+        row = conn.execute(
+            "SELECT fingerprint FROM items WHERE id=?", (member.item_id,)
+        ).fetchone()
+        identity = recall(
+            conn, member.item_id, fingerprint=str(row["fingerprint"] or "") if row else ""
+        )
+        recordings.append(identity.recording_id if identity and identity.matched else "")
+    if not equivalent(conn, relpaths, recordings=recordings):
+        return ""
+    return prefer_among(conn, relpaths)
 
 
 def _members(

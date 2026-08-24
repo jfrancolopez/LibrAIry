@@ -77,7 +77,17 @@ def build_view(
             _safe_component(part) for part in path.parent.parts if part not in {"", "."}
         ),
         hashtag_hints=_hashtags(relpath),
-        evidence_summaries=tuple(_evidence_summary(entry) for entry in evidence[:20]),
+        #  Everything a *document* said about itself is dropped here, and
+        #  deliberately. A title read out of a PDF is the one piece of evidence
+        #  in this program that can be the private part of the file — "Account
+        #  statement, March 2024" is not a filing hint, it is the document —
+        #  and it is also evidence a model is not needed for: a document that
+        #  named itself is already classified deterministically. So it stays on
+        #  this machine whatever provider chain is configured.
+        evidence_summaries=tuple(
+            _evidence_summary(entry)
+            for entry in [item for item in evidence if item.source != "document"][:20]
+        ),
     )
 
 

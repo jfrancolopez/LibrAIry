@@ -378,6 +378,10 @@
                     {# The reciprocal decision: not "bring this back as well"
                        but "use this one in its place". The filed version is
                        preserved first, so nothing is overwritten. #}
+                    {% if entry.replacement.preferred %}
+                    <span class="badge" title="{{ entry.replacement.preferred }}"
+                      >Your preferred format</span>
+                    {% endif %}
                     <form method="post" action="/quarantine/use-instead/{{ entry.id }}">
                       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                       <button type="submit"

@@ -2612,6 +2612,14 @@ summary.timeline-head::-webkit-details-marker { display: none; }
   margin: var(--space-1) 0;
 }
 
+/* What a document says it is, above the destination. One line: a type, a
+   title, and whatever identifies it — never its contents. */
+.proposal-identity {
+  display: flex; flex-wrap: wrap; gap: var(--space-1);
+  align-items: baseline; margin: 0 0 var(--space-1);
+  font-size: var(--text-sm);
+}
+
 /* Thirty-seven photographs, and a decision that is genuinely visual. The grid
    is the page's whole content: pictures big enough to tell apart, the facts
    underneath in the size facts belong in, and a tick that is the answer. */

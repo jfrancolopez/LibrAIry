@@ -188,7 +188,20 @@ def describe(conn: sqlite3.Connection, entry: sqlite3.Row) -> dict | None:
         "active_size": human_size(found.active_size),
         "dest_relpath": found.dest_relpath,
         "same_path": found.same_path,
+        #  These two are already established as versions of one filed thing —
+        #  that is what put this control on the row — so the only remaining
+        #  question is which representation, and the owner has answered it.
+        #  Preselects nothing here (there is one button), but says so.
+        "preferred": _preferred(conn, found),
     }
+
+
+def _preferred(conn: sqlite3.Connection, found) -> str:  # noqa: ANN001
+    """The sentence to print when the held copy is the format the owner wants."""
+    from librairy.format_preference import prefer_among, sentence
+
+    wanted = prefer_among(conn, [found.held_relpath, found.active_relpath])
+    return sentence(conn) if wanted == found.held_relpath else ""
 
 
 def request_replacement(
