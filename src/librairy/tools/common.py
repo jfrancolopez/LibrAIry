@@ -41,15 +41,33 @@ def run_json_tool(command: list[str], settings: Settings) -> ToolResult:
         return ToolResult(False, error=f"invalid JSON from {binary}: {exc}")
 
 
+#  The tools that own a cache row. Named here so a typo is a failed import
+#  rather than a second, empty cache nobody notices — three of these describe
+#  different things about one file and none is a substitute for another.
+MEDIA_TOOL = "ffprobe-media"
+DOCUMENT_TOOL = "document-meta"
+IMAGE_TOOL = "exiftool-image"
+
+
 def ensure_metadata_cache(conn: sqlite3.Connection) -> None:
+    """The cache table, for a database that predates it being in the schema.
+
+    One row per item **per tool**. It used to be one row per item, which is why
+    a test failed if a second writer ever appeared: with `item_id` alone as the
+    key, a document reader and a media reader would have taken turns
+    overwriting each other's answer. Migration 037 gave each tool its own row;
+    this keeps the same shape for anything that reaches here first.
+    """
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS item_metadata (
-          item_id INTEGER PRIMARY KEY REFERENCES items(id),
+          id          INTEGER PRIMARY KEY,
+          item_id     INTEGER NOT NULL REFERENCES items(id),
+          tool        TEXT NOT NULL,
           fingerprint TEXT NOT NULL,
-          tool TEXT NOT NULL,
-          payload TEXT NOT NULL,
-          updated_at TEXT NOT NULL
+          payload     TEXT NOT NULL,
+          updated_at  TEXT NOT NULL,
+          UNIQUE (item_id, tool)
         )
         """
     )
@@ -82,15 +100,14 @@ def set_cached_metadata(
     ensure_metadata_cache(conn)
     conn.execute(
         """
-        INSERT INTO item_metadata(item_id, fingerprint, tool, payload, updated_at)
+        INSERT INTO item_metadata(item_id, tool, fingerprint, payload, updated_at)
         VALUES (?, ?, ?, ?, ?)
-        ON CONFLICT(item_id) DO UPDATE SET
+        ON CONFLICT(item_id, tool) DO UPDATE SET
           fingerprint=excluded.fingerprint,
-          tool=excluded.tool,
           payload=excluded.payload,
           updated_at=excluded.updated_at
         """,
-        (item_id, fingerprint, tool, json.dumps(payload, sort_keys=True), updated_at),
+        (item_id, tool, fingerprint, json.dumps(payload, sort_keys=True), updated_at),
     )
 
 

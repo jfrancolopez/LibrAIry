@@ -1130,7 +1130,7 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
     def _photo_data(conn, settings, found, row) -> dict:  # noqa: ANN001, ARG001
         """The group as the page prints it, and no fact it does not print."""
         from librairy.mediakind import kind_for
-        from librairy.photo_group import SORTS
+        from librairy.photo_group import SORTS, TAKEN_SORT
         from librairy.web.quarantine import human_size
         from librairy.web.review import _common_folder
 
@@ -1189,11 +1189,52 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
                 }
                 for key, label in SORTS.items()
             ],
+            #  Offered only once every member carries a capture time. A sort
+            #  over a fact two-thirds of the group does not have is not a sort,
+            #  and reading the other two-thirds to find out would be five
+            #  hundred subprocesses on a page render.
+            "measured": found.measured,
+            "complete": found.complete,
+            "taken_href": href(sort=TAKEN_SORT, page=1),
             "exact_href": href(only="exact", page=1),
             "all_href": href(only="", page=1),
             "next_href": href(page=found.page + 1),
             "prev_href": href(page=found.page - 1),
         }
+
+    @app.post("/review/audit/{finding_id}/photos/measure", include_in_schema=False)
+    def review_audit_photos_measure(
+        request: Request,  # noqa: ARG001
+        finding_id: int,
+        page: Annotated[int, Form()] = 1,
+    ) -> RedirectResponse:
+        """Read the metadata for this page's photographs, once, and keep it.
+
+        A deliberate action because it is a subprocess: drawing the page must
+        not run exiftool, however few files are on it. One invocation for the
+        batch, recorded against the exact bytes measured, so the answers stay
+        good until somebody edits the picture — and once the whole group is
+        measured, ordering by capture time becomes available.
+        """
+        from librairy.corrections import load_finding
+        from librairy.photo_group import load, measure
+
+        try:
+            row = load_finding(conn, finding_id)
+        except CorrectionRefused as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        found = load(conn, settings, row, page=page, measure=False)
+        if found is None:
+            raise HTTPException(
+                status_code=404, detail="there is nothing left to compare here"
+            )
+        measure(conn, settings, list(found.members))
+        return RedirectResponse(
+            f"/review/audit/{finding_id}/photos?page={page}"
+            if page > 1
+            else f"/review/audit/{finding_id}/photos",
+            status_code=303,
+        )
 
     @app.post("/review/audit/{finding_id}/photos/select", include_in_schema=False)
     def review_audit_photos_select(
@@ -1313,6 +1354,32 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         """
         try:
             resolve_comparison(conn, settings, finding_id, list(keep))
+        except CorrectionRefused as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return RedirectResponse("/review#library-audit", status_code=303)
+
+    @app.post("/review/audit/{finding_id}/formats", include_in_schema=False)
+    def review_audit_formats(
+        request: Request,  # noqa: ARG001
+        finding_id: int,
+        keep: Annotated[list[str], Form()] = [],  # noqa: B006 - starlette form list
+    ) -> RedirectResponse:
+        """Say which formats of one work you want, and set the rest aside.
+
+        The same three-way shape every comparison here has, and the same
+        machinery underneath — `similar_media.set_aside` builds the plan, so a
+        book set aside from a work behaves exactly like an encode set aside
+        from a recording. Keeping all of them is a real answer with no
+        filesystem work in it.
+
+        The refusal that matters is an empty selection: setting aside every
+        format would leave the library without a book somebody owns, in the
+        name of tidying up the fact that they had it twice.
+        """
+        from librairy.document_works import resolve as resolve_formats
+
+        try:
+            resolve_formats(conn, settings, finding_id, list(keep))
         except CorrectionRefused as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         return RedirectResponse("/review#library-audit", status_code=303)

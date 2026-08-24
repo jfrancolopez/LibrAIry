@@ -176,7 +176,7 @@ def classify_item(
         #  names itself outranks a guess from its filename, so it gets the
         #  chance to. Only for formats there is a reader for, and only when it
         #  actually said something; everything else keeps the answer it had.
-        spoke = _document_result(path, relpath, settings, conn)
+        spoke = _document_result(path, relpath, settings, conn, item)
         if spoke is not None:
             return _enriched(conn, settings, item, ai_state, spoke)
         return _enriched(conn, settings, item, ai_state, heuristic)
@@ -223,7 +223,7 @@ def classify_item(
                 #  Read from the document, the same way music reads its tags
                 #  from the file rather than from its name. Analysis-time work
                 #  — never a page render. See `docmeta`.
-                facts=_document_facts(path, relpath, settings),
+                facts=_document_facts(path, relpath, settings, conn, item),
             ),
         )
     return _enriched(conn, settings, item, ai_state, _unknown(relpath))
@@ -414,13 +414,13 @@ def _lastfm_lookup(conn, settings):
     return lookup_for_settings(settings)
 
 
-def _document_result(path: Path, relpath: str, settings, conn):  # noqa: ANN001, ANN202
+def _document_result(path: Path, relpath: str, settings, conn, item=None):  # noqa: ANN001, ANN202
     """The document's own answer, or None when it had nothing to say."""
     from librairy.docmeta import readable
 
     if not readable(relpath):
         return None
-    facts = _document_facts(path, relpath, settings)
+    facts = _document_facts(path, relpath, settings, conn, item)
     if facts is None or not facts.identified:
         return None
     return classify_document_like(
@@ -428,7 +428,7 @@ def _document_result(path: Path, relpath: str, settings, conn):  # noqa: ANN001,
     )
 
 
-def _document_facts(path: Path, relpath: str, settings):  # noqa: ANN001, ANN202
+def _document_facts(path: Path, relpath: str, settings, conn=None, item=None):  # noqa: ANN001, ANN202
     """What a PDF or EPUB says about itself. `None` for everything else.
 
     Best-effort in exactly the way `_audio_tags` is: an encrypted PDF, a
@@ -436,11 +436,17 @@ def _document_facts(path: Path, relpath: str, settings):  # noqa: ANN001, ANN202
     back as no facts, and classification falls through to the filename it has
     always used.
     """
-    from librairy.docmeta import facts_for, readable
+    from librairy.docmeta import facts_for, facts_for_item, readable
 
     if not readable(relpath):
         return None
     try:
+        #  Through the cache when there is an item to key it to, which is the
+        #  ordinary case — analysis runs with the file already indexed. A
+        #  re-analysis of an unchanged document then costs a SELECT rather
+        #  than two subprocesses.
+        if conn is not None and item is not None:
+            return facts_for_item(conn, settings, item.id, path)
         return facts_for(path, settings)
     except Exception:  # noqa: BLE001 - identity is best-effort, like tags
         return None

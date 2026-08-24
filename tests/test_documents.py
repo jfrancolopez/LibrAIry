@@ -270,7 +270,7 @@ def test_an_isbn_makes_it_a_book_and_it_is_filed_as_one(tmp_path: Path) -> None:
 
     assert result.category == "books"
     assert result.fields["author"] == "Hunt and Thomas"
-    assert str(result.dest_relpath).startswith("Books/Hunt-and-Thomas/")
+    assert str(result.dest_relpath).startswith("Books/Hunt and Thomas/")
 
 
 @poppler
@@ -513,7 +513,7 @@ def test_the_name_only_pass_does_not_get_to_answer_for_a_document(
 
     assert guessed.fields["author"] == "Unknown Author"
     assert result.fields["author"] == "Frank Herbert"
-    assert str(result.dest_relpath) == "Books/Frank-Herbert/Dune/Dune.epub"
+    assert str(result.dest_relpath) == "Books/Frank Herbert/Dune/Dune.epub"
 
 
 @poppler
@@ -528,3 +528,239 @@ def test_a_document_that_says_nothing_keeps_the_answer_it_had(tmp_path: Path) ->
 
     assert (guessed.category if guessed else result.category) == result.category
     assert result.category == "documents"
+
+
+# --- 1-14: the Documents hierarchy ---------------------------------------------
+
+
+@poppler
+def test_a_manual_with_a_manufacturer_is_filed_under_it(tmp_path: Path) -> None:
+    path, settings = pdf_at(
+        tmp_path,
+        "scan-0473.pdf",
+        title="2024 CR-V Owner's Manual",
+        author="Honda Motor Co.",
+        lines=MANUAL_LINES,
+        pages=3,
+    )
+
+    result = classify_document_like(
+        "scan-0473.pdf", settings=settings, facts=facts_for(path, settings)
+    )
+
+    #  The trailing dot of `Co.` goes, because a component ending in a dot is
+    #  a component Windows silently drops. Everything else survives.
+    assert result.dest_relpath == (
+        "Documents/Manuals/Honda Motor Co/2024 CR-V Owner's Manual.pdf"
+    )
+
+
+@poppler
+def test_a_manual_with_no_trustworthy_maker_is_filed_one_level_up(
+    tmp_path: Path,
+) -> None:
+    """Absence of evidence makes *less* structure, never invented structure."""
+    path, settings = pdf_at(
+        tmp_path,
+        "guide.pdf",
+        title="Router XR500 User Guide",
+        author="Acrobat Distiller 11.0",
+        lines=("Router XR500 User Guide", "Setup"),
+    )
+
+    result = classify_document_like(
+        "guide.pdf", settings=settings, facts=facts_for(path, settings)
+    )
+
+    assert result.dest_relpath == "Documents/Manuals/Router XR500 User Guide.pdf"
+    assert "Unknown" not in str(result.dest_relpath)
+    assert "General" not in str(result.dest_relpath)
+
+
+@poppler
+def test_a_financial_document_is_filed_by_its_own_year(tmp_path: Path) -> None:
+    path, settings = pdf_at(
+        tmp_path,
+        "doc.pdf",
+        title="Account Statement March 2024",
+        lines=("Account statement", "Statement period: 1 March to 31 March"),
+    )
+
+    result = classify_document_like(
+        "doc.pdf", settings=settings, facts=facts_for(path, settings)
+    )
+
+    assert result.dest_relpath == (
+        "Documents/Financial/2024/Account Statement March 2024.pdf"
+    )
+
+
+@poppler
+def test_the_import_year_is_never_substituted_for_a_missing_document_year(
+    tmp_path: Path,
+) -> None:
+    """"I filed this in 2026" is a fact about the import, not about the file."""
+    import datetime
+
+    path, settings = pdf_at(
+        tmp_path,
+        "doc.pdf",
+        title="Account Statement",
+        lines=("Account statement", "Amount due on receipt"),
+    )
+
+    result = classify_document_like(
+        "doc.pdf", settings=settings, facts=facts_for(path, settings)
+    )
+
+    assert result.dest_relpath == "Documents/Financial/Account Statement.pdf"
+    assert str(datetime.date.today().year) not in str(result.dest_relpath)
+
+
+@poppler
+def test_a_paper_with_an_author_is_filed_under_the_first_one(tmp_path: Path) -> None:
+    path, settings = pdf_at(
+        tmp_path,
+        "preprint.pdf",
+        title="On the Electrodynamics of Moving Bodies",
+        author="Einstein, A.; Grossmann, M.",
+        lines=("Abstract", "We show that... doi:10.1000/xyz123"),
+    )
+
+    result = classify_document_like(
+        "preprint.pdf", settings=settings, facts=facts_for(path, settings)
+    )
+
+    #  `Einstein, A` and not `Einstein`: the comma separates a surname from
+    #  initials, and dropping them is dropping the half that tells two
+    #  Einsteins apart. The semicolon is what separates authors.
+    assert result.dest_relpath == (
+        "Documents/Papers/Einstein, A/On the Electrodynamics of Moving Bodies.pdf"
+    )
+
+
+@poppler
+def test_a_paper_with_no_author_falls_back_to_its_year(tmp_path: Path) -> None:
+    path, settings = pdf_at(
+        tmp_path,
+        "paper.pdf",
+        title="A Study of Something 2019",
+        lines=("Abstract", "Proceedings of the conference"),
+    )
+
+    result = classify_document_like(
+        "paper.pdf", settings=settings, facts=facts_for(path, settings)
+    )
+
+    assert result.dest_relpath == (
+        "Documents/Papers/2019/A Study of Something 2019.pdf"
+    )
+
+
+@poppler
+def test_a_paper_with_neither_keeps_the_shallowest_branch(tmp_path: Path) -> None:
+    path, settings = pdf_at(
+        tmp_path,
+        "paper.pdf",
+        title="Notes on a Method",
+        lines=("Abstract", "The method is described below."),
+    )
+
+    result = classify_document_like(
+        "paper.pdf", settings=settings, facts=facts_for(path, settings)
+    )
+
+    assert result.dest_relpath == "Documents/Papers/Notes on a Method.pdf"
+
+
+@poppler
+def test_a_generic_document_keeps_the_dated_branch_it_always_had(
+    tmp_path: Path,
+) -> None:
+    """Backward conceptual compatibility: nothing about the old shape changed."""
+    path, settings = pdf_at(
+        tmp_path,
+        "notes.pdf",
+        title="Meeting Notes 2024",
+        lines=("Meeting Notes 2024", "We talked about things."),
+    )
+
+    result = classify_document_like(
+        "notes.pdf", settings=settings, facts=facts_for(path, settings)
+    )
+
+    assert result.dest_relpath == "Documents/2024/Meeting Notes 2024.pdf"
+
+
+def test_the_book_hierarchy_is_unchanged(tmp_path: Path) -> None:
+    settings = settings_for(tmp_path)
+    path = settings.inbox_dir / "dune.epub"
+    write_epub(path, title="Dune", author="Frank Herbert", identifier="urn:isbn:9780441013593")
+
+    result = classify_document_like(
+        "dune.epub", settings=settings, facts=facts_for(path, settings)
+    )
+
+    assert result.dest_relpath == "Books/Frank Herbert/Dune/Dune.epub"
+
+
+@poppler
+def test_document_filenames_keep_the_punctuation_the_title_had(
+    tmp_path: Path,
+) -> None:
+    """Readable, and filesystem-safe in that order. A slash is still a
+    separator; an apostrophe is not."""
+    path, settings = pdf_at(
+        tmp_path,
+        "x.pdf",
+        title="Rock & Roll: What's It All About? (2nd ed.)",
+        lines=("Rock & Roll", "Chapter one"),
+    )
+
+    result = classify_document_like(
+        "x.pdf", settings=settings, facts=facts_for(path, settings)
+    )
+
+    #  Whatever the existing sanitizer does with `:` and `?` is what it does —
+    #  the point is that the ampersand, the apostrophe and the brackets survive.
+    assert "&" in result.clean_name
+    assert "What's" in result.clean_name
+    assert "(2nd ed.)" in result.clean_name
+    assert result.clean_name.endswith(".pdf")
+
+
+@poppler
+def test_a_scan_with_no_identity_gets_no_hierarchy_at_all(tmp_path: Path) -> None:
+    path, settings = pdf_at(tmp_path, "IMG_20240612_0001.pdf", pages=4)
+
+    result = classify_document_like(
+        "IMG_20240612_0001.pdf", settings=settings, facts=facts_for(path, settings)
+    )
+
+    assert result.dest_relpath is None
+    assert result.category == "documents"
+
+
+def test_the_new_taxonomy_does_not_report_documents_already_filed(
+    tmp_path: Path,
+) -> None:
+    """Like Music naming: the policy applies to new filing, not to what is
+    already on the shelf. An audit that suddenly reported every document for
+    being in the folder LibrAIry itself chose last year is house style wearing
+    a defect's clothes."""
+    from librairy.audit import audit_library
+
+    settings = settings_for(tmp_path)
+    conn = connect(settings)
+    filed = settings.library_dir / "Documents/2024/2024 CR-V Owner's Manual.pdf"
+    filed.parent.mkdir(parents=True, exist_ok=True)
+    filed.write_bytes(build_pdf(title="2024 CR-V Owner's Manual", author="Honda Motor Co.",
+                               lines=MANUAL_LINES, pages=3))
+    scan_root(conn, "library", settings.library_dir, settings)
+
+    audit_library(conn, settings)
+
+    findings = conn.execute(
+        "SELECT kind, relpath FROM audit_findings WHERE relpath LIKE 'Documents/%'"
+    ).fetchall()
+    assert [row["kind"] for row in findings] == []

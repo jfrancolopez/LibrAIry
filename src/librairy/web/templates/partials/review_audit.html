@@ -606,6 +606,58 @@
        and a person who knows whether lossless matters more to them than the
        space it costs. The measured table is fetched when this is opened, not
        rendered with the page: that is where the ffprobe calls are. #}
+    {# One work, two containers. Not a duplicate — the bytes differ — and not an
+       encoding question either: an EPUB reflows on a phone and a PDF keeps the
+       typesetting, and both may be worth having. No format carries a preferred
+       badge, because nobody has said which one they would rather keep. #}
+    {% if finding.work %}
+    <div class="audit-comparison">
+      <p class="audit-scale">
+        <strong>{{ finding.work.title }}</strong>
+        <span class="muted">is filed in {{ finding.work.count }} formats:
+          {{ finding.work.formats }}.</span>
+        <span class="badge badge-info">{{ finding.work.scheme }}
+          {{ finding.work.identifier }}</span>
+      </p>
+      <p class="audit-actionability">Same {{ finding.work.scheme }}, so this is
+        the same work in two containers — not a duplicate, and not a different
+        edition. Nothing is deleted; whatever you do not keep goes to
+        Quarantine.</p>
+      <div class="work-formats">
+        {% for member in finding.work.members %}
+        <div class="audit-track-new">
+          <p class="audit-track-note">
+            <strong>{{ member.name }}</strong>
+            <span class="muted mono">{{ member.folder }}</span>
+          </p>
+          <ul class="facts">
+            {% for fact in member.facts %}
+            <li><span class="badge badge-info">{{ fact.label }}</span>
+              {{ fact.value }}</li>
+            {% endfor %}
+          </ul>
+          <div class="audit-comparison-options">
+            <form method="post" action="/review/audit/{{ finding.id }}/formats">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="hidden" name="keep" value="{{ member.relpath }}">
+              <button type="submit">Keep the {{ member.format }}</button>
+            </form>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      <div class="audit-comparison-options">
+        <form method="post" action="/review/audit/{{ finding.id }}/formats">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          {% for member in finding.work.members %}
+          <input type="hidden" name="keep" value="{{ member.relpath }}">
+          {% endfor %}
+          <button type="submit">Keep all of them</button>
+        </form>
+      </div>
+    </div>
+    {% endif %}
+
     {% if finding.comparison and finding.comparison.large %}
     {# Too many to lay out as a table, and for one release that meant the group
        was dropped entirely — no row, no finding, nothing. It is a row now, and

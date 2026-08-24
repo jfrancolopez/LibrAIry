@@ -25,9 +25,11 @@ from librairy.optimization_storage import (
 from librairy.planner import utc_now
 from librairy.quarantine import (
     DELETE_PILE,
+    DOCUMENT_FORMAT,
     PRESERVED_ORIGINAL,
     PREVIOUS_REPRESENTATION,
     QuarantineError,
+    document_format_entry,
     is_preserved_original,
     is_previous_representation,
     mark_entry_for_deletion,
@@ -57,6 +59,9 @@ STORAGE_STATE = {
 REASONS = {
     "exact_duplicate": "byte-for-byte copy of a file you already have",
     "similar_media": "close enough to something you already have to be worth a look",
+    #  Also not a column value — derived from the plan's finding, like the two
+    #  below. "You said you did not want it" is what this used to read.
+    DOCUMENT_FORMAT: "another format of a document you kept",
     "user": "you said you did not want it",
     #  Not a value the column can hold — its CHECK allows the three above and
     #  SQLite cannot widen a CHECK. `quarantine_effective_reason` derives it
@@ -75,6 +80,7 @@ UNWANTED = "you sent it here from Review"
 REASON_TAGS = {
     "exact_duplicate": "duplicate",
     "similar_media": "similar",
+    DOCUMENT_FORMAT: "other format",
     "user": "you sent it here",
     PRESERVED_ORIGINAL: "preserved original",
 }
@@ -230,6 +236,24 @@ def _duplicate_of_path(conn: sqlite3.Connection, row: sqlite3.Row) -> str:
         "SELECT root, relpath FROM items WHERE id=?", (row["duplicate_of"],)
     ).fetchone()
     return f"{found['root']}/{found['relpath']}" if found else ""
+
+
+def _work_note(conn: sqlite3.Connection, row: sqlite3.Row) -> str:
+    """Why a document format is here, when that is why it is here."""
+    from librairy.document_works import KIND, describe
+
+    plan_id = row["plan_id"]
+    item_id = row["item_id"]
+    if not plan_id or item_id is None:
+        return ""
+    found = conn.execute(
+        "SELECT f.kind FROM plans p JOIN audit_findings f ON f.id = p.audit_finding_id"
+        " WHERE p.id=?",
+        (plan_id,),
+    ).fetchone()
+    if found is None or found["kind"] != KIND:
+        return ""
+    return describe(conn, int(item_id))
 
 
 def _kept_alongside(conn: sqlite3.Connection, row: sqlite3.Row) -> int:
@@ -465,11 +489,15 @@ def _entries(
             "reason_text": (
                 REASONS[PREVIOUS_REPRESENTATION]
                 if is_previous_representation(conn, row)
+                else REASONS[DOCUMENT_FORMAT]
+                if document_format_entry(conn, row)
                 else reason_text(quarantine_effective_reason(row))
             ),
             "reason_tag": (
                 "replaced"
                 if is_previous_representation(conn, row)
+                else "other format"
+                if document_format_entry(conn, row)
                 else REASON_TAGS.get(quarantine_effective_reason(row), "set aside")
             ),
             #  Which file it is a copy of. "Byte-for-byte copy of a file you
@@ -482,6 +510,9 @@ def _entries(
             #  true of a photo set aside from a group of thirty-seven and says
             #  a thirty-seventh of what happened; the count is the rest.
             "kept_alongside": _kept_alongside(conn, row),
+            #  "Same ISBN, different file format" — for a document set aside
+            #  from a work. Never "duplicate": these files do not share bytes.
+            "work_note": _work_note(conn, row),
             #  A preserved original is not a rejection, and its controls are not
             #  the generic ones. Restore means undo the adoption, and the delete
             #  queue is a two-plan dependency rather than a move — which is why

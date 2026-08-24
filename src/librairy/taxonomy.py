@@ -45,6 +45,15 @@ CATEGORIES = (
 #  filed under whatever is added — it is not a refactor.
 PARSED_FILENAME_CATEGORIES = frozenset({"music_videos", "music"})
 
+#  Categories whose *paths* are written for a person to read rather than
+#  slugified into house style. The music ones are here because a parser reads
+#  their filenames back; documents and books are here for the opposite reason
+#  — nothing parses them, and `Documents/Manuals/Honda-Motor-Co/2024-CR-V-
+#  Owners-Manual.pdf` is a worse answer than the title the document already
+#  carries. Safety still wins: `tidy_component` removes what a filesystem
+#  cannot hold and changes nothing else.
+READABLE_PATH_CATEGORIES = PARSED_FILENAME_CATEGORIES | {"documents", "books"}
+
 DEFAULT_STYLE = "conventional"
 DEFAULT_STYLES = {
     "music": "genre-first",
@@ -100,6 +109,47 @@ TEMPLATES: dict[str, dict[str, str]] = {
 }
 
 
+#  The Documents hierarchy, one template per broad type. Four branches and no
+#  more: `Reports`, `Forms`, `Statements` and `Reference` are distinctions this
+#  classifier cannot reliably support, and a taxonomy with twenty directories in
+#  it is a taxonomy whose folders disagree with each other.
+#
+#  Each type has a ladder of its own, and every rung down has *less* structure
+#  rather than invented structure. There is no `Unknown Manufacturer` and no
+#  `General`: a folder that exists to keep the depth uniform is a folder that
+#  claims to know something.
+DOCUMENT_TEMPLATES = {
+    "manual": (
+        ("organization", "Documents/Manuals/{organization}/{clean_name}"),
+        ((), "Documents/Manuals/{clean_name}"),
+    ),
+    "financial": (
+        ("year", "Documents/Financial/{year}/{clean_name}"),
+        ((), "Documents/Financial/{clean_name}"),
+    ),
+    "paper": (
+        ("author", "Documents/Papers/{author}/{clean_name}"),
+        ("year", "Documents/Papers/{year}/{clean_name}"),
+        ((), "Documents/Papers/{clean_name}"),
+    ),
+}
+
+
+def document_template(kind: str, fields: dict[str, Any]) -> str:
+    """The deepest branch this document has the evidence for.
+
+    Absence of evidence produces a shallower path, never a placeholder one.
+    A manual whose manufacturer is not trustworthy is filed as a manual —
+    `Documents/Manuals/2024 CR-V Owner's Manual.pdf` — because that is what is
+    known about it, and `Unknown Manufacturer/` would be a directory named
+    after a thing nobody established.
+    """
+    for token, template in DOCUMENT_TEMPLATES.get(kind, ()):
+        if not token or fields.get(token):
+            return template
+    return ""
+
+
 @dataclass(frozen=True)
 class RenderResult:
     relpath: str | None
@@ -125,6 +175,49 @@ def render_destination(
     except (KeyError, ValueError, PathValidationError) as exc:
         return RenderResult(None, str(exc))
     return RenderResult(relpath)
+
+
+def render_template(
+    template: str,
+    category: str,
+    fields: dict[str, Any],
+    *,
+    library_root: Path,
+) -> RenderResult:
+    """Render one explicit template, through the same machinery as the rest.
+
+    The document hierarchy chooses its branch from the evidence rather than
+    from a per-category style, so it needs the template resolved before this
+    rather than looked up inside it. Everything after that is shared on
+    purpose: one sanitizer, one path tidier, one `validate_dest`. A second
+    spelling of any of those is a second answer to "is this path safe".
+    """
+    missing = _missing_tokens(template, fields)
+    if missing:
+        return RenderResult(None, f"missing tokens: {', '.join(missing)}")
+    try:
+        relpath = _render_path(template, _safe_fields(fields, category), category)
+        validate_dest(library_root, relpath)
+    except (KeyError, ValueError, PathValidationError) as exc:
+        return RenderResult(None, str(exc))
+    return RenderResult(relpath)
+
+
+def document_name(title: str, ext: str = "") -> str:
+    """A document's filename: the title it carries, made safe and no more.
+
+    `media_filename` and not `slugify`, and the difference is the whole point
+    of reading the file. `2024 CR-V Owner's Manual.pdf` is what the document
+    calls itself; `2024-CR-V-Owners-Manual.pdf` is house style applied to a
+    title that did not need styling. Safety still wins — a slash is still a
+    directory separator — and a title made entirely of unusable characters
+    falls back to the house slug, because then there is nothing to preserve.
+    """
+    from librairy.naming import media_filename
+
+    if ext and not ext.startswith("."):
+        ext = f".{ext}"
+    return media_filename(f"{_strip_hashtags(title).strip()}{ext}")
 
 
 def _render_path(template: str, safe_fields: dict[str, Any], category: str) -> str:
@@ -159,7 +252,7 @@ def _tidy_for(category: str):  # noqa: ANN202
     `naming.py` for the split: most of what LibrAIry files is named for a person
     to glance at, and one thing is named for a parser to read back.
     """
-    if category not in PARSED_FILENAME_CATEGORIES:
+    if category not in READABLE_PATH_CATEGORIES:
         return tidy_relpath
     return lambda component: "/".join(
         tidy_component(part) for part in component.split("/") if part
@@ -226,13 +319,15 @@ def _safe_fields(fields: dict[str, Any], category: str) -> dict[str, Any]:
     hold: a new template or a new metadata source cannot introduce a folder
     with a space, an ampersand or an emoji in it without going through this.
 
-    Which *kind* of safe depends on the category, and only one category differs.
-    A music video's filename is read back by `musicvideo.parse` — the artist and
-    the title either side of ` - `, the version in brackets — so slugging it
-    would mean LibrAIry could not read a name it wrote itself. Those keep their
-    punctuation and lose only what is unsafe. Everything else gets house style.
+    Which *kind* of safe depends on the category. A music video's filename is
+    read back by `musicvideo.parse` — the artist and the title either side of
+    ` - `, the version in brackets — so slugging it would mean LibrAIry could
+    not read a name it wrote itself. A document's is read by a person, and
+    `Honda-Motor-Co/2024-CR-V-Owners-Manual.pdf` is house style applied to a
+    title that came with its own punctuation. Both keep what they have and lose
+    only what is unsafe; everything else gets house style.
     """
-    parsed = category in PARSED_FILENAME_CATEGORIES
+    parsed = category in READABLE_PATH_CATEGORIES
     safe: dict[str, Any] = {}
     for key, value in fields.items():
         if isinstance(value, int):

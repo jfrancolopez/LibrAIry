@@ -531,14 +531,40 @@ def resolve(
     if len(kept) == len(known):
         return _keep_all(conn, view, finding_id)
 
-    going = [member for member in view.members if member.relpath not in kept]
-    for member in going:
-        _assert_unchanged(conn, settings, member.relpath)
-    for relpath in kept:
+    return set_aside(
+        conn,
+        settings,
+        finding_id,
+        going=[member.relpath for member in view.members if member.relpath not in kept],
+        kept=kept,
+        error=CorrectionRefused,
+    )
+
+
+def set_aside(
+    conn: sqlite3.Connection,
+    settings: Settings,
+    finding_id: int,
+    *,
+    going: list[str],
+    kept: list[str],
+    error: type[Exception],
+) -> str:
+    """These go to Quarantine, those stay. One decision, one plan, one Undo.
+
+    The shared half of every comparison this program makes — several encodes of
+    a recording, thirty-seven photographs, two formats of one book. What
+    differs between them is how the members were *found* and what makes them
+    comparable; what happens afterwards is identical, so it is written once.
+
+    Both halves are checked against the bytes on disk before anything is
+    approved. The ones leaving are obvious; the ones staying matter just as
+    much, because they are the whole reason the others are safe to move.
+    """
+    for relpath in [*going, *kept]:
         _assert_unchanged(conn, settings, relpath)
     specs = [
-        replace(quarantine_operation(member.relpath), src_root="library")
-        for member in going
+        replace(quarantine_operation(relpath), src_root="library") for relpath in going
     ]
     plan_id = create_plan(conn, specs, settings)
     conn.execute("UPDATE plans SET audit_finding_id=? WHERE id=?", (finding_id, plan_id))
@@ -547,7 +573,7 @@ def resolve(
     except sqlite3.IntegrityError as exc:
         conn.execute("DELETE FROM plan_ops WHERE plan_id=?", (plan_id,))
         conn.execute("DELETE FROM plans WHERE id=?", (plan_id,))
-        raise CorrectionRefused(
+        raise error(
             "this comparison was answered by something else a moment ago"
         ) from exc
     conn.execute(

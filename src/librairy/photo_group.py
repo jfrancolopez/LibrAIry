@@ -80,6 +80,11 @@ SORTS = {
     "size": "file size",
     "date": "file date",
 }
+#  Offered only once every member has been measured, because sorting by it
+#  otherwise means reading five hundred files — which is exactly the unbounded
+#  thing this design refuses. Measuring is an action; sorting by the result is
+#  then free.
+TAKEN_SORT = "taken"
 DEFAULT_SORT = "path"
 
 FILTERS = {"exact": "byte-identical copies"}
@@ -101,6 +106,9 @@ class Photo:
     decision: str = KEEP
     #  Measured, and only for the members on the page somebody is looking at.
     facts: tuple[tuple[str, str], ...] = ()
+    #  When the camera says the shutter fired, from the cache. Empty until
+    #  somebody has asked for these photographs to be measured.
+    taken: str = ""
 
     @property
     def name(self) -> str:
@@ -155,6 +163,10 @@ class Group:
     only: str = ""
     has_next: bool = False
     matching: int = 0
+    #  How many members have a capture time on record. `total` means the
+    #  `Taken` order is available; anything less and it is not offered, because
+    #  a partial sort is a wrong sort.
+    measured: int = 0
 
     @property
     def shape(self) -> str:
@@ -163,6 +175,11 @@ class Group:
     @property
     def pages(self) -> int:
         return max(1, -(-self.matching // PAGE_MEMBERS))
+
+    @property
+    def complete(self) -> bool:
+        """Every member measured, so capture time is a fact about all of them."""
+        return self.total > 0 and self.measured == self.total
 
     @property
     def resolvable(self) -> bool:
@@ -225,12 +242,18 @@ def load(
     everyone = [
         replace(photo, decision=chosen.get(photo.item_id, KEEP)) for photo in everyone
     ]
-    matching = _filtered(everyone, only=only, fmt=fmt)
+    #  Sorting by capture time needs every member's answer, not this page's —
+    #  a page sorted by a fact two-thirds of the group does not carry is not
+    #  sorted. Reading the cache for the whole group is one query per member
+    #  and no subprocess; measuring it is the action that fills it.
+    measured = _measured(conn, everyone) if measure else everyone
+    complete = bool(measured) and all(photo.taken for photo in measured)
+    if sort == TAKEN_SORT and not complete:
+        sort = DEFAULT_SORT
+    matching = _filtered(measured, only=only, fmt=fmt)
     ordered = _sorted(matching, sort)
     page = max(1, page)
     window = ordered[(page - 1) * PAGE_MEMBERS : page * PAGE_MEMBERS]
-    if measure:
-        window = _measured(settings, window)
     return Group(
         finding_id=int(row["id"]),
         total=len(everyone),
@@ -245,6 +268,7 @@ def load(
         only=only if only in FILTERS else "",
         has_next=len(ordered) > page * PAGE_MEMBERS,
         matching=len(ordered),
+        measured=sum(1 for photo in measured if photo.taken),
     )
 
 
@@ -344,6 +368,8 @@ def _sorted(photos: list[Photo], sort: str) -> list[Photo]:
         "name": lambda photo: (photo.name.lower(), photo.relpath),
         "size": lambda photo: (photo.size, photo.relpath),
         "date": lambda photo: (photo.mtime_ns, photo.relpath),
+        #  Only reachable once every member is measured — see `Group.measured`.
+        TAKEN_SORT: lambda photo: (photo.taken, photo.relpath),
     }
     return sorted(photos, key=keys.get(sort, keys["path"]))
 
@@ -355,28 +381,100 @@ def _formats(photos: list[Photo]) -> tuple[tuple[str, int], ...]:
     return tuple(sorted(counted.items()))
 
 
-def _measured(settings: Settings, photos: list[Photo]) -> list[Photo]:
-    """Pixels, format and capture time — for this page, in one subprocess.
+def _measured(conn: sqlite3.Connection, photos: list[Photo]) -> list[Photo]:
+    """Pixels and capture time for this page, **from the cache only**.
 
-    One exiftool call for the whole page rather than one per picture: at
-    twenty-four members that is the difference between a page and a wait. A
-    file exiftool cannot read simply has no facts, which is a normal outcome
-    for a group and never an error.
+    This used to run exiftool while the page was being drawn — one call for the
+    whole page, which is bounded, but still a subprocess on a GET. The rule is
+    the same one every other reader here follows: analysis measures, pages
+    read. A member nobody has measured shows the facts the index already has
+    and no others, and `measure` is a button.
 
-    No network, no catalog, no model, and nothing that decodes an image.
+    No exiftool, no network, no catalog, no model, and nothing that decodes an
+    image.
     """
+    from librairy.tools.common import IMAGE_TOOL, get_cached_metadata
+
+    found: list[Photo] = []
+    for photo in photos:
+        payload = (
+            get_cached_metadata(conn, photo.item_id, photo.fingerprint, IMAGE_TOOL)
+            if photo.fingerprint
+            else None
+        )
+        found.append(
+            replace(photo, facts=_facts_from(payload), taken=str(payload.get("taken") or ""))
+            if payload
+            else photo
+        )
+    return found
+
+
+def measure(
+    conn: sqlite3.Connection, settings: Settings, photos: list[Photo]
+) -> int:
+    """Read the metadata for these photographs, once, and remember it.
+
+    One exiftool invocation for the whole batch rather than one per picture: at
+    twenty-four members that is the difference between a page and a wait. Only
+    ever called from an action — see `_measured` for why a page does not do
+    this — and the answers are recorded against the exact bytes measured.
+    """
+    from librairy.planner import utc_now
+    from librairy.tools.common import IMAGE_TOOL, set_cached_metadata
     from librairy.tools.exiftool import extract_many
 
-    if not photos:
-        return photos
-    paths = [settings.library_dir / photo.relpath for photo in photos]
+    wanted = [photo for photo in photos if photo.fingerprint]
+    if not wanted:
+        return 0
+    paths = [settings.library_dir / photo.relpath for photo in wanted]
     try:
         measured = extract_many(paths, settings)
     except Exception:  # noqa: BLE001 - a missing binary means "no facts"
-        return photos
-    return [
-        replace(photo, facts=_facts(found)) for photo, found in zip(photos, measured, strict=False)
-    ]
+        return 0
+    counted = 0
+    for photo, found in zip(wanted, measured, strict=False):
+        set_cached_metadata(
+            conn, photo.item_id, photo.fingerprint, IMAGE_TOOL,
+            _payload(found), utc_now(),
+        )
+        counted += 1
+    return counted
+
+
+def _payload(measured) -> dict:  # noqa: ANN001
+    """The handful of fields something consumes, not the whole EXIF dump.
+
+    A cache row that grows with the camera's verbosity is a row nobody reads
+    and a database that grows for no reason.
+    """
+    if measured is None:
+        return {}
+    tags = measured.tags or {}
+    return {
+        "width": _number(tags.get("ImageWidth")),
+        "height": _number(tags.get("ImageHeight")),
+        "taken": str(measured.created_at or ""),
+        "camera": str(measured.camera or ""),
+    }
+
+
+def _number(value) -> int:  # noqa: ANN001
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _facts_from(payload: dict) -> tuple[tuple[str, str], ...]:
+    found: list[tuple[str, str]] = []
+    if payload.get("width") and payload.get("height"):
+        found.append(("Pixels", f"{payload['width']}×{payload['height']}"))
+    if payload.get("taken"):
+        found.append(("Taken", str(payload["taken"])))
+    if payload.get("camera"):
+        found.append(("Camera", str(payload["camera"])))
+    return tuple(found)
 
 
 def _facts(measured) -> tuple[tuple[str, str], ...]:  # noqa: ANN001

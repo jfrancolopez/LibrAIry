@@ -355,18 +355,22 @@ def test_five_cycles_with_changing_bytes_keep_one_item_and_correct_backups(
     ) == [("library", TARGET), ("quarantine", ORIGINAL)]
 
 
-# --- recorded as technical debt, deliberately not fixed here -------------------------
+# --- the debt, paid --------------------------------------------------------------
 
 
-def test_the_probe_cache_holds_one_row_per_item_across_all_tools(scene) -> None:
-    """Known and out of scope. `item_metadata` is `item_id INTEGER PRIMARY KEY`
-    with `ON CONFLICT(item_id) DO UPDATE SET tool=excluded.tool`, so a second
-    metadata tool would overwrite the first rather than sit beside it.
+def test_each_metadata_tool_owns_its_own_cache_row(scene) -> None:
+    """This used to assert the opposite, and said so.
 
-    Latent today — `ffprobe-media` is the only writer — and adoption does not
-    add one, so redesigning the table here would be scope nobody asked for.
-    This pins the current behaviour so the day a second writer arrives, it
-    fails loudly here instead of quietly in production.
+    `item_metadata` was keyed by `item_id` alone with `ON CONFLICT(item_id) DO
+    UPDATE SET tool=excluded.tool`, so a second metadata tool would overwrite
+    the first rather than sit beside it. That was latent while `ffprobe-media`
+    was the only writer, and the old test pinned it so the day a second writer
+    arrived it would fail loudly here rather than quietly in production.
+
+    The day arrived: document identity and image metadata are both real
+    readers now. This is the invariant the tripwire was protecting — a tool
+    cannot clobber another tool's answer — rather than the limitation it was
+    describing.
     """
     conn, settings, item_id, _job_id, _output = scene
     set_cached_metadata(conn, item_id, "fp", TOOL, {"a": 1}, utc_now())
@@ -374,11 +378,37 @@ def test_the_probe_cache_holds_one_row_per_item_across_all_tools(scene) -> None:
     set_cached_metadata(conn, item_id, "fp", "some-other-tool", {"b": 2}, utc_now())
 
     rows = conn.execute(
-        "SELECT tool, payload FROM item_metadata WHERE item_id=?", (item_id,)
+        "SELECT tool FROM item_metadata WHERE item_id=? ORDER BY tool", (item_id,)
     ).fetchall()
-    assert len(rows) == 1, "if this now holds two rows, the debt has been paid"
-    assert rows[0]["tool"] == "some-other-tool"
-    assert get_cached_metadata(conn, item_id, "fp", TOOL) is None
+    assert [row["tool"] for row in rows] == [TOOL, "some-other-tool"]
+    assert get_cached_metadata(conn, item_id, "fp", TOOL) == {"a": 1}
+    assert get_cached_metadata(conn, item_id, "fp", "some-other-tool") == {"b": 2}
+
+
+def test_a_second_write_from_one_tool_replaces_only_that_tools_row(scene) -> None:
+    """One row per item per tool, holding the newest fingerprint — not a pile
+    of versions nobody prunes."""
+    conn, settings, item_id, _job_id, _output = scene
+    set_cached_metadata(conn, item_id, "old-bytes", TOOL, {"a": 1}, utc_now())
+    set_cached_metadata(conn, item_id, "old-bytes", "some-other-tool", {"b": 2}, utc_now())
+
+    set_cached_metadata(conn, item_id, "new-bytes", TOOL, {"a": 9}, utc_now())
+
+    assert conn.execute(
+        "SELECT COUNT(*) c FROM item_metadata WHERE item_id=?", (item_id,)
+    ).fetchone()["c"] == 2
+    assert get_cached_metadata(conn, item_id, "new-bytes", TOOL) == {"a": 9}
+    #  The other tool is untouched, and still describes the bytes it measured.
+    assert get_cached_metadata(conn, item_id, "old-bytes", "some-other-tool") == {"b": 2}
+
+
+def test_a_cached_answer_about_other_bytes_is_a_miss(scene) -> None:
+    """The fingerprint gate is the whole reason a cache is safe here."""
+    conn, settings, item_id, _job_id, _output = scene
+    set_cached_metadata(conn, item_id, "old-bytes", TOOL, {"duration": 210}, utc_now())
+
+    assert get_cached_metadata(conn, item_id, "new-bytes", TOOL) is None
+    assert get_cached_metadata(conn, item_id, "old-bytes", TOOL) == {"duration": 210}
 
 
 # --- AIFF, proved rather than extended by analogy -----------------------------------

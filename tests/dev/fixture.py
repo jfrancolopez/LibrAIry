@@ -552,6 +552,7 @@ def build_app(root: Path):  # noqa: ANN201
         None,
         [EvidenceEntry("filesystem", "name", "IMG_4099.MOV", 0.85)],
     )
+    _documents_in_the_inbox(conn, settings)
     _similar_representations(conn)
     #  Before the detector runs, because the burst is czkawka evidence and the
     #  finding is derived from it — writing the flags afterwards would leave
@@ -559,6 +560,12 @@ def build_app(root: Path):  # noqa: ANN201
     #  pass exists to remove.
     _a_burst_of_photographs(conn)
     batch.extend(similar_media.detect(conn))
+    #  One book, two containers, one ISBN — neither a duplicate nor an encoding
+    #  question. Derived from the cached identity the document analysis wrote,
+    #  which is the only thing the detector reads.
+    from librairy import document_works  # noqa: PLC0415
+
+    batch.extend(document_works.detect(conn))
     record_findings(conn, batch)
 
     # 7 goes stale: the bytes change after the audit looked at them.
@@ -576,7 +583,6 @@ def build_app(root: Path):  # noqa: ANN201
     _an_arriving_duplicate(conn, settings)
     _pending_decisions(conn, settings)
     _an_arriving_representation(conn, settings)
-    _documents_in_the_inbox(conn, settings)
     _identified_recordings(conn)
     _agreeing_loose_tracks(conn)
     _a_file_nobody_scanned(settings)
@@ -765,8 +771,58 @@ def _documents_in_the_inbox(conn, settings: Settings) -> None:  # noqa: ANN001
         identifier="urn:isbn:9780441013593",
         date="1965-08-01",
     )
+    #  The same book already filed as a PDF, so the EPUB arriving beside it is
+    #  the work comparison rather than a duplicate — no fingerprint pairs them
+    #  and no perceptual hash ever will.
+    filed = settings.library_dir / "Books/Frank Herbert/Dune/Dune.pdf"
+    filed.parent.mkdir(parents=True, exist_ok=True)
+    filed.write_bytes(
+        build_pdf(
+            title="Dune",
+            author="Frank Herbert",
+            lines=("Dune", "Frank Herbert", "ISBN 978-0-441-01359-3"),
+            pages=412,
+        )
+    )
+    #  A book already filed in both containers, so Review has the work
+    #  comparison from the start: same ISBN, different bytes, and neither the
+    #  duplicate workflow nor czkawka can see it.
+    earthsea = settings.library_dir / "Books/Ursula K. Le Guin/A Wizard of Earthsea"
+    earthsea.mkdir(parents=True, exist_ok=True)
+    write_epub(
+        earthsea / "A Wizard of Earthsea.epub",
+        title="A Wizard of Earthsea",
+        author="Ursula K. Le Guin",
+        identifier="urn:isbn:9780553383041",
+        date="1968-11-01",
+    )
+    (earthsea / "A Wizard of Earthsea.pdf").write_bytes(
+        build_pdf(
+            title="A Wizard of Earthsea",
+            author="Ursula K. Le Guin",
+            lines=("A Wizard of Earthsea", "ISBN 978-0-553-38304-1"),
+            pages=183,
+        )
+    )
+    #  And a paper, so the Papers branch has something in it.
+    paper = settings.inbox_dir / "1706.03762v5.pdf"
+    paper.write_bytes(
+        build_pdf(
+            title="Attention Is All You Need",
+            author="Vaswani, A.; Shazeer, N.",
+            lines=(
+                "Attention Is All You Need",
+                "Abstract",
+                "We propose a new simple network architecture. doi:10.48550/arXiv.1706.03762",
+            ),
+            pages=15,
+        )
+    )
+    scan_root(conn, "library", settings.library_dir, settings)
     scan_root(conn, "inbox", settings.inbox_dir, settings)
-    for name in ("scan-0473.pdf", "IMG_20240612_0001.pdf", "dune.epub"):
+    for name in (
+        "scan-0473.pdf", "IMG_20240612_0001.pdf", "dune.epub", "1706.03762v5.pdf"
+    ):
         row = conn.execute(
             "SELECT id FROM items WHERE root='inbox' AND relpath=?", (name,)
         ).fetchone()
@@ -786,6 +842,17 @@ def _documents_in_the_inbox(conn, settings: Settings) -> None:  # noqa: ANN001
         #  renders perfectly and Approve answers 500: `discovered -> approved`
         #  is not a legal transition, and it should not be.
         transition_item(conn, int(row["id"]), "proposed")
+    #  Analysis reads what is filed as well, which is what puts the PDF's ISBN
+    #  in the cache and makes the work comparison possible at all.
+    from librairy.docmeta import facts_for_item  # noqa: PLC0415
+
+    for row in conn.execute(
+        "SELECT id, relpath FROM items WHERE root='library'"
+        " AND (relpath LIKE '%.pdf' OR relpath LIKE '%.epub')"
+    ).fetchall():
+        facts_for_item(
+            conn, settings, int(row["id"]), settings.library_dir / str(row["relpath"])
+        )
 
 
 def _a_burst_of_photographs(conn) -> None:  # noqa: ANN001

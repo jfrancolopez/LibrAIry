@@ -94,6 +94,8 @@ def test_fresh_db_migrates_to_current_schema(tmp_path: Path) -> None:
         "idx_destination_choices_finding",
         # One answer per photograph in one visual group.
         "idx_similar_media_choices_finding",
+        # The metadata cache, one row per item per tool.
+        "idx_item_metadata_item",
     }
 
     columns = {row[1] for row in conn.execute("PRAGMA table_info(provider_status)")}
@@ -161,6 +163,9 @@ def test_migration_011_closes_proposals_for_files_already_filed(tmp_path: Path) 
         DROP TABLE IF EXISTS audit_runs;
         DROP TABLE IF EXISTS optimization_jobs;
         DROP TABLE IF EXISTS optimization_opportunities;
+        DROP TABLE IF EXISTS document_work_choices;
+        DROP INDEX IF EXISTS idx_item_metadata_item;
+        DROP TABLE IF EXISTS item_metadata;
         DROP INDEX IF EXISTS idx_similar_media_choices_finding;
         DROP TABLE IF EXISTS similar_media_choices;
         DROP TABLE IF EXISTS track_identity;

@@ -7,7 +7,14 @@ from pathlib import PurePosixPath
 
 from librairy.config import Settings
 from librairy.models import Category, EvidenceEntry
-from librairy.taxonomy import RenderResult, clean_name_from_title, render_destination
+from librairy.taxonomy import (
+    RenderResult,
+    clean_name_from_title,
+    document_name,
+    document_template,
+    render_destination,
+    render_template,
+)
 from librairy.tools.openlibrary import BookMatch
 
 BookLookup = Callable[[str], "BookMatch | None"]
@@ -74,7 +81,11 @@ def classify_document_like(
     #  and `2024 CR-V Owner's Manual` are not two candidate titles to weigh —
     #  one of them is a title and the other is what a scanner called a file.
     if facts is not None and facts.identified:
-        title = clean_title(facts.title)
+        #  Not `clean_title`: that repairs a *filename stem*, turning dots,
+        #  dashes and underscores into spaces so `my_report-v2` reads. A title
+        #  the document itself carries has already been written by a person,
+        #  and running it through the same pass cost `CR-V` its hyphen.
+        title = " ".join(facts.title.split())
         year = facts.year or year
         evidence.extend(
             EvidenceEntry("document", label.lower(), detail, 0.92)
@@ -98,7 +109,7 @@ def classify_document_like(
     elif suffix in BOOK_EXTS or _is_book(facts) or _booklike_pdf(suffix, title):
         category = "books"
         confidence = 0.78 if suffix == ".pdf" else 0.84
-        clean_name = clean_name_from_title(title, suffix)
+        clean_name = document_name(title, suffix)
         fields = {
             "author": "Unknown Author",
             "title": title,
@@ -115,7 +126,7 @@ def classify_document_like(
             confidence = max(confidence, 0.9)
         if facts is not None and facts.identified:
             fields["title"] = facts.title
-            fields["clean_name"] = clean_name_from_title(facts.title, suffix)
+            fields["clean_name"] = document_name(facts.title, suffix)
             clean_name = str(fields["clean_name"])
             confidence = max(confidence, 0.9)
         if facts is not None and facts.isbn:
@@ -144,7 +155,7 @@ def classify_document_like(
                 fields["author"] = match.author
             if match.year:
                 fields["year"] = match.year
-            fields["clean_name"] = clean_name_from_title(match.title, suffix)
+            fields["clean_name"] = document_name(match.title, suffix)
             clean_name = str(fields["clean_name"])
             confidence = max(confidence, 0.92)
             detail = f"{match.title}" + (f" — {match.author}" if match.author else "")
@@ -158,18 +169,26 @@ def classify_document_like(
             confidence = 0.88
         else:
             confidence = 0.45 if _ambiguous_document(title) else 0.72
-        clean_name = clean_name_from_title(title, suffix)
+        clean_name = document_name(title, suffix)
         fields = {"year": year or "Unknown", "topic": title, "clean_name": clean_name}
         evidence.append(EvidenceEntry("heuristic", "category", "document extension", confidence))
         if facts is not None and facts.read:
-            #  The broad type, where deterministic evidence supports one. It
-            #  does not change the destination — the Documents hierarchy is
-            #  what it is — but it is most of what a person needs to recognise
-            #  the row.
             fields["document_type"] = facts.kind
-            evidence.append(
-                EvidenceEntry("document", "type", facts.label, 0.85)
+            evidence.append(EvidenceEntry("document", "type", facts.label, 0.85))
+        branch = _document_branch(facts, fields, evidence)
+        if branch:
+            #  A deliberate branch of the Documents hierarchy, chosen from what
+            #  the document established about itself. Rendered through the same
+            #  sanitizer and the same `validate_dest` as every other
+            #  destination — see `taxonomy.render_template`.
+            rendered = render_template(
+                branch, category, fields, library_root=settings.library_dir
             )
+            if rendered.relpath and confidence >= settings.confidence_threshold:
+                return ClassificationResult(
+                    category, clean_name, rendered.relpath, confidence,
+                    tuple(evidence), fields, None,
+                )
     elif suffix in ARCHIVE_EXTS:
         category = "misc"
         confidence = 0.5
@@ -222,6 +241,77 @@ def _year_from_name(value: str) -> int | None:
 
 def _ambiguous_document(title: str) -> bool:
     return bool(re.fullmatch(r"(?i)(scan|img|doc|document)\s*\d*", title.strip()))
+
+
+#  Names a PDF producer writes into the Author field when nobody filled one
+#  in. Treating `Acrobat Distiller` as a manufacturer would create a folder
+#  named after the software that made the file.
+_NOT_AN_ORGANIZATION = re.compile(
+    r"(?i)^(acrobat|adobe|microsoft|word|writer|libreoffice|openoffice|pdf|"
+    r"scanner|canon|epson scan|hp scan|unknown|user|admin|owner|none|n/?a)\b"
+)
+
+
+def _document_branch(facts, fields: dict[str, object], evidence: list) -> str:  # noqa: ANN001
+    """Which branch of the Documents hierarchy this document has earned.
+
+    Only the broad types the classifier can actually support, and only from
+    deterministic identity. A document with no type and no title keeps the
+    generic dated branch it has always had.
+    """
+    from librairy.docmeta import FINANCIAL, MANUAL, PAPER
+
+    if facts is None or not facts.read or not facts.identified:
+        return ""
+    if facts.kind == MANUAL:
+        organization = _organization(facts)
+        if organization:
+            fields["organization"] = organization
+            evidence.append(EvidenceEntry("document", "organization", organization, 0.85))
+    elif facts.kind == PAPER:
+        author = _primary_author(facts)
+        if author:
+            fields["author"] = author
+            evidence.append(EvidenceEntry("document", "author", author, 0.85))
+        #  The document's own year, never the year it was imported. "I filed
+        #  this in 2026" is a fact about the import and says nothing about the
+        #  paper — and `Unknown`, which the generic branch uses as a literal
+        #  placeholder, is not a year either.
+        if facts.year:
+            fields["year"] = facts.year
+        else:
+            fields.pop("year", None)
+    elif facts.kind == FINANCIAL:
+        if facts.year:
+            fields["year"] = facts.year
+        else:
+            #  No trustworthy date, so no dated folder. `Financial/2026/` for a
+            #  statement whose date nobody read would be a filing cabinet
+            #  drawer labelled with the wrong year.
+            fields.pop("year", None)
+    return document_template(facts.kind, fields)
+
+
+def _organization(facts) -> str:  # noqa: ANN001
+    """The manufacturer, when the Author field is plausibly one."""
+    value = " ".join(str(getattr(facts, "author", "") or "").split())
+    if len(value) < 2 or _NOT_AN_ORGANIZATION.match(value):
+        return ""
+    return value
+
+
+def _primary_author(facts) -> str:  # noqa: ANN001
+    """The first author named, for a paper with several."""
+    value = _organization(facts)
+    if not value:
+        return ""
+    #  Semicolons and `and` separate *authors*; a comma usually separates a
+    #  surname from initials, so splitting on it would file `Einstein, A.`
+    #  under `Einstein` and lose the half that tells two Einsteins apart.
+    for separator in (";", " and ", " & "):
+        if separator in value:
+            return value.split(separator, 1)[0].strip()
+    return value
 
 
 def _is_book(facts) -> bool:  # noqa: ANN001

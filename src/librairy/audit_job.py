@@ -66,6 +66,11 @@ STAGES = (
     ("structure", "Structure and convention"),
     ("catalogs", "Catalogs"),
     ("artwork", "Artwork"),
+    #  Reads the filed documents nobody has read yet, and groups the ones that
+    #  carry the same ISBN or DOI. Its own stage because it opens files — two
+    #  subprocesses each — which is work the duplicate stage advertises that it
+    #  does not do.
+    ("documents", "Documents"),
     ("duplicates", "Duplicates"),
     # Cheap on purpose: cached probe data and arithmetic. This stage finds
     # things that *could* be smaller and records them. It never encodes

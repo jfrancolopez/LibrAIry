@@ -211,9 +211,28 @@ def group_pages(conn, settings, row) -> int:
     return load(conn, settings, row, measure=False).pages
 
 
+def test_drawing_a_page_never_runs_exiftool(tmp_path: Path, monkeypatch) -> None:
+    """Analysis measures; pages read. This used to spawn one subprocess per
+    page render, which is bounded and still the wrong side of the line."""
+    from librairy.tools import exiftool
+
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("a page render must not run exiftool")
+
+    monkeypatch.setattr(exiftool, "extract_many", forbidden)
+    conn, settings = burst(tmp_path, 500)
+    row = finding_row(conn)
+
+    group = load(conn, settings, row, measure=True)
+
+    assert len(group.members) == PAGE_MEMBERS
+    assert all(photo.facts == () for photo in group.members)
+
+
 def test_measuring_reads_the_page_in_one_call(tmp_path: Path, monkeypatch) -> None:
-    """One subprocess for the page, not one per photograph, and never one per
+    """One subprocess for the batch, not one per photograph, and never one per
     member of the group."""
+    from librairy.photo_group import measure
     from librairy.tools import exiftool
 
     calls: list[int] = []
@@ -225,10 +244,75 @@ def test_measuring_reads_the_page_in_one_call(tmp_path: Path, monkeypatch) -> No
     monkeypatch.setattr(exiftool, "extract_many", once)
     conn, settings = burst(tmp_path, 500)
     row = finding_row(conn)
+    page = load(conn, settings, row, measure=False)
 
-    load(conn, settings, row, measure=True)
+    measure(conn, settings, list(page.members))
 
     assert calls == [PAGE_MEMBERS]
+
+
+def test_measured_photos_show_their_facts_from_the_cache(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from librairy.photo_group import measure
+    from librairy.tools import exiftool
+    from librairy.tools.exiftool import ImageMetadata
+
+    def fake(paths, _settings):  # noqa: ANN001, ANN202
+        return [
+            ImageMetadata(
+                tags={"ImageWidth": 4032, "ImageHeight": 3024},
+                created_at="2024:06:18 14:32:01",
+                camera="Apple iPhone 15",
+            )
+            for _ in paths
+        ]
+
+    monkeypatch.setattr(exiftool, "extract_many", fake)
+    conn, settings = burst(tmp_path, 12)
+    row = finding_row(conn)
+    measure(conn, settings, list(load(conn, settings, row, measure=False).members))
+
+    #  And now, with nothing allowed to run, the page shows what was measured.
+    monkeypatch.setattr(
+        exiftool, "extract_many",
+        lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("no")),
+    )
+    group = load(conn, settings, row, measure=True)
+
+    facts = dict(group.members[0].facts)
+    assert facts["Pixels"] == "4032×3024"
+    assert facts["Taken"] == "2024:06:18 14:32:01"
+    assert facts["Camera"] == "Apple iPhone 15"
+
+
+def test_a_re_edited_photo_loses_its_cached_measurements(tmp_path: Path, monkeypatch) -> None:
+    """The fingerprint gate, on the photo side."""
+    from librairy.photo_group import measure
+    from librairy.tools import exiftool
+    from librairy.tools.exiftool import ImageMetadata
+
+    monkeypatch.setattr(
+        exiftool, "extract_many",
+        lambda paths, _s: [ImageMetadata(tags={"ImageWidth": 100, "ImageHeight": 50})
+                           for _ in paths],
+    )
+    conn, settings = burst(tmp_path, 12)
+    row = finding_row(conn)
+    members = list(load(conn, settings, row, measure=False).members)
+    measure(conn, settings, members)
+
+    (settings.library_dir / members[0].relpath).write_text("edited", encoding="utf-8")
+    scan_root(conn, "library", settings.library_dir, settings)
+
+    monkeypatch.setattr(
+        exiftool, "extract_many",
+        lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("no")),
+    )
+    group = load(conn, settings, row, measure=True)
+    changed = next(p for p in group.members if p.relpath == members[0].relpath)
+
+    assert changed.facts == ()
 
 
 def test_drawing_a_group_asks_no_model_and_no_network(

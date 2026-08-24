@@ -103,22 +103,25 @@ def test_every_table_tied_to_an_item_has_a_decision(scene) -> None:
     assert "item_metadata" in linked, "the lazily created cache must be in the inventory"
 
 
-def test_item_metadata_exists_and_is_reachable_even_though_no_migration_makes_it(
+def test_item_metadata_is_in_the_schema_now_rather_than_made_on_demand(
     scene,
 ) -> None:
-    """The finding worth writing down: it is absent until something caches a
-    probe, which is how a table with a real foreign key into `items` gets
-    missed by an audit that only reads the migrations."""
+    """It used to be absent until something cached a probe, which is how a
+    table with a real foreign key into `items` got missed by an audit that
+    only reads the migrations. Migration 037 put it in the schema, where it can
+    be migrated — which is what the second and third metadata tools needed."""
     conn = scene[0]
     present = {
         row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
     }
-    assert "item_metadata" not in present
+    assert "item_metadata" in present
 
-    ensure_metadata_cache(conn)
+    ensure_metadata_cache(conn)  # still safe, and still a no-op
 
     keys = conn.execute("PRAGMA foreign_key_list(item_metadata)").fetchall()
     assert [(k["table"], k["from"]) for k in keys] == [("items", "item_id")]
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(item_metadata)")}
+    assert {"item_id", "tool", "fingerprint", "payload"} <= columns
 
 
 # --- byte-specific records do not travel ----------------------------------------

@@ -9,7 +9,7 @@ from pathlib import Path
 from librairy.config import Settings
 
 LOGGER = logging.getLogger(__name__)
-SCHEMA_VERSION = 36
+SCHEMA_VERSION = 38
 
 
 class DatabaseVersionError(RuntimeError):
@@ -980,6 +980,74 @@ CREATE INDEX idx_similar_media_choices_finding
   ON similar_media_choices(audit_finding_id);
 """
 
+MIGRATION_037 = """
+-- One metadata cache row per item *per tool*.
+--
+-- `item_metadata` was keyed by `item_id` alone, because for a long time one
+-- reader wrote it: the ffprobe cache of codec, bitrate and duration. A test
+-- deliberately failed if a second writer appeared, which was the right guard
+-- at the time — a second tool would have silently overwritten the first, and
+-- a row saying `tool='exiftool-image'` where a caller expected ffprobe is
+-- worse than no cache at all.
+--
+-- There are now three genuine readers: media technicals, document identity
+-- (pdfinfo/pdftotext/EPUB) and image metadata (exiftool). They describe
+-- different things about the same file and none of them is a substitute for
+-- another, so each owns its own row. The tripwire is replaced by the
+-- invariant it was protecting: a tool cannot clobber another tool's row.
+--
+-- `fingerprint` stays and stays load-bearing. A cached duration, page count or
+-- capture time describes *those bytes*; after a re-encode it is a fact about a
+-- file that no longer exists, so a read whose fingerprint does not match is a
+-- miss rather than a stale answer.
+--
+-- Created here rather than left to `ensure_metadata_cache`'s CREATE TABLE IF
+-- NOT EXISTS, so the shape is in the schema where it can be migrated.
+CREATE TABLE IF NOT EXISTS item_metadata (
+  item_id     INTEGER PRIMARY KEY REFERENCES items(id),
+  fingerprint TEXT NOT NULL,
+  tool        TEXT NOT NULL,
+  payload     TEXT NOT NULL,
+  updated_at  TEXT NOT NULL
+);
+CREATE TABLE item_metadata_new (
+  id          INTEGER PRIMARY KEY,
+  item_id     INTEGER NOT NULL REFERENCES items(id),
+  tool        TEXT NOT NULL,
+  fingerprint TEXT NOT NULL,
+  payload     TEXT NOT NULL,
+  updated_at  TEXT NOT NULL,
+  UNIQUE (item_id, tool)
+);
+INSERT INTO item_metadata_new(item_id, tool, fingerprint, payload, updated_at)
+  SELECT item_id, tool, fingerprint, payload, updated_at FROM item_metadata;
+DROP TABLE item_metadata;
+ALTER TABLE item_metadata_new RENAME TO item_metadata;
+CREATE INDEX idx_item_metadata_item ON item_metadata(item_id);
+"""
+
+MIGRATION_038 = """
+-- "I want both formats of this book", remembered so it is not asked again.
+--
+-- A similar-media group records that answer on the czkawka pairs behind it,
+-- because that is where its membership came from. A work group has no pairs:
+-- its membership is an ISBN or a DOI, so the answer is recorded against the
+-- identifier and against **the exact files it was given about**.
+--
+-- `fingerprints` is the sorted content hashes of the members, joined. That is
+-- what makes the suppression expire honestly: replace the PDF with a better
+-- scan and the set no longer matches, so the question comes back — which is
+-- right, because nobody has been asked about the new file. Suppressing by
+-- title or by path would have survived that and quietly hidden it.
+CREATE TABLE document_work_choices (
+  scheme       TEXT NOT NULL,
+  identifier   TEXT NOT NULL,
+  fingerprints TEXT NOT NULL,
+  created_at   TEXT NOT NULL,
+  PRIMARY KEY (scheme, identifier)
+);
+"""
+
 MIGRATIONS = {
     1: MIGRATION_001,
     2: MIGRATION_002,
@@ -1017,6 +1085,8 @@ MIGRATIONS = {
     34: MIGRATION_034,
     35: MIGRATION_035,
     36: MIGRATION_036,
+    37: MIGRATION_037,
+    38: MIGRATION_038,
 }
 
 

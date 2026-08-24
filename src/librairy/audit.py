@@ -88,6 +88,7 @@ KINDS = {
     # representation you want. See `audit_duplicates` for the byte-identical
     # case, which is a different question with a different answer.
     "similar-media": "The same thing, encoded twice",
+    "document-formats": "One work, filed in two formats",
 }
 
 # Kinds whose correction is a concrete, deterministic filesystem move that
@@ -276,7 +277,9 @@ def audit_library(
 
     view = gather(conn, settings, scope=scope, read_tags=read_tags)
     run = CatalogRun()
-    findings = detect(view, conn=conn if use_catalogs else None, run=run)
+    findings = detect(
+        view, conn=conn if use_catalogs else None, settings=settings, run=run
+    )
     record_findings(conn, findings, scope=scope)
     kinds: dict[str, int] = defaultdict(int)
     for finding in findings:
@@ -367,6 +370,7 @@ def detect(
     view: LibraryView,
     *,
     conn: sqlite3.Connection | None = None,
+    settings: Settings | None = None,
     run: object | None = None,
     skip: frozenset[str] = frozenset(),
     collections: bool = True,
@@ -424,6 +428,18 @@ def detect(
         from librairy import similar_media
 
         findings.extend(similar_media.detect(conn))
+    if conn is not None and "document-formats" not in skip:
+        #  Also connection-only: the identifiers were read when each document
+        #  was analysed and cached against its bytes. This opens nothing.
+        from librairy import document_works
+
+        if settings is not None:
+            #  The audit is the pass that reads what is already filed — the
+            #  same place music tags are read. Filing a document creates a new
+            #  item row, so a book identified in the inbox arrives here
+            #  unmeasured, and nothing else would ever open it.
+            document_works.measure_filed(conn, settings)
+        findings.extend(document_works.detect(conn))
     for finding in findings:
         row = view.indexed.get(finding.relpath)
         if row is not None:

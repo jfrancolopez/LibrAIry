@@ -24,6 +24,7 @@ from librairy.corrections import (
     plan_files,
     resolve_group,
 )
+from librairy.document_works import is_work_finding
 from librairy.duplicates import items_with_reports, reports_for_item
 from librairy.flags import flags_for, unhidden_name
 from librairy.inbox_duplicates import describe as describe_duplicate
@@ -462,6 +463,42 @@ def filters_from_query(
         # An unknown sort is a typo or a stale bookmark, not a reason to fail.
         sort=sort if sort in SORTS else DEFAULT_SORT,
     )
+
+
+def _work_row(conn, settings, row: sqlite3.Row) -> dict[str, object] | None:  # noqa: ANN001
+    """One work in several formats, as the page reads it.
+
+    Facts under each format and no badge on any of them: nobody has said which
+    document format they would rather keep, and the music preference is about
+    music. Reads the cache — nothing here opens a PDF.
+    """
+    from librairy.document_works import compare as compare_work
+
+    if settings is None:
+        return None
+    view = compare_work(conn, settings, row)
+    if view is None:
+        return None
+    return {
+        "title": view.title,
+        "scheme": view.label,
+        "identifier": view.identifier,
+        "formats": view.formats,
+        "members": [
+            {
+                "relpath": member.relpath,
+                "name": member.name,
+                "folder": member.folder,
+                "format": member.format,
+                "size": human_size(member.size),
+                "facts": [
+                    {"label": label, "value": value} for label, value in member.facts
+                ],
+            }
+            for member in view.members
+        ],
+        "count": len(view.members),
+    }
 
 
 def _document_row(row: sqlite3.Row) -> dict[str, object] | None:
@@ -1758,6 +1795,7 @@ def _audit_row(
         or bool(merge and merge.unresolved)
         or destination is not None
         or comparison is not None
+        or is_work_finding(row)
         or filing is not None,
     )
     status_label = ACTION_LABEL[status_kind]
@@ -1835,6 +1873,9 @@ def _audit_row(
         # Several encodes of one thing, and the measured table that is fetched
         # rather than rendered. `None` for every other kind of finding.
         "comparison": comparison,
+        # One work filed in two formats, which is neither a duplicate nor an
+        # encoding question. `None` for everything else.
+        "work": _work_row(conn, settings, row) if not accepted else None,
         # Loose tracks, one question each. `None` for everything else.
         "filing": _filing_row(filing, settings, conn) if filing is not None else None,
         # What those tracks already agree on, if they agree. `None` when they

@@ -94,8 +94,14 @@ def _duplicate_of(conn: sqlite3.Connection, op: sqlite3.Row) -> int | None:
     return twins[0].item_id if twins else None
 
 
+#  Not a value the `reason` column can hold — its CHECK allows three — and
+#  derived from the plan's finding the same way the preserved-original and
+#  previous-representation reasons are.
+DOCUMENT_FORMAT = "document_format"
+
+
 def _plan_reason(conn: sqlite3.Connection, op: sqlite3.Row) -> str:
-    """`similar_media` when this quarantine came from a comparison.
+    """Why this file is held, when the plan's finding says more than the row.
 
     Read off the plan's finding rather than stored a second time. A library
     file set aside from Review has no proposal to read evidence from, so
@@ -103,6 +109,7 @@ def _plan_reason(conn: sqlite3.Connection, op: sqlite3.Row) -> str:
     want it" — over a file that was set aside after comparing two encodes.
     """
     from librairy.arrival_comparison import is_similar_proposal
+    from librairy.document_works import KIND as WORK_KIND
     from librairy.similar_media import KIND
 
     plan_id = op["plan_id"]
@@ -115,6 +122,14 @@ def _plan_reason(conn: sqlite3.Connection, op: sqlite3.Row) -> str:
     ).fetchone()
     if found is not None and found["kind"] == KIND:
         return "similar_media"
+    if found is not None and found["kind"] == WORK_KIND:
+        #  Deliberately *not* returned as a stored reason. The column's CHECK
+        #  allows three values and SQLite cannot widen one, so a fourth here
+        #  fails the insert and the quarantine never happens — which is how
+        #  this was found. `document_format_entry` derives it from the plan's
+        #  finding for display, the same way a preserved original is derived
+        #  from its job.
+        return ""
     if op["item_id"] is not None and is_similar_proposal(conn, int(op["item_id"])):
         return "similar_media"
     if _replaced_by_another_representation(conn, op):
@@ -260,6 +275,30 @@ def quarantine_effective_reason(entry) -> str:
     if job_id is not None:
         return PRESERVED_ORIGINAL
     return str(entry["reason"] or "")
+
+
+def document_format_entry(conn: sqlite3.Connection, entry) -> bool:  # noqa: ANN001
+    """Whether this held file is another format of a document somebody kept.
+
+    Same argument as `quarantine_effective_reason`: the stored column cannot
+    say so, so the truth is read off the plan's finding. Without it the row
+    read "you said you did not want it" over a book whose format the person
+    deliberately chose.
+    """
+    from librairy.document_works import KIND
+
+    try:
+        plan_id = entry["plan_id"]
+    except (KeyError, IndexError):
+        return False
+    if not plan_id:
+        return False
+    found = conn.execute(
+        "SELECT f.kind FROM plans p JOIN audit_findings f ON f.id = p.audit_finding_id"
+        " WHERE p.id=?",
+        (plan_id,),
+    ).fetchone()
+    return found is not None and found["kind"] == KIND
 
 
 def is_previous_representation(conn: sqlite3.Connection, entry) -> bool:  # noqa: ANN001

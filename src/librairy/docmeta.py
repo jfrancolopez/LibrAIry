@@ -161,6 +161,100 @@ def readable(relpath: str) -> bool:
     return PurePosixPath(relpath).suffix.lower() in {".pdf", ".epub"}
 
 
+def facts_for_item(
+    conn, settings: Settings, item_id: int, path: Path  # noqa: ANN001
+) -> DocumentFacts:
+    """This document's identity, measured once and remembered against its bytes.
+
+    Analysis calls this; a page render calls `cached_facts` and takes no for an
+    answer. The difference is the whole rule: `pdfinfo` and `pdftotext` are
+    subprocesses, and a Review page of forty rows must not spawn eighty of
+    them. Re-reading the same 643-page manual on every screen that mentions it
+    is the same waste at a smaller scale.
+    """
+    from librairy.planner import utc_now
+    from librairy.tools.common import DOCUMENT_TOOL, set_cached_metadata
+
+    cached = cached_facts(conn, item_id, path)
+    if cached is not None:
+        return cached
+    facts = facts_for(path, settings)
+    fingerprint = _fingerprint(conn, item_id)
+    if fingerprint:
+        set_cached_metadata(
+            conn, item_id, fingerprint, DOCUMENT_TOOL, _as_payload(facts), utc_now()
+        )
+    return facts
+
+
+def cached_facts(conn, item_id: int, path: Path) -> DocumentFacts | None:  # noqa: ANN001
+    """What was measured about *these bytes*, or None. Never measures anything.
+
+    None means "nobody has looked at this file yet", and a page that gets it
+    says so rather than opening the document to find out. An answer recorded
+    against a previous version of the file is also None: a page count from
+    before somebody replaced the scan is a fact about a file that is gone.
+    """
+    from librairy.tools.common import DOCUMENT_TOOL, get_cached_metadata
+
+    if conn is None or not readable(path.name):
+        return None
+    fingerprint = _fingerprint(conn, item_id)
+    if not fingerprint:
+        return None
+    payload = get_cached_metadata(conn, item_id, fingerprint, DOCUMENT_TOOL)
+    return _from_payload(payload) if payload else None
+
+
+def _fingerprint(conn, item_id: int) -> str:  # noqa: ANN001
+    row = conn.execute(
+        "SELECT fingerprint FROM items WHERE id=?", (item_id,)
+    ).fetchone()
+    return str(row["fingerprint"] or "") if row else ""
+
+
+def _as_payload(facts: DocumentFacts) -> dict:
+    """The normalised fields, not the raw metadata dump.
+
+    A cache holding everything a tool can say is a cache nobody can read and a
+    row that grows with the tool's verbosity. These are the fields something
+    consumes.
+    """
+    return {
+        "title": facts.title,
+        "author": facts.author,
+        "subject": facts.subject,
+        "pages": facts.pages,
+        "year": facts.year,
+        "isbn": facts.isbn,
+        "doi": facts.doi,
+        "kind": facts.kind,
+        "scanned": facts.scanned,
+        "read": facts.read,
+        "sources": [list(pair) for pair in facts.sources],
+    }
+
+
+def _from_payload(payload: dict) -> DocumentFacts:
+    return DocumentFacts(
+        title=str(payload.get("title") or ""),
+        author=str(payload.get("author") or ""),
+        subject=str(payload.get("subject") or ""),
+        pages=int(payload.get("pages") or 0),
+        year=int(payload.get("year") or 0),
+        isbn=str(payload.get("isbn") or ""),
+        doi=str(payload.get("doi") or ""),
+        kind=str(payload.get("kind") or UNKNOWN),
+        scanned=bool(payload.get("scanned")),
+        read=bool(payload.get("read")),
+        sources=tuple(
+            (str(pair[0]), str(pair[1]))
+            for pair in payload.get("sources") or []
+            if isinstance(pair, list | tuple) and len(pair) == 2
+        ),
+    )
+
+
 def facts_for(
     path: Path,
     settings: Settings,
@@ -293,6 +387,10 @@ def _epub(path: Path) -> DocumentFacts:
     author = _clean(next(iter(found.get("creator", [])), ""))
     identifiers = " ".join(found.get("identifier", []))
     isbn = _first(_ISBN, identifiers) or _bare_isbn(identifiers)
+    #  An EPUB's `dc:identifier` is whatever the publisher put there — an ISBN
+    #  most often, a DOI for a paper distributed as one, a random UUID for a
+    #  self-published file. Read what is there and claim nothing else.
+    doi = _first(_DOI, identifiers)
     sources: list[tuple[str, str]] = []
     if title:
         sources.append(("EPUB metadata", title))
@@ -305,6 +403,7 @@ def _epub(path: Path) -> DocumentFacts:
         author=author,
         year=_year(" ".join(found.get("date", []))),
         isbn=isbn,
+        doi=doi,
         #  An EPUB is a book by construction. Nothing else is published in one.
         kind=BOOK,
         read=True,

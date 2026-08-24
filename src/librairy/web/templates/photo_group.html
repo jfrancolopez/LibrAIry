@@ -44,6 +44,16 @@
     <a href="{{ sort.href }}">{{ sort.label }}</a>
     {% endif %}
     {% endfor %}
+    {% if group.complete %}
+    {# Available because the whole group has been measured. Until then it is
+       not offered at all — a page ordered by a fact most of the group does not
+       carry is not ordered. #}
+    {% if group.sort == 'taken' %}
+    <span class="badge">capture time</span>
+    {% else %}
+    <a href="{{ group.taken_href }}">capture time</a>
+    {% endif %}
+    {% endif %}
     {% if group.exact_sets %}
     <span class="muted">·</span>
     {% if group.only == 'exact' %}
@@ -109,6 +119,22 @@
         aside across the whole group.</span>
     </div>
   </form>
+
+  {% if not group.complete %}
+  {# Measuring is a subprocess, so it is a button and not something the page
+     does to draw itself. One invocation for the page, remembered against the
+     bytes it measured. #}
+  <form method="post" action="/review/audit/{{ group.finding_id }}/photos/measure"
+        class="photo-tray">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="page" value="{{ group.page }}">
+    <button type="submit" class="btn-ghost">Measure these photos</button>
+    <span class="muted">Reads pixel size, capture time and camera from the
+      files on this page. {{ group.measured }} of {{ group.total }} measured so
+      far; ordering by capture time needs all of them.</span>
+  </form>
+  {% endif %}
+
 
   {% if group.pages > 1 %}
   <div class="button-row">

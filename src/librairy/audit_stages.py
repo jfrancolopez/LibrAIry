@@ -469,6 +469,26 @@ def _catalog_art(context: Context, release_id: str) -> str:
 # --- 3: the cheap certainties --------------------------------------------------
 
 
+def _documents(context: Context) -> bool:
+    """Read the filed documents nobody has read, then group them by identifier.
+
+    Its own stage because it opens files. A document identified in the inbox
+    arrives in the library as a *new* item row, so its cached identity does not
+    come with it and nothing else would ever read it again — which is how two
+    formats of one book sat side by side with LibrAIry unable to say so.
+
+    Bounded per run, and the bound is honest: a library of ten thousand PDFs is
+    caught up over several audits rather than in one that never finishes.
+    """
+    from librairy import document_works
+
+    if context.conn is None or context.settings is None:
+        return True
+    document_works.measure_filed(context.conn, context.settings)
+    context.findings.extend(document_works.detect(context.conn))
+    return True
+
+
 def _duplicates(context: Context) -> bool:
     """Exact matches, from hashes the index already holds.
 
@@ -603,6 +623,7 @@ STAGE_HANDLERS: dict[str, Callable[[Context], bool]] = {
     "structure": _structure,
     "catalogs": _catalogs,
     "artwork": _artwork,
+    "documents": _documents,
     "duplicates": _duplicates,
     "storage": _storage,
     "ai": _ai,

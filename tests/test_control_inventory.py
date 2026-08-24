@@ -212,6 +212,10 @@ ACTION_MAY_HAVE_SEVERAL_LABELS = {
     #  the same route because keeping everything is still an answer — it just
     #  happens to be the one with no filesystem work in it.
     "POST /review/audit/{finding_id}/comparison",
+    #  Each button names the format it keeps, which is the whole content of the
+    #  decision — and `Keep all of them` is the same request with every format
+    #  in it, which is an answer rather than a different action.
+    "POST /review/audit/{finding_id}/formats",
     #  Each button names the version it would make active, which is the whole
     #  content of the decision — and the two are a FLAC and an MP3 of one
     #  recording, so `Use this one` would be one label saying nothing.
