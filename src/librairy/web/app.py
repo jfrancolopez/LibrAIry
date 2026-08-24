@@ -1139,6 +1139,38 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             f"/review?focus={finding_id}#finding-{finding_id}", status_code=303
         )
 
+    @app.post("/review/audit/{finding_id}/file-album", include_in_schema=False)
+    def review_audit_file_album(
+        request: Request,  # noqa: ARG001
+        finding_id: int,
+        dest_relpath: Annotated[str, Form()] = "",
+    ) -> RedirectResponse:
+        """Answer a whole group of loose tracks at once, where they agree.
+
+        Not a new filing path. It writes the same per-track answers the
+        buttons below it write, through the same function, with the same rule
+        that a track may only be sent to a folder its own evidence named — so
+        a member that does not agree cannot be swept along by the ones that
+        do. Nothing moves and no plan exists until the ordinary `Approve
+        filing` below.
+
+        An empty `dest_relpath` is `Leave here` for every unanswered track: a
+        shelf of singles is filed correctly already, and saying so twelve
+        times is not twelve decisions either.
+        """
+        from librairy.album_identity import file_as, leave_all
+
+        try:
+            if dest_relpath:
+                file_as(conn, settings, finding_id, dest_relpath)
+            else:
+                leave_all(conn, settings, finding_id)
+        except CorrectionRefused as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return RedirectResponse(
+            f"/review?focus={finding_id}#finding-{finding_id}", status_code=303
+        )
+
     @app.post("/review/audit/{finding_id}/file-track", include_in_schema=False)
     def review_audit_file_track(
         request: Request,  # noqa: ARG001
@@ -1263,6 +1295,7 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
     def browse_normalize(
         request: Request,
         scope: Annotated[str, Form()] = "",
+        page: PageNumber = 1,
     ) -> HTMLResponse:
         """What the current Music naming would call the files in one folder.
 
@@ -1270,6 +1303,69 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         find their tags, which is work somebody asks for rather than something
         a page does to draw itself. It moves nothing: what comes back is a list
         of exact before-and-after names, and approving it is a second press.
+        """
+        from librairy.normalize_names import NormalizeError, branch_preview, preview
+
+        try:
+            clean = sanitize_scope(scope, settings.library_dir)
+            branch = branch_preview(conn, settings, clean, page=page)
+            #  The page that suits the folder, decided by what is in it rather
+            #  than by a mode anybody has to choose: an album shows its
+            #  filenames, an artist shows its albums. An artist-wide list of
+            #  four hundred renames is not a preview, and an album-level list
+            #  of one album is a summary of nothing.
+            if branch.single:
+                found = preview(conn, settings, clean)
+            else:
+                return TEMPLATES.TemplateResponse(
+                    request,
+                    "normalize_branch.html",
+                    {"title": "Filename cleanup", **_branch_data(branch)},
+                )
+        except (PathValidationError, NormalizeError) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return TEMPLATES.TemplateResponse(
+            request,
+            "normalize.html",
+            {"title": "Filename cleanup", **_normalize_data(found)},
+        )
+
+    def _branch_data(branch) -> dict:  # noqa: ANN001
+        """The albums as the page prints them, and no facts it does not print."""
+        return {
+            "folder": branch.folder,
+            "artist": PurePosixPath(branch.folder).name,
+            "albums": [
+                {
+                    "relpath": album.relpath,
+                    "name": album.name,
+                    "parent": album.parent,
+                    "tracks": album.tracks,
+                    "off_form": album.off_form,
+                    "current": album.current,
+                }
+                for album in branch.albums
+            ],
+            "total": branch.total,
+            "shown": len(branch.albums),
+            "tracks": branch.tracks,
+            "off_form": branch.off_form,
+            "current_albums": branch.current_albums,
+            "page": branch.page,
+            "has_next": branch.has_next,
+        }
+
+    @app.post("/browse/normalize/album", response_class=HTMLResponse, include_in_schema=False)
+    def browse_normalize_album(
+        request: Request,
+        scope: Annotated[str, Form()] = "",
+    ) -> HTMLResponse:
+        """The exact names for one album, read when somebody opens it.
+
+        This is where the tags are read, and it is why the summary above does
+        not claim to know what would change: forty albums of `ffprobe` to draw
+        a list of counts would be a page nobody opens twice. One album, on
+        request, and still nothing moves.
         """
         from librairy.normalize_names import NormalizeError, preview
 
@@ -1279,9 +1375,7 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         except (PathValidationError, NormalizeError) as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         return TEMPLATES.TemplateResponse(
-            request,
-            "normalize.html",
-            {"title": "Filename cleanup", **_normalize_data(found)},
+            request, "partials/normalize_album.html", _normalize_data(found)
         )
 
     def _normalize_data(found) -> dict:  # noqa: ANN001
@@ -1309,18 +1403,65 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
 
     @app.post("/browse/normalize/approve", include_in_schema=False)
     def browse_normalize_approve(
-        request: Request,  # noqa: ARG001
+        request: Request,
         scope: Annotated[str, Form()] = "",
-    ) -> RedirectResponse:
-        """Approve the renames. They happen at Commit, like every other move."""
-        from librairy.normalize_names import NormalizeError, plan_normalization
+        album: Annotated[list[str], Form()] = [],  # noqa: B006 - starlette form list
+    ) -> Response:
+        """Approve the renames. They happen at Commit, like every other move.
+
+        One album, or several selected from an artist — and several is several
+        decisions, never one. Four thousand renames in a single transaction
+        would be one Commit card nobody can check and one Undo that puts back
+        everything or nothing; an album is the unit somebody thinks in, so it
+        is the unit of the plan.
+        """
+        from librairy.normalize_names import (
+            NormalizeError,
+            approve_branch,
+            plan_normalization,
+        )
 
         try:
             clean = sanitize_scope(scope, settings.library_dir)
-            plan_normalization(conn, settings, clean)
+            if album:
+                approved = approve_branch(
+                    conn,
+                    settings,
+                    clean,
+                    [sanitize_scope(one, settings.library_dir) for one in album],
+                )
+            else:
+                plan_normalization(conn, settings, clean)
+                approved = []
         except (PathValidationError, NormalizeError) as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
-        return RedirectResponse("/commit?type=correction", status_code=303)
+        if not approved:
+            return RedirectResponse("/commit?type=correction", status_code=303)
+        #  Several albums means several outcomes, and some of them are "nothing
+        #  to change" or "one file refused". Redirecting straight to Commit
+        #  would show the plans that exist and say nothing at all about the
+        #  albums that produced none.
+        return TEMPLATES.TemplateResponse(
+            request,
+            "normalize_approved.html",
+            {
+                "title": "Filename cleanup",
+                "folder": clean,
+                "albums": [
+                    {
+                        "name": one.name,
+                        "relpath": one.relpath,
+                        "renamed": one.renamed,
+                        "refused": one.refused,
+                        "note": one.note,
+                        "planned": bool(one.plan_id),
+                    }
+                    for one in approved
+                ],
+                "planned": sum(1 for one in approved if one.plan_id),
+                "renamed": sum(one.renamed for one in approved),
+            },
+        )
 
     @app.post("/browse/audit", include_in_schema=False)
     def browse_audit(
@@ -2168,6 +2309,35 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             "item_detail.html",
             {"title": "Item Detail", **data},
         )
+
+    @app.post("/items/{item_id}/identify", include_in_schema=False)
+    def item_identify(
+        request: Request,  # noqa: ARG001
+        item_id: int,
+    ) -> RedirectResponse:
+        """Ask what one filed audio file is, from the audio itself.
+
+        The same lookup the loose-track row offers, reachable from the item it
+        is about — because identity is useful for a file that is already filed
+        too: it is what makes a normalization rename possible, and what makes
+        two similar files eligible to replace one another.
+
+        It reads, asks and records. It does not rename, move, retag or approve
+        anything, and it never runs from a GET: a page that identified a file
+        to draw itself would fingerprint on every refresh.
+        """
+        from librairy.track_identity import identify
+
+        row = conn.execute(
+            "SELECT root, relpath FROM items WHERE id=?", (item_id,)
+        ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="that item no longer exists")
+        try:
+            identify(conn, settings, str(row["relpath"]), root=str(row["root"]))
+        except CorrectionRefused as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return RedirectResponse(f"/items/{item_id}", status_code=303)
 
     @app.exception_handler(HTTPException)
     async def http_error(request: Request, exc: HTTPException) -> Response:

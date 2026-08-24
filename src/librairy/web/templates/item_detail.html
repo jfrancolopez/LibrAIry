@@ -39,6 +39,81 @@
         {{ proposal.dest_root }}/{{ proposal.dest_relpath }}</span>
     {% else %}<span class="muted">No proposal metadata.</span>{% endif %}
   </section>
+  {# What the audio itself is, when anybody has asked. Read from the record and
+     never looked up to draw this page — identification reads the whole file and
+     goes out to a catalog, and neither is something a render may do. Present
+     only for audio: a photograph has no acoustic fingerprint. #}
+  {% if music_identity %}
+  <section class="metric wide music-identity">
+    <h2>Music identity</h2>
+    {% if music_identity.stale %}
+    {# Not silently reused, and not silently replaced either. An identity
+       recorded against bytes this file no longer has is a fact about a re-rip,
+       and it is shown as one. #}
+    <p class="status warn">This identity was recorded for an older version of
+      the file. It is not used for anything until the current file is
+      identified.</p>
+    {% endif %}
+    {% if music_identity.facts %}
+    <ul class="facts">
+      {% for fact in music_identity.facts %}
+      <li><span class="badge badge-info">{{ fact.label }}</span>
+        <span class="mono">{{ fact.value }}</span></li>
+      {% endfor %}
+      <li><span class="badge badge-info">Identified from</span>
+        <span class="mono">{{ music_identity.fingerprint or 'no fingerprint recorded' }}</span></li>
+    </ul>
+    {% if music_identity.releases %}
+    {# Every release, and nothing chosen. Which one a library is about is a
+       filing decision, and this page is not filing anything. #}
+    <p class="muted">Releases this recording appears on. Nothing here picks one
+      — that is a filing decision, made where the file is filed.</p>
+    <ul class="rename-list">
+      {% for release in music_identity.releases %}
+      <li><span class="mono">{{ release.title }}</span>
+        {% if release.detail %}<span class="muted">{{ release.detail }}</span>{% endif %}</li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+    {% elif music_identity.asked and not music_identity.stale %}
+    <p class="muted">Asked, and the catalog had nothing for this recording.</p>
+    {% else %}
+    <p class="muted">No catalog identity stored.</p>
+    {% endif %}
+
+    {% if music_identity.missing %}
+    <p class="muted">The file is not on disk, so there is nothing to listen
+      to.</p>
+    {% elif music_identity.blocked %}
+    <p class="muted">{{ music_identity.blocked }}</p>
+    {% elif music_identity.stale %}
+    <form method="post" action="/items/{{ item.id }}/identify">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button type="submit">Identify current file</button>
+    </form>
+    {% elif not music_identity.asked %}
+    <form method="post" action="/items/{{ item.id }}/identify">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button type="submit">Identify track</button>
+    </form>
+    <p class="muted">Reads the audio, asks AcoustID and MusicBrainz what it is.
+      It does not rename, move or retag anything.</p>
+    {% else %}
+    {# Already answered, about these bytes. Asking again would spend a
+       fingerprint and a request to be told the same thing, so it is here
+       rather than in front of somebody. #}
+    <details>
+      <summary>Ask again</summary>
+      <p class="muted">The stored answer still describes this file. Asking
+        again is only useful if the catalog has changed.</p>
+      <form method="post" action="/items/{{ item.id }}/identify">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button type="submit">Refresh identification</button>
+      </form>
+    </details>
+    {% endif %}
+  </section>
+  {% endif %}
   <section class="metric wide">
     <h2>Evidence</h2>
     {% if evidence_error %}<span class="status warn">Evidence unavailable: {{ evidence_error }}</span>{% endif %}

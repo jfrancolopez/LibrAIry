@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block content %}
+  <h1>Filename cleanup</h1>
+  <p class="muted"><span class="mono">{{ folder }}</span></p>
+
+  {# An artist, not an album. Four hundred rename rows is not a preview, so
+     what this page shows is the albums — counted from one directory walk, with
+     no file read at all — and opening one is what reads its tags and shows the
+     exact names. Nothing has moved either way. #}
+  <p>Nothing has moved. {{ total }} album{{ 's' if total != 1 else '' }} under
+    this folder, {{ tracks }} track{{ 's' if tracks != 1 else '' }} on this
+    page.</p>
+  <p class="muted">
+    {% if off_form %}
+    {{ off_form }} filename{{ 's are' if off_form != 1 else ' is' }} not in the
+    current album-track form.
+    {% else %}
+    Every filename on this page is already in the current album-track form.
+    {% endif %}
+    {% if current_albums %}
+    {{ current_albums }} album{{ 's are' if current_albums != 1 else ' is' }}
+    already current throughout.
+    {% endif %}
+    Opening an album reads its tags and shows the exact names — which is the
+    only way to know what would really change.
+  </p>
+
+  <form method="post" action="/browse/normalize/approve" class="normalize-branch">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="scope" value="{{ folder }}">
+    <ul class="album-list">
+      {% for album in albums %}
+      <li class="album-row">
+        <label class="album-choose">
+          <input type="checkbox" name="album" value="{{ album.relpath }}">
+          <span class="mono">{{ album.name }}</span>
+        </label>
+        {% if album.parent %}
+        <span class="muted">{{ album.parent }}</span>
+        {% endif %}
+        <span class="muted">{{ album.tracks }} track{{ 's' if album.tracks != 1 else '' }}</span>
+        {% if album.current %}
+        <span class="badge">Already current</span>
+        {% else %}
+        <span class="muted">{{ album.off_form }} not in the current form</span>
+        {% endif %}
+        {# Read on request, one album at a time. This is where the `ffprobe`
+           calls are, which is exactly why they are not in the summary above. #}
+        <details class="album-detail">
+          <summary hx-post="/browse/normalize/album"
+                   hx-vals='{"scope": {{ album.relpath|tojson }}}'
+                   hx-target="next .album-changes"
+                   hx-trigger="click once"
+                   hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>Show changes</summary>
+          <div class="album-changes">
+            <p class="muted">Reading the tags in this album…</p>
+          </div>
+        </details>
+      </li>
+      {% endfor %}
+    </ul>
+
+    {# One plan per album, never one plan for the artist. Each is a decision
+       somebody can read on Commit and undo on its own. #}
+    <button type="submit" class="btn-primary">Approve the selected albums</button>
+    <span class="muted">Each album becomes its own decision, committed and
+      undone separately.</span>
+  </form>
+
+  {% if page > 1 or has_next %}
+  <div class="button-row">
+    {% if page > 1 %}
+    <form method="post" action="/browse/normalize?page={{ page - 1 }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="scope" value="{{ folder }}">
+      <button type="submit" class="btn-ghost">Previous albums</button>
+    </form>
+    {% endif %}
+    {% if has_next %}
+    <form method="post" action="/browse/normalize?page={{ page + 1 }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="scope" value="{{ folder }}">
+      <button type="submit" class="btn-ghost">More albums</button>
+    </form>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <p><a href="/browse">Back to Browse</a></p>
+{% endblock %}

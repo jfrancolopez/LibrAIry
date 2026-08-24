@@ -257,6 +257,85 @@
         <span class="muted">· {{ finding.filing.leaving }} staying here</span>
         {% endif %}
       </p>
+
+      {# What these tracks already agree on. Read from evidence that is already
+         stored — nothing here fingerprints a file or asks a catalog — and shown
+         only when no member has evidence for a *different* album. Eleven rows
+         saying the same thing is one conclusion typed out eleven times. #}
+      {% if finding.album %}
+      <div class="audit-album">
+        <p class="audit-track-note">
+          {# The group size, and what the evidence points at — deliberately not
+             "all 12 agree", because some of them do not and are listed below
+             as exceptions. Each release carries its own count on its own
+             button. #}
+          <span class="muted">{{ finding.album.tracks }} tracks here, and the
+            evidence points at {{ 'one release' if finding.album.single
+              else 'more than one release. Which one is a fact about your
+              library rather than about the files' }}.</span>
+        </p>
+        {% for release in finding.album.releases %}
+        <div class="audit-track-new">
+          <p class="audit-track-note">
+            <strong>{{ finding.album.artist }} — {{ release.name }}</strong>
+            {% if release.detail %}
+            <span class="muted">{{ release.detail }}</span>
+            {% endif %}
+            {% if not release.exists %}
+            <span class="badge">New folder</span>
+            {% endif %}
+          </p>
+          {# Counted, never scored. Four facts a person can check beat one
+             number made out of them, which would hide which is which. #}
+          <ul class="facts">
+            {% for count in release.counts %}
+            <li><span class="badge badge-info">{{ count.count }}</span>
+              {{ count.label }}</li>
+            {% endfor %}
+          </ul>
+          {% if release.exceptions %}
+          <p class="audit-track-note muted">Not included in this, and still
+            asked about below:</p>
+          <ul class="rename-list">
+            {% for member in release.exceptions %}
+            <li><span class="mono">{{ member.name }}</span>
+              <span class="muted">{{ member.reason }}{% if member.detail %} —
+                {{ member.detail }}{% endif %}</span></li>
+            {% endfor %}
+          </ul>
+          {% endif %}
+          {% if release.repeats %}
+          <p class="audit-track-note muted">
+            {{ release.repeats|length }} of these are the same recording as
+            another: {{ release.repeats|join(', ') }}.</p>
+          {% endif %}
+          <div class="audit-track-options">
+            <form method="post" action="/review/audit/{{ finding.id }}/file-album">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="hidden" name="dest_relpath" value="{{ release.relpath }}">
+              <button type="submit">File {{ release.members }} tracks as
+                {{ release.name }}</button>
+            </form>
+          </div>
+        </div>
+        {% endfor %}
+        {# An answer, not the absence of one — a shelf of singles is filed
+           correctly already, and saying so twelve times is not twelve
+           decisions either. #}
+        <div class="audit-track-options">
+          <form method="post" action="/review/audit/{{ finding.id }}/file-album">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="dest_relpath" value="">
+            <button type="submit">Leave all {{ finding.album.tracks }} here</button>
+          </form>
+        </div>
+      </div>
+      {% endif %}
+
+      {% if finding.album %}
+      <details class="audit-album-tracks">
+        <summary>Review tracks individually</summary>
+      {% endif %}
       {% for track in finding.filing.tracks %}
       <div class="audit-track">
         <p class="audit-track-head">
@@ -398,6 +477,9 @@
         {% endif %}
       </div>
       {% endfor %}
+      {% if finding.album %}
+      </details>
+      {% endif %}
       {% if finding.filing.unresolved %}
       <p class="audit-actionability">{{ finding.filing.unresolved }} of these still
         need{{ 's' if finding.filing.unresolved == 1 else '' }} an answer before this

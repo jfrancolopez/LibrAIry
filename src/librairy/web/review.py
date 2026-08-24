@@ -1401,6 +1401,54 @@ def _filing_row(view, settings: Settings, conn=None) -> dict[str, object]:  # no
     }
 
 
+def _album_row(conn, view, row: sqlite3.Row) -> dict[str, object] | None:  # noqa: ANN001
+    """One conclusion over a group of loose tracks, as the page reads it.
+
+    Built from the filing view that was already assembled for this row rather
+    than from a second pass over the database, and from persisted evidence
+    only — drawing Review must not fingerprint a file or ask a catalog
+    anything, however many tracks are in front of it.
+    """
+    from librairy.album_identity import from_view
+
+    if conn is None:
+        return None
+    found = from_view(view, row)
+    if found is None:
+        return None
+    return {
+        "artist": found.artist_name,
+        "tracks": found.open_tracks,
+        "single": found.single,
+        "choice": found.choice,
+        "releases": [
+            {
+                "relpath": conclusion.relpath,
+                "name": conclusion.name,
+                "detail": conclusion.detail,
+                "exists": conclusion.exists,
+                "members": len(conclusion.members),
+                #  Counted, never scored. See `album_identity.Conclusion.counts`
+                #  for why there is no single number here.
+                "counts": [
+                    {"label": label, "count": count}
+                    for label, count in conclusion.counts
+                ],
+                "exceptions": [
+                    {
+                        "name": member.name,
+                        "reason": member.reason,
+                        "detail": member.detail,
+                    }
+                    for member in conclusion.exceptions
+                ],
+                "repeats": list(conclusion.repeats),
+            }
+            for conclusion in found.conclusions
+        ],
+    }
+
+
 def _identity_asked(conn, track) -> bool:  # noqa: ANN001
     """Whether this file has already been asked about, match or no match.
 
@@ -1662,6 +1710,9 @@ def _audit_row(
         "comparison": comparison,
         # Loose tracks, one question each. `None` for everything else.
         "filing": _filing_row(filing, settings, conn) if filing is not None else None,
+        # What those tracks already agree on, if they agree. `None` when they
+        # do not — which leaves the per-track question exactly as it was.
+        "album": _album_row(conn, filing, row) if filing is not None else None,
         # The explicit Approve a resolved choice earns, and never bulk. See the
         # `choices` argument above for why the two are separate.
         "approve_choice": bool(

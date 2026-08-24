@@ -216,6 +216,16 @@ ACTION_MAY_HAVE_SEVERAL_LABELS = {
     #  content of the decision — and the two are a FLAC and an MP3 of one
     #  recording, so `Use this one` would be one label saying nothing.
     "POST /review/audit/{finding_id}/make-active",
+    #  Each release names itself, because which release a group of tracks is
+    #  is the whole content of the decision — and `Leave all of them here` is
+    #  the same request with no destination in it, which is an answer rather
+    #  than a different action.
+    "POST /review/audit/{finding_id}/file-album",
+    #  Three situations, three sentences: nothing has been asked, an answer
+    #  exists about bytes the file no longer has, or the answer still stands
+    #  and asking again is only useful if the catalog changed. One label for
+    #  all three would have to say none of it.
+    "POST /items/{item_id}/identify",
     #  `Restore` on its own means bring this back; on a row that also offers
     #  `Use this instead`, the two answers end differently — both
     #  representations active, or exactly one — so the first one says which it

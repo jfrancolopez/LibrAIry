@@ -58,6 +58,11 @@ MUSIC_ROOT = "Music"
 #  tool is shaped to avoid.
 MAX_FILES = 200
 
+#  How many albums one page of a branch shows. Same bound Browse pages by, and
+#  for the same reason: a screen listing four hundred rows is not a decision
+#  surface, whatever the database can do.
+PAGE_ALBUMS = 50
+
 RENAME = "rename"
 CURRENT = "current"
 UNKNOWN = "unknown"
@@ -157,6 +162,228 @@ def preview(
         _checked(settings, member, wanted, folder) for member in members
     )
     return Preview(folder=folder, members=checked)
+
+
+# --- a branch of albums ---------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class AlbumSummary:
+    """One album under a branch, counted rather than read.
+
+    `off_form` is the cheap, exact question: how many filenames are not in the
+    album-track grammar LibrAIry writes. It is deliberately **not** a count of
+    what would change — knowing that means reading every file's tags, and
+    forty albums of that is forty albums of `ffprobe` to draw a summary. So
+    the row says what it measured, and opening the album does the reading and
+    shows the exact names.
+    """
+
+    relpath: str
+    name: str
+    parent: str
+    tracks: int
+    off_form: int
+
+    @property
+    def current(self) -> bool:
+        return self.off_form == 0
+
+
+@dataclass(frozen=True)
+class BranchPreview:
+    """The albums under one artist or section, a page at a time."""
+
+    folder: str
+    albums: tuple[AlbumSummary, ...]
+    total: int
+    page: int = 1
+    has_next: bool = False
+
+    @property
+    def tracks(self) -> int:
+        return sum(album.tracks for album in self.albums)
+
+    @property
+    def off_form(self) -> int:
+        return sum(album.off_form for album in self.albums)
+
+    @property
+    def current_albums(self) -> int:
+        return sum(1 for album in self.albums if album.current)
+
+    @property
+    def single(self) -> bool:
+        """One album, and it is the folder itself.
+
+        The page that suits a folder is the page for what is in it: an album
+        shows its filenames, an artist shows its albums. This is how the two
+        are told apart, and it is a property of the folder rather than a mode
+        anybody has to choose.
+        """
+        return self.total == 1 and bool(self.albums) and self.albums[0].relpath == self.folder
+
+
+def branch_preview(
+    conn: sqlite3.Connection,  # noqa: ARG001
+    settings: Settings,
+    folder: str,
+    *,
+    page: int = 1,
+) -> BranchPreview:
+    """Every album under this folder, with how many names are off the grammar.
+
+    One directory walk and no file reads. That is the whole scale argument:
+    five hundred albums cost one walk and a page of rows, and the expensive
+    part — the tags — happens for one album, when somebody opens it.
+    """
+    albums = _albums(settings, folder)
+    folder = folder.strip("/")
+    page = max(1, page)
+    window = albums[(page - 1) * PAGE_ALBUMS : page * PAGE_ALBUMS]
+    return BranchPreview(
+        folder=folder,
+        albums=tuple(window),
+        total=len(albums),
+        page=page,
+        has_next=len(albums) > page * PAGE_ALBUMS,
+    )
+
+
+def _albums(settings: Settings, folder: str) -> list[AlbumSummary]:
+    """Every album under this folder, from one directory walk and no file reads.
+
+    An "album" is any directory that directly holds audio, including the
+    folder itself when tracks are lying loose in it — which is what an artist
+    folder with singles beside its albums really looks like.
+    """
+    from librairy.mediakind import kind_for
+    from librairy.scanner import visible_files
+
+    folder = folder.strip("/")
+    _assert_music(folder)
+    base = settings.library_dir / folder
+    if not base.is_dir():
+        raise NormalizeError("that folder is not in your library")
+    counted: dict[str, list[int]] = {}
+    for relpath in visible_files(base, settings.ignore_patterns):
+        if kind_for(relpath) != "audio":
+            continue
+        parent = str(PurePosixPath(relpath).parent)
+        album = folder if parent == "." else f"{folder}/{parent}"
+        tallies = counted.setdefault(album, [0, 0])
+        tallies[0] += 1
+        #  A leading track number in the current grammar. Read by the parser
+        #  that writes it, so "is this the current form" has one answer in
+        #  this program rather than a regular expression per caller.
+        if not parse(PurePosixPath(relpath).name).track:
+            tallies[1] += 1
+    return [
+        AlbumSummary(
+            relpath=album,
+            name=PurePosixPath(album).name,
+            parent=(
+                str(PurePosixPath(album).parent)[len(folder) + 1 :]
+                if album != folder
+                else ""
+            ),
+            tracks=tracks,
+            off_form=off_form,
+        )
+        for album, (tracks, off_form) in sorted(counted.items())
+    ]
+
+
+@dataclass(frozen=True)
+class Approved:
+    """What happened to one album somebody selected."""
+
+    relpath: str
+    name: str
+    plan_id: str = ""
+    renamed: int = 0
+    refused: int = 0
+    note: str = ""
+
+
+def approve_branch(
+    conn: sqlite3.Connection,
+    settings: Settings,
+    folder: str,
+    albums: list[str],
+    *,
+    read_tags=None,  # noqa: ANN001
+) -> list[Approved]:
+    """One plan per album, and one report line per album. Never one big plan.
+
+    Four thousand renames in a single transaction would be one Commit card
+    nobody can check and one Undo that either puts back everything or nothing.
+    An album is the unit somebody thinks in, so it is the unit of the decision
+    — and each one keeps the semantics the single-folder tool already has:
+    the safe members proceed, a collision is refused by name, and a file with
+    no trustworthy title is left alone.
+
+    Nothing is silently included and nothing is silently dropped. An album
+    that turns out to have nothing to do says so rather than producing an
+    empty plan, and an album that refuses everything says that too.
+    """
+    folder = folder.strip("/")
+    _assert_music(folder)
+    #  Every album in the branch, not the page somebody was looking at: a
+    #  selection is checked against what is really there, and a name that is
+    #  not one of them is refused rather than normalized.
+    known = {album.relpath for album in _albums(settings, folder)}
+    found: list[Approved] = []
+    for album in albums:
+        album = album.strip("/")
+        if album not in known:
+            #  A folder that is not one of this branch's albums. Refused
+            #  rather than normalized: the form said what it was about.
+            raise NormalizeError(f"{album} is not an album under {folder}")
+        found.append(_approve_album(conn, settings, album, read_tags=read_tags))
+    return found
+
+
+def _approve_album(
+    conn: sqlite3.Connection,
+    settings: Settings,
+    album: str,
+    *,
+    read_tags=None,  # noqa: ANN001
+) -> Approved:
+    """One album's plan, or the reason there is not one.
+
+    A refusal for one album is not a refusal for the others. They are separate
+    decisions on purpose, so one collision cannot stop the four albums beside
+    it from being tidied.
+    """
+    name = PurePosixPath(album).name
+    try:
+        found = preview(conn, settings, album, read_tags=read_tags)
+    except NormalizeError as exc:
+        return Approved(relpath=album, name=name, note=str(exc))
+    if not found.anything_to_do:
+        return Approved(
+            relpath=album,
+            name=name,
+            refused=len(found.blocked),
+            note=(
+                "nothing to change here"
+                if not found.blocked
+                else "every rename here would land on another file"
+            ),
+        )
+    try:
+        plan_id = plan_normalization(conn, settings, album, read_tags=read_tags)
+    except NormalizeError as exc:
+        return Approved(relpath=album, name=name, note=str(exc))
+    return Approved(
+        relpath=album,
+        name=name,
+        plan_id=plan_id,
+        renamed=len(found.renaming),
+        refused=len(found.blocked),
+    )
 
 
 def _assert_music(folder: str) -> None:

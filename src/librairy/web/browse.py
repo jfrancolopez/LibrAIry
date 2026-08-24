@@ -456,6 +456,70 @@ def item_detail(conn: sqlite3.Connection, settings: Settings, item_id: int) -> d
         # record whose file is gone the page shows the library-relative path it
         # last had, and no location to go and open.
         "host_path": "" if missing_since else host_path(settings, row["root"], row["relpath"]),
+        # What a catalog has said this audio is, if anybody has asked. Read
+        # only — this page renders the stored answer and never makes a lookup
+        # happen. `None` for everything that is not audio.
+        "music_identity": music_identity(conn, settings, row),
+    }
+
+
+def music_identity(
+    conn: sqlite3.Connection, settings: Settings, row: sqlite3.Row
+) -> dict[str, object] | None:
+    """What is on record about this file's sound, for the item page.
+
+    Three separate questions, kept separate because the answers mean different
+    things: can this file be identified at all, may LibrAIry ask anybody, and
+    what came back last time. A page that collapsed them would show a button
+    with no explanation of why it is there or what it did before.
+
+    Not offered on anything that is not audio. A photograph and a PDF have no
+    acoustic fingerprint, and a control that appeared everywhere and refused
+    almost everywhere would be a worse answer than not appearing.
+    """
+    from librairy.mediakind import kind_for
+    from librairy.track_identity import stored, unavailable
+
+    if kind_for(row["relpath"]) != "audio":
+        return None
+    found = stored(conn, int(row["id"]), fingerprint=str(row["fingerprint"] or ""))
+    identity = found.identity
+    return {
+        #  Said in words rather than answered by a missing button: "nothing
+        #  happened when I pressed it" and "there is no button and I do not
+        #  know why" are the same failure.
+        "blocked": unavailable(conn, settings),
+        #  The file is not on disk. Nothing can read bytes that are gone, and
+        #  the record is kept for its history rather than for another lookup.
+        "missing": bool(row["missing_since"]),
+        "asked": found.asked,
+        "matched": found.matched,
+        #  Recorded against bytes this file no longer has. Shown as exactly
+        #  that, and not used for anything: an identity about the old rip is
+        #  not evidence about the new one.
+        "stale": found.stale,
+        "expired": found.expired and not found.stale,
+        "artist": identity.artist if identity else "",
+        "title": identity.title if identity else "",
+        "recording_id": identity.recording_id if identity else "",
+        "fingerprint": identity.fingerprint if identity else "",
+        "facts": (
+            [{"label": label, "value": value} for label, value in identity.evidence]
+            if identity and identity.matched
+            else []
+        ),
+        #  Every release, and no selection. Which release somebody's library is
+        #  about is a filing decision, and this page is not filing anything —
+        #  see `track_identity` on why the first result is never the answer.
+        "releases": (
+            [
+                {"title": release.title, "detail": release.detail,
+                 "catalog_id": release.catalog_id}
+                for release in identity.releases
+            ]
+            if identity and identity.matched
+            else []
+        ),
     }
 
 

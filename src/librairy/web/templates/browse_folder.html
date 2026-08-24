@@ -22,7 +22,8 @@
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <input type="hidden" name="scope" value="{{ top ~ '/' ~ folder }}">
         <button type="submit">Preview filename cleanup</button>
-        <span class="muted">Shows what the current Music naming would call these files. Moves nothing.</span>
+        <span class="muted">Shows what the current Music naming would call these
+          files — an album folder at a time. Moves nothing.</span>
       </form>
       {% endif %}
 

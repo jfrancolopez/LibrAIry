@@ -342,6 +342,57 @@ def recall(
     return identity
 
 
+@dataclass(frozen=True)
+class Stored:
+    """What is on record for one file, including the ways it does not count.
+
+    `recall` answers the organiser's question — is there evidence I may act
+    on — and folds every kind of "no" into None, which is right for a
+    destination and wrong for a page. Somebody looking at an item wants to
+    know *which* no it is: nothing was ever asked, or an answer exists and
+    describes bytes this file no longer has. The second one is not an absence,
+    it is a fact about a re-rip, and hiding it behind an `Identify` button
+    would invite the same lookup with no explanation of why the last one
+    stopped counting.
+    """
+
+    identity: Identity | None = None
+    stale: bool = False
+    expired: bool = False
+
+    @property
+    def asked(self) -> bool:
+        return self.identity is not None
+
+    @property
+    def matched(self) -> bool:
+        return self.identity is not None and self.identity.matched
+
+    @property
+    def current(self) -> bool:
+        """Worth using: an answer, about these bytes, not out of date."""
+        return self.matched and not self.stale and not self.expired
+
+
+def stored(conn: sqlite3.Connection, item_id: int, *, fingerprint: str = "") -> Stored:
+    """Everything on record for one file, with no judgement folded in."""
+    row = conn.execute(
+        "SELECT * FROM track_identity WHERE item_id=?", (item_id,)
+    ).fetchone()
+    if row is None:
+        return Stored()
+    identity = _identity(row)
+    return Stored(
+        identity=identity,
+        stale=bool(
+            fingerprint and identity.fingerprint and identity.fingerprint != fingerprint
+        ),
+        expired=_expired(
+            str(row["looked_up_at"]), HIT_TTL if identity.matched else MISS_TTL
+        ),
+    )
+
+
 def asked(conn: sqlite3.Connection, item_id: int) -> bool:
     """Whether this file has been asked about at all, match or no match."""
     return (

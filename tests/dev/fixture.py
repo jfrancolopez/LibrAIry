@@ -85,6 +85,19 @@ FILES: dict[str, bytes | None] = {
     "Music/Rock/Bowie/Hunky Dory/02-Oh-You-Pretty-Things.flac": b"bowie two",
     "Music/Rock/Bowie/Hunky Dory/03-Life-on-Mars.flac": b"bowie three",
     "Music/Rock/Bowie/Hunky Dory/cover.jpg": b"a sleeve",
+    #  Two more albums under the same artist, so the cleanup preview has a
+    #  branch to summarise rather than one folder to list: one more in the old
+    #  style, one already spelled the way LibrAIry spells things now.
+    "Music/Rock/Bowie/Low/01-Speed-of-Life.flac": b"bowie four",
+    "Music/Rock/Bowie/Low/02-Breaking-Glass.flac": b"bowie five",
+    "Music/Rock/Bowie/Heroes/01 - Beauty and the Beast.flac": b"bowie six",
+    # 10f. a shelf of loose tracks that already agree on one release — the
+    #      group that should be asked about once rather than twelve times.
+    "Music/Rock/The Clash/London Calling/01 - London Calling.flac": b"clash filed",
+    **{
+        f"Music/Rock/The Clash/t{number:02d}.flac": f"clash loose {number}".encode()
+        for number in range(1, 13)
+    },
     # 10e. the same recording filed twice, in two folders — the pair that can
     #      swap which one is the active version.
     "Music/Rock/Queen/A Night at the Opera/"
@@ -444,6 +457,24 @@ def build_app(root: Path):  # noqa: ANN201
         ],
     )
     finding(
+        "Music/Rock/The Clash",
+        "loose-tracks",
+        "12 track(s) sit directly in this artist folder, which otherwise uses "
+        "1 album folder(s).",
+        None,
+        [
+            EvidenceEntry("filesystem", "loose tracks", "12", 0.9),
+            EvidenceEntry("library-pattern", "album folders here", "1", 0.85),
+            #  Two of the twelve carry the album in their own tags. The other
+            #  nine are identified by their audio in `_identified_recordings`,
+            #  and the twelfth has nothing at all — so the aggregate has to
+            #  say "9 identified, 2 tags, 1 with nothing to go on" rather than
+            #  one number made out of the three.
+            EvidenceEntry("tags", "album of t10.flac", "Combat Rock", 0.9),
+            EvidenceEntry("tags", "album of t11.flac", "Combat Rock", 0.9),
+        ],
+    )
+    finding(
         "Music/Pop/Lipps Inc.",
         "naming-inconsistency",
         "Ends in a dot, which Windows silently drops.",
@@ -528,6 +559,7 @@ def build_app(root: Path):  # noqa: ANN201
     _pending_decisions(conn, settings)
     _an_arriving_representation(conn, settings)
     _identified_recordings(conn)
+    _agreeing_loose_tracks(conn)
     _a_file_nobody_scanned(settings)
 
     return create_app(settings, conn)
@@ -674,6 +706,48 @@ def _identified_recordings(conn) -> None:  # noqa: ANN001
                 releases=(),
                 fingerprint=str(row["fingerprint"] or ""),
                 score=0.96,
+            ),
+        )
+
+
+def _agreeing_loose_tracks(conn) -> None:  # noqa: ANN001
+    """Nine loose tracks whose stored identities all name one release.
+
+    Written as `track_identity` rows because that is what a fingerprint lookup
+    persists, and because the album-level conclusion is derived from exactly
+    these rows and the finding's tag evidence — nothing else. A fixture that
+    wrote the conclusion would prove the page rather than the rule.
+
+    Each carries two releases, the album and a compilation, which is what
+    MusicBrainz really returns for a well-known track. Both are coherent over
+    the group, so the row is a choice between two releases rather than one
+    conclusion — and neither is the one the catalog happened to list first.
+    """
+    from librairy.track_identity import Identity, Release, remember
+
+    releases = (
+        Release("r-combat", "Combat Rock", "g-combat", 1982, "Album"),
+        Release("r-story", "The Story of the Clash", "g-story", 1988, "Compilation"),
+    )
+    for number in range(1, 10):
+        relpath = f"Music/Rock/The Clash/t{number:02d}.flac"
+        row = conn.execute(
+            "SELECT id, fingerprint FROM items WHERE root='library' AND relpath=?",
+            (relpath,),
+        ).fetchone()
+        if row is None:
+            continue
+        remember(
+            conn,
+            Identity(
+                item_id=int(row["id"]),
+                provider="acoustid+musicbrainz",
+                recording_id=f"c1a5h000-0000-4000-8000-{number:012d}",
+                artist="The Clash",
+                title=f"Clash Track {number}",
+                releases=releases,
+                fingerprint=str(row["fingerprint"] or ""),
+                score=0.93,
             ),
         )
 
@@ -1322,6 +1396,11 @@ def dev_providers() -> None:
         "01-Changes.flac": {"title": "Changes", "track": "1"},
         "02-Oh-You-Pretty-Things.flac": {"title": "Oh! You Pretty Things", "track": "2"},
         "03-Life-on-Mars.flac": {"title": "Life on Mars?", "track": "3"},
+        "01-Speed-of-Life.flac": {"title": "Speed of Life", "track": "1"},
+        "02-Breaking-Glass.flac": {"title": "Breaking Glass", "track": "2"},
+        "01 - Beauty and the Beast.flac": {
+            "title": "Beauty and the Beast", "track": "1"
+        },
     }
 
     def tags_of(_settings, relpath: str) -> dict[str, str]:  # noqa: ANN001

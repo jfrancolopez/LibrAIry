@@ -698,7 +698,16 @@ def _folder_subject(
         #  → Music/Rock/Queen", which is a decision that appears to do nothing.
         albums = _filing_albums(conn, row["plan_id"])
         return {
-            "subject": "File loose tracks",
+            #  When every track is going to one album, that album *is* the
+            #  decision and the card says so — which is the whole point of a
+            #  group that agreed: one conclusion, named, rather than a count of
+            #  files. With two or three destinations no single name is true,
+            #  and the artist is what was approved.
+            "subject": (
+                f"File tracks as {PurePosixPath(albums[0]).name}"
+                if len(albums) == 1
+                else "File loose tracks"
+            ),
             "current": f"library/{found['relpath']}",
             "after": (
                 f"library/{albums[0]}"

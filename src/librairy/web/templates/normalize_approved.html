@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block content %}
+  <h1>Filename cleanup</h1>
+  <p class="muted"><span class="mono">{{ folder }}</span></p>
+
+  {# Several albums are several decisions, and some of them produced none.
+     Going straight to Commit would show the plans that exist and say nothing
+     at all about the albums that made none — which is the half somebody needs
+     to know about. #}
+  <p>{{ planned }} album{{ 's are' if planned != 1 else ' is' }} waiting for
+    Commit, {{ renamed }} filename{{ 's' if renamed != 1 else '' }} in all.
+    Nothing has moved yet.</p>
+
+  <ul class="rename-list">
+    {% for album in albums %}
+    <li>
+      <span class="mono">{{ album.name }}</span>
+      {% if album.planned %}
+      <span>{{ album.renamed }} filename{{ 's' if album.renamed != 1 else '' }}</span>
+      {% if album.refused %}
+      <span class="muted">· {{ album.refused }} refused, because the new name
+        was already taken</span>
+      {% endif %}
+      {% else %}
+      <span class="muted">{{ album.note or 'nothing to change here' }}</span>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+
+  <div class="button-row commit-after">
+    <a class="btn" href="/commit?type=correction">View in Commit</a>
+    <a class="btn" href="/browse">View in Browse</a>
+  </div>
+{% endblock %}

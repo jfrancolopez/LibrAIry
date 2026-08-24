@@ -203,7 +203,7 @@ def chrome(binary: str | None = None) -> Iterator[Chrome]:
 # --- the page under the microscope --------------------------------------------
 
 
-def render(page: str, root: Path, *, expand: tuple[str, ...] = ()) -> Path:
+def render(page, root: Path, *, expand: tuple[str, ...] = ()) -> Path:  # noqa: ANN001
     """Build a fixture library, render one page, inline its CSS.
 
     Inlining matters: the file is opened over `file://`, where `/static/...`
@@ -214,7 +214,23 @@ def render(page: str, root: Path, *, expand: tuple[str, ...] = ()) -> Path:
     from tests.dev.fixture import build_fixture  # noqa: PLC0415
 
     client = build_fixture(root)
-    response = client.get(page)
+    if isinstance(page, tuple):
+        #  A scene that only exists behind a POST. The filename cleanup pages
+        #  are the reason: previewing reads every file in a folder, which is
+        #  work somebody asks for rather than something a GET does — so the
+        #  only way to look at the layout is to ask for it the way a person
+        #  does.
+        path, form = page
+        client.get("/browse")
+        token = client.cookies.get("csrf_token", "")
+        response = client.post(
+            path,
+            data={**form, "csrf_token": token},
+            headers={"x-csrf-token": token},
+            follow_redirects=True,
+        )
+    else:
+        response = client.get(page)
     html = response.text
     for href in set(re.findall(r'<link[^>]+href="(/static/[^"]+\.css)"', html)):
         css = client.get(href).text
@@ -238,6 +254,8 @@ def _slug(page: str) -> str:
     page it had never loaded. A silent pass is the worst answer a measurement
     tool can give.
     """
+    if isinstance(page, tuple):
+        page = f"{page[0]}-{'-'.join(str(value) for value in page[1].values())}"
     return re.sub(r"[^A-Za-z0-9]+", "-", page.strip("/")).strip("-") or "index"
 
 
@@ -338,6 +356,17 @@ PAGES = {
     "history": "/history",
     "search": "/browse?q=IMG_4021",
     "item": "/items/1",
+    # A filed track with a stored catalog identity: five facts, a 128-character
+    # fingerprint and two releases, which is the widest thing the item page has
+    # ever had to hold on a phone.
+    "item-identity": "/items/28",
+    # The two filename-cleanup shapes. Both are POST-only, because previewing
+    # reads files — see `render` for why the harness can ask for them anyway.
+    "normalize-branch": ("/browse/normalize", {"scope": "Music/Rock/Bowie"}),
+    "normalize-album": (
+        "/browse/normalize",
+        {"scope": "Music/Rock/Bowie/Hunky Dory"},
+    ),
 }
 
 # Scenes that need something opened before it can be looked at. A closed
@@ -349,6 +378,10 @@ EXPANDED = {
     #  OPTIMIZE card gets is its storage accounting beside its file list, and a
     #  closed `<details>` measures as no layout at all.
     "commit-open": ("why", "commit-files"),
+    #  Every album's fold open at once. A collapsed `<details>` measures as no
+    #  layout at all, which is exactly how a real overflow inside one would
+    #  survive this harness.
+    "normalize-branch": ("album-detail",),
 }
 
 

@@ -2612,6 +2612,38 @@ summary.timeline-head::-webkit-details-marker { display: none; }
   margin: var(--space-1) 0;
 }
 
+/* An artist's albums, counted rather than read. One row per album: name,
+   size, whether it is already current, and a fold that reads the tags when
+   somebody opens it. No paths in a collapsed row — a narrow screen has no
+   room for one and they say nothing the name does not. */
+.album-list { list-style: none; padding: 0; margin: var(--space-2) 0; }
+.album-row {
+  display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-2);
+  align-items: baseline; padding: var(--space-1) 0;
+  border-bottom: 1px solid var(--border); font-size: var(--text-sm);
+}
+.album-choose { display: flex; gap: var(--space-1); align-items: baseline; }
+.album-detail { flex-basis: 100%; }
+.album-detail > summary { cursor: pointer; padding: var(--space-1) 0; }
+.normalize-approve, .normalize-branch > button { margin-top: var(--space-2); }
+
+/* An identifier, a name and a score, one per line. Used wherever a catalog
+   answer is printed as facts a reader can check rather than as a verdict. */
+.facts {
+  list-style: none; padding: 0; margin: var(--space-1) 0;
+  display: grid; gap: calc(var(--space-1) / 2); font-size: var(--text-sm);
+}
+
+/* What a group of loose tracks already agrees on. Set above the per-track
+   questions and ahead of them, because when the group agrees the eleven rows
+   underneath are one conclusion written out eleven times. */
+.audit-album { margin: 0 0 var(--space-2); }
+.audit-album-tracks > summary {
+  font-size: var(--text-sm);
+  cursor: pointer;
+  padding: var(--space-1) 0;
+}
+
 /* An arriving file against the filed one it resembles. */
 .row-similar { margin: var(--space-1) 0 var(--space-2); }
 
