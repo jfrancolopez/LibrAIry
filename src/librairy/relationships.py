@@ -38,8 +38,12 @@ SUBTITLE = "subtitle"
 LYRICS = "lyrics"
 CUE = "cue"
 ARTWORK = "artwork"
+#  Established from capture metadata, never from a filename. See
+#  `librairy/photo_pairs.py` for exactly what each one requires.
+RAW_RENDER = "raw_render"
+LIVE_PHOTO = "live_photo"
 
-KINDS = (SUBTITLE, LYRICS, CUE, ARTWORK)
+KINDS = (SUBTITLE, LYRICS, CUE, ARTWORK, RAW_RENDER, LIVE_PHOTO)
 
 # What the relationship is called on a page, in a word a person would use.
 LABEL = {
@@ -47,6 +51,20 @@ LABEL = {
     LYRICS: "Lyrics",
     CUE: "Cue sheet",
     ARTWORK: "Artwork",
+    RAW_RENDER: "JPEG render",
+    LIVE_PHOTO: "Live Photo video",
+}
+
+#  What the *other* half is called, when a page is looking at the companion and
+#  wants to name what it belongs to. "Subtitle" on both sides of a pair would
+#  say the same word about two different facts.
+SUBJECT_LABEL = {
+    SUBTITLE: "Video",
+    LYRICS: "Track",
+    CUE: "Audio",
+    ARTWORK: "Release",
+    RAW_RENDER: "RAW original",
+    LIVE_PHOTO: "Live Photo still",
 }
 
 # Why LibrAIry believes it. Short, deterministic, and printed as-is: a rule
@@ -77,7 +95,11 @@ class Related:
 
     @property
     def label(self) -> str:
-        return LABEL.get(self.kind, self.kind)
+        return LABEL.get(self.kind, self.kind) if self.companion else self.subject_label
+
+    @property
+    def subject_label(self) -> str:
+        return SUBJECT_LABEL.get(self.kind, self.kind)
 
     @property
     def name(self) -> str:
@@ -209,6 +231,73 @@ def companion_ids(conn: sqlite3.Connection, item_ids: list[int]) -> set[int]:
         item_ids,
     ).fetchall()
     return {int(row["companion_item_id"]) for row in rows}
+
+
+#  How a companion introduces itself in a list. "film.en.srt" in a search
+#  result is a filename with no reason to exist; "Subtitle for Arrival
+#  (2016).mkv" is the answer to why it is in the library.
+CONTEXT = {
+    SUBTITLE: "Subtitle for {name}",
+    LYRICS: "Lyrics for {name}",
+    CUE: "Cue sheet for {name}",
+    ARTWORK: "Artwork for {name}",
+    RAW_RENDER: "JPEG render of {name}",
+    LIVE_PHOTO: "Live Photo video of {name}",
+}
+
+
+def context(conn: sqlite3.Connection, item_ids: list[int]) -> dict[int, str]:
+    """One short sentence per item saying how it relates to something else.
+
+    **One query for a whole page.** Browse and Search draw fifty rows, and a
+    relationship lookup per row is the N+1 that makes a list slower the more
+    the library knows — which would be the worst possible reason for a page to
+    get worse.
+
+    A companion says what it belongs to, because that is the fact somebody
+    reading a list of filenames is missing. Anything else says how many files
+    come with it, which is the fact somebody looking at a film wants.
+    """
+    if not item_ids:
+        return {}
+    placeholders = ",".join("?" * len(item_ids))
+    rows = conn.execute(
+        f"""
+        SELECT side.id AS item_id, r.kind AS kind,
+               side.other AS other_id, i.relpath AS other_relpath,
+               r.companion_item_id AS companion_item_id
+        FROM (
+          SELECT r.id AS rel, r.low_item_id AS id, r.high_item_id AS other
+            FROM item_relationships r
+          UNION ALL
+          SELECT r.id AS rel, r.high_item_id AS id, r.low_item_id AS other
+            FROM item_relationships r
+        ) AS side
+        JOIN item_relationships r ON r.id = side.rel
+        JOIN items i ON i.id = side.other AND {live('i')}
+        WHERE side.id IN ({placeholders})
+        ORDER BY side.id, r.kind, i.relpath COLLATE NOCASE
+        """,  # noqa: S608 - placeholders are counted; `live()` is a constant
+        item_ids,
+    ).fetchall()
+    companion_of: dict[int, tuple[str, str]] = {}
+    others: dict[int, int] = {}
+    for row in rows:
+        item_id = int(row["item_id"])
+        others[item_id] = others.get(item_id, 0) + 1
+        if int(row["companion_item_id"]) == item_id and item_id not in companion_of:
+            companion_of[item_id] = (
+                str(row["kind"]),
+                str(row["other_relpath"]).rsplit("/", 1)[-1],
+            )
+    found: dict[int, str] = {}
+    for item_id, count in others.items():
+        if item_id in companion_of:
+            kind, name = companion_of[item_id]
+            found[item_id] = CONTEXT.get(kind, "Related to {name}").format(name=name)
+        else:
+            found[item_id] = f"+{count} related file{'s' if count != 1 else ''}"
+    return found
 
 
 def subjects(conn: sqlite3.Connection, item_ids: list[int]) -> dict[int, list[Related]]:

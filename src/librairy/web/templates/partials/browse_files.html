@@ -12,7 +12,17 @@
       {% else %}
         <span class="row-thumb is-placeholder" aria-hidden="true"></span>
       {% endif %}
-      <span class="row-name mono">{{ item.name }}</span>
+      {# Name and context share the row's middle column. A fourth grid child
+         would wrap onto a line of its own and push the size out of line. #}
+      <span class="row-main">
+        <span class="row-name mono">{{ item.name }}</span>
+        {% if item.related_context %}
+          {# Compact on purpose. The whole list of related files lives on Item
+             Detail; this is the one line that stops a `.srt` looking like a
+             file nobody can account for. #}
+          <span class="row-related muted">{{ item.related_context }}</span>
+        {% endif %}
+      </span>
       <span class="row-size muted">{{ item.size }}</span>
     </a>{{ ext_info(item.name) }}
   {% else %}

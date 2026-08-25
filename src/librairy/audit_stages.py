@@ -504,6 +504,54 @@ def _duplicates(context: Context) -> bool:
     return True
 
 
+def _similar(context: Context) -> bool:
+    """Groups of files that look or sound alike, from pairs already recorded.
+
+    Reads. czkawka did the comparing in the worker's own pass and wrote
+    `similar_media_flags`; this joins those pairs into the connected components
+    a person can actually answer, and opens no file to do it.
+
+    Scoped, and scoped on *both* members of a pair. `Audit this folder` that
+    answered with a group reaching outside it would record a finding under a
+    path this run does not cover — and the next audit of that path, seeing a
+    finding it did not produce, would retire it. A pair with one end elsewhere
+    waits for the run that covers both.
+    """
+    from librairy import similar_media
+
+    if context.conn is None:
+        return True
+    found = similar_media.detect(context.conn, scope=context.scope)
+    context.findings.extend(found)
+    context.counters.similar_groups = len(found)
+    context.counters.similar_pairs = sum(
+        len(finding.evidence) for finding in found
+    )
+    return True
+
+
+def _companions(context: Context) -> bool:
+    """Read what pictures record about themselves, then pair the ones that agree.
+
+    Its own stage because it opens files: one exiftool invocation for a bounded
+    batch, exactly like the documents stage two above it. The pairing that
+    follows opens nothing — it reads the cache written against those bytes.
+
+    Bounded and honest about it. A library of forty thousand photographs is
+    caught up over several audits, and until both halves of a pair have been
+    read they are simply not paired. Silence is not agreement.
+    """
+    from librairy import photo_pairs
+
+    if context.conn is None or context.settings is None:
+        return True
+    context.counters.photos_measured = photo_pairs.measure(
+        context.conn, context.settings
+    )
+    context.counters.companions_found = photo_pairs.pair(context.conn)
+    return True
+
+
 def _ai(context: Context) -> bool:
     """Only what nothing above could resolve.
 
@@ -625,6 +673,8 @@ STAGE_HANDLERS: dict[str, Callable[[Context], bool]] = {
     "artwork": _artwork,
     "documents": _documents,
     "duplicates": _duplicates,
+    "similar": _similar,
+    "companions": _companions,
     "storage": _storage,
     "ai": _ai,
     "record": _record,

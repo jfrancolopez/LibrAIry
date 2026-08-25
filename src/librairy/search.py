@@ -10,6 +10,7 @@ from typing import Any
 
 from librairy.config import Settings
 from librairy.live import live
+from librairy.relationships import context as relationship_context
 from librairy.taxonomy import CATEGORIES as TAXONOMY_CATEGORIES
 
 PAGE_SIZE = 50
@@ -320,7 +321,13 @@ def search_data(
 ) -> dict[str, object]:
     filters = filters or SearchFilters()
     rows = search_items(conn, query, filters)
+    #  One query for the page. `film.en.srt` in a list of results is a filename
+    #  with no reason to exist; saying which film it belongs to is the answer
+    #  somebody is missing — and asking per row would make the page slower the
+    #  more the library knows.
+    related = relationship_context(conn, [int(row["item_id"]) for row in rows])
     for row in rows:
+        row["related_context"] = related.get(int(row["item_id"]), "")
         row["host_path"] = host_path(settings, row["root"], row["relpath"])
         row["history_count"] = conn.execute(
             "SELECT COUNT(*) FROM history WHERE dest_root=? AND dest_relpath=?",

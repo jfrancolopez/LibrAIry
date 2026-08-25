@@ -209,7 +209,7 @@ def dismiss_between(conn: sqlite3.Connection, item_ids: list[int]) -> int:
 # --- finding the groups -------------------------------------------------------------
 
 
-def detect(conn: sqlite3.Connection) -> list:
+def detect(conn: sqlite3.Connection, *, scope: str = "") -> list:
     """One finding per group of library files czkawka paired with each other.
 
     Pairs are what the table stores, and a group is what a person answers, so
@@ -221,10 +221,18 @@ def detect(conn: sqlite3.Connection) -> list:
     to the exact-duplicate workflow, which knows what rmlint said and can say
     so. And nothing is grouped by name, tags or catalog — if czkawka did not
     pair two files, they are not in a group, however alike they look.
+
+    `scope` narrows it to one folder, and narrows it **on both sides of the
+    pair**. `Audit this folder` must not answer with a group half of whose
+    members are somewhere else: the finding would be recorded outside the scope
+    that was asked about, and the next scoped audit of *that* folder would
+    retire it. A pair reaching out of the scope is left for the audit that
+    covers both ends.
     """
     from librairy.audit import Finding
     from librairy.models import EvidenceEntry
 
+    prefix = f"{scope.strip('/')}/" if scope.strip("/") else ""
     edges = conn.execute(
         f"""
         SELECT a.id AS a_id, a.relpath AS a_path, a.fingerprint AS a_fp,
@@ -237,28 +245,49 @@ def detect(conn: sqlite3.Connection) -> list:
           AND f.kind IN ({",".join("?" * len(SIMILAR_KINDS))})
           AND a.root = 'library' AND b.root = 'library'
           AND a.missing_since IS NULL AND b.missing_since IS NULL
+          AND (? = '' OR (a.relpath LIKE ? ESCAPE '\\' AND b.relpath LIKE ? ESCAPE '\\'))
         """,  # noqa: S608 - the placeholders are the constant above
-        SIMILAR_KINDS,
+        (*SIMILAR_KINDS, prefix, f"{prefix}%", f"{prefix}%"),
     ).fetchall()
 
-    groups: dict[int, set[int]] = {}
+    #  Union-find, not set-merging.
+    #
+    #  The obvious version — union the two members' sets and write the result
+    #  back for every member — rewrites a group of N once per edge, which is
+    #  quadratic. It was invisible while nothing on a schedule called this:
+    #  a burst of ten thousand photographs took two seconds to *group*, having
+    #  already been compared. Same components, same order, one pass.
+    parent: dict[int, int] = {}
     paths: dict[int, str] = {}
     scores: dict[int, float | None] = {}
     kinds: dict[int, str] = {}
     prints: dict[int, str] = {}
+
+    def root_of(item: int) -> int:
+        parent.setdefault(item, item)
+        while parent[item] != item:
+            parent[item] = parent[parent[item]]
+            item = parent[item]
+        return item
+
     for edge in edges:
         left, right = int(edge["a_id"]), int(edge["b_id"])
         prints[left], prints[right] = str(edge["a_fp"] or ""), str(edge["b_fp"] or "")
         paths[left], paths[right] = str(edge["a_path"]), str(edge["b_path"])
-        merged = groups.get(left, {left}) | groups.get(right, {right})
-        for member in merged:
-            groups[member] = merged
-        anchor = min(merged)
-        scores[anchor] = edge["score"]
-        kinds[anchor] = str(edge["kind"])
+        #  The smaller id stays the root, so the anchor of a component is its
+        #  lowest member — which is what the finding is keyed by, and what
+        #  keeps a group's identity stable as edges arrive in any order.
+        first, second = sorted((root_of(left), root_of(right)))
+        parent[second] = first
+        scores[first] = edge["score"]
+        kinds[first] = str(edge["kind"])
+
+    components: dict[int, set[int]] = {}
+    for item in parent:
+        components.setdefault(root_of(item), set()).add(item)
 
     findings = []
-    for members in {id(group): group for group in groups.values()}.values():
+    for members in components.values():
         if len({prints.get(item, "") for item in members}) < 2:
             #  Every member has the same bytes. That is the exact-duplicate
             #  workflow's question, and it can answer it properly — it knows

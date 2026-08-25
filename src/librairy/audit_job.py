@@ -72,6 +72,21 @@ STAGES = (
     #  does not do.
     ("documents", "Documents"),
     ("duplicates", "Duplicates"),
+    #  Groups of files that *resemble* each other, from the pairs czkawka
+    #  already wrote. Its own stage, after the exact matches, because the two
+    #  answer different questions: byte-identical copies belong to the
+    #  duplicate workflow, which knows what rmlint said.
+    #
+    #  It was missing for four releases and the omission was invisible, because
+    #  `audit.detect` gates similar media behind a connection and the staged
+    #  runner calls it without one. The photo comparison existed, worked, and
+    #  was only ever reachable from a direct call.
+    ("similar", "Similar media"),
+    #  Reads capture metadata for pictures nobody has measured, and pairs the
+    #  ones the metadata proves belong together — a RAW with its JPEG, the two
+    #  halves of a Live Photo. Its own stage because it opens files, which is
+    #  work the stages around it advertise that they do not do.
+    ("companions", "Photo companions"),
     # Cheap on purpose: cached probe data and arithmetic. This stage finds
     # things that *could* be smaller and records them. It never encodes
     # anything — pressing Audit must not make a NAS start transcoding.
@@ -109,6 +124,10 @@ class Counters:
     artwork_total: int = 0
     artwork_found: int = 0
     duplicate_clusters: int = 0
+    similar_pairs: int = 0
+    similar_groups: int = 0
+    photos_measured: int = 0
+    companions_found: int = 0
     storage_checked: int = 0
     storage_total: int = 0
     storage_probes: int = 0
@@ -500,6 +519,12 @@ def _counter_rows(counters: Counters) -> list[tuple[str, str]]:
         ("Catalog matches", counters.catalog_matches),
         ("Artwork checked", counters.artwork_checked),
         ("Duplicate sets", counters.duplicate_clusters),
+        #  A different question from the line above and worth its own: exact
+        #  copies are a fact about bytes, and these are a fact about what two
+        #  files look or sound like.
+        ("Similar groups", counters.similar_groups),
+        ("Photos measured", counters.photos_measured),
+        ("Photo companions", counters.companions_found),
         ("Issues found", counters.findings),
     ):
         if value:

@@ -109,6 +109,17 @@
         {% if photo.exact_set %}
         <p class="photo-facts"><span class="badge">Exact copy · set {{ photo.exact_set }}</span></p>
         {% endif %}
+        {% for mate in photo.companions %}
+        {# Not a duplicate and not a recommendation. A RAW and its JPEG are
+           usually both wanted — one to keep, one to send — so this says the
+           pair exists and ticks nothing. #}
+        <p class="photo-facts"><span class="badge">{{ mate.label }}</span>
+          <span class="mono">{{ mate.name }}</span></p>
+        {% endfor %}
+        {% if photo.split %}
+        <p class="photo-facts status warn">Its companion is not going the same
+          way. That is allowed — just make sure you meant it.</p>
+        {% endif %}
       </li>
       {% endfor %}
     </ul>

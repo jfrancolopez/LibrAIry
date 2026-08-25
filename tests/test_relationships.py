@@ -343,4 +343,4 @@ def test_an_unknown_kind_is_refused(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="unknown relationship kind"):
         record(conn, companion_item_id=right, subject_item_id=left,
-               kind="live_photo", provenance="same stem")
+               kind="related_photo", provenance="they look similar")

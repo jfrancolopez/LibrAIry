@@ -456,6 +456,21 @@ def _payload(measured) -> dict:  # noqa: ANN001
         "height": _number(tags.get("ImageHeight")),
         "taken": str(measured.created_at or ""),
         "camera": str(measured.camera or ""),
+        #  Apple's Live Photo pairing, written into both halves by the phone.
+        #  The one field here that is *proof* rather than corroboration: two
+        #  files carrying the same content identifier were recorded as one
+        #  thing by the device that made them.
+        "content_id": str(
+            tags.get("ContentIdentifier")
+            or tags.get("MediaGroupUUID")
+            or ""
+        ),
+        #  What a camera writes to tie a RAW to the JPEG it developed, when it
+        #  writes anything at all. Most do not, which is why the RAW rule does
+        #  not require it.
+        "unique_id": str(
+            tags.get("ImageUniqueID") or tags.get("OriginalRawFileName") or ""
+        ),
     }
 
 

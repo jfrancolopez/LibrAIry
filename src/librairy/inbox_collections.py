@@ -137,6 +137,7 @@ class Collection:
     waiting: int
     companions: int
     categories: list[tuple[str, int]] = field(default_factory=list)
+    companion_kinds: list[tuple[str, int]] = field(default_factory=list)
 
     @property
     def settled(self) -> bool:
@@ -197,6 +198,7 @@ def summaries(
     )
     folders = [str(row["folder"]) for row in rows]
     companions = _companion_counts(conn, folders)
+    kinds = _companion_kinds(conn, folders)
     categories = _category_counts(conn, folders)
     return (
         [
@@ -208,6 +210,7 @@ def summaries(
                 unresolved=int(row["unresolved"]),
                 waiting=int(row["waiting"]),
                 companions=companions.get(str(row["folder"]), 0),
+                companion_kinds=kinds.get(str(row["folder"]), []),
                 categories=categories.get(str(row["folder"]), []),
             )
             for row in rows
@@ -246,6 +249,7 @@ def summary(conn: sqlite3.Connection, folder: str) -> Collection | None:
         unresolved=int(row["unresolved"]),
         waiting=int(row["waiting"]),
         companions=_companion_counts(conn, [folder]).get(folder, 0),
+        companion_kinds=_companion_kinds(conn, [folder]).get(folder, []),
         categories=_category_counts(conn, [folder]).get(folder, []),
     )
 
@@ -331,6 +335,38 @@ def _companion_counts(conn: sqlite3.Connection, folders: list[str]) -> dict[str,
         folders,
     ).fetchall()
     return {str(row["folder"]): int(row["n"]) for row in rows}
+
+
+def _companion_kinds(
+    conn: sqlite3.Connection, folders: list[str]
+) -> dict[str, list[tuple[str, int]]]:
+    """What kinds of pair are in each import, counted in SQL.
+
+    "3 companions" is true and says nothing about what they are. Four RAW/JPEG
+    pairs and three Live Photos is the same number told usefully — and it is
+    read from persisted relationships, never worked out while the page draws.
+    """
+    if not folders:
+        return {}
+    placeholders = ",".join("?" * len(folders))
+    rows = conn.execute(
+        f"""
+        SELECT {_FOLDER} AS folder, r.kind AS kind, COUNT(DISTINCT i.id) AS n
+        FROM items i
+        JOIN item_relationships r ON r.companion_item_id = i.id
+        WHERE i.root='inbox' AND {live()} AND instr(i.relpath, '/') > 0
+          AND {_FOLDER} IN ({placeholders})
+        GROUP BY folder, kind
+        ORDER BY n DESC, kind
+        """,  # noqa: S608 - placeholders are counted; the rest are constants
+        folders,
+    ).fetchall()
+    found: dict[str, list[tuple[str, int]]] = {}
+    for row in rows:
+        found.setdefault(str(row["folder"]), []).append(
+            (str(row["kind"]), int(row["n"]))
+        )
+    return found
 
 
 def _category_counts(

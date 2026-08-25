@@ -31,8 +31,14 @@
               {# Not unexplained files. A subtitle its video accounts for is
                  counted here rather than under Unresolved, which is where it
                  used to sit looking like work. #}
-              <li><span class="badge">{{ collection.companions }}</span>
-                companion{{ 's' if collection.companions != 1 else '' }}</li>
+              {% if collection.companion_kinds %}
+                {% for pair in collection.companion_kinds %}
+                  <li><span class="badge">{{ pair.count }}</span> {{ pair.label }}</li>
+                {% endfor %}
+              {% else %}
+                <li><span class="badge">{{ collection.companions }}</span>
+                  companion{{ 's' if collection.companions != 1 else '' }}</li>
+              {% endif %}
             {% endif %}
           </ul>
           {% if collection.categories %}

@@ -31,6 +31,12 @@
             </p>
             <p class="result-path mono muted">{{ row.root }}/{{ row.relpath }}{{ ext_info(row.relpath) }}</p>
             {% if row.snippet %}<p class="result-snippet muted">{{ row.snippet|safe }}</p>{% endif %}
+            {% if row.related_context %}
+              {# Why an apparently generic file is in the library. Read from
+                 persisted relationships in one query for the page — the
+                 search itself is unchanged. #}
+              <p class="result-related muted">{{ row.related_context }}</p>
+            {% endif %}
 
             <p class="result-facts">
               <span class="badge badge-info">{{ row.category or 'misc' }}</span>

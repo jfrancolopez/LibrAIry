@@ -585,6 +585,11 @@ def build_app(root: Path):  # noqa: ANN201
     _an_arriving_representation(conn, settings)
     _identified_recordings(conn)
     _agreeing_loose_tracks(conn)
+    #  Before the file nobody scanned, because it scans the library — and that
+    #  scene exists precisely to have an `items` row missing. A later library
+    #  scan puts the row back and the fixture quietly proves the opposite of
+    #  what it is for. See `_a_file_nobody_scanned`.
+    _photo_companions(conn, settings)
     _a_file_nobody_scanned(settings)
     _four_manuals_already_filed(conn, settings)
     _an_imported_camera_card(conn, settings)
@@ -856,6 +861,67 @@ def _documents_in_the_inbox(conn, settings: Settings) -> None:  # noqa: ANN001
         facts_for_item(
             conn, settings, int(row["id"]), settings.library_dir / str(row["relpath"])
         )
+
+
+def _photo_companions(conn, settings: Settings) -> None:  # noqa: ANN001
+    """A RAW with its JPEG, a Live Photo, and the counterexample beside them.
+
+    The metadata is written as **cache rows**, which is what a real measurement
+    leaves behind — the pairing is then established by the same rule the audit
+    uses, from the same facts. A fixture that inserted the relationships would
+    prove the page and not the evidence.
+
+    The third pair is the point: same folder, same stem, same phone, twenty
+    seconds apart and no shared identifier. It is two unrelated files and it
+    must stay that way.
+    """
+    from librairy.photo_pairs import pair  # noqa: PLC0415
+    from librairy.planner import utc_now  # noqa: PLC0415
+    from librairy.tools.common import IMAGE_TOOL, set_cached_metadata  # noqa: PLC0415
+
+    canon = "Canon EOS R6"
+    phone = "Apple iPhone 15 Pro"
+    live = "1B0F3A22-4C5D-6E7F-8091-A2B3C4D5E6F7"
+    here = "Photos/2024/Backyard"
+    shots = {
+        f"{here}/IMG_5200.CR3": ("2024:08:01 14:22:31", canon, ""),
+        f"{here}/IMG_5200.JPG": ("2024:08:01 14:22:31", canon, ""),
+        f"{here}/IMG_5301.HEIC": ("2024:08:02 09:14:07", phone, live),
+        f"{here}/IMG_5301.MOV": ("2024:08:02 09:14:07", phone, live),
+        #  Same name, same phone, twenty seconds apart, no identifier: an
+        #  ordinary photograph and an unrelated clip.
+        f"{here}/IMG_5402.jpeg": ("2024:08:02 11:00:00", phone, ""),
+        f"{here}/IMG_5402.MOV": ("2024:08:02 11:00:20", phone, ""),
+    }
+    for relpath in shots:
+        path = settings.library_dir / relpath
+        path.parent.mkdir(parents=True, exist_ok=True)
+        image = relpath.lower().endswith((".jpg", ".jpeg"))
+        path.write_bytes(JPEG if image else relpath.encode() * 20)
+    scan_root(conn, "library", settings.library_dir, settings)
+    for relpath, (taken, camera, content_id) in shots.items():
+        row = conn.execute(
+            "SELECT id, fingerprint FROM items WHERE root='library' AND relpath=?",
+            (relpath,),
+        ).fetchone()
+        if row is None:
+            continue
+        set_cached_metadata(
+            conn,
+            int(row["id"]),
+            str(row["fingerprint"] or ""),
+            IMAGE_TOOL,
+            {
+                "width": 6000,
+                "height": 4000,
+                "taken": taken,
+                "camera": camera,
+                "content_id": content_id,
+                "unique_id": "",
+            },
+            utc_now(),
+        )
+    pair(conn)
 
 
 def _four_manuals_already_filed(conn, settings: Settings) -> None:  # noqa: ANN001

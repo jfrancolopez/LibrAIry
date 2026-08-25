@@ -127,6 +127,10 @@ def _card(found: Collection) -> dict[str, Any]:
         "unresolved": found.unresolved,
         "waiting": found.waiting,
         "companions": found.companions,
+        "companion_kinds": [
+            {"label": _pair_label(kind, count), "count": count}
+            for kind, count in found.companion_kinds
+        ],
         "settled": found.settled,
         "categories": [
             {"label": CATEGORY_LABEL.get(name, name), "count": count}
@@ -159,6 +163,24 @@ def _row(
         #  they move by magic.
         "related": companions.get(item_id, []),
     }
+
+
+#  What a pair is called on a card. Plural handled here rather than in the
+#  template, because "1 Live Photos" is the kind of small wrongness that makes
+#  a page feel unfinished.
+_PAIR_LABEL = {
+    "raw_render": ("RAW/JPEG pair", "RAW/JPEG pairs"),
+    "live_photo": ("Live Photo", "Live Photos"),
+    "subtitle": ("subtitle", "subtitles"),
+    "lyrics": ("lyrics file", "lyrics files"),
+    "cue": ("cue sheet", "cue sheets"),
+    "artwork": ("artwork file", "artwork files"),
+}
+
+
+def _pair_label(kind: str, count: int) -> str:
+    one, many = _PAIR_LABEL.get(kind, (kind, kind))
+    return one if count == 1 else many
 
 
 def collection_href(folder: str) -> str:

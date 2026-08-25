@@ -1183,8 +1183,27 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         """The group as the page prints it, and no fact it does not print."""
         from librairy.mediakind import kind_for
         from librairy.photo_group import SORTS, TAKEN_SORT
+        from librairy.relationships import present as related_present
         from librairy.web.quarantine import human_size
         from librairy.web.review import _common_folder
+
+        #  Companion context for the page's members, from persisted
+        #  relationships — one lookup per member on the page, never a scan.
+        #  A RAW and its JPEG are usually both wanted, so this says the pair
+        #  exists and preselects nothing.
+        companions = {
+            photo.item_id: [
+                mate
+                for mate in related_present(conn, photo.item_id)
+                if mate.kind in ("raw_render", "live_photo")
+            ]
+            for photo in found.members
+        }
+
+        #  Which members this answer would set aside, so a pair being split can
+        #  be pointed out. Read from the decisions already recorded, never
+        #  guessed from the page.
+        going = {photo.item_id for photo in found.members if not photo.kept}
 
         def href(**changes: object) -> str:
             values = {"sort": found.sort, "only": found.only, "page": found.page}
@@ -1224,6 +1243,20 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
                     "facts": [
                         {"label": label, "value": value} for label, value in photo.facts
                     ],
+                    #  The other half of a pair the metadata proved. Said, not
+                    #  acted on: a RAW and its render are usually both wanted,
+                    #  so nothing here ticks or unticks a box.
+                    "companions": [
+                        {"name": mate.name, "label": mate.label, "why": mate.provenance}
+                        for mate in companions.get(photo.item_id, ())
+                    ],
+                    #  Whether this member's companion is on its way out while
+                    #  this one stays, or the other way round. Worth saying
+                    #  once, where the decision is being made.
+                    "split": any(
+                        (mate.item_id in going) != (photo.item_id in going)
+                        for mate in companions.get(photo.item_id, ())
+                    ),
                 }
                 for photo in found.members
             ],

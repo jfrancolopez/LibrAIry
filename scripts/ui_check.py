@@ -360,6 +360,11 @@ PAGES = {
     # under each picture, the tray, and the selection controls. Finding 25 is
     # the burst in the dev fixture — stable, the same way `/items/1` is.
     "photo-group": "/review/audit/25/photos",
+    # A folder whose files explain each other: a RAW with its render, a Live
+    # Photo's two halves, and the unrelated same-stem pair that stays unpaired.
+    "browse-related": "/browse/Photos?folder=2024%2FBackyard",
+    # The same context in a result list.
+    "search-related": "/browse?q=IMG_5200&root=library",
     # Everything decision memory has picked up, read-only. The widest thing on
     # it is a destination template beside two counts.
     "learned": "/review/learned",

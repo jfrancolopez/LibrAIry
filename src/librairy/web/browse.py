@@ -294,6 +294,15 @@ def _enriched(
             relpaths,
         )
     }
+    #  One query for the whole page, and only for the files that are indexed.
+    #  A relationship lookup per row is the N+1 that would make Browse slower
+    #  the more LibrAIry knows about a library, which is the worst possible
+    #  direction for that trade.
+    from librairy.relationships import context as relationship_context
+
+    related = relationship_context(
+        conn, [int(row["id"]) for row in rows.values() if row["id"]]
+    )
     items = []
     for file, relpath in zip(files, relpaths, strict=True):
         row = rows.get(relpath)
@@ -307,6 +316,9 @@ def _enriched(
                 # Drives one small badge. Correctness first: the file is listed
                 # either way, this only says whether we know anything about it.
                 "indexed": row is not None,
+                #  Why a `.srt` or a `cover.jpg` is here, in the list rather
+                #  than one click away. The full set stays on Item Detail.
+                "related_context": related.get(int(row["id"]), "") if row else "",
             }
         )
     return items

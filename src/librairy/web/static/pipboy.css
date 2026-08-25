@@ -3341,3 +3341,15 @@ summary.timeline-head::-webkit-details-marker { display: none; }
 .learned-row.is-off { opacity: 0.6; }
 .learned-what { flex: 1 1 20rem; }
 .learned-what > p { margin: 0; overflow-wrap: anywhere; }
+
+/* Why an otherwise unexplained file is in the library — "Subtitle for Arrival
+   (2016).mkv" beside a `.srt`. One line, never the whole relationship list:
+   that belongs on Item Detail, and a Browse row that carried it would be a
+   paragraph. */
+.row-main { display: grid; gap: 0; min-width: 0; }
+.row-related {
+  font-size: var(--text-sm);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  min-width: 0;
+}
+.result-related { margin: 0 0 var(--space-1); font-size: var(--text-sm); }

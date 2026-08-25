@@ -9,7 +9,7 @@ from pathlib import Path
 from librairy.config import Settings
 
 LOGGER = logging.getLogger(__name__)
-SCHEMA_VERSION = 41
+SCHEMA_VERSION = 42
 
 
 class DatabaseVersionError(RuntimeError):
@@ -1158,6 +1158,48 @@ CREATE TABLE decision_suppressions (
 );
 """
 
+MIGRATION_042 = """
+-- Two more relationship kinds, now that there is evidence for them.
+--
+-- `raw_render` and `live_photo` were refused when relationships were first
+-- written down, and the refusal was right: the only thing available then was a
+-- shared filename stem, and the counterexample is the *common* case — a phone
+-- camera folder where `IMG_9323.jpeg` sits beside an entirely unrelated
+-- `IMG_9323.MOV`. Pairing on that would have invented a fact about somebody's
+-- family photographs.
+--
+-- What changed is the metadata cache. `exiftool-image` now holds capture time,
+-- camera and Apple's content identifier against the exact bytes they were read
+-- from, so the pairing can be established from what the files record rather
+-- than from what they are called. A stem is still not evidence; it is only the
+-- reason to look.
+--
+-- SQLite cannot widen a CHECK, so the table is rebuilt. Every existing
+-- relationship is carried across unchanged.
+CREATE TABLE item_relationships_new (
+  id                INTEGER PRIMARY KEY,
+  low_item_id       INTEGER NOT NULL REFERENCES items(id),
+  high_item_id      INTEGER NOT NULL REFERENCES items(id),
+  kind              TEXT NOT NULL CHECK (kind IN
+                      ('subtitle','lyrics','cue','artwork','raw_render','live_photo')),
+  companion_item_id INTEGER NOT NULL REFERENCES items(id),
+  provenance        TEXT NOT NULL,
+  created_at        TEXT NOT NULL,
+  CHECK (low_item_id < high_item_id),
+  UNIQUE (low_item_id, high_item_id, kind)
+);
+INSERT INTO item_relationships_new
+  (id, low_item_id, high_item_id, kind, companion_item_id, provenance, created_at)
+  SELECT id, low_item_id, high_item_id, kind, companion_item_id, provenance, created_at
+  FROM item_relationships;
+DROP INDEX IF EXISTS idx_item_relationships_low;
+DROP INDEX IF EXISTS idx_item_relationships_high;
+DROP TABLE item_relationships;
+ALTER TABLE item_relationships_new RENAME TO item_relationships;
+CREATE INDEX idx_item_relationships_low ON item_relationships(low_item_id);
+CREATE INDEX idx_item_relationships_high ON item_relationships(high_item_id);
+"""
+
 MIGRATIONS = {
     1: MIGRATION_001,
     2: MIGRATION_002,
@@ -1200,6 +1242,7 @@ MIGRATIONS = {
     39: MIGRATION_039,
     40: MIGRATION_040,
     41: MIGRATION_041,
+    42: MIGRATION_042,
 }
 
 
