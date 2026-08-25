@@ -108,6 +108,11 @@ class Decision:
     gone: int
     names: tuple[str, ...]
     pending_plan_id: str = ""
+    #  What this decision is made of, when LibrAIry knows some of its files
+    #  belong together: "3 Live Photos", "2 RAW/JPEG pairs", "7 unrelated
+    #  files". Description only — the restore boundary is still the originating
+    #  plan, and nothing here regroups it.
+    pairs: tuple[str, ...] = ()
 
     @property
     def label(self) -> str:
@@ -166,6 +171,7 @@ def decisions(
     kinds = _kinds(conn, plan_ids)
     names = _names(conn, plan_ids)
     pending = pending_restores(conn, plan_ids)
+    composition = _composition(conn, plan_ids)
     return [
         Decision(
             plan_id=str(row["plan_id"]),
@@ -177,6 +183,7 @@ def decisions(
             gone=int(row["gone"] or 0),
             names=names.get(str(row["plan_id"]), ()),
             pending_plan_id=pending.get(str(row["plan_id"]), ""),
+            pairs=composition.get(str(row["plan_id"]), ()),
         )
         for row in rows
     ]
@@ -212,6 +219,7 @@ def decision(conn: sqlite3.Connection, plan_id: str) -> Decision | None:
         gone=int(rows["gone"] or 0),
         names=_names(conn, [plan_id]).get(plan_id, ()),
         pending_plan_id=pending_restores(conn, [plan_id]).get(plan_id, ""),
+        pairs=_composition(conn, [plan_id]).get(plan_id, ()),
     )
 
 
@@ -514,6 +522,77 @@ def _occupied(conn: sqlite3.Connection, settings: Settings, member: Member) -> b
         [*ACTIVE_PLAN_STATUSES, member.original_root, member.original_relpath],
     ).fetchone()
     return claimed is not None
+
+
+def _composition(
+    conn: sqlite3.Connection, plan_ids: list[str]
+) -> dict[str, tuple[str, ...]]:
+    """What each decision is made of, where files in it belong together.
+
+    Two queries for the whole page. The pairs counted are only those with
+    **both** halves inside the same decision — a Live Photo whose still is
+    still in the library is not a pair this decision is putting back, and
+    counting it would promise something the restore does not do.
+
+    Description, not structure. The restore boundary is the originating plan
+    and stays the originating plan; this only lets its Details say what is in
+    it instead of a bare number.
+    """
+    from librairy.relationship_impact import PAIR_NAME
+
+    if not plan_ids:
+        return {}
+    placeholders = ",".join("?" * len(plan_ids))
+    kinds = conn.execute(
+        f"""
+        SELECT qe.plan_id AS plan_id, r.kind AS kind, COUNT(*) AS n
+        FROM item_relationships r
+        JOIN quarantine_entries qe  ON qe.item_id  = r.low_item_id
+        JOIN quarantine_entries qe2 ON qe2.item_id = r.high_item_id
+                                   AND qe2.plan_id = qe.plan_id
+        WHERE qe.plan_id IN ({placeholders})
+        GROUP BY qe.plan_id, r.kind
+        ORDER BY qe.plan_id, r.kind
+        """,  # noqa: S608 - placeholders are counted from the id list
+        plan_ids,
+    ).fetchall()
+    if not kinds:
+        return {}
+    paired = conn.execute(
+        f"""
+        SELECT qe.plan_id AS plan_id, COUNT(DISTINCT qe.item_id) AS n
+        FROM quarantine_entries qe
+        JOIN item_relationships r
+          ON r.low_item_id = qe.item_id OR r.high_item_id = qe.item_id
+        JOIN quarantine_entries qe2
+          ON qe2.plan_id = qe.plan_id
+         AND qe2.item_id = CASE WHEN r.low_item_id = qe.item_id
+                                THEN r.high_item_id ELSE r.low_item_id END
+        WHERE qe.plan_id IN ({placeholders})
+        GROUP BY qe.plan_id
+        """,  # noqa: S608 - placeholders are counted from the id list
+        plan_ids,
+    ).fetchall()
+    within = {str(row["plan_id"]): int(row["n"]) for row in paired}
+    totals = conn.execute(
+        f"SELECT plan_id, COUNT(*) AS n FROM quarantine_entries"  # noqa: S608
+        f" WHERE plan_id IN ({placeholders}) AND optimization_job_id IS NULL"
+        f" GROUP BY plan_id",
+        plan_ids,
+    ).fetchall()
+    total = {str(row["plan_id"]): int(row["n"]) for row in totals}
+    lines: dict[str, list[str]] = {}
+    for row in kinds:
+        plan_id, kind, count = str(row["plan_id"]), str(row["kind"]), int(row["n"])
+        singular, plural = PAIR_NAME.get(kind, ("related pair", "related pairs"))
+        lines.setdefault(plan_id, []).append(
+            f"{count} {singular if count == 1 else plural}"
+        )
+    for plan_id, rendered in lines.items():
+        rest = total.get(plan_id, 0) - within.get(plan_id, 0)
+        if rest > 0:
+            rendered.append(f"{rest} unrelated file{'' if rest == 1 else 's'}")
+    return {plan_id: tuple(rendered) for plan_id, rendered in lines.items()}
 
 
 def _kinds(conn: sqlite3.Connection, plan_ids: list[str]) -> dict[str, str]:

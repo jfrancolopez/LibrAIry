@@ -145,6 +145,12 @@
               {% if decision.more %}
                 <p class="muted">and {{ decision.more }} more.</p>
               {% endif %}
+              {% if decision.pairs %}
+                {# What the number is made of. The restore is still bounded by
+                   the decision that made it — this only lets "18 files" say
+                   whether that is eighteen separate answers or nine pairs. #}
+                <p class="muted">{{ decision.pairs|join(' · ') }}</p>
+              {% endif %}
             </details>
           {% endif %}
           {% if decision.waiting %}
@@ -270,6 +276,32 @@
               {% if entry.work_note %}
               <span class="muted">{{ entry.work_note }}</span>
               {% endif %}</p>
+
+            {% if entry.related %}
+              {# The context that used to stop at Item Detail. A file set aside
+                 from a comparison is not just `IMG_1234.MOV`; it is the video
+                 half of a Live Photo whose still is still in Photos, and that
+                 is what decides whether putting this one back is worth
+                 doing. #}
+              <div class="quarantine-related">
+                {% for item in entry.related %}
+                  {% if item.more %}
+                    <p class="muted">and {{ item.more }} more related
+                      file{{ 's' if item.more != 1 else '' }}.</p>
+                  {% else %}
+                    <p><span class="muted">{{ item.label }}:</span>
+                      <span class="mono">{{ item.path }}</span>
+                      {% if item.rejoins and entry.restorable %}
+                        {# What Restore would do to the pair, said before it is
+                           pressed. The path above already names the file; this
+                           says what putting this one back means for it. #}
+                        <span class="muted">— Restore puts the two back
+                          together.</span>
+                      {% endif %}</p>
+                  {% endif %}
+                {% endfor %}
+              </div>
+            {% endif %}
 
             {% if entry.preserved_original %}
               {# The question a person actually has in front of this row: then
@@ -466,6 +498,20 @@
                 {% endif %}
               </div>
             </div>
+
+            {% if entry.replacement and entry.replacement.not_carried %}
+              {# Said out loud, because the alternative reading is the wrong
+                 one. A pairing established from what these bytes record is not
+                 transferred to different bytes — a second export of the same
+                 photograph has to earn it from its own metadata. Silence here
+                 would look exactly like the pair having quietly vanished. #}
+              <div class="quarantine-related">
+                <p class="muted">Using this one instead would not carry over:</p>
+                {% for line in entry.replacement.not_carried %}
+                  <p>{{ line }}</p>
+                {% endfor %}
+              </div>
+            {% endif %}
 
             {# Fills in place, below the row it belongs to, like Review. #}
             <div id="qpreview-{{ entry.id }}"></div>

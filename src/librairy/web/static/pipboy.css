@@ -3353,3 +3353,29 @@ summary.timeline-head::-webkit-details-marker { display: none; }
   min-width: 0;
 }
 .result-related { margin: 0 0 var(--space-1); font-size: var(--text-sm); }
+
+/* What a decision does to a pair LibrAIry already knows about, on the last
+   screen before the disk changes. Indented rather than boxed in alarm colours:
+   separating a RAW from its JPEG is a perfectly ordinary thing to want, and a
+   panel that shouts at somebody for it teaches them to stop reading it. The
+   split variant gets a heavier rule and nothing else. */
+.relationship-impact {
+  margin: var(--space-2) 0;
+  padding-left: var(--space-2);
+  border-left: 2px solid var(--border);
+}
+.relationship-impact.is-split { border-left-color: var(--warn); }
+.relationship-impact > h4 {
+  margin: 0 0 calc(var(--space-1) / 2);
+  font-size: var(--text-sm); text-transform: uppercase; letter-spacing: 0.08em;
+}
+.relationship-impact > p { margin: 0 0 calc(var(--space-1) / 2); font-size: var(--text-sm); }
+.relationship-impact > p.mono { overflow-wrap: anywhere; }
+.relationship-count { font-weight: 600; }
+.relationship-headline { font-weight: 600; }
+
+/* The same facts on the Quarantine page, where the question is the opposite
+   one: not "what will this separate" but "what is this held file still part
+   of". Same shape so the two pages read as one program. */
+.quarantine-related { margin: var(--space-1) 0 0; font-size: var(--text-sm); }
+.quarantine-related > p { margin: 0 0 calc(var(--space-1) / 2); overflow-wrap: anywhere; }

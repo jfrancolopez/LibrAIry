@@ -189,6 +189,62 @@
                 {% endif %}
               </dl>
               {% endif %}
+              {% if row.stale_reason %}
+                {# Named, not just flagged. "Approval is outdated" on its own
+                   sends somebody hunting through a folder for what changed —
+                   and for a relationship the thing that changed is a file this
+                   decision does not even contain. #}
+                <p class="muted">{{ row.stale_reason }}, so this approval no
+                  longer describes what would happen.</p>
+              {% endif %}
+              {% if row.relationship %}
+                {# The context that used to vanish at exactly this point.
+                   LibrAIry knew these two files belonged together on every
+                   other page and then, on the one screen that touches the
+                   disk, described a file called IMG_1234.MOV and nothing
+                   else. #}
+                <div class="relationship-impact{% if row.relationship.any_split %} is-split{% endif %}">
+                  <h4>Related files</h4>
+                  {% for line in row.relationship.summary %}
+                    <p class="relationship-count">{{ line }}</p>
+                  {% endfor %}
+                  {% for split in row.relationship.splits %}
+                    <p class="relationship-headline">{{ split.headline }}</p>
+                    <p class="muted">{{ split.detail }}</p>
+                  {% endfor %}
+                  {% if row.relationship.splits_more %}
+                    <p class="muted">and {{ row.relationship.splits_more }} more
+                      that would be separated.</p>
+                  {% endif %}
+                  {% for pair in row.relationship.together %}
+                    <p class="relationship-headline">{{ pair.headline }}</p>
+                    <p class="muted mono">{{ pair.detail }}</p>
+                  {% endfor %}
+                  {% if row.relationship.together_more %}
+                    <p class="muted">and {{ row.relationship.together_more }} more
+                      that move together.</p>
+                  {% endif %}
+                  {% for line in row.not_carried %}
+                    <p>{{ line }}</p>
+                  {% endfor %}
+                  {# Said out loud, because the alternative reading is the
+                     dangerous one: a program that knows about a pair might be
+                     assumed to be doing something about it. #}
+                  <p class="muted">Nothing extra is moved. This decision covers
+                    only the files listed above.</p>
+                </div>
+              {% elif row.related_count %}
+                {# Nothing is being separated — a file already in Quarantine is
+                   already apart from a partner in the library — but "this
+                   still has two related files" is exactly what somebody about
+                   to queue it for deletion wants to know. #}
+                <div class="relationship-impact">
+                  <h4>Related files</h4>
+                  <p>This file has {{ row.related_count }} related
+                    file{{ 's' if row.related_count != 1 else '' }} in your
+                    library. None of them are included in this decision.</p>
+                </div>
+              {% endif %}
               {% if row.files %}
                 {# On demand. Showing every move of every decision by default
                    is how a page with two hundred waiting becomes unreadable. #}

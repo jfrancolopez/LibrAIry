@@ -177,6 +177,7 @@ def describe(conn: sqlite3.Connection, entry: sqlite3.Row) -> dict | None:
     found = replacement_of(conn, entry)
     if found is None:
         return None
+    from librairy.relationship_impact import not_carried
     from librairy.web.quarantine import human_size
 
     return {
@@ -193,6 +194,15 @@ def describe(conn: sqlite3.Connection, entry: sqlite3.Row) -> dict | None:
         #  question is which representation, and the owner has answered it.
         #  Preselects nothing here (there is one button), but says so.
         "preferred": _preferred(conn, found),
+        #  What the outgoing version is paired with and the incoming one is
+        #  not. The pairing is deliberately not transferred — it was
+        #  established from the bytes being replaced — and an invariant nobody
+        #  can see is one somebody will eventually "fix".
+        "not_carried": not_carried(
+            conn,
+            replaced_item_id=found.active_item_id,
+            replacing_item_id=int(entry["item_id"]),
+        ),
     }
 
 

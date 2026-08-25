@@ -102,6 +102,8 @@ def test_fresh_db_migrates_to_current_schema(tmp_path: Path) -> None:
         # Decision memory, looked up by cue signature and settled by plan.
         "idx_decision_events_signature",
         "idx_decision_events_plan",
+        # What a decision was told about the relationships it touches.
+        "idx_plan_relationships_plan",
     }
 
     columns = {row[1] for row in conn.execute("PRAGMA table_info(provider_status)")}
@@ -169,6 +171,8 @@ def test_migration_011_closes_proposals_for_files_already_filed(tmp_path: Path) 
         DROP TABLE IF EXISTS audit_runs;
         DROP TABLE IF EXISTS optimization_jobs;
         DROP TABLE IF EXISTS optimization_opportunities;
+        DROP INDEX IF EXISTS idx_plan_relationships_plan;
+        DROP TABLE IF EXISTS plan_relationships;
         DROP INDEX IF EXISTS idx_decision_events_signature;
         DROP INDEX IF EXISTS idx_decision_events_plan;
         DROP TABLE IF EXISTS decision_events;
@@ -206,6 +210,7 @@ def test_migration_011_closes_proposals_for_files_already_filed(tmp_path: Path) 
         -- and has to come off by name.
         ALTER TABLE backup_queue DROP COLUMN verified;
         ALTER TABLE similar_media_flags DROP COLUMN dismissed_fingerprints;
+        ALTER TABLE plans DROP COLUMN relationships_checked;
         ALTER TABLE plans DROP COLUMN restore_of_plan_id;
         ALTER TABLE plans DROP COLUMN coherent;
         ALTER TABLE plans DROP COLUMN optimization_job_id;

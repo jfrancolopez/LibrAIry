@@ -35,6 +35,7 @@ Open `http://localhost:8080` and drop files into `data/inbox`. No password is re
 - [Backup and restore](docs/backup-restore.md)
 - [One-way backup](docs/backup.md)
 - [Content search](docs/content-search.md)
+- [Files that belong together](docs/relationships.md)
 - [Performance](docs/performance.md)
 - [FAQ](docs/faq.md)
 

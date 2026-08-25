@@ -148,6 +148,27 @@ src/librairy/
 
 Processes communicate only through SQLite (WAL) and the filesystem. No queues, no brokers.
 
+## Relationships (permanent principle, added 2026-08-25)
+
+**A relationship is evidence about files. It may explain a decision or warn
+that a decision will break something. It may never take one.**
+
+Same shape as decision memory below: LibrAIry is allowed to know more than it
+acts on. A relationship may change what a page explains, which choices it
+offers, and whether an approval is still valid — it may never change what is in
+a plan without somebody pressing something that says so.
+
+Written up in full in [../relationships.md](../relationships.md). The parts
+that must not drift:
+
+- no relationship ever adds a filesystem operation
+- not all kinds mean the same thing; sidecars need adjacency, capture-metadata
+  pairs do not, and artwork is folder-scoped
+- a pairing is never transferred to replacement bytes
+- a relationship is not a destination
+- what a decision was *told* about its relationships is frozen at approval, so
+  Commit can refuse when the explanation has stopped being true
+
 ## Decision memory (permanent principle, added 2026-08-25)
 
 LibrAIry learns from explicit decisions that **completed**, and uses what it

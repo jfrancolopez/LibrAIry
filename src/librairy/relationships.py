@@ -190,6 +190,76 @@ def present(conn: sqlite3.Connection, item_id: int) -> list[Related]:
     return [item for item in related(conn, item_id) if item.live]
 
 
+def for_items(
+    conn: sqlite3.Connection, item_ids: list[int]
+) -> dict[int, list[Related]]:
+    """Every live relationship for each of these items, in one query.
+
+    `related` answers for one file and is what Item Detail wants. A page of
+    fifty held files calling it fifty times is the N+1 that makes Quarantine
+    slower the more LibrAIry knows about the library — the worst possible
+    reason for a page to get worse.
+    """
+    if not item_ids:
+        return {}
+    placeholders = ",".join("?" * len(item_ids))
+    rows = conn.execute(
+        f"""
+        SELECT side.id AS item_id, r.kind, r.provenance, r.companion_item_id,
+               side.other AS other_id, i.relpath, i.root
+        FROM (
+          SELECT r.id AS rel, r.low_item_id AS id, r.high_item_id AS other
+            FROM item_relationships r
+          UNION ALL
+          SELECT r.id AS rel, r.high_item_id AS id, r.low_item_id AS other
+            FROM item_relationships r
+        ) AS side
+        JOIN item_relationships r ON r.id = side.rel
+        JOIN items i ON i.id = side.other AND {live('i')}
+        WHERE side.id IN ({placeholders})
+        ORDER BY side.id, r.kind, i.relpath COLLATE NOCASE
+        """,  # noqa: S608 - placeholders are counted; `live()` is a constant
+        item_ids,
+    ).fetchall()
+    found: dict[int, list[Related]] = {}
+    for row in rows:
+        found.setdefault(int(row["item_id"]), []).append(
+            Related(
+                item_id=int(row["other_id"]),
+                relpath=f"{row['root']}/{row['relpath']}",
+                kind=str(row["kind"]),
+                provenance=str(row["provenance"]),
+                companion=int(row["companion_item_id"]) == int(row["other_id"]),
+                live=True,
+            )
+        )
+    return found
+
+
+def pairs_within(
+    conn: sqlite3.Connection, item_ids: list[int]
+) -> dict[str, int]:
+    """How many relationships have *both* halves inside this set, by kind.
+
+    What a whole decision needs to describe itself: "3 Live Photo pairs, 2
+    RAW/JPEG pairs, 7 unrelated files" is the shape of a restore, and it is
+    only true of pairs that are entirely within it. A pair with one half
+    somewhere else is not a pair this decision is putting back.
+    """
+    if not item_ids:
+        return {}
+    placeholders = ",".join("?" * len(item_ids))
+    rows = conn.execute(
+        f"""
+        SELECT kind, COUNT(*) AS n FROM item_relationships
+        WHERE low_item_id IN ({placeholders}) AND high_item_id IN ({placeholders})
+        GROUP BY kind
+        """,  # noqa: S608 - placeholders are counted from the id list
+        [*item_ids, *item_ids],
+    ).fetchall()
+    return {str(row["kind"]): int(row["n"]) for row in rows}
+
+
 def counts(conn: sqlite3.Connection, item_ids: list[int]) -> dict[int, int]:
     """How many live relationships each of these items has, in one query.
 

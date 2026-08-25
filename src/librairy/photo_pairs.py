@@ -121,15 +121,30 @@ class Candidate:
 #  known until both halves have been read.
 MEASURE_PER_RUN = 300
 
+#  Where pairing looks. Both, because a pair has to be establishable on either
+#  side of filing — but each orchestration names its own, so the worker keeping
+#  an arriving camera card current never spends its budget on the library.
+ROOTS = ("library", "inbox")
+
 
 def measure(
-    conn: sqlite3.Connection, settings, *, limit: int = MEASURE_PER_RUN  # noqa: ANN001
+    conn: sqlite3.Connection,
+    settings,  # noqa: ANN001
+    *,
+    limit: int = MEASURE_PER_RUN,
+    roots: tuple[str, ...] = ROOTS,
 ) -> int:
-    """Read capture metadata for library images and clips that have none.
+    """Read capture metadata for images and clips that have none.
 
-    Subprocess work, so it belongs to an explicit staged run and never to a
-    page. Recorded against the exact bytes it was read from, which is what
-    makes a stale answer a miss rather than a wrong pairing.
+    Subprocess work, so it belongs to an explicit staged run or to the worker's
+    own analysis phase, and never to a page. Recorded against the exact bytes
+    it was read from, which is what makes a stale answer a miss rather than a
+    wrong pairing.
+
+    `roots` is how one implementation serves two orchestrations. The staged
+    audit catches the library up; the worker keeps the *inbox* current, so a
+    camera card knows its Live Photos before anybody is asked where to file
+    them. Same evidence, same rules, different budget.
     """
     from librairy.photo_group import _payload as image_payload
     from librairy.planner import utc_now
@@ -138,7 +153,7 @@ def measure(
 
     wanted = [
         candidate
-        for candidate in _candidates(conn, limit=limit * 4)
+        for candidate in _candidates(conn, limit=limit * 4, roots=roots)
         if not candidate.measured
     ][:limit]
     if not wanted:
@@ -170,14 +185,16 @@ def measure(
     return counted
 
 
-def pair(conn: sqlite3.Connection, *, limit: int = PER_RUN) -> int:
+def pair(
+    conn: sqlite3.Connection, *, limit: int = PER_RUN, roots: tuple[str, ...] = ROOTS
+) -> int:
     """Record the photographic companions the measured metadata establishes.
 
     Reads the cache and nothing else. A file nobody has measured has no facts,
     and a file with no facts is not paired with anything — which is the honest
     outcome and the reason this can never be the thing that makes a page slow.
     """
-    candidates = _candidates(conn, limit=limit)
+    candidates = _candidates(conn, limit=limit, roots=roots)
     written = 0
     written += _live_photos(conn, candidates)
     written += _raw_renders(conn, candidates)
@@ -272,7 +289,9 @@ def _agrees(raw: Candidate, render: Candidate) -> str:
     return f"same camera and {when}"
 
 
-def _candidates(conn: sqlite3.Connection, *, limit: int) -> list[Candidate]:
+def _candidates(
+    conn: sqlite3.Connection, *, limit: int, roots: tuple[str, ...] = ROOTS
+) -> list[Candidate]:
     """Library images and clips, with whatever has been measured about them.
 
     A LEFT JOIN on purpose: a file with no cache row is a real candidate that
@@ -286,17 +305,18 @@ def _candidates(conn: sqlite3.Connection, *, limit: int) -> list[Candidate]:
     #  here: a camera writes `.CR2` and a phone writes `.heic`, and both are
     #  the same extension.
     matches = " OR ".join("i.relpath LIKE ?" for _ in suffixes)
+    places = ",".join("?" * len(roots))
     rows = conn.execute(
         f"""
         SELECT i.id, i.root, i.relpath, m.payload,
                m.fingerprint AS measured_fp, i.fingerprint
         FROM items i
         LEFT JOIN item_metadata m ON m.item_id = i.id AND m.tool = ?
-        WHERE i.root IN ('library', 'inbox') AND {live()} AND ({matches})
+        WHERE i.root IN ({places}) AND {live()} AND ({matches})
         ORDER BY i.relpath
         LIMIT ?
         """,  # noqa: S608 - the clause is built from a module constant
-        (IMAGE_TOOL, *[f"%{suffix}" for suffix in suffixes], limit),
+        (IMAGE_TOOL, *roots, *[f"%{suffix}" for suffix in suffixes], limit),
     ).fetchall()
     return [
         Candidate(

@@ -37,6 +37,7 @@ from librairy.quarantine import (
     quarantine_effective_reason,
     restore_entry,
 )
+from librairy.relationship_impact import PAIRED as PAIRED_KINDS
 from librairy.web.evidence import humanize_evidence
 
 #  Two vocabularies for one situation, mapped in one place. Where the file is
@@ -187,6 +188,10 @@ def _decisions(conn: sqlite3.Connection) -> list[dict[str, object]]:
             "waiting": found.waiting,
             "restorable": found.restorable,
             "partly_restored": found.partly_restored,
+            #  What is in it, when LibrAIry knows some of these files belong
+            #  together. Behind the card's fold with the names: it explains the
+            #  number, it does not change what Restore does.
+            "pairs": found.pairs,
         }
         for found in decisions(conn)
         if found.held or found.waiting
@@ -526,9 +531,15 @@ def _entries(
     from librairy.quarantine_requests import pending_requests
 
     requests = pending_requests(conn)
+    related = _related(conn, rows)
     return [
         {
             **dict(row),
+            #  What this held file is still part of. A file set aside from a
+            #  comparison is not just `IMG_1234.MOV` — it is the video half of
+            #  a Live Photo whose still is still in Photos, and that is the
+            #  fact that decides whether restoring it is worth doing.
+            "related": related.get(int(row["item_id"] or 0), []),
             "reason_text": (
                 REASONS[PREVIOUS_REPRESENTATION]
                 if is_previous_representation(conn, row)
@@ -598,6 +609,70 @@ def _entries(
         }
         for row in rows
     ]
+
+
+#  How many related files one held row names before it starts counting. Same
+#  bound as the Commit card, for the same reason.
+RELATED_SHOWN = 3
+
+
+def _related(
+    conn: sqlite3.Connection, rows: list[sqlite3.Row]
+) -> dict[int, list[dict[str, object]]]:
+    """The live files each held file still belongs with — one query for the page.
+
+    Two things are said, and the second is the one that took thought.
+
+    *Where the other half is.* `library/Photos/2024/IMG_1234.HEIC`, in full,
+    because "its Live Photo still" without a path is a fact somebody has to go
+    and look up.
+
+    *Whether restoring this one rejoins it.* Only when the other half is
+    actually where this file would go back to. A `Restore pair` offered for a
+    partner that is already sitting in the library would be a button whose only
+    honest outcome is nothing — and one offered for a partner held under a
+    different decision would quietly widen the restore past what was pressed.
+    """
+    from librairy.relationships import for_items
+
+    item_ids = [int(row["item_id"]) for row in rows if row["item_id"] is not None]
+    if not item_ids:
+        return {}
+    found = for_items(conn, item_ids)
+    original = {
+        int(row["item_id"]): (
+            str(row["original_root"] or ""),
+            str(row["original_relpath"] or ""),
+        )
+        for row in rows
+        if row["item_id"] is not None
+    }
+    described: dict[int, list[dict[str, object]]] = {}
+    for item_id, entries in found.items():
+        root, relpath = original.get(item_id, ("", ""))
+        folder = relpath.rsplit("/", 1)[0] if "/" in relpath else ""
+        for entry in entries[:RELATED_SHOWN]:
+            other_root, _, other_relpath = entry.relpath.partition("/")
+            other_folder = (
+                other_relpath.rsplit("/", 1)[0] if "/" in other_relpath else ""
+            )
+            described.setdefault(item_id, []).append({
+                "label": entry.label,
+                "path": entry.relpath,
+                "name": entry.name,
+                #  Would putting this file back put the two of them together
+                #  again? For a pair established from capture metadata, being
+                #  in the same root is enough; for a sidecar it has to be the
+                #  same folder, which is the whole reason a sidecar exists.
+                "rejoins": bool(root)
+                and other_root == root
+                and (other_folder == folder or entry.kind in PAIRED_KINDS),
+            })
+    for item_id, entries in found.items():
+        extra = len(entries) - RELATED_SHOWN
+        if extra > 0 and item_id in described:
+            described[item_id].append({"more": extra})
+    return described
 
 
 def _disposal_state(conn: sqlite3.Connection, row) -> str:

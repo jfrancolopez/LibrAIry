@@ -9,7 +9,7 @@ from pathlib import Path
 from librairy.config import Settings
 
 LOGGER = logging.getLogger(__name__)
-SCHEMA_VERSION = 42
+SCHEMA_VERSION = 43
 
 
 class DatabaseVersionError(RuntimeError):
@@ -1200,6 +1200,48 @@ CREATE INDEX idx_item_relationships_low ON item_relationships(low_item_id);
 CREATE INDEX idx_item_relationships_high ON item_relationships(high_item_id);
 """
 
+MIGRATION_043 = """
+-- What a decision was told about the relationships it touches.
+--
+-- A plan is immutable and hash-checked, so what it will *do* cannot change
+-- between approval and Commit. What it *means* can. "This will separate a Live
+-- Photo — the still stays in Photos" is a statement about a file the plan does
+-- not contain and therefore never checks: the half that stays behind. If that
+-- half is deleted, replaced, or newly paired with something else in the
+-- meantime, the sentence the person read when they approved is no longer true,
+-- and Commit would run under a topology nobody was shown.
+--
+-- So the affected relationships are frozen here at approval. Only the ones
+-- this plan touches — never a copy of the relationship table — and only the
+-- fields needed to ask "does this still mean the same thing?".
+CREATE TABLE plan_relationships (
+  id             INTEGER PRIMARY KEY,
+  plan_id        TEXT NOT NULL REFERENCES plans(id),
+  kind           TEXT NOT NULL,
+  low_item_id    INTEGER NOT NULL,
+  high_item_id   INTEGER NOT NULL,
+  -- What the person was shown: moves_together, split, both_remain or stale.
+  state          TEXT NOT NULL,
+  -- The member this plan does NOT operate on, when there is one. NULL when
+  -- both halves are in the plan, because both are then covered by the
+  -- fingerprint the executor already verifies on every operation.
+  outside_item_id     INTEGER,
+  -- That member's fingerprint at approval. NULL when it had none recorded.
+  outside_fingerprint TEXT,
+  created_at     TEXT NOT NULL,
+  UNIQUE (plan_id, low_item_id, high_item_id, kind)
+);
+CREATE INDEX idx_plan_relationships_plan ON plan_relationships(plan_id);
+
+-- Whether this plan was approved by a version of LibrAIry that looked at
+-- relationships at all. Plans approved before this feature existed have 0 and
+-- keep their old semantics exactly: they are not retroactively required to
+-- carry a snapshot, and Commit does not invent a refusal for them. A plan
+-- approved now has 1 even when it touches no relationship, which is what tells
+-- "checked, and there were none" apart from "never checked".
+ALTER TABLE plans ADD COLUMN relationships_checked INTEGER NOT NULL DEFAULT 0;
+"""
+
 MIGRATIONS = {
     1: MIGRATION_001,
     2: MIGRATION_002,
@@ -1243,6 +1285,7 @@ MIGRATIONS = {
     40: MIGRATION_040,
     41: MIGRATION_041,
     42: MIGRATION_042,
+    43: MIGRATION_043,
 }
 
 

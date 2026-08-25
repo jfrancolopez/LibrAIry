@@ -43,6 +43,10 @@ ACTIVE_PLAN_STATUSES = ("approved", "executing")
 # What the source did after approval. Empty string means "nothing".
 DRIFT_CHANGED = "changed"
 DRIFT_MISSING = "missing"
+#  Not the source: a file this decision was *explained in terms of* and does
+#  not touch. "The still stays in Photos" is a claim about a file no operation
+#  names, so nothing else in the commit path would ever notice it changing.
+DRIFT_RELATED = "related"
 
 
 @dataclass(frozen=True)
@@ -166,4 +170,10 @@ def plan_drift(conn: sqlite3.Connection, settings: Settings, plan_id: str) -> st
             return DRIFT_MISSING
         if blake2b_file(path) != row["src_fingerprint"]:
             return DRIFT_CHANGED
-    return ""
+    #  Asked last because it is the cheapest and the least likely: a source
+    #  that has moved on is the ordinary reason an approval goes stale, and a
+    #  related file changing underneath one is the rare one. Both make the
+    #  card say the same thing — this approval can no longer run.
+    from librairy.relationship_impact import drift as relationship_drift
+
+    return DRIFT_RELATED if relationship_drift(conn, plan_id) else ""

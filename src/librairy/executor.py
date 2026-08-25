@@ -28,6 +28,7 @@ from librairy.optimization_source import (
 from librairy.paths import resolve_collision, validate_dest, validate_relpath
 from librairy.planner import compute_plan_hash, utc_now
 from librairy.quarantine import record_quarantine_entry
+from librairy.relationship_impact import drift as relationship_drift
 from librairy.search import sync_search_item
 
 TERMINAL_RESULTS = {
@@ -135,6 +136,32 @@ def _execute_plan_unlocked(
         "SELECT * FROM plan_ops WHERE plan_id=? ORDER BY seq",
         (plan_id,),
     ).fetchall()
+    #  What this decision was explained in terms of, re-read.
+    #
+    #  Every operation's own source is verified byte for byte before it moves.
+    #  The file the operation was *explained by* is not an operation, so
+    #  nothing else here would ever look at it — and it is the half the person
+    #  was told about: "the still stays in Photos". If that half is gone,
+    #  different, or newly paired with something nobody was shown, the sentence
+    #  they approved is not the sentence this run would carry out.
+    #
+    #  All or nothing, and only for plans approved by a version that looked:
+    #  see `relationship_impact.drift`.
+    pending = [row for row in rows if row["result"] not in TERMINAL_RESULTS]
+    outdated = relationship_drift(conn, plan_id) if pending else ""
+    if outdated:
+        for row in pending:
+            _finish_op(conn, row["id"], "skipped_changed", None)
+            _journal(
+                conn, row, row["dest_relpath"], row["src_fingerprint"],
+                f"skipped_changed relationship: {outdated}",
+            )
+            counts["skipped_changed"] += 1
+        conn.execute(
+            "UPDATE plans SET status='failed', finished_at=? WHERE id=?",
+            (utc_now(), plan_id),
+        )
+        return ExecutionSummary(plan_id, **counts)
     # A library correction is one logical action over several files. If any
     # part of it has moved on since it was approved, none of it runs: half an
     # album in its new home and half in the old one is worse than either, and

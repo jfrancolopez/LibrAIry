@@ -104,6 +104,10 @@ TYPE_NOTE = {
 # One page of rows, whatever is waiting. The same 50 every other list in
 # LibrAIry uses — Review, Quarantine, History, Search and Browse all bound a
 # page at fifty rows, and `tests/test_scale.py` pins them together.
+#  A marker, not a message. The sentence a reader sees comes from
+#  `relationship_impact`, which knows which of the three things changed.
+RELATED_DRIFT = "related"
+
 PAGE_SIZE = 50
 
 # How many of a group the unfiltered view shows.
@@ -432,6 +436,18 @@ def _plan_row(
         from librairy.correction_state import plan_drift
 
         stale = plan_drift(conn, settings, row["plan_id"])
+    #  Asked for every kind of decision, not just the two whose sources get
+    #  re-hashed. A restore and a delete-queue request are explained in terms of
+    #  related files too, and this question is answered from the database — no
+    #  filesystem, nothing to make the page slower for asking.
+    from librairy.relationship_impact import card as relationship_card
+    from librairy.relationship_impact import drift as relationship_drift
+    from librairy.relationship_impact import for_plan
+
+    related_drift = relationship_drift(conn, row["plan_id"])
+    stale = stale or (RELATED_DRIFT if related_drift else "")
+    impact = for_plan(conn, row["plan_id"])
+    relationship = relationship_card(impact)
     extra = (
         _optimization_fields(conn, row)
         if kind == OPTIMIZATION
@@ -470,6 +486,23 @@ def _plan_row(
         "plan_id": row["plan_id"],
         "applying": row["status"] == "executing",
         "stale": bool(stale),
+        #  Why, in the words the reader needs. "Approval is outdated" on its
+        #  own sends somebody looking through a folder for what changed.
+        "stale_reason": related_drift if stale == RELATED_DRIFT else "",
+        #  What this decision does to pairs LibrAIry already knows about.
+        #  Bounded: a photo group holds dozens, and a card that lists every one
+        #  of them is no longer a card. `None` when it touches none.
+        "relationship": relationship,
+        #  How many live relationships these files have at all, said even when
+        #  nothing is being separated. A file going to the delete queue is
+        #  already apart from its partner — it has been in Quarantine all along
+        #  — so there is no split to warn about, and "this still has two
+        #  related files in your library" is exactly what somebody about to
+        #  queue it for deletion wants to know.
+        "related_count": len(impact.touched) if relationship is None else 0,
+        #  What a replacement would *not* bring with it. The pairing belonged
+        #  to the bytes being replaced.
+        "not_carried": _replacement_note(conn, row),
         "finding_id": row["audit_finding_id"],
         "entry_id": row["quarantine_entry_id"],
         # Where "send this back" goes for this kind of decision. One row
@@ -535,6 +568,48 @@ def _plan_row(
         #  preview follows the one being named.
         "item_id": row["item_id"],
     }
+
+
+def _replacement_note(conn: sqlite3.Connection, row: sqlite3.Row) -> list[str]:
+    """For a replacement: what the outgoing version is paired with, and the
+    incoming one is not.
+
+    A replacement is two operations — preserve the filed copy, admit the held
+    one — so the relationship model already reports the first half as a split.
+    What it cannot know is that the arriving file did not inherit the pairing,
+    because that is a fact about a relationship which does not exist. Silence
+    there reads as the pair having quietly vanished.
+    """
+    if row["quarantine_entry_id"] is None or not row["coherent"]:
+        return []
+    ops = conn.execute(
+        "SELECT item_id, src_root, dest_root FROM plan_ops"
+        " WHERE plan_id=? AND item_id IS NOT NULL ORDER BY seq",
+        (row["plan_id"],),
+    ).fetchall()
+    replaced = next(
+        (
+            int(op["item_id"])
+            for op in ops
+            if op["src_root"] == "library" and op["dest_root"] == "quarantine"
+        ),
+        None,
+    )
+    replacing = next(
+        (
+            int(op["item_id"])
+            for op in ops
+            if op["src_root"] == "quarantine" and op["dest_root"] == "library"
+        ),
+        None,
+    )
+    if replaced is None or replacing is None:
+        return []
+    from librairy.relationship_impact import not_carried
+
+    return not_carried(
+        conn, replaced_item_id=replaced, replacing_item_id=replacing
+    )
 
 
 def _restore_group_subject(

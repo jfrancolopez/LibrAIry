@@ -346,6 +346,10 @@ PAGES = {
     # fixture used to put one library correction here and nothing else.
     "commit-mixed": "/commit",
     "commit-open": "/commit",
+    # The relationship panel on a Commit card: a headline, both filenames and
+    # their destinations. Long sentences beside a bounded set of buttons, which
+    # is exactly the shape that ran past the edge on the collection page.
+    "commit-related": "/commit?type=set-aside",
     # The three quarantine views that have rows in them. Held is the page as it
     # opens; the other two are where a decision goes and what disposal leaves
     # behind, and neither had ever been photographed.
@@ -375,6 +379,10 @@ PAGES = {
     # The same page for a folder whose companions are shown under the file
     # that explains them, which is the one nested list on it.
     "collection-companions": "/review/collection/Arrival%20(2016)",
+    # A camera card whose Live Photos and RAW/JPEG pairs are known *before*
+    # anything is filed — counts at the top, and a companion row that says
+    # what it belongs to. The widest lines on it are those sentences.
+    "collection-pairs": "/review/collection/CameraCard-Aug24?section=unresolved",
     # A filed track with a stored catalog identity: five facts, a 128-character
     # fingerprint and two releases, which is the widest thing the item page has
     # ever had to hold on a phone.

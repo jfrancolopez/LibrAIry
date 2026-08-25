@@ -22,10 +22,18 @@
       {% for kind in collection.categories %}
         <li><span class="badge badge-info">{{ kind.count }}</span> {{ kind.label }}</li>
       {% endfor %}
-      {% if collection.companions %}
+      {% if collection.companion_kinds %}
+        {# Broken out by kind. "3 companions" is true and says nothing: a
+           camera card's companions are Live Photos and RAW/JPEG pairs, and a
+           film's are subtitles and a poster. These are pairs *within* this
+           import — neither half is counted twice in the file total above. #}
+        {% for pair in collection.companion_kinds %}
+          <li><span class="badge">{{ pair.count }}</span> {{ pair.label }}</li>
+        {% endfor %}
+      {% elif collection.companions %}
         <li><span class="badge">{{ collection.companions }}</span>
-          companion{{ 's' if collection.companions != 1 else '' }} — subtitles,
-          lyrics, cue sheets and artwork that another file here explains</li>
+          companion{{ 's' if collection.companions != 1 else '' }} — files that
+          another file here explains</li>
       {% endif %}
     </ul>
   </section>
@@ -73,6 +81,13 @@
             <p class="mono muted">→ {{ row.dest_root }}/{{ row.dest_relpath }}</p>
           {% else %}
             <p class="muted">No destination yet.</p>
+          {% endif %}
+          {% if row.related_context %}
+            {# The other direction: what this file belongs to. A Live Photo's
+               video half in a list of arrivals is a filename with nothing to
+               explain it, and that is the file somebody sets aside by
+               mistake. #}
+            <p class="row-related muted">{{ row.related_context }}</p>
           {% endif %}
           {% if row.related %}
             {# Shown under the file that explains them. They are still real

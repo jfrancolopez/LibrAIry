@@ -590,6 +590,7 @@ def build_app(root: Path):  # noqa: ANN201
     #  scan puts the row back and the fixture quietly proves the opposite of
     #  what it is for. See `_a_file_nobody_scanned`.
     _photo_companions(conn, settings)
+    _decisions_that_split_a_pair(conn, settings)
     _a_file_nobody_scanned(settings)
     _four_manuals_already_filed(conn, settings)
     _an_imported_camera_card(conn, settings)
@@ -998,6 +999,43 @@ def _four_manuals_already_filed(conn, settings: Settings) -> None:  # noqa: ANN0
         execute_plan(conn, plan, settings)
 
 
+def _decisions_that_split_a_pair(conn, settings: Settings) -> None:  # noqa: ANN001
+    """One split waiting for Commit, and one that already happened.
+
+    Both halves of the pass this scene exists for: the Commit card that has to
+    say *this will separate a Live Photo* before anything moves, and the held
+    file that has to say what it is still part of afterwards. Real plans, so
+    the pages are reading the same rows they read in production — a fixture
+    that wrote a warning string would prove the template and nothing else.
+    """
+    from librairy.executor import execute_plan  # noqa: PLC0415
+    from librairy.planner import OperationSpec, approve_plan, create_plan  # noqa: PLC0415
+
+    here = "Photos/2024/Backyard"
+    for relpath, commit in ((f"{here}/IMG_5301.MOV", False), (f"{here}/IMG_5200.JPG", True)):
+        if not (settings.library_dir / relpath).is_file():
+            continue
+        plan_id = create_plan(
+            conn,
+            [
+                OperationSpec(
+                    op_type="quarantine",
+                    src_root="library",
+                    src_relpath=relpath,
+                    dest_root="quarantine",
+                    dest_relpath=f"2024-08-24/{relpath.rsplit('/', 1)[-1]}",
+                )
+            ],
+            settings,
+        )
+        #  One decision about one file, which is what `coherent` means and what
+        #  puts the card under `Set aside` rather than nowhere.
+        conn.execute("UPDATE plans SET coherent=1 WHERE id=?", (plan_id,))
+        approve_plan(conn, plan_id, settings)
+        if commit:
+            execute_plan(conn, plan_id, settings)
+
+
 def _an_imported_camera_card(conn, settings: Settings) -> None:  # noqa: ANN001
     """One folder, three answers in it: a real import.
 
@@ -1057,6 +1095,62 @@ def _an_imported_camera_card(conn, settings: Settings) -> None:  # noqa: ANN001
         transition_item(conn, int(row["id"]), "proposed")
     #  The two the card's firmware left behind get nothing at all, which is
     #  what Unresolved is for.
+    _camera_card_pairs(conn, settings, card)
+
+
+def _camera_card_pairs(conn, settings: Settings, card) -> None:  # noqa: ANN001
+    """The card's Live Photos and RAW/JPEG pairs — known before it is filed.
+
+    Written as cache rows and then paired by the same rule the library audit
+    uses, so what the collection page shows is the evidence rather than the
+    fixture's opinion. `IMG_9323` is the counterexample and stays unpaired:
+    same folder, same stem, same phone, twenty seconds apart, no identifier.
+    """
+    from librairy.photo_pairs import pair  # noqa: PLC0415
+    from librairy.planner import utc_now  # noqa: PLC0415
+    from librairy.tools.common import IMAGE_TOOL, set_cached_metadata  # noqa: PLC0415
+
+    phone = "Apple iPhone 15 Pro"
+    canon = "Canon EOS R6"
+    shots: dict[str, tuple[str, str, str]] = {}
+    for index in range(1, 4):
+        identifier = f"7A1C{index:04d}-9C4E-4E6F-9A11-33D4C7E6F7A0"
+        moment = f"2024:08:24 18:03:0{index}"
+        shots[f"IMG_100{index}.HEIC"] = (moment, phone, identifier)
+        shots[f"IMG_100{index}.MOV"] = (moment, phone, identifier)
+    for index in range(1, 3):
+        moment = f"2024:08:24 19:1{index}:22"
+        shots[f"IMG_200{index}.CR3"] = (moment, canon, "")
+        shots[f"IMG_200{index}.JPG"] = (moment, canon, "")
+    shots["IMG_9323.jpeg"] = ("2024:08:24 20:00:00", phone, "")
+    shots["IMG_9323.MOV"] = ("2024:08:24 20:00:20", phone, "")
+    for name in shots:
+        image = name.lower().endswith((".jpg", ".jpeg", ".heic"))
+        (card / name).write_bytes(JPEG if image else name.encode() * 40)
+    scan_root(conn, "inbox", settings.inbox_dir, settings)
+    for name, (taken, camera, content_id) in shots.items():
+        row = conn.execute(
+            "SELECT id, fingerprint FROM items WHERE root='inbox' AND relpath=?",
+            (f"{card.name}/{name}",),
+        ).fetchone()
+        if row is None:
+            continue
+        set_cached_metadata(
+            conn,
+            int(row["id"]),
+            str(row["fingerprint"] or ""),
+            IMAGE_TOOL,
+            {
+                "width": 4032,
+                "height": 3024,
+                "taken": taken,
+                "camera": camera,
+                "content_id": content_id,
+                "unique_id": "",
+            },
+            utc_now(),
+        )
+    pair(conn, roots=("inbox",))
 
 
 def _an_imported_film_with_companions(conn, settings: Settings) -> None:  # noqa: ANN001

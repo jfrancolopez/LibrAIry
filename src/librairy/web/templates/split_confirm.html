@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block content %}
+  {# The one interruption this feature is allowed. It appears only when a
+     decision would pull apart two files LibrAIry currently knows belong
+     together, and it never answers the question — separating a RAW from its
+     JPEG is an ordinary thing to want, and a program that refused would be
+     wrong about the common case. What the owner is owed is being told. #}
+  <header class="page-head">
+    <div>
+      <h1>This separates files that belong together</h1>
+      <p class="muted">Nothing has moved and nothing is approved. Choosing to
+        continue puts this decision in Commit like any other, where you can
+        still send it back.</p>
+    </div>
+  </header>
+
+  {% for split in splits %}
+    <div class="relationship-impact is-split">
+      <p class="relationship-headline">{{ split.headline }}</p>
+      <p>{{ split.detail }}</p>
+    </div>
+  {% endfor %}
+  {% if splits_more %}
+    <p class="muted">and {{ splits_more }} more pair{{ 's' if splits_more != 1 else '' }}
+      that would be separated by this decision.</p>
+  {% endif %}
+
+  <div class="button-row">
+    <form method="post" action="{{ action_url }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="acknowledge" value="split">
+      {% for field, values in carried.items() %}
+        {% for value in values %}
+          <input type="hidden" name="{{ field }}" value="{{ value }}">
+        {% endfor %}
+      {% endfor %}
+      <button type="submit" class="btn-primary">{{ continue_label }}</button>
+    </form>
+    {% if both_url %}
+      {# Offered only where the other half is part of *this* decision. A button
+         that reached outside it would be LibrAIry adding an operation nobody
+         pressed anything for, which is the one thing relationships may never
+         do. #}
+      <form method="post" action="{{ both_url }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="acknowledge" value="split">
+        {% for field, values in carried.items() %}
+          {% for value in values %}
+            <input type="hidden" name="{{ field }}" value="{{ value }}">
+          {% endfor %}
+        {% endfor %}
+        {% for field, values in both_fields.items() %}
+          {% for value in values %}
+            <input type="hidden" name="{{ field }}" value="{{ value }}">
+          {% endfor %}
+        {% endfor %}
+        <button type="submit">Set aside both</button>
+      </form>
+    {% endif %}
+    <a class="btn-ghost" href="{{ back_url }}">Go back</a>
+  </div>
+
+  {% if not both_url %}
+    <p class="muted">The other half is not part of this decision, so LibrAIry
+      cannot include it here. Setting it aside as well is its own decision, and
+      you can take it from that file's page.</p>
+  {% endif %}
+  <p class="muted">Whatever you choose, only the files this decision names are
+    moved. LibrAIry never adds an operation because two files are related.</p>
+{% endblock %}

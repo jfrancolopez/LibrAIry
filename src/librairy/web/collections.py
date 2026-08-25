@@ -24,6 +24,7 @@ from librairy.inbox_collections import (
     summaries,
     summary,
 )
+from librairy.relationships import context as relationship_context
 from librairy.relationships import subjects
 
 # What the row calls each category, in the words the rest of the program uses.
@@ -74,7 +75,12 @@ def collection_page(
     total = int(getattr(found, section))
     page = max(1, min(page, max(1, -(-total // PAGE_SIZE))))
     rows = members(conn, folder, section=section, page=page)
-    companions = subjects(conn, [int(row["item_id"]) for row in rows])
+    item_ids = [int(row["item_id"]) for row in rows]
+    companions = subjects(conn, item_ids)
+    #  One query for the page, like Browse and Search. A companion's own row
+    #  should say what it belongs to — "Live Photo video of IMG_1001.HEIC" —
+    #  rather than sitting in a list of filenames with no reason to exist.
+    context = relationship_context(conn, item_ids)
     return {
         **_card(found),
         "section": section,
@@ -90,7 +96,7 @@ def collection_page(
             }
             for key in SECTIONS
         ],
-        "rows": [_row(conn, settings, row, companions) for row in rows],
+        "rows": [_row(conn, settings, row, companions, context) for row in rows],
         "page": page,
         "page_size": PAGE_SIZE,
         "section_total": total,
@@ -144,6 +150,7 @@ def _row(
     settings: Settings | None,  # noqa: ARG001
     row: sqlite3.Row,
     companions: dict[int, list],
+    context: dict[int, str],
 ) -> dict[str, Any]:
     from librairy.web.review import human_size
 
@@ -162,6 +169,17 @@ def _row(
         #  own operations — this is where they are *read*, not a claim that
         #  they move by magic.
         "related": companions.get(item_id, []),
+        #  And the reciprocal, for the companion's own row: what it belongs to.
+        #  Both halves of a Live Photo appear in the import, and the video half
+        #  reading `IMG_1001.MOV` with nothing beside it is exactly the file
+        #  somebody cannot place.
+        #
+        #  Only where the nested list is empty. A row that already shows its
+        #  companion underneath does not also need "+1 related file" above it
+        #  — that is the same fact, twice, in less detail.
+        "related_context": (
+            "" if companions.get(item_id) else context.get(item_id, "")
+        ),
     }
 
 

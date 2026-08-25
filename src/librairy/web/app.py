@@ -1367,20 +1367,156 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             f"{target}?{query}" if query else target, status_code=303
         )
 
+    def _confirm_split(
+        request: Request,
+        connection,  # noqa: ANN001
+        item_ids: list[int],
+        *,
+        action_url: str,
+        back_url: str,
+        continue_label: str,
+        both_url: str = "",
+        carried: dict[str, list[str]] | None = None,
+    ) -> Response | None:
+        """The one interruption a relationship is allowed to cause.
+
+        None when this decision separates nothing currently known, which is
+        almost always — so almost always there is no extra screen, no extra
+        click, and nothing changes about how the page behaves. When something
+        *is* about to be pulled apart, it is named once, and the answer is
+        still the person's.
+
+        It confirms; it never refuses, and it never edits the selection. The
+        only thing that can add an operation here is a button that says so.
+        """
+        from librairy.relationship_impact import SHOWN, distinct, if_set_aside
+
+        splits = distinct(if_set_aside(connection, item_ids).splits)
+        if not splits:
+            return None
+        return TEMPLATES.TemplateResponse(
+            request,
+            "split_confirm.html",
+            {
+                "splits": [
+                    {"headline": item.headline, "detail": item.detail}
+                    for item in splits[:SHOWN]
+                ],
+                "splits_more": max(0, len(splits) - SHOWN),
+                "action_url": action_url,
+                "back_url": back_url,
+                "both_url": both_url,
+                "continue_label": continue_label,
+                "carried": carried or {},
+                "both_fields": {"include_related": ["1"]} if both_url else {},
+            },
+        )
+
+    def _split_partners(connection, current_settings, finding_id: int) -> list[int]:  # noqa: ANN001
+        """Members of *this* comparison that the selection would leave behind.
+
+        The list `Set aside both` acts on, and the reason that button is only
+        offered sometimes. A partner outside this comparison is not something
+        this decision can reach: including it would be LibrAIry adding an
+        operation to a plan because two files are related, which is the one
+        thing it may never do.
+        """
+        from librairy.corrections import load_finding
+        from librairy.photo_group import SET_ASIDE, choices, member_ids
+        from librairy.relationship_impact import if_set_aside
+
+        row = load_finding(connection, finding_id)
+        members = set(member_ids(connection, current_settings, row))
+        answers = choices(connection, finding_id)
+        aside = [
+            item_id for item_id, answer in answers.items() if answer == SET_ASIDE
+        ]
+        partners = {
+            split.outside.item_id
+            for split in if_set_aside(connection, aside).splits
+            if split.outside is not None
+        }
+        return sorted(partners & members)
+
+    def _comparison_set_aside(
+        connection,  # noqa: ANN001
+        current_settings,  # noqa: ANN001
+        finding_id: int,
+        keep: list[str],
+    ) -> list[int]:
+        """The item ids a comparison answer would set aside.
+
+        Derived from the same `keep` list the resolver uses, so the screen that
+        warns and the code that acts cannot disagree about which files are
+        going.
+        """
+        from librairy.corrections import load_finding
+        from librairy.similar_media import compare
+
+        row = load_finding(connection, finding_id)
+        view = compare(connection, current_settings, row, measure=False)
+        if view is None:
+            return []
+        kept = set(keep)
+        return [
+            member.item_id
+            for member in view.members
+            if member.relpath not in kept
+        ]
+
     @app.post("/review/audit/{finding_id}/photos/approve", include_in_schema=False)
     def review_audit_photos_approve(
-        request: Request,  # noqa: ARG001
+        request: Request,
         finding_id: int,
-    ) -> RedirectResponse:
+        acknowledge: Annotated[str, Form()] = "",
+        include_related: Annotated[str, Form()] = "",
+    ) -> Response:
         """Turn the selection into the ordinary comparison decision.
 
         One decision, however many files it moves. There is no photo planner
         and no photo executor: this is `similar_media.resolve` with a longer
         list, so the Commit card, the journal entry and the Undo are the ones
         that already worked.
-        """
-        from librairy.photo_group import approve
 
+        The one interruption: if this selection would pull apart a pair
+        LibrAIry currently knows about, it is shown once and confirmed once.
+        `acknowledge` is the confirmation, and it does nothing else — it never
+        changes what the selection is, only whether it has been seen.
+        """
+        from librairy.photo_group import SET_ASIDE, approve, choices, choose
+
+        if include_related:
+            #  The one path that adds an operation, and it exists because a
+            #  person pressed a button that says exactly this. Both halves have
+            #  to be members of this same comparison; `_split_partners` will
+            #  not return one that is not.
+            try:
+                for item_id in _split_partners(conn, settings, finding_id):
+                    choose(conn, settings, finding_id, item_id, SET_ASIDE)
+            except CorrectionRefused as exc:
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
+        elif not acknowledge:
+            aside = [
+                item_id
+                for item_id, answer in choices(conn, finding_id).items()
+                if answer == SET_ASIDE
+            ]
+            confirm = _confirm_split(
+                request,
+                conn,
+                aside,
+                action_url=f"/review/audit/{finding_id}/photos/approve",
+                back_url=f"/review/audit/{finding_id}/photos",
+                continue_label="Set aside only these",
+                both_url=(
+                    f"/review/audit/{finding_id}/photos/approve"
+                    if _split_partners(conn, settings, finding_id)
+                    else ""
+                ),
+                carried={"include_related": []},
+            )
+            if confirm is not None:
+                return confirm
         try:
             approve(conn, settings, finding_id)
         except CorrectionRefused as exc:
@@ -1421,10 +1557,11 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
 
     @app.post("/review/audit/{finding_id}/comparison", include_in_schema=False)
     def review_audit_resolve_comparison(
-        request: Request,  # noqa: ARG001
+        request: Request,
         finding_id: int,
         keep: Annotated[list[str], Form()] = [],  # noqa: B006 - starlette form list
-    ) -> RedirectResponse:
+        acknowledge: Annotated[str, Form()] = "",
+    ) -> Response:
         """Say which of these representations you want, and set the rest aside.
 
         Every member named in `keep` stays exactly where it is; the others are
@@ -1437,6 +1574,22 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         representation would leave the library without a recording somebody
         has, in the name of tidying up the fact that they had two of it.
         """
+        if not acknowledge:
+            #  The same one-time interruption the photo grid gets, for the same
+            #  reason: two representations of one recording can be a RAW and
+            #  its render, and setting one aside separates a pair. It is shown
+            #  once and answered once; it changes no selection.
+            confirm = _confirm_split(
+                request,
+                conn,
+                _comparison_set_aside(conn, settings, finding_id, list(keep)),
+                action_url=f"/review/audit/{finding_id}/comparison",
+                back_url="/review#library-audit",
+                continue_label="Set aside only these",
+                carried={"keep": list(keep)},
+            )
+            if confirm is not None:
+                return confirm
         try:
             resolve_comparison(conn, settings, finding_id, list(keep))
         except CorrectionRefused as exc:

@@ -128,6 +128,16 @@ def approve_plan(conn: sqlite3.Connection, plan_id: str, settings: Settings) -> 
         "UPDATE plans SET status='approved', plan_hash=?, approved_at=? WHERE id=?",
         (plan_hash, utc_now(), plan_id),
     )
+    #  What was true about the relationships this decision touches, at the
+    #  moment it was approved. Imported here rather than at module scope
+    #  because relationships are recorded with this module's own clock.
+    #
+    #  It records; it never refuses. A decision that separates a RAW from its
+    #  JPEG is a decision somebody is allowed to make, and approval is not
+    #  where LibrAIry gets an opinion about it.
+    from librairy.relationship_impact import snapshot
+
+    snapshot(conn, plan_id)
     return plan_hash
 
 

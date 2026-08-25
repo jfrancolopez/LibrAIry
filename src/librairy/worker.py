@@ -68,6 +68,11 @@ class WorkerSummary:
     #  Files that left quarantine without LibrAIry moving them — which is what
     #  emptying the delete queue looks like from here, and is not work.
     quarantine_vanished: int = 0
+    #  Photographic companions established among arriving files. Not counted as
+    #  work: it is a fact recorded *about* the inbox, and letting it hold the
+    #  worker at a busy sleep interval would starve the library audit exactly
+    #  the way `scanned` used to.
+    companions_paired: int = 0
 
     @property
     def work_found(self) -> bool:
@@ -161,6 +166,17 @@ class Worker:
             analysis = analyze_items(self.conn, settings, settings.batch_size)
             _set_worker_state(self.conn, "current_phase", "content")
             content = process_content_extractions(self.conn, settings, settings.batch_size)
+            #  After analysis, deliberately. Companion evidence is *supporting*
+            #  evidence: an arriving JPEG whose metadata cannot be read must
+            #  still be classified, proposed and reviewable, so nothing here is
+            #  allowed to stand between a file and its Review row.
+            #
+            #  It runs on every cycle rather than only idle ones, because the
+            #  thing it exists to fix is a camera card reaching Review before
+            #  anybody knows which of its files are two halves of one picture —
+            #  and that is exactly a busy cycle.
+            _set_worker_state(self.conn, "current_phase", "companions")
+            companions = self._inbox_companions(settings)
             # prune_cache was written with a byte budget and never called by
             # anything, so the thumbnail cache only ever grew: one JPEG per
             # image and per video ever previewed, kept forever on the same
@@ -189,6 +205,7 @@ class Worker:
                 backup_copied=backup.copied,
                 backup_failed=backup.failed,
                 quarantine_vanished=quarantine_scan.missing,
+                companions_paired=companions,
             )
             # Everything above is inbox work, and it has already happened.
             # A library audit is asked for, not needed, so it gets a bounded
@@ -316,6 +333,29 @@ class Worker:
             )
             return queue.UNSUPPORTED
         return "started" if started else "eligible"
+
+    def _inbox_companions(self, settings: Settings) -> int:
+        """Pair the arriving photographs, before anybody is asked to file them.
+
+        The staged library audit already does this for filed files. Doing it
+        only there had the order backwards: a camera card could reach Review
+        with `IMG_1001.HEIC` and `IMG_1001.MOV` presented as two unrelated
+        arrivals, and the pairing would appear afterwards — which is the one
+        moment it is no longer useful.
+
+        Same evidence function as the audit, different budget: one bounded
+        exiftool batch per cycle over the inbox alone. Wrapped, because a
+        missing binary or an unreadable file must never be the reason a file
+        cannot be filed.
+        """
+        from librairy.photo_pairs import measure, pair
+
+        try:
+            measure(self.conn, settings, roots=("inbox",))
+            return pair(self.conn, roots=("inbox",))
+        except Exception:  # noqa: BLE001 - never let the extra break the job
+            LOGGER.exception("inbox companion pairing failed")
+            return 0
 
     def _audit_slice(self, settings: Settings) -> str:
         """One slice of a requested audit, if one is waiting.

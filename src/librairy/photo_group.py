@@ -510,6 +510,18 @@ def _facts(measured) -> tuple[tuple[str, str], ...]:  # noqa: ANN001
 # --- the answer, built up a page at a time --------------------------------------------
 
 
+def member_ids(
+    conn: sqlite3.Connection, settings: Settings, row: sqlite3.Row
+) -> list[int]:
+    """Every photograph in this comparison, by item id.
+
+    The whole membership, not the page being looked at — a question about what
+    this decision can reach has to be asked of the decision, not of the
+    scrollback.
+    """
+    return [photo.item_id for photo in _all(conn, settings, row)]
+
+
 def choices(conn: sqlite3.Connection, finding_id: int) -> dict[int, str]:
     """What has been decided about this group so far. Absent means keep."""
     return {
