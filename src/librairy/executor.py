@@ -81,13 +81,18 @@ def execute_plan(conn: sqlite3.Connection, plan_id: str, settings: Settings) -> 
     # audit finding is settled here rather than at each caller. It is a no-op
     # for an ordinary inbox plan.
     from librairy.corrections import settle_plan
+    from librairy.quarantine_groups import settle as settle_restore_group
     from librairy.quarantine_requests import settle_quarantine_plan
 
     settle_plan(conn, plan_id, settings)
     # The same reasoning, for the other kind of decision that waits here: one
-    # door, so there is one place to forget rather than two. Both are no-ops
-    # for an ordinary inbox plan.
+    # door, so there is one place to forget rather than two. All three are
+    # no-ops for an ordinary inbox plan.
     settle_quarantine_plan(conn, plan_id)
+    # A whole decision put back at once. It settles by reading the plan's own
+    # operations, so a member that was skipped does not have its entry marked
+    # as restored — the file did not move.
+    settle_restore_group(conn, plan_id)
     return summary
 
 

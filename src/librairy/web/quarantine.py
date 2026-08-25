@@ -129,6 +129,11 @@ def quarantine_data(
     host_dir = str(settings.host_quarantine_dir) if settings else ""
     return {
         "staged": _staged(conn),
+        #  Whole decisions, above the individual rows rather than instead of
+        #  them. One answer to a photo comparison can be ninety of the rows
+        #  below, and putting that answer back a row at a time loses the only
+        #  thing that made the ninety one thing.
+        "decisions": _decisions(conn),
         "entries": rows,
         "similar_flags": _similar_flags(conn),
         "view": view,
@@ -158,12 +163,50 @@ def quarantine_data(
     }
 
 
+def _decisions(conn: sqlite3.Connection) -> list[dict[str, object]]:
+    """The committed decisions that set aside more than one file.
+
+    Bounded, and counted in SQL: a decision that moved five hundred files is
+    one card with a number on it, never five hundred names. Only decisions
+    with something still held are offered — a group whose every member has
+    already gone back is finished, and a card with no action on it is furniture.
+    """
+    from librairy.quarantine_groups import decisions
+
+    return [
+        {
+            "plan_id": found.plan_id,
+            "label": found.label,
+            "total": found.total,
+            "held": found.held,
+            "restored": found.restored,
+            "gone": found.gone,
+            "names": found.names,
+            "more": max(0, found.total - len(found.names)),
+            "when": human_ago(found.when),
+            "waiting": found.waiting,
+            "restorable": found.restorable,
+            "partly_restored": found.partly_restored,
+        }
+        for found in decisions(conn)
+        if found.held or found.waiting
+    ]
+
+
 # A held file is in exactly one of these states, and the expressions below are
 # the definition. Written once, in SQL, so the count in the tab and the rows
 # under it cannot drift apart — two hand-written filters agreeing is luck.
 _ACTIVE_PLAN = (
-    "EXISTS (SELECT 1 FROM plans p WHERE p.quarantine_entry_id = qe.id"
+    "(EXISTS (SELECT 1 FROM plans p WHERE p.quarantine_entry_id = qe.id"
     " AND p.status IN ('approved','executing'))"
+    #  Or a whole decision being put back at once, which names no single entry
+    #  — it is one plan with an operation per member. Without this half the
+    #  rows of a pending group restore stayed under `Held`, offering a second
+    #  Restore for a file that already had one waiting.
+    " OR EXISTS (SELECT 1 FROM plans p JOIN plan_ops o ON o.plan_id = p.id"
+    " WHERE p.restore_of_plan_id IS NOT NULL"
+    " AND p.status IN ('approved','executing')"
+    " AND o.src_root='quarantine' AND o.item_id = qe.item_id))"
 )
 _IN_DELETE_QUEUE = "i.relpath LIKE '_to-delete/%' ESCAPE '\\'"
 #  The same predicate `live.py` owns, phrased for this join: no row at all, or a

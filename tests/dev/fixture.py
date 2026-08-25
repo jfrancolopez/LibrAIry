@@ -586,6 +586,8 @@ def build_app(root: Path):  # noqa: ANN201
     _identified_recordings(conn)
     _agreeing_loose_tracks(conn)
     _a_file_nobody_scanned(settings)
+    _an_imported_camera_card(conn, settings)
+    _an_imported_film_with_companions(conn, settings)
 
     return create_app(settings, conn)
 
@@ -853,6 +855,129 @@ def _documents_in_the_inbox(conn, settings: Settings) -> None:  # noqa: ANN001
         facts_for_item(
             conn, settings, int(row["id"]), settings.library_dir / str(row["relpath"])
         )
+
+
+def _an_imported_camera_card(conn, settings: Settings) -> None:  # noqa: ANN001
+    """One folder, three answers in it: a real import.
+
+    Twenty photographs LibrAIry can file, five clips, and two files it cannot
+    name. Written as a *folder* because that is the only thing a collection is
+    — a fixture that seeded a collection row would prove the page rather than
+    the rule.
+    """
+    from librairy.lifecycle import transition_item  # noqa: PLC0415
+    from librairy.proposals import upsert_proposal  # noqa: PLC0415
+
+    card = settings.inbox_dir / "CameraCard-Aug24"
+    card.mkdir(parents=True, exist_ok=True)
+    for index in range(20):
+        (card / f"IMG_{index:04d}.JPG").write_bytes(JPEG)
+    for index in range(5):
+        (card / f"MVI_{index:04d}.MOV").write_bytes(b"clip" * 64)
+    (card / "CANONMSC.DAT").write_bytes(b"\x00" * 32)
+    (card / "MISC.CTG").write_bytes(b"\x00" * 16)
+    scan_root(conn, "inbox", settings.inbox_dir, settings)
+    for index in range(20):
+        name = f"CameraCard-Aug24/IMG_{index:04d}.JPG"
+        row = conn.execute(
+            "SELECT id FROM items WHERE root='inbox' AND relpath=?", (name,)
+        ).fetchone()
+        if row is None:
+            continue
+        upsert_proposal(
+            conn,
+            item_id=int(row["id"]),
+            category="photos",
+            clean_name=f"IMG_{index:04d}.jpg",
+            dest_relpath=f"Photos/2024/August/IMG_{index:04d}.jpg",
+            confidence=0.91,
+            evidence=[EvidenceEntry("heuristic", "category", "camera filename", 0.91)],
+        )
+        transition_item(conn, int(row["id"]), "proposed")
+    #  The clips get a destination too — a camera card is not one category, and
+    #  that is the point of the collection being orchestration rather than
+    #  classification.
+    for index in range(5):
+        name = f"CameraCard-Aug24/MVI_{index:04d}.MOV"
+        row = conn.execute(
+            "SELECT id FROM items WHERE root='inbox' AND relpath=?", (name,)
+        ).fetchone()
+        if row is None:
+            continue
+        upsert_proposal(
+            conn,
+            item_id=int(row["id"]),
+            category="photos",
+            clean_name=f"MVI_{index:04d}.mov",
+            dest_relpath=f"Photos/2024/August/MVI_{index:04d}.mov",
+            confidence=0.74,
+            evidence=[EvidenceEntry("heuristic", "category", "camera filename", 0.74)],
+        )
+        transition_item(conn, int(row["id"]), "proposed")
+    #  The two the card's firmware left behind get nothing at all, which is
+    #  what Unresolved is for.
+
+
+def _an_imported_film_with_companions(conn, settings: Settings) -> None:  # noqa: ANN001
+    """A film, its subtitle and its poster, in one imported folder.
+
+    The relationships are written by `associate_companions`, which is what
+    analysis calls — not by the fixture. A fixture that inserted the rows would
+    prove the page and not the pairing.
+    """
+    from librairy.classify import classify_item  # noqa: PLC0415
+    from librairy.classify.companions import associate_companions  # noqa: PLC0415
+    from librairy.lifecycle import transition_item  # noqa: PLC0415
+    from librairy.proposals import upsert_proposal  # noqa: PLC0415
+
+    folder = settings.inbox_dir / "Arrival (2016)"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "Arrival.2016.1080p.mkv").write_bytes(b"film" * 512)
+    (folder / "Arrival.2016.1080p.en.srt").write_bytes(
+        b"1\n00:00:01,000 --> 00:00:03,000\nLouise.\n"
+    )
+    (folder / "poster.jpg").write_bytes(JPEG)
+    scan_root(conn, "inbox", settings.inbox_dir, settings)
+    row = conn.execute(
+        "SELECT id FROM items WHERE root='inbox' AND relpath=?",
+        ("Arrival (2016)/Arrival.2016.1080p.mkv",),
+    ).fetchone()
+    if row is None:
+        return
+    upsert_proposal(
+        conn,
+        item_id=int(row["id"]),
+        category="movies",
+        clean_name="Arrival (2016).mkv",
+        dest_relpath="Movies/Arrival (2016)/Arrival (2016).mkv",
+        confidence=0.93,
+        evidence=[EvidenceEntry("tmdb", "title", "Arrival (2016)", 0.93)],
+    )
+    transition_item(conn, int(row["id"]), "proposed")
+    #  The order the worker uses: every item in the batch is analysed first,
+    #  then the companion pass runs over the folder. It only ever *re-points* a
+    #  proposal that already exists, so a companion the batch never classified
+    #  is one it will not touch — which is a real rule and not a fixture
+    #  detail, and getting the order wrong here hid the poster.
+    for name in ("Arrival.2016.1080p.en.srt", "poster.jpg"):
+        companion = conn.execute(
+            "SELECT id FROM items WHERE root='inbox' AND relpath=?",
+            (f"Arrival (2016)/{name}",),
+        ).fetchone()
+        if companion is None:
+            continue
+        result = classify_item(settings.inbox_dir / "Arrival (2016)" / name, name, settings)
+        upsert_proposal(
+            conn,
+            item_id=int(companion["id"]),
+            category=result.category,
+            clean_name=result.clean_name,
+            dest_relpath=result.dest_relpath,
+            confidence=result.confidence,
+            evidence=list(result.evidence),
+        )
+        transition_item(conn, int(companion["id"]), "proposed")
+    associate_companions(conn, settings)
 
 
 def _a_burst_of_photographs(conn) -> None:  # noqa: ANN001

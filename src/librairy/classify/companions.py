@@ -79,6 +79,14 @@ SIDECAR_KINDS = {
 # lyrics behind under the old stem is the same bug in a different folder.
 NAMES_ONE_FILE = frozenset({"subtitle", "lyrics"})
 
+#  Companion kinds that can name one specific file, and so can become a
+#  recorded relationship between two items. `cue` is here and not in
+#  NAMES_ONE_FILE on purpose: a cue sheet that names its audio file is a real
+#  pairing worth remembering, and renaming the cue to follow that file is a
+#  filing change nobody asked for. Knowing a thing and acting on it are
+#  separate decisions.
+_RELATED_KINDS = NAMES_ONE_FILE | {"cue"}
+
 # What the Why panel calls each kind, in words rather than an extension.
 SIDECAR_LABEL = {
     "playlist": "playlist",
@@ -174,6 +182,11 @@ def associate_companions(conn: sqlite3.Connection, settings: Settings) -> Artwor
     for directory, items in _inbox_by_directory(conn).items():
         if any(marker in directory.split("/") for marker in DISC_MARKERS):
             continue
+        #  Before the anchor, and deliberately: a subtitle names its video by
+        #  filename whether or not the folder has agreed on a destination yet.
+        #  Gating the *fact* on the *filing* would mean a film still being
+        #  argued about in Review had no recorded subtitle.
+        _record_sidecar_relationships(conn, items)
         anchor = _anchor(items) or _anchor_from_history(conn, directory)
         if anchor is None:
             continue
@@ -192,7 +205,78 @@ def associate_companions(conn: sqlite3.Connection, settings: Settings) -> Artwor
                 associated += 1
             elif outcome == "already_present":
                 already += 1
+        #  The other half, and only once the folder has an anchor: artwork
+        #  belongs to a release, and "there is an image and some media here" is
+        #  the rule this module exists to reject.
+        _record_artwork_relationships(conn, items)
     return ArtworkSummary(associated, already)
+
+
+def _record_sidecar_relationships(
+    conn: sqlite3.Connection, items: list[sqlite3.Row]
+) -> None:
+    """Persist the pairings a filename establishes beyond doubt.
+
+    Analysis writes these, never a GET. A page that discovers relationships by
+    looking at a directory is a page that stats the filesystem to draw itself,
+    which is the shape the metadata-cache pass just finished removing from the
+    photo grid.
+
+    Deterministic pairings only. A subtitle or an `.lrc` that names a file here
+    is one; a `.cue` that names one is another. An `.nfo` or an `.m3u` that
+    merely sits in the folder is not — it describes a release rather than a
+    file, and relating it to whichever track happens to be first would be
+    inventing the half the filename does not say.
+    """
+    from librairy.relationships import record
+
+    for item in items:
+        kind = sidecar_kind(PurePosixPath(item["relpath"]).name)
+        if kind is None or kind not in _RELATED_KINDS:
+            continue
+        match = _matching_media(item, items, require_destination=False)
+        if match is None:
+            continue
+        media, extra = match
+        record(
+            conn,
+            companion_item_id=int(item["id"]),
+            subject_item_id=int(media["id"]),
+            kind=kind,
+            provenance=f"names {PurePosixPath(media['relpath']).name}"
+            + (f" ({extra.lstrip('.')})" if extra else ""),
+        )
+
+
+def _record_artwork_relationships(
+    conn: sqlite3.Connection, items: list[sqlite3.Row]
+) -> None:
+    """Relate this folder's cover to the release it is a cover of.
+
+    Every media file of it, not the folder: that is what lets Item Detail
+    answer for track five rather than only for the directory. Bounded, because
+    past a hundred files the folder is not an album — it is a dumping ground,
+    and one image is not a fact about six hundred files.
+    """
+    from librairy.relationships import ARTWORK, ARTWORK_FANOUT, BY_FOLDER, record
+
+    covers = _artwork_candidates(items)
+    media = [
+        row
+        for row in items
+        if PurePosixPath(row["relpath"]).suffix.lower() in MEDIA_EXTS
+        and not is_companion(PurePosixPath(row["relpath"]).name)
+    ]
+    if not covers or not media or len(media) > ARTWORK_FANOUT:
+        return
+    for row in media:
+        record(
+            conn,
+            companion_item_id=int(covers[0]["id"]),
+            subject_item_id=int(row["id"]),
+            kind=ARTWORK,
+            provenance=BY_FOLDER,
+        )
 
 
 @dataclass(frozen=True)
@@ -318,7 +402,12 @@ def _sidecar_candidates(items: list[sqlite3.Row]) -> list[sqlite3.Row]:
     ]
 
 
-def _matching_media(item: sqlite3.Row, items: list[sqlite3.Row]) -> tuple[sqlite3.Row, str] | None:
+def _matching_media(
+    item: sqlite3.Row,
+    items: list[sqlite3.Row],
+    *,
+    require_destination: bool = True,
+) -> tuple[sqlite3.Row, str] | None:
     """The one media file this sidecar names, and whatever it adds to the name.
 
     `Movie.en.forced.srt` beside `Movie.mkv` returns that video and `.en.forced`
@@ -334,7 +423,12 @@ def _matching_media(item: sqlite3.Row, items: list[sqlite3.Row]) -> tuple[sqlite
     lowered = stem.lower()
     best: tuple[sqlite3.Row, str] | None = None
     for row in items:
-        if row["id"] == item["id"] or not row["dest_relpath"]:
+        if row["id"] == item["id"]:
+            continue
+        #  Filing needs the video's destination to build the subtitle's; the
+        #  *pairing* does not, and asking for one would make a fact about two
+        #  filenames wait on a decision about where they go.
+        if require_destination and not row["dest_relpath"]:
             continue
         name = PurePosixPath(row["relpath"])
         if name.suffix.lower() not in MEDIA_EXTS:

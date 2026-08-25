@@ -825,6 +825,58 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             {"options": options_for_proposal(conn, settings, proposal_id)},
         )
 
+    @app.get("/review/collection/{folder}", response_class=HTMLResponse,
+             include_in_schema=False)
+    def review_collection(
+        request: Request,
+        folder: str,
+        section: str = "",
+        page: PageNumber = 1,
+    ) -> HTMLResponse:
+        """One import, one section of it, one page at a time.
+
+        A dedicated page rather than a block in Review, for the same reason the
+        photo group has one: an import can be ten thousand files, and Review is
+        a list of what needs answering rather than a place to hold all of it.
+        The collection knows what arrived together; every decision on this page
+        is still one file's.
+
+        Reads only. Counts from SQL, one bounded page of members, and nothing
+        touches the filesystem.
+        """
+        from librairy.web.collections import collection_page
+
+        found = collection_page(conn, settings, folder, section=section, page=page)
+        if found is None:
+            raise HTTPException(
+                status_code=404, detail="there is no import left by that name"
+            )
+        return TEMPLATES.TemplateResponse(
+            request,
+            "collection.html",
+            {"title": folder, "collection": found},
+        )
+
+    @app.post("/review/collection/{folder}/approve", include_in_schema=False)
+    async def review_collection_approve(request: Request, folder: str) -> RedirectResponse:
+        """Approve the members that were already independently approvable.
+
+        Bulk that applies answers and chooses nothing. The list is resolved
+        here, from the database, rather than taken from the form: a file that
+        grew a duplicate report since the page was drawn is a choice now, and
+        choices are exactly what this must not reach.
+        """
+        from librairy.inbox_collections import ready_proposal_ids
+        from librairy.web.collections import collection_href
+
+        await _request_form(request)
+        ready = ready_proposal_ids(conn, folder)
+        if ready:
+            apply_review_action(
+                conn, "approve", filters_from_query(), proposal_ids=ready
+            )
+        return RedirectResponse(collection_href(folder), status_code=303)
+
     @app.post("/review/forget-missing", include_in_schema=False)
     def review_forget_missing(
         request: Request,  # noqa: ARG001
@@ -2013,6 +2065,39 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         return _quarantine_page(
             request, "Restore requested. It moves back when you commit.", view="waiting"
         )
+
+    @app.post("/quarantine/decision/{plan_id}/restore", response_class=HTMLResponse)
+    def quarantine_restore_decision(request: Request, plan_id: str) -> HTMLResponse:
+        """Put a whole decision back. Moves nothing now.
+
+        The group is the plan that set these files aside — recorded when it
+        happened, not reconstructed from dates or filenames. Pressing this
+        writes one approved, coherent plan, and Commit runs it through the same
+        executor as everything else.
+        """
+        from librairy.quarantine_groups import request_restore as request_group
+
+        try:
+            request_group(conn, settings, plan_id)
+        except QuarantineError as exc:
+            return _quarantine_page(request, str(exc), status_code=409)
+        return _quarantine_page(
+            request,
+            "Restore requested for the whole decision. Every file goes back "
+            "when you commit, or none of them do.",
+            view="waiting",
+        )
+
+    @app.post("/quarantine/decision/{plan_id}/cancel", response_class=HTMLResponse)
+    def quarantine_cancel_decision(request: Request, plan_id: str) -> HTMLResponse:
+        """Take the group request back before anything has moved."""
+        from librairy.quarantine_groups import cancel_restore
+
+        try:
+            cancel_restore(conn, plan_id)
+        except QuarantineError as exc:
+            return _quarantine_page(request, str(exc), status_code=409)
+        return _quarantine_page(request, "Restore request cancelled. Nothing moved.")
 
     @app.post("/quarantine/use-instead/{entry_id}", response_class=HTMLResponse)
     def quarantine_use_instead(request: Request, entry_id: int) -> HTMLResponse:

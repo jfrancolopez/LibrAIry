@@ -294,6 +294,7 @@ def _undo_op_unlocked(
     _record_undo(conn, entry, final_relpath, current_fingerprint, "ok")
     _update_item_after_undo(conn, entry, final_relpath, final_dest)
     _settle_quarantine_after_undo(conn, entry)
+    _unsettle_quarantine_after_undo(conn, entry, final_relpath)
     return UndoResult(history_id, "ok", final_relpath)
 
 
@@ -364,6 +365,35 @@ def _settle_quarantine_after_undo(conn: sqlite3.Connection, entry: sqlite3.Row) 
           AND item_id = (SELECT id FROM items WHERE root=? AND relpath=?)
         """,
         (utc_now(), entry["plan_id"], entry["src_root"], entry["src_relpath"]),
+    )
+
+
+def _unsettle_quarantine_after_undo(
+    conn: sqlite3.Connection, entry: sqlite3.Row, final_relpath: str
+) -> None:
+    """A restore that has been undone is a file in quarantine again.
+
+    The mirror of `_settle_quarantine_after_undo`, and it exists for the same
+    reason: the item row followed the file back and the `quarantine_entries`
+    row did not, so a file physically sitting in Quarantine was listed under
+    `Put back` with no way to ask for it again. Only reached when the undo has
+    actually put the file back in the quarantine root — the entry is not
+    "unrestored" because a plan was reversed, it is unrestored because the
+    file is held again.
+    """
+    if entry["action"] != "move" or entry["src_root"] != "quarantine":
+        return
+    item = conn.execute(
+        "SELECT id FROM items WHERE root='quarantine' AND relpath=?", (final_relpath,)
+    ).fetchone()
+    if item is None:
+        return
+    conn.execute(
+        """
+        UPDATE quarantine_entries SET restored_at=NULL
+        WHERE item_id=? AND restored_at IS NOT NULL
+        """,
+        (int(item["id"]),),
     )
 
 

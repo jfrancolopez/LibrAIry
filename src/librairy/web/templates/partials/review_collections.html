@@ -1,0 +1,56 @@
+{% if collections %}
+  {# A summary, never the files. Eighty-seven cards inlined here is the thing
+     this replaces — the counts come from SQL over the whole import and the
+     members live one click away, bounded and sectioned. #}
+  <section class="metric wide" id="review-collections">
+    <h2>Arrived together</h2>
+    <p class="muted">Folders you dropped into the inbox. A collection is a
+      folder and nothing else — it groups what you imported, and decides
+      nothing about any file in it.</p>
+    <ul class="collection-list">
+      {% for collection in collections %}
+        <li class="collection-card">
+          <div class="collection-head">
+            <h3><span class="mono">{{ collection.folder }}</span></h3>
+            <span class="muted">{{ collection.total }} file{{ 's' if collection.total != 1 else '' }}</span>
+          </div>
+          <ul class="facts">
+            {% if collection.ready %}
+              <li><span class="badge badge-info">{{ collection.ready }}</span> ready to file</li>
+            {% endif %}
+            {% if collection.choice %}
+              <li><span class="badge">{{ collection.choice }}</span> need your choice</li>
+            {% endif %}
+            {% if collection.unresolved %}
+              <li><span class="badge">{{ collection.unresolved }}</span> unresolved</li>
+            {% endif %}
+            {% if collection.waiting %}
+              <li><span class="badge badge-info">{{ collection.waiting }}</span> waiting for Commit</li>
+            {% endif %}
+            {% if collection.companions %}
+              {# Not unexplained files. A subtitle its video accounts for is
+                 counted here rather than under Unresolved, which is where it
+                 used to sit looking like work. #}
+              <li><span class="badge">{{ collection.companions }}</span>
+                companion{{ 's' if collection.companions != 1 else '' }}</li>
+            {% endif %}
+          </ul>
+          {% if collection.categories %}
+            <p class="collection-kinds muted">
+              {% for kind in collection.categories %}
+                {{ kind.label }} {{ kind.count }}{% if not loop.last %} · {% endif %}
+              {% endfor %}
+            </p>
+          {% endif %}
+          <a class="btn" href="{{ collection.href }}">Review collection</a>
+        </li>
+      {% endfor %}
+    </ul>
+    {% if collections_more %}
+      <p class="muted">{{ collections_more }} more
+        collection{{ 's' if collections_more != 1 else '' }} in the inbox. The
+        counts above cover only the ones listed; the whole list is in the file
+        list below.</p>
+    {% endif %}
+  </section>
+{% endif %}

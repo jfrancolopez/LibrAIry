@@ -91,6 +91,13 @@ def test_the_migration_keeps_every_ffprobe_row(tmp_path: Path) -> None:
         INSERT INTO items(id, root, relpath, size, mtime_ns, fingerprint, state,
           first_seen_at, last_seen_at)
           VALUES (1, 'library', 'a.mkv', 10, 0, 'the-bytes', 'committed', 'x', 'x');
+        -- Not what this test is about, and a real database from before 037
+        -- has one. Migration 040 adds a column to it, and a fixture that
+        -- omitted it was asserting that the upgrade works on a database
+        -- nobody has.
+        CREATE TABLE plans (id TEXT PRIMARY KEY, status TEXT NOT NULL,
+          plan_hash TEXT, created_at TEXT NOT NULL, approved_at TEXT,
+          finished_at TEXT);
         CREATE TABLE item_metadata (
           item_id INTEGER PRIMARY KEY REFERENCES items(id),
           fingerprint TEXT NOT NULL, tool TEXT NOT NULL,

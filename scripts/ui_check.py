@@ -360,6 +360,13 @@ PAGES = {
     # under each picture, the tray, and the selection controls. Finding 25 is
     # the burst in the dev fixture — stable, the same way `/items/1` is.
     "photo-group": "/review/audit/25/photos",
+    # One import, in detail: the section tabs, the bulk control, and fifty
+    # member rows with a destination each. `CameraCard-Aug24` is the dev
+    # fixture's camera card — twenty-seven files with three answers in them.
+    "collection": "/review/collection/CameraCard-Aug24",
+    # The same page for a folder whose companions are shown under the file
+    # that explains them, which is the one nested list on it.
+    "collection-companions": "/review/collection/Arrival%20(2016)",
     # A filed track with a stored catalog identity: five facts, a 128-character
     # fingerprint and two releases, which is the widest thing the item page has
     # ever had to hold on a phone.

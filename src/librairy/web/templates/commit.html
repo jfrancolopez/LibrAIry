@@ -204,6 +204,10 @@
                       </li>
                     {% endfor %}
                   </ul>
+                  {% if row.files_more %}
+                    <p class="muted">and {{ row.files_more }} more. Commit moves
+                      all {{ row.op_count }}.</p>
+                  {% endif %}
                 </details>
               {% endif %}
               {# Look at it before you commit it. Every other page that moves

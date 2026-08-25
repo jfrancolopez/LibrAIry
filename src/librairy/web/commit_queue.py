@@ -176,6 +176,12 @@ def queue_summary(conn: sqlite3.Connection) -> dict[str, Any]:
           SELECT p.id AS plan_id, o.id AS op_id, i.size AS bytes,
             CASE
               WHEN p.optimization_job_id IS NOT NULL THEN 'optimization'
+              -- Asked first, and off a column rather than off a shape. A whole
+              -- decision put back is many operations moving into the library,
+              -- which every rule below reads as a library correction — and
+              -- `Library corrections` is not what restoring eighteen
+              -- photographs is called.
+              WHEN p.restore_of_plan_id IS NOT NULL THEN 'restore'
               {_SET_ASIDE_CASE}
               WHEN p.audit_finding_id IS NOT NULL OR p.coherent=1 THEN 'correction'
               WHEN o.dest_root='quarantine' AND o.dest_relpath LIKE '_to-delete/%'
@@ -359,10 +365,14 @@ def _plan_rows(
 ) -> list[dict[str, Any]]:
     where = {
         CORRECTION: (
-            f"(p.audit_finding_id IS NOT NULL OR p.coherent=1) AND {_HAS_LIBRARY_MOVE}"
+            "p.restore_of_plan_id IS NULL"
+            f" AND (p.audit_finding_id IS NOT NULL OR p.coherent=1)"
+            f" AND {_HAS_LIBRARY_MOVE}"
         ),
         SET_ASIDE: (
-            f"(p.audit_finding_id IS NOT NULL OR p.coherent=1) AND NOT {_HAS_LIBRARY_MOVE}"
+            "p.restore_of_plan_id IS NULL"
+            f" AND (p.audit_finding_id IS NOT NULL OR p.coherent=1)"
+            f" AND NOT {_HAS_LIBRARY_MOVE}"
         ),
         #  `coherent=0` on both: a plan about a held file that has to run as a
         #  unit is a replacement, and it is counted and listed as a correction.
@@ -373,8 +383,9 @@ def _plan_rows(
             " AND o.dest_root='quarantine' AND o.dest_relpath LIKE '_to-delete/%'"
         ),
         RESTORE: (
-            "p.quarantine_entry_id IS NOT NULL AND p.coherent=0"
-            " AND NOT (o.dest_root='quarantine' AND o.dest_relpath LIKE '_to-delete/%')"
+            "(p.restore_of_plan_id IS NOT NULL OR"
+            " (p.quarantine_entry_id IS NOT NULL AND p.coherent=0"
+            "  AND NOT (o.dest_root='quarantine' AND o.dest_relpath LIKE '_to-delete/%')))"
         ),
         OPTIMIZATION: "p.optimization_job_id IS NOT NULL",
     }[kind]
@@ -382,6 +393,7 @@ def _plan_rows(
         f"""
         SELECT p.id AS plan_id, p.status, p.approved_at, p.coherent,
                p.audit_finding_id, p.quarantine_entry_id, p.optimization_job_id,
+               p.restore_of_plan_id,
                o.src_root, o.src_relpath, o.dest_root, o.dest_relpath, o.item_id,
                (SELECT COUNT(*) FROM plan_ops WHERE plan_id=p.id) AS op_count,
                (SELECT COALESCE(SUM(i2.size), 0) FROM plan_ops o2
@@ -413,7 +425,7 @@ def _plan_row(
     #  pressing Commit will do — a person reading it would not know a folder was
     #  being renamed at all. The finding is the decision, so it is what the card
     #  names.
-    folder = _folder_subject(conn, row, kind)
+    folder = _folder_subject(conn, row, kind) or _restore_group_subject(conn, row)
     reason = _reason(conn, row, kind)
     stale = ""
     if settings is not None and kind in (CORRECTION, SET_ASIDE):
@@ -482,6 +494,11 @@ def _plan_row(
                 #  calls. One implementation, one `plan_withdrawals` record.
                 f"/maintenance/optimization/{row['optimization_job_id']}/send-back"
                 if kind == OPTIMIZATION
+                #  A group restore has no single entry to cancel, because it
+                #  is not about a single file. It is recalled by the decision
+                #  it reverses, which is the thing that was pressed.
+                else f"/quarantine/decision/{row['restore_of_plan_id']}/cancel"
+                if row["restore_of_plan_id"]
                 else f"/quarantine/cancel/{row['quarantine_entry_id']}"
             )
         ),
@@ -506,11 +523,45 @@ def _plan_row(
         # is one decision and twelve moves, and "twelve files" is a number
         # until you can see which twelve.
         "files": _files(conn, row["plan_id"]) if int(row["op_count"]) > 1 else [],
+        #  What the bounded list above left out. Said rather than silently
+        #  truncated: a fold that shows twenty of ninety and does not say so is
+        #  a page quietly lying about the size of a decision.
+        "files_more": max(0, int(row["op_count"]) - FILES_SHOWN)
+        if int(row["op_count"]) > 1
+        else 0,
         #  So the card can show you the thing rather than its path. Resolved
         #  from the plan's first operation, which is the file the card is
         #  headed by; a decision over several files says so under Files and the
         #  preview follows the one being named.
         "item_id": row["item_id"],
+    }
+
+
+def _restore_group_subject(
+    conn: sqlite3.Connection, row: sqlite3.Row
+) -> dict[str, str] | None:
+    """A whole decision being put back, titled as one thing.
+
+    Without this the card is headed by whichever file happens to be the plan's
+    first operation, which describes one eighteenth of what Commit is about to
+    do — the same failure a folder rename had before `_folder_subject`.
+    """
+    from librairy.quarantine_groups import decision
+
+    origin = row["restore_of_plan_id"]
+    if not origin:
+        return None
+    found = decision(conn, str(origin))
+    if found is None:
+        return None
+    count = int(row["op_count"])
+    return {
+        "subject": f"Put back {count} file{'s' if count != 1 else ''} — "
+        f"{found.label.lower()}",
+        "is_file": "",
+        "verb": "Back to",
+        "current": "quarantine",
+        "after": "their original paths",
     }
 
 
@@ -630,6 +681,15 @@ def _preserved_original_fields(
 INTERNAL_LABEL = "LibrAIry's optimization workspace"
 
 
+#  How many of a decision's operations `Files` will print.
+#
+#  A folder rename is fourteen and reads fine. Putting a whole photo decision
+#  back is ninety, and one of those can be five hundred — at which point the
+#  fold is not a detail view, it is the page. The count beside the summary is
+#  the honest version of the rest, and it was always the number that mattered.
+FILES_SHOWN = 20
+
+
 def _files(conn: sqlite3.Connection, plan_id: str) -> list[dict[str, str]]:
     return [
         {
@@ -644,8 +704,8 @@ def _files(conn: sqlite3.Connection, plan_id: str) -> list[dict[str, str]]:
         }
         for op in conn.execute(
             "SELECT role, src_root, src_relpath, dest_relpath FROM plan_ops"
-            " WHERE plan_id=? ORDER BY seq",
-            (plan_id,),
+            " WHERE plan_id=? ORDER BY seq LIMIT ?",
+            (plan_id, FILES_SHOWN),
         )
     ]
 
@@ -1012,6 +1072,20 @@ def _reason(conn: sqlite3.Connection, row: sqlite3.Row, kind: str) -> str:
         return found["summary"]
     if kind == DELETE_QUEUE:
         return "You chose Delete queue. Nothing is deleted."
+    if kind == RESTORE and row["restore_of_plan_id"]:
+        #  A whole decision, so the sentence is about the decision. "You asked
+        #  for this to go back" over a card headed by ninety files describes
+        #  one of them.
+        from librairy.quarantine_groups import decision
+
+        found = decision(conn, str(row["restore_of_plan_id"]))
+        if found is not None:
+            return (
+                f"You asked for the {found.label.lower()} decision of "
+                f"{found.when[:10]} to be put back. Every file goes to the "
+                "path it was taken from, or none of them do."
+            )
+        return "You asked for a whole decision to be put back."
     if kind == RESTORE and row["quarantine_entry_id"]:
         return "You asked for this to go back."
     if kind == OPTIMIZATION:

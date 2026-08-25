@@ -64,6 +64,7 @@ from librairy.web.actionability import (
 from librairy.web.actionability import (
     LABEL as ACTION_LABEL,
 )
+from librairy.web.collections import collections_view
 from librairy.web.evidence import (
     confidence_caption,
     confidence_segments,
@@ -184,6 +185,10 @@ def review_data(
         "confident_ready": _confident_count(conn, filters),
         # A separate list for a separate question. See audit_view.
         **audit_groups,
+        #  What arrived together, as counts only. The members live on the
+        #  collection's own page — this block is four numbers per import and
+        #  never a row per file. See `librairy/inbox_collections.py`.
+        **collections_view(conn),
         # None until an audit has ever been asked for, which is what lets the
         # empty state distinguish "nothing is wrong" from "nobody has looked".
         "progress": audit_progress(conn),

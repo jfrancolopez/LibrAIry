@@ -9,7 +9,7 @@ from pathlib import Path
 from librairy.config import Settings
 
 LOGGER = logging.getLogger(__name__)
-SCHEMA_VERSION = 38
+SCHEMA_VERSION = 40
 
 
 class DatabaseVersionError(RuntimeError):
@@ -1048,6 +1048,61 @@ CREATE TABLE document_work_choices (
 );
 """
 
+MIGRATION_039 = """
+-- What LibrAIry knows about two files belonging together.
+--
+-- Companion handling has existed for a year as *classification logic*: the
+-- classifier worked out that `Movie.en.srt` names `Movie.mkv`, pointed the
+-- subtitle at the video's destination, and then forgot. Nothing else could
+-- ask. Item Detail could not say "this film has two subtitles and a poster",
+-- an inbox collection could not tell a companion from an unexplained file,
+-- and every future feature that needs the same answer would have had to work
+-- it out again from filenames.
+--
+-- The pair is stored canonically — `low_item_id < high_item_id` — so one
+-- relationship is one row and A-to-B cannot coexist with B-to-A. Direction,
+-- where a kind has one, is stored as a *value*: `companion_item_id` names
+-- which of the two is the companion. Reading the role off the column order
+-- would make it an accident of insertion.
+--
+-- `provenance` records why LibrAIry believes it, in the words that were
+-- actually true: `stem+suffix` for a subtitle that names its video,
+-- `folder-artwork` for a cover that its album agreed on. Never "AI said so" —
+-- nothing here is inferred by a model, and a deterministic rule that cannot
+-- say which rule it was is not evidence.
+CREATE TABLE item_relationships (
+  id                INTEGER PRIMARY KEY,
+  low_item_id       INTEGER NOT NULL REFERENCES items(id),
+  high_item_id      INTEGER NOT NULL REFERENCES items(id),
+  kind              TEXT NOT NULL CHECK (kind IN
+                      ('subtitle','lyrics','cue','artwork')),
+  companion_item_id INTEGER NOT NULL REFERENCES items(id),
+  provenance        TEXT NOT NULL,
+  created_at        TEXT NOT NULL,
+  CHECK (low_item_id < high_item_id),
+  UNIQUE (low_item_id, high_item_id, kind)
+);
+CREATE INDEX idx_item_relationships_low ON item_relationships(low_item_id);
+CREATE INDEX idx_item_relationships_high ON item_relationships(high_item_id);
+"""
+
+MIGRATION_040 = """
+-- The committed decision a restore is putting back.
+--
+-- One photo comparison can send ninety files to Quarantine as a single
+-- answer, and until now the only way to reverse it was ninety separate
+-- restores — each its own plan, its own Commit card and its own History
+-- line. The decision boundary that produced them was already recorded:
+-- `quarantine_entries.plan_id` says these files moved together *because of
+-- one thing*. This column is the other half of that sentence, on the plan
+-- that puts them back.
+--
+-- It is deliberately a plan id and not a date, a folder or a reason string.
+-- Those would group files that merely resemble each other; this groups files
+-- that actually left together.
+ALTER TABLE plans ADD COLUMN restore_of_plan_id TEXT REFERENCES plans(id);
+"""
+
 MIGRATIONS = {
     1: MIGRATION_001,
     2: MIGRATION_002,
@@ -1087,6 +1142,8 @@ MIGRATIONS = {
     36: MIGRATION_036,
     37: MIGRATION_037,
     38: MIGRATION_038,
+    39: MIGRATION_039,
+    40: MIGRATION_040,
 }
 
 

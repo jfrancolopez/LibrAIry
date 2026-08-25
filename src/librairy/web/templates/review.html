@@ -44,6 +44,7 @@
      both lists stay whole, both stay printable, both stay linkable, and each
      selection scope stays exactly where it was. #}
   {% set jump = [
+       ('#review-collections', 'Arrived together', collections|length),
        ('#review-list', 'New files', total),
        ('#library-audit', 'Existing library', audit_open),
        ('#storage-opportunities', 'Storage', storage.count or 0),
@@ -215,6 +216,8 @@
       {% endfor %}
     </section>
   {% endif %}
+
+  {% include "partials/review_collections.html" %}
 
   {# One bar for everything you do to this list — how it is sorted, what is
      filtered out of it, and what happens to a selection. Three separate bands

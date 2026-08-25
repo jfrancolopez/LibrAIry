@@ -119,6 +119,23 @@
     {% if evidence_error %}<span class="status warn">Evidence unavailable: {{ evidence_error }}</span>{% endif %}
     {% for entry in evidence %}<span><span class="badge badge-info">{{ entry.source }}</span> {{ entry.field }} {{ entry.detail }} {{ '%.2f'|format(entry.weight) }}</span>{% else %}<span class="muted">No evidence.</span>{% endfor %}
   </section>
+  {% if related %}
+    {# Not "files in the same folder", which is what Siblings below says. These
+       are the ones LibrAIry recorded as belonging with this file, and it can
+       say why for each of them. #}
+    <section class="metric wide" id="related-files">
+      <h2>Related files</h2>
+      <ul class="facts">
+        {% for mate in related %}
+          <li>
+            <a href="/items/{{ mate.item_id }}" class="mono">{{ mate.name }}</a>
+            <span class="badge">{{ mate.label }}</span>
+            <span class="muted">{% if mate.belongs_to %}this file belongs to it{% else %}{{ mate.provenance }}{% endif %}</span>
+          </li>
+        {% endfor %}
+      </ul>
+    </section>
+  {% endif %}
   <section class="metric wide">
     <h2>Siblings</h2>
     {% for sibling in siblings %}<span><a href="/items/{{ sibling.id }}">{{ sibling.relpath }}</a></span>{% else %}<span class="muted">No siblings.</span>{% endfor %}

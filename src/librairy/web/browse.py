@@ -460,7 +460,39 @@ def item_detail(conn: sqlite3.Connection, settings: Settings, item_id: int) -> d
         # only — this page renders the stored answer and never makes a lookup
         # happen. `None` for everything that is not audio.
         "music_identity": music_identity(conn, settings, row),
+        #  Files LibrAIry has recorded as belonging with this one — subtitles,
+        #  lyrics, a cue sheet, the album's cover. Read from what analysis
+        #  worked out and wrote down, never discovered by looking at the
+        #  directory now: a GET that scans a folder to draw a page is a GET
+        #  that stats a NAS once per neighbour.
+        "related": related_files(conn, item_id),
     }
+
+
+def related_files(conn: sqlite3.Connection, item_id: int) -> list[dict[str, str]]:
+    """The companions of this file, as the page prints them.
+
+    Only the ones that are actually there. The relationship row survives a file
+    going away — it is a record of what happened — but offering "Related files:
+    Movie.en.srt" for a subtitle that is not on disk describes a library that
+    does not exist.
+    """
+    from librairy.relationships import present
+
+    return [
+        {
+            "item_id": str(mate.item_id),
+            "name": mate.name,
+            "relpath": mate.relpath,
+            "label": mate.label,
+            "provenance": mate.provenance,
+            #  Which way round it is. "Subtitle" on the film's page and on the
+            #  subtitle's page would say the same word about two different
+            #  facts; the second one is *what this file belongs to*.
+            "belongs_to": not mate.companion,
+        }
+        for mate in present(conn, item_id)
+    ]
 
 
 def music_identity(

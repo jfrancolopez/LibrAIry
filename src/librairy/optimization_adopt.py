@@ -89,6 +89,23 @@ NEVER_CARRIED = (
     "optimization_opportunities",
     "backup_queue",
     "proposals",
+    #  Companion relationships — a subtitle, a cue sheet, a cover. Not carried,
+    #  and this one is a real judgement rather than an obvious no.
+    #
+    #  Against carrying: the row names two specific item ids, and the result of
+    #  an adoption is a different item. Writing a row that says the new file is
+    #  the one the subtitle names would be asserting a pairing nothing has
+    #  established about the new file.
+    #
+    #  What it costs, stated rather than hidden: after an adoption the result's
+    #  Item Detail shows no related files until analysis pairs them again. It
+    #  costs nothing that moves a file — companion *filing* still works off the
+    #  classifier's own matching, which reads filenames and not this table, so
+    #  no subtitle is left behind by a commit because of this.
+    #
+    #  Carrying it belongs with making this table the source of companion
+    #  filing, which is a deliberate pass and not a line added here.
+    "item_relationships",
 )
 
 # What *is* carried, and it is empty on purpose.

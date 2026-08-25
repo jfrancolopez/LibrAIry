@@ -177,7 +177,9 @@ def _days(
             by_day[day] = bucket
             days.append(bucket)
         group["time"] = str(group.get("ts") or "")[11:16]
-        group["summary"] = _plan_summary(group["entries"])
+        group["summary"] = _plan_summary(
+            group["entries"], _restored_decision(conn, group["plan_id"])
+        )
         group["correction"] = _is_correction(group["entries"])
         group["adoption"] = _is_adoption(group["entries"])
         group["undo"] = _plan_undo(
@@ -229,10 +231,39 @@ def _is_adoption(entries: list[dict[str, object]]) -> bool:
     )
 
 
-def _plan_summary(entries: list[dict[str, object]]) -> str:
+def _restored_decision(conn: sqlite3.Connection, plan_id: object) -> str:
+    """What kind of decision this plan put back, when it put one back.
+
+    The journal stays precise — eighteen rows, eighteen paths, eighteen
+    fingerprints. This is presentation: "Restored 18 files from a previous
+    similar-files decision" is the sentence a person can act on, and it is
+    read off the plan's own provenance rather than guessed from the paths.
+    """
+    if not plan_id:
+        return ""
+    from librairy.quarantine_groups import ORIGIN_LABEL, restored_by
+
+    origin = restored_by(conn, str(plan_id))
+    if not origin:
+        return ""
+    found = conn.execute(
+        "SELECT f.kind FROM plans p LEFT JOIN audit_findings f ON f.id = p.audit_finding_id"
+        " WHERE p.id=?",
+        (origin,),
+    ).fetchone()
+    kind = str(found["kind"] or "") if found else ""
+    return ORIGIN_LABEL.get(kind, "a previous").lower()
+
+
+def _plan_summary(entries: list[dict[str, object]], restored: str = "") -> str:
     """What this plan did, in the words the buttons that caused it used."""
     count = len(entries)
     files = "file" if count == 1 else "files"
+    if restored:
+        #  One sentence for one decision. Before this it read "Filed 18 files",
+        #  which is true of the moves and false about what happened: nothing
+        #  was filed, a decision was reversed.
+        return f"Restored {count} {files} from {restored} decision"
     if _is_adoption(entries):
         #  Named before the generic branches below, which would otherwise call
         #  it "Filed 1 file, quarantined 1" — two true halves that together

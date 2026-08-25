@@ -80,6 +80,17 @@ CLASSIFIED = {
         " fingerprint still matches, so a carried copy would be a dead row"
         " that looks like evidence. Re-identifying is one deliberate action.",
     ),
+    "item_relationships": (
+        "identity", "no",
+        "A companion pairing: this subtitle names that video, this cover"
+        " belongs to that album. Not a claim about bytes — but it names two"
+        " specific item ids, and an adoption's result is a different item, so"
+        " a carried row would assert a pairing nothing has established about"
+        " the new file. The cost is presentation only: companion *filing*"
+        " reads the classifier's filename matching and not this table, so no"
+        " sidecar is left behind by a commit. Carrying it belongs with making"
+        " this table the source of that filing.",
+    ),
     "backup_queue": (
         "byte", "no",
         "A request to copy specific bytes to a remote. The executor makes one"

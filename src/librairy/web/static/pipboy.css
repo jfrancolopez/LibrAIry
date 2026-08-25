@@ -3249,3 +3249,70 @@ summary.timeline-head::-webkit-details-marker { display: none; }
    and the whole card scrolled sideways. Nothing about it was visible until it
    was opened, which is why every DOM assertion in the suite missed it. */
 .button-row > details { min-width: 0; max-width: 100%; }
+
+/* What arrived together. Cards on Review are a *summary* — a name, a handful
+   of counts, and a way in — so they stay small enough that a dozen imports
+   read as a list rather than a page. The members live on the collection's own
+   page, and there is no width at which eighty-seven of them belong here. */
+.collection-list { list-style: none; padding: 0; margin: var(--space-2) 0;
+  display: grid; gap: var(--space-2);
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+}
+.collection-card {
+  border: var(--border-thin) solid var(--border);
+  border-radius: var(--radius-ui);
+  padding: var(--space-2);
+  background: var(--bg-metric);
+  display: grid; gap: var(--space-1); align-content: start;
+}
+.collection-head {
+  display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-2);
+  align-items: baseline; justify-content: space-between;
+}
+.collection-head h3 { margin: 0; font-size: var(--text-md); overflow-wrap: anywhere; }
+.collection-kinds { margin: 0; font-size: var(--text-sm); }
+
+/* One member of an import. A list and not a grid: these are files being read
+   rather than pictures being compared, and the useful thing about each of
+   them is a path and a destination, both of which want the width. */
+.collection-members { list-style: none; padding: 0; margin: var(--space-2) 0; }
+.collection-member {
+  padding: var(--space-1) 0;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--text-sm);
+}
+.collection-member > p { margin: 0; overflow-wrap: anywhere; }
+/* A subtitle sits under the film that explains it, indented once. Still its
+   own file, still its own operation — the indent says why it is here, it does
+   not claim the two are one thing. */
+.collection-related {
+  list-style: none; margin: calc(var(--space-1) / 2) 0 0;
+  padding-left: var(--space-2);
+  border-left: 1px solid var(--border);
+  display: grid; gap: calc(var(--space-1) / 2);
+}
+
+/* One committed decision that set aside several files. A card rather than a
+   row: the useful facts are a count, a date and what is left of it, and the
+   filenames are behind a fold because five hundred of them is not a summary. */
+.decision-card {
+  border: var(--border-thin) solid var(--border);
+  border-radius: var(--radius-ui);
+  padding: var(--space-2);
+  margin: var(--space-2) 0;
+  background: var(--bg-metric);
+  display: grid; gap: var(--space-1); align-content: start;
+}
+.decision-head {
+  display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-2);
+  align-items: baseline; justify-content: space-between;
+}
+.decision-head h3 { margin: 0; font-size: var(--text-md); }
+.decision-card > p { margin: 0; font-size: var(--text-sm); }
+.decision-files > summary { cursor: pointer; padding: var(--space-1) 0; font-size: var(--text-sm); }
+
+/* The sentence beside a bulk button. `.button-row` pins its children at
+   `flex: 0 0 auto` so they line up with real buttons, which means a sentence
+   in one cannot shrink — at 375px it ran 156px past the edge. It takes a full
+   row of its own instead, where it can wrap like prose. */
+.collection-bulk > .muted { flex: 1 1 100%; font-size: var(--text-sm); }

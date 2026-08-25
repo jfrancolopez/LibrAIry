@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block content %}
+  <header class="page-head">
+    <div>
+      <h1>{{ collection.total }} file{{ 's' if collection.total != 1 else '' }} that
+        arrived together</h1>
+      <p class="muted">Imported from <span class="mono">Inbox/{{ collection.folder }}/</span></p>
+    </div>
+  </header>
+
+  {# What a collection is and is not, said once on the page that shows one.
+     The counts below are the *shape* of an import — they are not a decision,
+     and pressing anything here still decides one file at a time. #}
+  <p>These arrived in one folder. LibrAIry has not decided anything about them
+    as a group: a camera card can hold photographs, video and files it cannot
+    name, and each of those is answered on its own.</p>
+
+  <section class="metric wide">
+    <h2>What is in this import</h2>
+    <ul class="facts">
+      <li><span class="badge badge-info">{{ collection.total }}</span> files</li>
+      {% for kind in collection.categories %}
+        <li><span class="badge badge-info">{{ kind.count }}</span> {{ kind.label }}</li>
+      {% endfor %}
+      {% if collection.companions %}
+        <li><span class="badge">{{ collection.companions }}</span>
+          companion{{ 's' if collection.companions != 1 else '' }} — subtitles,
+          lyrics, cue sheets and artwork that another file here explains</li>
+      {% endif %}
+    </ul>
+  </section>
+
+  <div class="photo-controls">
+    <span class="muted">Show</span>
+    {% for part in collection.sections %}
+      {% if not part.count %}
+      {% elif part.current %}
+        <span class="badge">{{ part.label }} {{ part.count }}</span>
+      {% else %}
+        <a href="{{ part.href }}">{{ part.label }} {{ part.count }}</a>
+      {% endif %}
+    {% endfor %}
+  </div>
+
+  <section class="metric wide">
+    <h2>{{ collection.section_label }}</h2>
+    <p class="muted">{{ collection.section_note }}</p>
+
+    {% if collection.section == 'ready' and collection.ready %}
+      {# Bulk here applies answers that already exist. It cannot reach a file
+         that needs a choice, and it cannot reach one with no destination —
+         `ready_proposal_ids` resolves the list from the database at the moment
+         the button is pressed, not from the page. #}
+      <form method="post" action="/review/collection/{{ collection.folder|urlencode }}/approve"
+            class="button-row collection-bulk">
+        <input type="hidden" name="csrf_token" value="{{ request.state.session.csrf_token }}">
+        <button type="submit" class="btn-primary">Approve {{ collection.ready }} ready
+          file{{ 's' if collection.ready != 1 else '' }}</button>
+        <span class="muted">Applies the destinations already worked out. Nothing
+          moves until you commit.</span>
+      </form>
+    {% endif %}
+
+    <ul class="collection-members">
+      {% for row in collection.rows %}
+        <li class="collection-member">
+          <p class="mono">{{ row.display_name }}</p>
+          <p class="muted">
+            {{ row.category_label }}{% if row.size_label %} · {{ row.size_label }}{% endif %}
+            {%- if row.proposal_id %} · {{ row.percent }}%{% endif %}
+          </p>
+          {% if row.dest_relpath %}
+            <p class="mono muted">→ {{ row.dest_root }}/{{ row.dest_relpath }}</p>
+          {% else %}
+            <p class="muted">No destination yet.</p>
+          {% endif %}
+          {% if row.related %}
+            {# Shown under the file that explains them. They are still real
+               files with their own operations — this says why they are here,
+               it does not merge them into one. #}
+            <ul class="collection-related">
+              {% for mate in row.related %}
+                <li><span class="mono">{{ mate.name }}</span>
+                  <span class="badge">{{ mate.label }}</span></li>
+              {% endfor %}
+            </ul>
+          {% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+
+    {% if collection.page_count > 1 %}
+      <div class="button-row">
+        {% if collection.has_prev %}<a class="btn" href="{{ collection.prev_href }}">Previous</a>{% endif %}
+        <span class="muted">{{ collection.range_start }}–{{ collection.range_end }}
+          of {{ collection.section_total }} · page {{ collection.page }} of
+          {{ collection.page_count }}</span>
+        {% if collection.has_next %}<a class="btn" href="{{ collection.next_href }}">Next</a>{% endif %}
+      </div>
+    {% endif %}
+  </section>
+
+  <p><a href="/review#review-collections">Back to Review</a></p>
+{% endblock %}

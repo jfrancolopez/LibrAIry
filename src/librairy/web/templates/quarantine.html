@@ -109,6 +109,70 @@
     {% endif %}
   </section>
 
+  {% if decisions %}
+    {# One answer, however many files it moved. The rows below are still there
+       and still precise; this is the boundary the decision was made at, which
+       is the thing a file-at-a-time list cannot give back. #}
+    <section class="metric wide" id="quarantine-decisions">
+      <h2>Whole decisions</h2>
+      <p class="muted">These files were set aside together, by one answer you
+        gave. Putting the answer back is one decision too — nothing moves until
+        you commit it.</p>
+      {% for decision in decisions %}
+        <article class="decision-card">
+          <div class="decision-head">
+            <h3>{{ decision.label }}</h3>
+            <span class="muted">{{ decision.when }}</span>
+          </div>
+          <p>
+            {% if decision.partly_restored %}
+              <strong>{{ decision.held }} still held</strong>,
+              {{ decision.restored }} already put back
+            {%- else %}
+              <strong>{{ decision.held }} file{{ 's' if decision.held != 1 else '' }}
+                set aside together</strong>
+            {%- endif %}
+            {%- if decision.gone %}, {{ decision.gone }} no longer present{% endif %}.
+          </p>
+          {% if decision.names %}
+            <details class="decision-files">
+              <summary>Show files</summary>
+              <ul class="sample-moves">
+                {% for name in decision.names %}
+                  <li class="mono">{{ name }}</li>
+                {% endfor %}
+              </ul>
+              {% if decision.more %}
+                <p class="muted">and {{ decision.more }} more.</p>
+              {% endif %}
+            </details>
+          {% endif %}
+          {% if decision.waiting %}
+            <p class="muted">A restore of this decision is waiting for Commit.</p>
+            <form method="post" action="/quarantine/decision/{{ decision.plan_id }}/cancel">
+              <input type="hidden" name="csrf_token" value="{{ request.state.session.csrf_token }}">
+              <button type="submit" class="btn-ghost">Cancel request</button>
+            </form>
+          {% elif decision.restorable %}
+            <form method="post" action="/quarantine/decision/{{ decision.plan_id }}/restore">
+              <input type="hidden" name="csrf_token" value="{{ request.state.session.csrf_token }}">
+              <button type="submit" class="btn-primary">
+                {% if decision.partly_restored %}
+                  Restore the remaining {{ decision.held }}
+                {% else %}
+                  Restore all {{ decision.held }}
+                {% endif %}
+              </button>
+              <span class="muted">Nothing moves yet. This becomes one decision
+                in Commit, and every file goes back to the path it came from —
+                or none of them do.</span>
+            </form>
+          {% endif %}
+        </article>
+      {% endfor %}
+    </section>
+  {% endif %}
+
   <section class="metric wide">
     {# One tab per real state, counted in SQL over the whole table rather than
        by measuring a list. The counts stay true at a million rows because
