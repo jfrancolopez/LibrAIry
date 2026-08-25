@@ -586,6 +586,7 @@ def build_app(root: Path):  # noqa: ANN201
     _identified_recordings(conn)
     _agreeing_loose_tracks(conn)
     _a_file_nobody_scanned(settings)
+    _four_manuals_already_filed(conn, settings)
     _an_imported_camera_card(conn, settings)
     _an_imported_film_with_companions(conn, settings)
 
@@ -855,6 +856,80 @@ def _documents_in_the_inbox(conn, settings: Settings) -> None:  # noqa: ANN001
         facts_for_item(
             conn, settings, int(row["id"]), settings.library_dir / str(row["relpath"])
         )
+
+
+def _four_manuals_already_filed(conn, settings: Settings) -> None:  # noqa: ANN001
+    """Four Honda manuals decided and committed, and a fifth still arriving.
+
+    Written by *making the decisions* — approve, plan, commit — rather than by
+    inserting rows into `decision_events`. A fixture that seeded the pattern
+    would prove the page and not the learning: the point under test is that an
+    ordinary filing teaches something, and that only a completed one does.
+    """
+    from librairy.executor import execute_plan  # noqa: PLC0415
+    from librairy.lifecycle import transition_item  # noqa: PLC0415
+    from librairy.planner import OperationSpec, approve_plan, create_plan  # noqa: PLC0415
+    from librairy.proposals import upsert_proposal  # noqa: PLC0415
+    from librairy.web.review import ReviewFilters, apply_review_action  # noqa: PLC0415
+    from tests.support.documents import build_pdf  # noqa: PLC0415
+
+    def manual(name: str, title: str) -> None:
+        (settings.inbox_dir / name).write_bytes(
+            build_pdf(
+                title=title,
+                author="Honda Motor Co.",
+                lines=(title, "American Honda Motor Co., Inc."),
+                pages=2,
+            )
+        )
+
+    filed = [
+        ("civic-2019.pdf", "2019 Civic Owner's Manual"),
+        ("accord-2020.pdf", "2020 Accord Owner's Manual"),
+        ("crv-2021.pdf", "2021 CR-V Owner's Manual"),
+        ("hrv-2022.pdf", "2022 HR-V Owner's Manual"),
+    ]
+    for name, title in filed:
+        manual(name, title)
+    #  And one that has not been decided yet, whose own guess is the generic
+    #  dated branch — so the suggestion has something to disagree with.
+    manual("pilot-2025.pdf", "2025 Pilot Service Manual")
+    scan_root(conn, "inbox", settings.inbox_dir, settings)
+
+    for name, title in [*filed, ("pilot-2025.pdf", "2025 Pilot Service Manual")]:
+        row = conn.execute(
+            "SELECT id FROM items WHERE root='inbox' AND relpath=?", (name,)
+        ).fetchone()
+        if row is None:
+            continue
+        settled = name != "pilot-2025.pdf"
+        dest = (
+            f"Documents/Manuals/Honda Motor Co/{title}.pdf"
+            if settled
+            else f"Documents/2025/{title}.pdf"
+        )
+        proposal = upsert_proposal(
+            conn,
+            item_id=int(row["id"]),
+            category="documents",
+            clean_name=f"{title}.pdf",
+            dest_relpath=dest,
+            confidence=0.88,
+            evidence=[
+                EvidenceEntry("heuristic", "category", "document extension", 0.88),
+                EvidenceEntry("document", "type", "Manual", 0.85),
+                EvidenceEntry("document", "organization", "Honda Motor Co.", 0.85),
+            ],
+        )
+        transition_item(conn, int(row["id"]), "proposed")
+        if not settled:
+            continue
+        apply_review_action(conn, "approve", ReviewFilters(), proposal_ids=[proposal])
+        plan = create_plan(
+            conn, [OperationSpec("move", name, "library", dest)], settings
+        )
+        approve_plan(conn, plan, settings)
+        execute_plan(conn, plan, settings)
 
 
 def _an_imported_camera_card(conn, settings: Settings) -> None:  # noqa: ANN001

@@ -80,6 +80,15 @@ CLASSIFIED = {
         " fingerprint still matches, so a carried copy would be a dead row"
         " that looks like evidence. Re-identifying is one deliberate action.",
     ),
+    "decision_events": (
+        "neither", "no",
+        "What the owner chose and under what cues. `item_id` points at the file"
+        " the decision was *about*, which is the original — the optimized copy"
+        " was never the subject of that decision. Carrying it would claim"
+        " somebody made a choice about a file that did not exist yet. The"
+        " lesson itself is unaffected either way: it is keyed by cues, not by"
+        " item, and it still describes the same kind of file.",
+    ),
     "item_relationships": (
         "identity", "no",
         "A companion pairing: this subtitle names that video, this cover"

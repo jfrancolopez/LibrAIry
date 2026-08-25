@@ -13,6 +13,8 @@ from pathlib import Path
 from librairy.attributes import normalize_placed_file, parse_mode
 from librairy.backup import enqueue_backup_item
 from librairy.config import Settings
+from librairy.decisions import settle as settle_decision
+from librairy.decisions import settle_plan as settle_decision_plan
 from librairy.fingerprint import blake2b_file
 from librairy.lifecycle import assert_transition
 from librairy.locks import acquire_lock
@@ -89,6 +91,9 @@ def execute_plan(conn: sqlite3.Connection, plan_id: str, settings: Settings) -> 
     # door, so there is one place to forget rather than two. All three are
     # no-ops for an ordinary inbox plan.
     settle_quarantine_plan(conn, plan_id)
+    # And the decision the plan carried out, where one was recorded against
+    # the whole plan rather than against a file. A no-op for everything else.
+    settle_decision_plan(conn, plan_id)
     # A whole decision put back at once. It settles by reading the plan's own
     # operations, so a member that was skipped does not have its entry marked
     # as restored — the file did not move.
@@ -514,6 +519,11 @@ def _execute_op(conn: sqlite3.Connection, row: sqlite3.Row, settings: Settings) 
     _journal(conn, row, final_relpath, row["src_fingerprint"], "ok")
     _move_item_row(conn, row, final_relpath, final_dest)
     _mark_proposal_committed(conn, row["item_id"])
+    #  The other half of a learned decision: the file actually moved. Stamped
+    #  here, per operation, after the bytes are verified — a plan that half ran
+    #  teaches only the half that ran, and a decision that never completed
+    #  teaches nothing at all.
+    settle_decision(conn, row["item_id"], str(row["plan_id"]))
     if row["dest_root"] == "library":
         enqueue_backup_item(
             conn,

@@ -106,6 +106,10 @@ NEVER_CARRIED = (
     #  Carrying it belongs with making this table the source of companion
     #  filing, which is a deliberate pass and not a line added here.
     "item_relationships",
+    #  A record of what the owner chose about the *original*. The result was
+    #  not the subject of that decision and copying the row would say it was.
+    #  Nothing is lost: the lesson is keyed by cues, not by item.
+    "decision_events",
 )
 
 # What *is* carried, and it is empty on purpose.

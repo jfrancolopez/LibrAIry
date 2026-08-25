@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block content %}
+  <header class="page-head">
+    <div>
+      <h1>What LibrAIry has learned</h1>
+      <p class="muted">Patterns built from decisions you made and committed.</p>
+    </div>
+  </header>
+
+  {# The whole point of this page is that nothing here is a secret. A
+     suggestion in Review should never be the first time somebody hears that a
+     pattern exists, and turning one off should not require finding a file it
+     happens to fire on. #}
+  <p>These are <strong>suggestions only</strong>. Nothing on this page approves
+    anything, files anything or moves a file. When one of them matches a file
+    in Review, LibrAIry offers the answer and you decide — exactly as before.</p>
+
+  {% if patterns %}
+    <ul class="learned-list">
+      {% for pattern in patterns %}
+        <li class="learned-row{{ ' is-off' if pattern.suppressed else '' }}">
+          <div class="learned-what">
+            <p>{{ pattern.described or 'Any file' }}</p>
+            <p class="mono">→ {{ pattern.outcome }}/</p>
+            {% if pattern.narrower %}
+              {# How the lesson was learned, not separate beliefs. Turning the
+                 row off turns all of them off. #}
+              <p class="muted">also matched more narrowly:
+                {% for detail in pattern.narrower %}{{ detail }}{% if not loop.last %}; {% endif %}{% endfor %}</p>
+            {% endif %}
+          </div>
+          <p class="muted">
+            {{ pattern.support }} confirmation{{ 's' if pattern.support != 1 else '' }} ·
+            {{ pattern.contradictions }} time{{ 's' if pattern.contradictions != 1 else '' }}
+            you chose differently
+            {%- if pattern.suppressed %} · <strong>not being suggested</strong>{% endif %}
+          </p>
+          <form method="post" action="/review/learned/suppress">
+            <input type="hidden" name="csrf_token" value="{{ request.state.session.csrf_token }}">
+            <input type="hidden" name="signature" value="{{ pattern.signature }}">
+            {% if pattern.suppressed %}
+              <input type="hidden" name="restore" value="1">
+              <button type="submit" class="btn">Suggest this again</button>
+            {% else %}
+              <button type="submit" class="btn-ghost">Don't suggest this pattern</button>
+            {% endif %}
+          </form>
+        </li>
+      {% endfor %}
+    </ul>
+    {# A placeholder in a destination is the difference between a policy and a
+       coincidence, so it is shown rather than resolved away. #}
+    <p class="muted">A name in braces — <span class="mono">{year}</span>,
+      <span class="mono">{organization}</span> — is filled in from the file being
+      filed, so a pattern learned from 2024 documents does not file a 2026 one
+      under 2024.</p>
+  {% else %}
+    <p class="muted">Nothing yet. LibrAIry starts suggesting once you have made
+      the same choice for three similar files and committed them — one is a
+      precedent, two is a coincidence.</p>
+  {% endif %}
+
+  <p><a href="/review">Back to Review</a></p>
+{% endblock %}

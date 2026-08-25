@@ -99,6 +99,9 @@ def test_fresh_db_migrates_to_current_schema(tmp_path: Path) -> None:
         # Companion relationships, reachable from either side of the pair.
         "idx_item_relationships_low",
         "idx_item_relationships_high",
+        # Decision memory, looked up by cue signature and settled by plan.
+        "idx_decision_events_signature",
+        "idx_decision_events_plan",
     }
 
     columns = {row[1] for row in conn.execute("PRAGMA table_info(provider_status)")}
@@ -166,6 +169,10 @@ def test_migration_011_closes_proposals_for_files_already_filed(tmp_path: Path) 
         DROP TABLE IF EXISTS audit_runs;
         DROP TABLE IF EXISTS optimization_jobs;
         DROP TABLE IF EXISTS optimization_opportunities;
+        DROP INDEX IF EXISTS idx_decision_events_signature;
+        DROP INDEX IF EXISTS idx_decision_events_plan;
+        DROP TABLE IF EXISTS decision_events;
+        DROP TABLE IF EXISTS decision_suppressions;
         DROP INDEX IF EXISTS idx_item_relationships_low;
         DROP INDEX IF EXISTS idx_item_relationships_high;
         DROP TABLE IF EXISTS item_relationships;

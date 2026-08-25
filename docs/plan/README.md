@@ -148,6 +148,28 @@ src/librairy/
 
 Processes communicate only through SQLite (WAL) and the filesystem. No queues, no brokers.
 
+## Decision memory (permanent principle, added 2026-08-25)
+
+LibrAIry learns from explicit decisions that **completed**, and uses what it
+learns to *suggest*. It never uses it to act. Five kinds of opinion, in a fixed
+order:
+
+    1. safety invariant       never overwrite, never delete, revalidate hashes
+    2. explicit user policy   music.preferred_format = mp3
+    3. strong current evidence   a catalog identity, an ISBN, a DOI
+    4. learned suggestion     "you filed six Honda manuals here"
+    5. weak heuristic cue     a filename that looks like a year
+
+A learned pattern is (4) on purpose: it is a statement about files that
+*resembled* this one, and (3) is a statement about this one. The invariant is
+that **learned behaviour accelerates Review; it does not bypass Review** — no
+suggestion approves anything, builds a plan, or moves a file.
+
+See [../decision-memory.md](../decision-memory.md) for what is learned, what is
+deliberately not, and the suggest → promote → auto-apply roadmap. Phase 1
+(suggest only) shipped at schema 41; phases 2 and 3 are future work and still
+converge at Commit.
+
 ## Document conventions
 
 - Backlog item IDs: `P<phase>-<nn>` (e.g. `P4-03`). Commit messages during execution: `P4-03: <title>`.

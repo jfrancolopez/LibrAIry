@@ -9,7 +9,7 @@ from pathlib import Path
 from librairy.config import Settings
 
 LOGGER = logging.getLogger(__name__)
-SCHEMA_VERSION = 40
+SCHEMA_VERSION = 41
 
 
 class DatabaseVersionError(RuntimeError):
@@ -1103,6 +1103,61 @@ MIGRATION_040 = """
 ALTER TABLE plans ADD COLUMN restore_of_plan_id TEXT REFERENCES plans(id);
 """
 
+MIGRATION_041 = """
+-- What the owner actually decided, and what was true about the file when they
+-- decided it.
+--
+-- History already records what *moved*: a source, a destination, a hash and an
+-- outcome. It cannot answer the question this table exists for — *why would
+-- somebody choose that again* — because the cues that made the choice are not
+-- in it, and re-deriving them later would re-classify the file with today's
+-- rules rather than the ones that were in front of the person at the time.
+--
+-- So this stores the cues and the answer, and nothing else. Whether the
+-- decision *completed* is not stored: it is read from the journal, by plan,
+-- which is also where a later Undo shows up. One record of what happened, one
+-- record of what was chosen, and no third place for them to disagree.
+--
+-- `features` is normalized cues — a document type, an organization, a
+-- category, a set of formats. Never document text, never a filename as an
+-- opaque equality, never anything from a page of a bank statement.
+--
+-- `outcome` is a *template* wherever the destination policy is one:
+-- `Documents/Financial/{year}` rather than `Documents/Financial/2024`, so four
+-- statements from 2024 do not teach LibrAIry to file a 2026 statement under
+-- 2024.
+CREATE TABLE decision_events (
+  id           INTEGER PRIMARY KEY,
+  kind         TEXT NOT NULL,
+  -- The canonical form of `features`, which is what a lookup matches on.
+  signature    TEXT NOT NULL,
+  -- How many cues had to agree. A narrower pattern beats a broader one by
+  -- this number and by nothing else — there is no score here.
+  specificity  INTEGER NOT NULL,
+  features     TEXT NOT NULL,
+  outcome      TEXT NOT NULL,
+  item_id      INTEGER REFERENCES items(id),
+  -- The plan that carried it out, stamped when the file actually moved. NULL
+  -- means one of two things and they are told apart by `settled_at`: not yet
+  -- committed, or a decision that never had a plan because the answer was to
+  -- leave everything where it is.
+  plan_id      TEXT REFERENCES plans(id),
+  dest_relpath TEXT,
+  decided_at   TEXT NOT NULL,
+  settled_at   TEXT
+);
+CREATE INDEX idx_decision_events_signature ON decision_events(signature);
+CREATE INDEX idx_decision_events_plan ON decision_events(plan_id);
+
+-- "Do not suggest this again." Not a deletion: the decisions that formed the
+-- pattern are still what happened, and still show in History. This says the
+-- owner does not want to be offered the conclusion.
+CREATE TABLE decision_suppressions (
+  signature  TEXT PRIMARY KEY,
+  created_at TEXT NOT NULL
+);
+"""
+
 MIGRATIONS = {
     1: MIGRATION_001,
     2: MIGRATION_002,
@@ -1144,6 +1199,7 @@ MIGRATIONS = {
     38: MIGRATION_038,
     39: MIGRATION_039,
     40: MIGRATION_040,
+    41: MIGRATION_041,
 }
 
 

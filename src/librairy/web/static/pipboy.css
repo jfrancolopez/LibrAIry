@@ -3316,3 +3316,28 @@ summary.timeline-head::-webkit-details-marker { display: none; }
    in one cannot shrink — at 375px it ran 156px past the edge. It takes a full
    row of its own instead, where it can wrap like prose. */
 .collection-bulk > .muted { flex: 1 1 100%; font-size: var(--text-sm); }
+
+/* A learned answer on a Review row. Quieter than the duplicate and similar
+   banners above it on purpose: those are facts about the file, and this is a
+   habit — it should read as an offer, not as a finding. */
+.row-suggestion {
+  margin: var(--space-1) 0 var(--space-2);
+  padding-left: var(--space-2);
+  border-left: 2px solid var(--border);
+}
+.row-suggestion > p { margin: 0 0 calc(var(--space-1) / 2); }
+.row-suggestion .button-row { margin: var(--space-1) 0 0; }
+
+/* Everything LibrAIry has picked up, one row each. No editor: a rule you can
+   hand-write is a different feature, and this page exists so a suggestion is
+   never the first time you hear a pattern exists. */
+.learned-list { list-style: none; padding: 0; margin: var(--space-2) 0; }
+.learned-row {
+  display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-2);
+  align-items: baseline; justify-content: space-between;
+  padding: var(--space-2) 0; border-bottom: 1px solid var(--border);
+  font-size: var(--text-sm);
+}
+.learned-row.is-off { opacity: 0.6; }
+.learned-what { flex: 1 1 20rem; }
+.learned-what > p { margin: 0; overflow-wrap: anywhere; }

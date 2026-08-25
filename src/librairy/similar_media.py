@@ -52,6 +52,7 @@ from dataclasses import dataclass, replace
 from pathlib import PurePosixPath
 
 from librairy.config import Settings
+from librairy.decisions import record_representation
 from librairy.fingerprint import blake2b_file
 from librairy.paths import PathValidationError, validate_relpath
 from librairy.planner import approve_plan, create_plan, utc_now
@@ -580,7 +581,32 @@ def set_aside(
         "UPDATE audit_findings SET status='accepted', plan_id=?, updated_at=? WHERE id=?",
         (plan_id, utc_now(), finding_id),
     )
+    #  What was chosen, when the choice was genuinely about format. Eighteen
+    #  JPEGs out of twenty-five is not — see `decisions.formats_cue`. Nothing
+    #  is counted yet: the plan has to run first.
+    record_representation(
+        conn,
+        category=_library_branch([*going, *kept]),
+        formats=[_suffix(relpath) for relpath in [*going, *kept]],
+        kept=[_suffix(relpath) for relpath in kept],
+        plan_id=plan_id,
+    )
     return plan_id
+
+
+def _suffix(relpath: str) -> str:
+    return PurePosixPath(relpath).suffix.lower().lstrip(".")
+
+
+def _library_branch(relpaths: list[str]) -> str:
+    """The top-level library folder these share, or "" if they share none.
+
+    The coarsest honest scope for a format decision: keeping the MP3 is a
+    statement about Music, and it should not be read back as a statement about
+    Books.
+    """
+    tops = {PurePosixPath(relpath).parts[0] for relpath in relpaths if relpath}
+    return next(iter(tops)) if len(tops) == 1 else ""
 
 
 def _keep_all(conn: sqlite3.Connection, view: Comparison, finding_id: int) -> str:
@@ -598,6 +624,17 @@ def _keep_all(conn: sqlite3.Connection, view: Comparison, finding_id: int) -> st
     conn.execute(
         "UPDATE audit_findings SET status='kept', updated_at=? WHERE id=?",
         (utc_now(), finding_id),
+    )
+    #  "I want both of these." An explicit answer with no filesystem work in
+    #  it, which completes the moment it is given — there is no plan for a
+    #  commit to run, so there is nothing to wait for.
+    relpaths = [member.relpath for member in view.members]
+    record_representation(
+        conn,
+        category=_library_branch(relpaths),
+        formats=[_suffix(relpath) for relpath in relpaths],
+        kept=[_suffix(relpath) for relpath in relpaths],
+        settled=True,
     )
     return ""
 

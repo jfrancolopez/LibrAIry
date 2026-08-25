@@ -1882,6 +1882,102 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             },
         )
 
+    @app.post("/review/proposals/{proposal_id}/use-suggestion", response_class=HTMLResponse)
+    async def review_use_suggestion(request: Request, proposal_id: int) -> HTMLResponse:
+        """Take the learned answer. The same edit, with the box filled in.
+
+        Deliberately not a new mutation path: this resolves the suggestion, and
+        then calls `edit_proposal` exactly as the destination field does. The
+        proposal is still `proposed` afterwards, still needs approving, and
+        still moves nothing until Commit — a learned pattern changes what is
+        offered, never what happens.
+        """
+        from librairy.web.review import apply_suggestion
+
+        await _request_form(request)
+        try:
+            proposal, warning = apply_suggestion(conn, settings, proposal_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return TEMPLATES.TemplateResponse(
+            request,
+            "partials/review_row.html",
+            {
+                "proposal": proposal,
+                "warning": warning,
+                "filters": filters_from_query(),
+                "categories": REVIEW_CATEGORIES,
+            },
+        )
+
+    @app.post("/review/suggestions/suppress", response_class=HTMLResponse)
+    def review_suppress_suggestion(
+        request: Request,
+        proposal_id: Annotated[int, Form()],
+    ) -> HTMLResponse:
+        """"Stop offering me this."
+
+        Turns off one learned conclusion. It does not touch the file, the
+        proposal, the category or the decisions the pattern was built from —
+        those are still what happened, and still in History.
+        """
+        from librairy.web.review import suppress_suggestion
+
+        return TEMPLATES.TemplateResponse(
+            request,
+            "partials/review_row.html",
+            {
+                "proposal": suppress_suggestion(conn, settings, proposal_id),
+                "warning": None,
+                "filters": filters_from_query(),
+                "categories": REVIEW_CATEGORIES,
+            },
+        )
+
+    @app.get("/review/learned", response_class=HTMLResponse)
+    def review_learned(request: Request) -> HTMLResponse:
+        """What LibrAIry has picked up, in one read-only list.
+
+        No rule editor and no auto-apply switch. It exists so that a suggestion
+        appearing in Review is never the first time somebody hears about a
+        pattern — and so that turning one off does not require finding a file
+        it happens to fire on.
+        """
+        from librairy.decisions import learned
+
+        return TEMPLATES.TemplateResponse(
+            request,
+            "learned.html",
+            {"title": "What LibrAIry has learned", "patterns": learned(conn)},
+        )
+
+    @app.post("/review/learned/suppress", response_class=HTMLResponse)
+    def review_learned_suppress(
+        request: Request,  # noqa: ARG001
+        signature: Annotated[str, Form()],
+        restore: Annotated[str | None, Form()] = None,
+    ) -> RedirectResponse:
+        from librairy.decisions import learned, suppress
+        from librairy.decisions import restore as restore_pattern
+
+        #  Every rung that reaches the same conclusion, so the button does what
+        #  its label says. Turning off the narrow pattern and leaving the broad
+        #  one saying the same thing is pressing a button and seeing nothing.
+        matching = next(
+            (
+                [str(name) for name in pattern.get("signatures") or [signature]]
+                for pattern in learned(conn, limit=200)
+                if signature in (pattern.get("signatures") or [])
+            ),
+            [signature],
+        )
+        for name in matching:
+            if restore:
+                restore_pattern(conn, name)
+            else:
+                suppress(conn, name)
+        return RedirectResponse("/review/learned", status_code=303)
+
     @app.get("/activity", response_class=HTMLResponse)
     def activity_fragment(request: Request) -> HTMLResponse:
         """The header pill, polled from every open tab — keep it cheap."""

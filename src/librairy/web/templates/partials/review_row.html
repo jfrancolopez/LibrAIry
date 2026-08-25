@@ -88,6 +88,37 @@
         {% endif %}
       </p>
 
+      {# What this person has repeatedly chosen for files like this one, when
+         it differs from today's guess. Shown as decisions and not as a score:
+         "6 previous decisions" is checkable and "93% confident" is not.
+
+         It suggests. It does not approve, it does not build a plan and it
+         moves nothing — `Use this` is the ordinary destination edit that was
+         always available, with the box filled in. #}
+      {% if proposal.suggestion %}
+      <div class="row-suggestion">
+        <p class="row-duplicate">
+          <span class="badge">FROM YOUR DECISIONS</span>
+          <span class="mono">{{ proposal.suggestion.folder }}/</span>
+        </p>
+        <p class="muted">{{ proposal.suggestion.explanation }}</p>
+        <div class="button-row">
+          <button type="button" class="btn"
+            hx-post="/review/proposals/{{ proposal.id }}/use-suggestion"
+            hx-target="#proposal-{{ proposal.id }}" hx-swap="outerHTML"
+            hx-headers='{"x-csrf-token":"{{ csrf }}"}'>Use this suggestion</button>
+          {# Not a dismissal of the file, the finding or the category — it
+             turns off this one learned conclusion. The decisions behind it
+             stay in History, because they are what happened. #}
+          <button type="button" class="btn-ghost"
+            hx-post="/review/suggestions/suppress"
+            hx-vals='{"proposal_id": "{{ proposal.id }}"}'
+            hx-target="#proposal-{{ proposal.id }}" hx-swap="outerHTML"
+            hx-headers='{"x-csrf-token":"{{ csrf }}"}'>Don't suggest this pattern</button>
+        </div>
+      </div>
+      {% endif %}
+
       {# A file you already have, arriving again. The library path is the whole
          decision — "already in your library" without saying where leaves a
          person no way to judge whether this arrival is the better copy — so it

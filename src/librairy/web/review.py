@@ -249,7 +249,55 @@ def apply_review_action(
             "UPDATE proposals SET status=?, updated_at=? WHERE id=?",
             (status, utc_now(), row["id"]),
         )
+    if action == "approve":
+        #  The explicit half of the evidence. Approving is a choice — the same
+        #  press could have been Reject, Later, Analyse again or an edit — and
+        #  it is recorded here, where the person made it, because the cues that
+        #  produced it are only knowable now. The *other* half is whether the
+        #  file actually moved, which the executor stamps on. See
+        #  `librairy/decisions.py`.
+        remember_approvals(conn, [int(row["id"]) for row in rows])
     return len(rows)
+
+
+def remember_approvals(conn: sqlite3.Connection, proposal_ids: list[int]) -> None:
+    """Write down what was chosen for each of these, and under what cues.
+
+    One query for the batch. Nothing is written for a proposal with no
+    destination — "I approve of not knowing where this goes" is not a lesson —
+    and nothing is written for a file whose destination came from a catalog
+    identity or a printed identifier, because repeating *that* is repeating the
+    identity, not a habit.
+    """
+    if not proposal_ids:
+        return
+    from librairy.decision_cues import cues_for, outcome_for, outranked
+    from librairy.decisions import record
+
+    rows = conn.execute(
+        f"""
+        SELECT p.*, i.relpath AS item_relpath
+        FROM proposals p JOIN items i ON i.id = p.item_id
+        WHERE p.id IN ({_placeholders(proposal_ids)})
+        """,  # noqa: S608 - `_placeholders` counts, it does not interpolate
+        proposal_ids,
+    ).fetchall()
+    for row in rows:
+        if not row["dest_relpath"] or row["dest_root"] != "library":
+            continue
+        if outranked(row):
+            continue
+        outcome = outcome_for(row)
+        if not outcome:
+            continue
+        for cue in cues_for(row):
+            record(
+                conn,
+                cue=cue,
+                outcome=outcome,
+                item_id=int(row["item_id"]),
+                dest_relpath=str(row["dest_relpath"]),
+            )
 
 
 DEST_FOLDER_LIMIT = 200
@@ -431,6 +479,100 @@ def edit_proposal(
     return updated, warning
 
 
+def proposal_row(
+    conn: sqlite3.Connection, settings: Settings | None, proposal_id: int
+) -> dict[str, Any]:
+    """One proposal, rendered exactly as the list renders it."""
+    row = conn.execute(
+        "SELECT status FROM proposals WHERE id=?", (proposal_id,)
+    ).fetchone()
+    if row is None:
+        raise ValueError("proposal not found")
+    found = _proposal_rows(
+        conn,
+        ReviewFilters(state=row["status"], page=1),
+        proposal_ids=[proposal_id],
+        settings=settings,
+    )
+    if not found:
+        raise ValueError("proposal not found")
+    return found[0]
+
+
+def suppress_suggestion(
+    conn: sqlite3.Connection, settings: Settings | None, proposal_id: int
+) -> dict[str, Any]:
+    """"Stop offering me this", meaning the answer and not one phrasing of it.
+
+    A file matches a ladder of cues — Honda manuals, then manuals — and more
+    than one rung can reach the same conclusion. Turning off only the rung that
+    happened to fire leaves the broader one saying exactly the same thing, so
+    pressing the button looks like pressing nothing. Every rung that currently
+    agrees on the suggested answer is suppressed; a rung that would say
+    something *else* is a different conclusion and is left alone.
+    """
+    from librairy.decision_cues import cues_for
+    from librairy.decisions import suggest, suppress, tally
+
+    row = conn.execute(
+        """
+        SELECT p.*, i.relpath AS item_relpath
+        FROM proposals p JOIN items i ON i.id = p.item_id
+        WHERE p.id=?
+        """,
+        (proposal_id,),
+    ).fetchone()
+    if row is None:
+        raise ValueError("proposal not found")
+    ladder = cues_for(row)
+    answer = suggest(conn, ladder)
+    if answer is not None:
+        counts = tally(conn, [cue.signature for cue in ladder])
+        for cue in ladder:
+            outcomes = counts.get(cue.signature) or {}
+            if not outcomes:
+                continue
+            top = max(outcomes.items(), key=lambda pair: (pair[1], pair[0]))[0]
+            if top == answer.outcome:
+                suppress(conn, cue.signature)
+    return proposal_row(conn, settings, proposal_id)
+
+
+def apply_suggestion(
+    conn: sqlite3.Connection, settings: Settings, proposal_id: int
+) -> tuple[dict[str, Any], str | None]:
+    """Move this proposal to where the owner usually files things like it.
+
+    Resolved here rather than taken from the page: a suggestion rendered ten
+    minutes ago may have been suppressed since, or outgrown by an override, and
+    a destination posted from a stale form is a destination nobody currently
+    stands behind. Everything after that is the ordinary edit — same
+    validation, same collision handling, same `proposed` status at the end.
+    """
+    row = conn.execute(
+        """
+        SELECT p.*, i.relpath AS item_relpath
+        FROM proposals p JOIN items i ON i.id = p.item_id
+        WHERE p.id=?
+        """,
+        (proposal_id,),
+    ).fetchone()
+    if row is None:
+        raise ValueError("proposal not found")
+    found = learned_suggestions(conn, [row])
+    answer = found.get(proposal_id)
+    if answer is None:
+        raise ValueError("there is no suggestion for this file any more")
+    return edit_proposal(
+        conn,
+        settings,
+        proposal_id,
+        category=str(row["category"]),
+        clean_name=str(row["clean_name"]),
+        dest_relpath=str(answer["relpath"]),
+    )
+
+
 def evidence_lines(payload: str) -> list[str]:
     lines: list[str] = []
     for entry in decode_evidence(payload):
@@ -568,6 +710,9 @@ def _proposal_rows(
     item_ids = [int(row["item_id"]) for row in rows]
     compared = items_with_reports(conn, item_ids)
     seen = vision_for_items(conn, item_ids)
+    #  One lookup for the whole page. A history scan per row is the shape that
+    #  stops working at fifty rows and is unusable at five hundred.
+    suggested = learned_suggestions(conn, rows)
     return [
         {
             **dict(row),
@@ -616,9 +761,65 @@ def _proposal_rows(
             # guess on screen until the worker replaces it in place. Without
             # saying so, pressing it looks like it did nothing.
             "rechecking": row["item_state"] == "discovered",
+            #  What the owner has repeatedly chosen for files like this, when
+            #  that differs from today's guess. Absent otherwise: a suggestion
+            #  agreeing with the destination already on the row is a sentence
+            #  that changes nothing.
+            "suggestion": suggested.get(int(row["id"])),
         }
         for row in rows
     ]
+
+
+def learned_suggestions(
+    conn: sqlite3.Connection, rows: list[sqlite3.Row]
+) -> dict[int, dict[str, object]]:
+    """The learned answer for each of these rows, where there is one.
+
+    Three steps and one query: build each row's cue ladder, tally every
+    signature on the page at once, then read each row's answer out of the
+    tally. Nothing here opens a file, asks a catalog, or runs a model.
+
+    A suggestion is dropped when it agrees with the destination already
+    proposed. The point of showing one is that it would change something; a
+    row that says "you usually file these exactly where this is going" is
+    furniture.
+    """
+    from librairy.decision_cues import cues_for, destination_from, outranked
+    from librairy.decisions import suggest, tally
+
+    if not rows:
+        return {}
+    ladders = {int(row["id"]): cues_for(row) for row in rows}
+    signatures = sorted(
+        {cue.signature for cues in ladders.values() for cue in cues}
+    )
+    counts = tally(conn, signatures)
+    found: dict[int, dict[str, object]] = {}
+    for row in rows:
+        if outranked(row):
+            #  A catalog identity or a printed identifier answers this file's
+            #  destination better than any habit. See `decision_cues`.
+            continue
+        answer = suggest(conn, ladders[int(row["id"])], counts=counts)
+        if answer is None:
+            continue
+        destination = destination_from(answer, row)
+        current = str(row["dest_relpath"] or "")
+        if not destination or destination == PurePosixPath(current).parent.as_posix():
+            continue
+        found[int(row["id"])] = {
+            "signature": answer.signature,
+            "folder": destination,
+            "relpath": f"{destination}/{PurePosixPath(current).name}"
+            if current
+            else destination,
+            "support": answer.support,
+            "contradictions": answer.contradictions,
+            "explanation": answer.explanation,
+            "described": answer.cue.described,
+        }
+    return found
 
 
 def duplicate_comparison(conn: sqlite3.Connection, settings: Settings, item_id: int) -> dict:

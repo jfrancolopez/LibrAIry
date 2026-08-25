@@ -360,6 +360,9 @@ PAGES = {
     # under each picture, the tray, and the selection controls. Finding 25 is
     # the burst in the dev fixture — stable, the same way `/items/1` is.
     "photo-group": "/review/audit/25/photos",
+    # Everything decision memory has picked up, read-only. The widest thing on
+    # it is a destination template beside two counts.
+    "learned": "/review/learned",
     # One import, in detail: the section tabs, the bulk control, and fifty
     # member rows with a destination each. `CameraCard-Aug24` is the dev
     # fixture's camera card — twenty-seven files with three answers in them.
