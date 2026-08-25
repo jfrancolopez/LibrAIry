@@ -9,7 +9,7 @@ from pathlib import Path
 from librairy.config import Settings
 
 LOGGER = logging.getLogger(__name__)
-SCHEMA_VERSION = 43
+SCHEMA_VERSION = 44
 
 
 class DatabaseVersionError(RuntimeError):
@@ -1242,6 +1242,63 @@ CREATE INDEX idx_plan_relationships_plan ON plan_relationships(plan_id);
 ALTER TABLE plans ADD COLUMN relationships_checked INTEGER NOT NULL DEFAULT 0;
 """
 
+MIGRATION_044 = """
+-- What the owner has said they prefer, permit and protect.
+--
+-- One table, because the alternative had already started: `music.preferred_format`
+-- lived in `settings`, `optimization.protected_roots` lived in `settings` under
+-- a different name and a different meaning, and every new domain that wanted a
+-- format opinion was going to invent a third. A page of independent toggles is
+-- not a policy — nothing can consult it, nothing can explain it, and no two
+-- subsystems can be made to agree.
+--
+-- Three genuinely different things live here and are deliberately not
+-- collapsed into one column:
+--
+--   preferred_format    among representations that ALREADY EXIST, which one
+--                       does the owner want. It creates nothing.
+--   allow_*_transform   may LibrAIry ever *propose* making one. NULL means
+--                       the owner has not said, which is not the same as no.
+--   preserve_originals  this scope's originals are not to be traded away by
+--                       any representation preference or optimization.
+--
+-- Scope precedence is most-specific-wins, per field, among the scopes that
+-- actually state that field: folder, then category, then global. A scope that
+-- says nothing about a field does not overrule a broader one that does.
+CREATE TABLE format_policy_scopes (
+  id                 INTEGER PRIMARY KEY,
+  scope_kind         TEXT NOT NULL CHECK (scope_kind IN ('global','category','folder')),
+  -- '' for global, a taxonomy slug for category, a library-relative path for
+  -- folder. Never an absolute path: this database is restored onto other
+  -- machines, and a policy that stops applying because the mount point moved
+  -- is a protection somebody believes they have.
+  scope_value        TEXT NOT NULL,
+  preferred_format   TEXT NOT NULL DEFAULT '',
+  -- Tri-state on purpose. NULL is "not stated" and is the default everywhere,
+  -- so adding this table changes no existing behaviour: Storage Optimization
+  -- goes on proposing exactly what it proposed before until somebody says
+  -- otherwise.
+  preserve_originals       INTEGER,
+  allow_lossy_transform    INTEGER,
+  allow_lossless_transform INTEGER,
+  created_at         TEXT NOT NULL,
+  updated_at         TEXT NOT NULL,
+  UNIQUE (scope_kind, scope_value)
+);
+CREATE INDEX idx_format_policy_kind ON format_policy_scopes(scope_kind);
+
+-- The MP3 preference moves here rather than being copied here. Two rows that
+-- both claim to be the preferred music format can disagree, and the one being
+-- read would then depend on which module asked.
+INSERT INTO format_policy_scopes
+  (scope_kind, scope_value, preferred_format, created_at, updated_at)
+SELECT 'category', 'music',
+       lower(trim(COALESCE((SELECT value FROM settings WHERE key='music.preferred_format'),
+                           'mp3'))),
+       datetime('now'), datetime('now');
+DELETE FROM settings WHERE key='music.preferred_format';
+"""
+
 MIGRATIONS = {
     1: MIGRATION_001,
     2: MIGRATION_002,
@@ -1286,6 +1343,7 @@ MIGRATIONS = {
     41: MIGRATION_041,
     42: MIGRATION_042,
     43: MIGRATION_043,
+    44: MIGRATION_044,
 }
 
 

@@ -716,6 +716,17 @@
           <p class="muted">Measuring…</p>
         </div>
       </details>
+      {% for entry in finding.comparison.protected %}
+      {# Explicit policy, named as the owner's own instruction and as the
+         reason a choice is not on offer. It protects the *representation*: the
+         file can still be filed, renamed and reorganised — what nothing may do
+         is decide it is the dispensable copy. #}
+      <p class="audit-track-note">
+        <span class="badge">Protected</span>
+        {{ entry.name }} is inside {{ entry.folder }}, which preserves original
+        representations. It cannot be set aside here.
+      </p>
+      {% endfor %}
       {% if finding.comparison.preference %}
       {# The owner's own preference, named as theirs. Not a quality claim, and
          not a decision — it starts the answer off and Commit still has to

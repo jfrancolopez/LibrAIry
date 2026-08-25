@@ -1531,8 +1531,22 @@ def _comparison_row(
                 #  points here. A starting point, not a decision: nothing moves
                 #  until Approve and Commit.
                 "preferred": member.relpath == view.preferred,
+                #  Non-empty when the owner's Format Policy says this file's
+                #  originals are not to be traded away. Named rather than
+                #  merely disabled: a control that has quietly stopped working
+                #  is worse than one that says why it will not.
+                "protected_by": member.protected_by,
             }
             for member in view.members
+        ],
+        #  What the policy has to say about this comparison, when it has
+        #  something to say. Only then: a card filled with policy text on every
+        #  decision the policy does not affect is how the sentence that *does*
+        #  matter stops being read.
+        "protected": [
+            {"name": member.name, "folder": member.protected_by}
+            for member in view.members
+            if member.protected_by
         ],
         #  Whose preference it is, said out loud. Never "MP3 is better" — see
         #  `format_preference` for why the wording is part of the feature.

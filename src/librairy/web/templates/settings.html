@@ -121,6 +121,19 @@
   <label><input type="checkbox" name="use_czkawka" {% if settings_view.dedup.use_czkawka %}checked{% endif %}> czkawka near-media scan</label>
   <p class="muted">At least one exact duplicate method must remain enabled.</p>
 
+  <h2 id="format-policy">Format Policy</h2>
+  {# Its own page, deliberately. It is the only setting in LibrAIry whose
+     subject is a *policy* — an answer that outlives the decision it was given
+     for — and putting it between thumbnail sizes and API keys would say it was
+     the same kind of thing. #}
+  <p class="muted">What you prefer among the copies you already have, what
+    LibrAIry may ever offer to convert, and which folders' originals must never
+    be traded away. Consulted by Review, comparisons and Storage Optimization
+    alike, so they cannot disagree.</p>
+  <p><a class="btn" href="/settings/format-policy">Format Policy</a></p>
+</section>
+
+<section class="metric wide">
   <h2 id="storage-optimization">Storage Optimization</h2>
   <p class="muted">
     Optional maintenance that converts files to smaller formats. It never

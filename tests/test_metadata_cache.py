@@ -98,6 +98,10 @@ def test_the_migration_keeps_every_ffprobe_row(tmp_path: Path) -> None:
         CREATE TABLE plans (id TEXT PRIMARY KEY, status TEXT NOT NULL,
           plan_hash TEXT, created_at TEXT NOT NULL, approved_at TEXT,
           finished_at TEXT);
+        -- Same reasoning: `settings` has existed since migration 002, and
+        -- migration 044 reads the music format preference out of it on its way
+        -- into the central Format Policy.
+        CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
         CREATE TABLE item_metadata (
           item_id INTEGER PRIMARY KEY REFERENCES items(id),
           fingerprint TEXT NOT NULL, tool TEXT NOT NULL,

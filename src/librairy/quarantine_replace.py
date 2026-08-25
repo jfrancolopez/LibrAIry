@@ -132,6 +132,14 @@ def replacement_of(conn: sqlite3.Connection, entry: sqlite3.Row) -> Replacement 
     ).fetchone()
     if active is None:
         return None
+    #  The filed version would go to Quarantine to make room, which is the one
+    #  thing a protected folder exists to refuse. No control at all rather than
+    #  one that can only produce an error — the same rule every other button on
+    #  this page follows.
+    from librairy.format_policy import resolve
+
+    if resolve(conn, str(active["relpath"])).protected_original:
+        return None
     return Replacement(
         entry_id=int(entry["id"]),
         held_relpath=str(held["relpath"]),

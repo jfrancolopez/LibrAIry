@@ -33,7 +33,7 @@ from librairy.catalog_probe import UnknownCatalog, probe_catalog
 from librairy.catalogs import catalog_enabled
 from librairy.config import Settings
 from librairy.corrections import CorrectionRefused, accept_correction
-from librairy.db import connect, impatient, is_locked
+from librairy.db import connect, impatient, is_locked, transaction
 from librairy.dedup import DedupConfigError
 from librairy.destination_choice import choose as choose_destination
 from librairy.filetypes import aria_label as ext_aria_label
@@ -176,6 +176,21 @@ def _is_htmx(request: Request) -> bool:
     document on the screen that moves files.
     """
     return request.headers.get("hx-request", "").lower() == "true"
+
+
+def _tristate(value: str) -> bool | None:
+    """`yes` / `no` / anything else, which means "not configured".
+
+    Three states rather than a checkbox, because unset is not the same as no.
+    Unset is what every category starts as and what stops this page changing
+    what Storage Optimization already offers on the day it appears.
+    """
+    text = str(value or "").strip().lower()
+    if text in {"yes", "true", "1", "on"}:
+        return True
+    if text in {"no", "false", "0", "off"}:
+        return False
+    return None
 
 
 def _csrf_context(request: Request) -> dict[str, str]:
@@ -449,6 +464,107 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
                 **settings_page_data(conn, settings),
             },
         )
+
+    def _format_policy_page(request: Request, error: str = "") -> HTMLResponse:
+        from librairy.web.format_policy_page import page_data
+
+        return TEMPLATES.TemplateResponse(
+            request,
+            "format_policy.html",
+            {"title": "Format Policy", "error": error, **page_data(conn)},
+        )
+
+    @app.get("/settings/format-policy", response_class=HTMLResponse)
+    def format_policy_screen(request: Request) -> HTMLResponse:
+        """Read-only, and it stays read-only.
+
+        Nothing is measured while this renders. The impact analysis walks the
+        whole index, and a page that did that on a GET would get slower the
+        more somebody owned — so it is a button, and this shows what the button
+        last found.
+        """
+        return _format_policy_page(request)
+
+    @app.post("/settings/format-policy/preferred", response_class=HTMLResponse)
+    def format_policy_preferred(
+        request: Request,
+        category: Annotated[str, Form()] = "",
+        preferred: Annotated[str, Form()] = "",
+    ) -> Response:
+        """Which existing representation the owner wants. Creates nothing.
+
+        An empty value clears the preference, which is a real answer — three of
+        the four categories ship in it — and a page that could only ever add
+        preferences would trap somebody in one.
+        """
+        from librairy.format_policy import PolicyError, set_preferred_format
+
+        try:
+            with transaction(conn):
+                set_preferred_format(conn, category, preferred)
+        except PolicyError as exc:
+            return _format_policy_page(request, str(exc))
+        return RedirectResponse("/settings/format-policy", status_code=303)
+
+    @app.post("/settings/format-policy/transforms", response_class=HTMLResponse)
+    def format_policy_transforms(
+        request: Request,
+        category: Annotated[str, Form()] = "",
+        lossy: Annotated[str, Form()] = "",
+        lossless: Annotated[str, Form()] = "",
+    ) -> Response:
+        """Whether a conversion may ever be *offered*. It converts nothing."""
+        from librairy.format_policy import PolicyError, set_transforms
+
+        try:
+            with transaction(conn):
+                set_transforms(
+                    conn,
+                    category,
+                    lossy=_tristate(lossy),
+                    lossless=_tristate(lossless),
+                )
+        except PolicyError as exc:
+            return _format_policy_page(request, str(exc))
+        return RedirectResponse("/settings/format-policy", status_code=303)
+
+    @app.post("/settings/format-policy/protect", response_class=HTMLResponse)
+    def format_policy_protect(
+        request: Request, folder: Annotated[str, Form()] = ""
+    ) -> Response:
+        from librairy.format_policy import PolicyError, protect_folder
+
+        try:
+            with transaction(conn):
+                protect_folder(conn, folder, library_dir=settings.library_dir)
+        except PolicyError as exc:
+            return _format_policy_page(request, str(exc))
+        return RedirectResponse("/settings/format-policy#protected", status_code=303)
+
+    @app.post("/settings/format-policy/unprotect", response_class=HTMLResponse)
+    def format_policy_unprotect(
+        request: Request,  # noqa: ARG001
+        folder: Annotated[str, Form()] = "",
+    ) -> RedirectResponse:
+        from librairy.format_policy import unprotect_folder
+
+        with transaction(conn):
+            unprotect_folder(conn, folder)
+        return RedirectResponse("/settings/format-policy#protected", status_code=303)
+
+    @app.post("/settings/format-policy/analyse", response_class=HTMLResponse)
+    def format_policy_analyse(request: Request) -> RedirectResponse:  # noqa: ARG001
+        """Measure what the policy is about. Writes only its own result.
+
+        A POST because it reads the whole index — and because a measurement
+        somebody asked for is a different thing from one that happened while
+        they were looking at a page.
+        """
+        from librairy.format_impact import analyse
+
+        with transaction(conn):
+            analyse(conn, settings)
+        return RedirectResponse("/settings/format-policy#impact", status_code=303)
 
     @app.get("/settings/template-example", response_class=HTMLResponse)
     def settings_template_example(request: Request, category: str) -> HTMLResponse:

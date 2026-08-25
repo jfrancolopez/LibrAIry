@@ -1,0 +1,211 @@
+{% extends "base.html" %}
+{% block content %}
+  <header class="page-head">
+    <div>
+      <h1>Format Policy</h1>
+      <p class="muted">What you prefer, what you permit, and what must not be
+        touched. This page changes nothing on its own — no file is converted,
+        moved, set aside or deleted by anything here. It is what the rest of
+        LibrAIry consults before it offers you a choice.</p>
+    </div>
+    <a class="btn-ghost" href="/settings">Back to Settings</a>
+  </header>
+
+  {% if error %}<p class="error-note">{{ error }}</p>{% endif %}
+
+  {% for section in sections %}
+    <section class="metric wide policy-section">
+      <h2>{{ section.label }}</h2>
+      <p{% if not section.preferred %} class="muted"{% endif %}>{{ section.note }}</p>
+      {# The first of the three questions, and the one that creates nothing:
+         among copies you ALREADY have, which do you want. If the only copy is
+         a FLAC there is no MP3 to prefer and nothing happens. #}
+      <form method="post" action="/settings/format-policy/preferred" class="button-row">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="category" value="{{ section.category }}">
+        <label for="preferred-{{ section.category }}">Preferred existing representation</label>
+        <select id="preferred-{{ section.category }}" name="preferred">
+          <option value=""{% if not section.preferred %} selected{% endif %}>No preference</option>
+          {% for choice in section.choices %}
+            <option value="{{ choice.value }}"{% if choice.value == section.preferred %} selected{% endif %}>{{ choice.label }}</option>
+          {% endfor %}
+        </select>
+        <button type="submit">Save</button>
+      </form>
+      {# The second question, kept separate on purpose. "MP3 is the copy I want
+         to keep" says nothing about whether LibrAIry may go and make MP3s. #}
+      <details class="why">
+        <summary>May LibrAIry propose converting these?</summary>
+        <p class="muted">{{ section.transform_note }}</p>
+        <form method="post" action="/settings/format-policy/transforms" class="button-row">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="category" value="{{ section.category }}">
+          <label for="lossless-{{ section.category }}">Lossless conversions</label>
+          <select id="lossless-{{ section.category }}" name="lossless">
+            <option value=""{% if section.allow_lossless is none %} selected{% endif %}>Not configured</option>
+            <option value="yes"{% if section.allow_lossless is true %} selected{% endif %}>May be proposed</option>
+            <option value="no"{% if section.allow_lossless is false %} selected{% endif %}>Never propose</option>
+          </select>
+          <label for="lossy-{{ section.category }}">Lossy conversions</label>
+          <select id="lossy-{{ section.category }}" name="lossy">
+            <option value=""{% if section.allow_lossy is none %} selected{% endif %}>Not configured</option>
+            <option value="yes"{% if section.allow_lossy is true %} selected{% endif %}>May be proposed</option>
+            <option value="no"{% if section.allow_lossy is false %} selected{% endif %}>Never propose</option>
+          </select>
+          <button type="submit">Save</button>
+        </form>
+        <p class="muted">Nothing here converts anything. It decides whether a
+          conversion may ever be <em>offered</em> to you.</p>
+      </details>
+    </section>
+  {% endfor %}
+
+  <section class="metric wide policy-section" id="protected">
+    <h2>Protected folders</h2>
+    <p class="muted">Folders whose originals must not be traded away. A RAW
+      wedding or a WAV keepsake is the only copy there will ever be, and no
+      format preference and no optimization may decide it is the dispensable
+      one. LibrAIry can still index, search, organise and file these files —
+      this is about representation, not about a locked folder.</p>
+    {% if protected %}
+      <ul class="policy-protected">
+        {% for entry in protected %}
+          <li>
+            <div class="policy-protected-what">
+              <p class="mono">{{ entry.folder }}</p>
+              <p class="muted">{{ entry.what }} — {{ entry.note }}</p>
+            </div>
+            {% if entry.removable %}
+              <form method="post" action="/settings/format-policy/unprotect">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input type="hidden" name="folder" value="{{ entry.folder }}">
+                <button type="submit" class="btn-ghost">Remove</button>
+              </form>
+            {% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="muted">No folders are protected.</p>
+    {% endif %}
+    <form method="post" action="/settings/format-policy/protect" class="button-row">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label for="protect-folder">Protect a folder</label>
+      <input id="protect-folder" type="text" name="folder"
+             placeholder="Photos/Wedding" class="mono">
+      <button type="submit">Preserve originals</button>
+    </form>
+  </section>
+
+  <section class="metric wide policy-section" id="impact">
+    <h2>What this would affect</h2>
+    <p class="muted">A measurement of your library as it is now. It reads the
+      index and writes nothing: no plan, no optimization job, no file. Run it
+      before changing anything, so a policy is a decision rather than a
+      sentence.</p>
+    <form method="post" action="/settings/format-policy/analyse" class="button-row">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button type="submit" class="btn-primary">Analyse impact</button>
+      {% if impact %}
+        <span class="muted">Last measured {{ impact_when }}, over
+          {{ impact.item_count }} library files.</span>
+      {% endif %}
+    </form>
+
+    {% if impact_stale %}
+      {# A snapshot, and said to be one. A week-old estimate read as execution
+         truth is how somebody approves a decision about a library that has
+         changed underneath it. #}
+      <p class="policy-stale">Your library has changed since this was measured.
+        These numbers may be out of date.</p>
+    {% endif %}
+
+    {% if impact %}
+      {% for section in impact.sections %}
+        {% if section.preferred %}
+          <div class="policy-impact">
+            <h3>{{ section.label }} — {{ section.preferred_label }} preferred</h3>
+            {# Two different facts, never added together. One is a choice among
+               files that exist; the other is work that would have to happen. #}
+            <p><strong>{{ section.both_count }}</strong> already exist in
+              {{ section.preferred_label }} and another format.</p>
+            <dl class="correction-shape">
+              <div><dt>{{ section.preferred_label }} bytes</dt>
+                   <dd>{{ section.preferred_bytes_label }}</dd></div>
+              <div><dt>Other-format bytes</dt>
+                   <dd>{{ section.other_bytes_label }}</dd></div>
+            </dl>
+            <p class="muted">If you chose to keep only
+              {{ section.preferred_label }}, {{ section.other_bytes_label }}
+              would eventually leave active representation storage — after you
+              set those files aside and removed them yourself. Nothing is
+              removed by this analysis, and a preference does not delete
+              anything.</p>
+            <p><strong>{{ section.convertible_count }}</strong> exist only in
+              another format. No {{ section.preferred_label }} exists for these,
+              and one would have to be made.</p>
+            <p class="muted">
+              {% if section.transform_allowed is none %}
+                You have not said whether LibrAIry may propose converting them,
+                so nothing is offered.
+              {% elif section.transform_allowed %}
+                Conversions may be proposed for these.
+              {% else %}
+                You have said conversions are never to be proposed for these.
+              {% endif %}
+            </p>
+            {% for line in section.disclosures %}
+              <p class="muted">{{ line }}</p>
+            {% endfor %}
+            {% if section.folders %}
+              <details class="why">
+                <summary>Where they are</summary>
+                <ul class="sample-moves">
+                  {% for folder in section.folders %}
+                    <li><span class="mono">{{ folder.folder }}</span>
+                      <span class="muted">{{ folder.count }} ·
+                        {{ folder.bytes_label }}</span></li>
+                  {% endfor %}
+                </ul>
+                {% if section.folders_more %}
+                  <p class="muted">and {{ section.folders_more }} more folders.</p>
+                {% endif %}
+              </details>
+            {% endif %}
+          </div>
+        {% endif %}
+      {% endfor %}
+
+      <div class="policy-impact">
+        <h3>Files that belong together</h3>
+        {% for entry in impact.relationships %}
+          {# Counted and named, never judged. A RAW that has a JPEG render is
+             not a redundant file, and a program that said so would be making
+             an argument about somebody's photographs. #}
+          <p><strong>{{ entry.count }}</strong> {{ entry.label }}{% if entry.protected %},
+            of which {{ entry.protected }} are in protected folders{% endif %}.</p>
+        {% endfor %}
+        <p class="muted">These are related files, not spare copies. No format
+          preference applies across them.</p>
+      </div>
+
+      <div class="policy-impact">
+        <h3>Protected</h3>
+        {% if impact.protected %}
+          <ul class="sample-moves">
+            {% for entry in impact.protected %}
+              <li><span class="mono">{{ entry.folder }}</span>
+                <span class="muted">{{ entry.count }} files ·
+                  {{ entry.bytes_label }}</span></li>
+            {% endfor %}
+          </ul>
+          <p class="muted">Excluded from everything above.</p>
+        {% else %}
+          <p class="muted">No folders are protected.</p>
+        {% endif %}
+      </div>
+    {% else %}
+      <p class="muted">Nothing measured yet.</p>
+    {% endif %}
+  </section>
+{% endblock %}

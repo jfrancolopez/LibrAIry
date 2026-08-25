@@ -383,6 +383,10 @@ PAGES = {
     # anything is filed — counts at the top, and a companion row that says
     # what it belongs to. The widest lines on it are those sentences.
     "collection-pairs": "/review/collection/CameraCard-Aug24?section=unresolved",
+    # The one page whose subject is a policy: four category sections, the two
+    # protections told apart, and a measurement under them. The widest things
+    # on it are a label beside a select and a folder path beside a Remove.
+    "format-policy": "/settings/format-policy",
     # A filed track with a stored catalog identity: five facts, a 128-character
     # fingerprint and two releases, which is the widest thing the item page has
     # ever had to hold on a phone.

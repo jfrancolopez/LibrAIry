@@ -435,6 +435,8 @@ def learned(conn: sqlite3.Connection, *, limit: int = 50) -> list[dict[str, obje
     Built from the same counts a Review row uses, so the page cannot show a
     pattern that Review would not offer, or miss one it would.
     """
+    from librairy.format_policy import answers as policy_answer
+
     rows = conn.execute(
         f"""
         SELECT e.signature, e.kind, e.outcome, e.features, e.specificity,
@@ -468,6 +470,12 @@ def learned(conn: sqlite3.Connection, *, limit: int = 50) -> list[dict[str, obje
                 "support": support,
                 "contradictions": others,
                 "described": Cue(str(top["kind"]), features).described,
+                #  Non-empty when explicit policy already answers this. A
+                #  learned pattern is the weakest kind of evidence in the
+                #  program and must never be presented as competing with an
+                #  instruction the owner actually gave — see
+                #  `format_policy.answers`.
+                "policy": policy_answer(conn, str(top["kind"]), features),
                 "suppressed": signature in stopped,
                 "last": str(top["last"] or ""),
             }

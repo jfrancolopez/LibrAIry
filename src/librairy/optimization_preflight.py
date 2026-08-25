@@ -178,10 +178,14 @@ def adoption_preflight(
         )
 
     # 6. A protected root is a statement that LibrAIry does not reorganise
-    #    inside it. Replacing a file there is still a change to it.
-    from librairy.protected import protected_roots, protecting_root
+    #    inside it, and a Format Policy folder is a statement that its
+    #    originals are not to be traded away. Adopting an optimized copy in
+    #    place of the original is both of those, so both refuse it — checked
+    #    here as well as at advisory time, because a folder can be protected
+    #    between an opportunity appearing and somebody acting on it.
+    from librairy.format_policy import protecting
 
-    protector = protecting_root(item["relpath"], protected_roots(conn))
+    protector = protecting(conn, item["relpath"])
     if protector:
         return Refusal(
             "protected",

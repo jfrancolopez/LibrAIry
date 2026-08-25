@@ -104,6 +104,15 @@ class Member:
     relpath: str
     size: int
     facts: tuple[tuple[str, str], ...] = ()
+    #  Non-empty when the owner's Format Policy says this file's originals are
+    #  not to be traded away — the folder that says so, for printing. Such a
+    #  member is shown and compared like any other; what it cannot be is the
+    #  one set aside.
+    protected_by: str = ""
+
+    @property
+    def protected(self) -> bool:
+        return bool(self.protected_by)
 
     @property
     def name(self) -> str:
@@ -426,6 +435,20 @@ def preferred_member(conn: sqlite3.Connection, members) -> str:  # noqa: ANN001
         recordings.append(identity.recording_id if identity and identity.matched else "")
     if not equivalent(conn, relpaths, recordings=recordings):
         return ""
+    #  Relationship identity outranks format simplification. A Live Photo's MOV
+    #  is not a smaller HEIC and a subtitle is not a compact film, so a
+    #  preference about formats has nothing to say where the members are
+    #  companions rather than alternative encodings.
+    from librairy.format_policy import blocking_relationship
+
+    if blocking_relationship(conn, [member.item_id for member in members]):
+        return ""
+    #  And never a member whose originals the owner has protected: preferring a
+    #  file is the first half of setting the others aside, and one of the
+    #  others is the thing they said to keep.
+    protected = {member.relpath for member in members if member.protected_by}
+    if protected:
+        return ""
     return prefer_among(conn, relpaths)
 
 
@@ -461,6 +484,23 @@ def _members(
                 size=int(item["size"] or 0),
             )
         )
+    #  One resolution for the whole comparison rather than one per member: the
+    #  scope table and the protected roots are read once and applied to every
+    #  path, so a group of thirty-seven photographs costs the same as a pair.
+    from librairy.format_policy import protected_among
+
+    policies = protected_among(conn, [member.relpath for member in found])
+    found = [
+        replace(
+            member,
+            protected_by=(
+                policies[member.relpath].protected_by
+                if policies[member.relpath].protected_original
+                else ""
+            ),
+        )
+        for member in found
+    ]
     return sorted(found, key=lambda member: member.relpath)
 
 
@@ -571,6 +611,21 @@ def resolve(
     )
 
 
+def _assert_not_protected(
+    conn: sqlite3.Connection, going: list[str], error: type[Exception]
+) -> None:
+    """Refuse to set aside a file whose originals the owner has protected."""
+    from librairy.format_policy import protected_among
+
+    for relpath, policy in protected_among(conn, list(going)).items():
+        if policy.protected_original:
+            raise error(
+                f"{PurePosixPath(relpath).name} is protected by your Format "
+                f"Policy: {policy.explanation} Change that first if you want "
+                f"to set it aside."
+            )
+
+
 def set_aside(
     conn: sqlite3.Connection,
     settings: Settings,
@@ -591,6 +646,16 @@ def set_aside(
     approved. The ones leaving are obvious; the ones staying matter just as
     much, because they are the whole reason the others are safe to move.
     """
+    #  The Format Policy gate, at the one place every comparison passes
+    #  through — several encodes of a recording, thirty-seven photographs, two
+    #  formats of one book. Blocked rather than warned about: a protected
+    #  original is the owner's explicit instruction, and "are you sure?" on a
+    #  keepsake is a dialog somebody dismisses.
+    #
+    #  It blocks a *representation* decision and nothing else. LibrAIry can
+    #  still file, rename, reorganise and move these files; what it may not do
+    #  is decide one of them is the dispensable copy.
+    _assert_not_protected(conn, going, error)
     for relpath in [*going, *kept]:
         _assert_unchanged(conn, settings, relpath)
     specs = [

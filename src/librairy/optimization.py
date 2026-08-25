@@ -735,7 +735,12 @@ def scan_one(
     audit of an unchanged library should spend zero, and "the cache works" is
     otherwise an unfalsifiable claim.
     """
-    from librairy.protected import protected_roots, protecting_root
+    #  Both protections, asked as one question. A protected *root* stops a
+    #  folder being queued at all; a Format Policy folder says its originals
+    #  are not to be traded away — and an optimization that replaces the
+    #  original with a smaller encode is exactly that trade. The opportunity is
+    #  still recorded and still shown; what it cannot become is a job.
+    from librairy.format_policy import protecting
 
     item_id = int(row["id"]) if row is not None else None
     fingerprint = (row["fingerprint"] or "") if row is not None else ""
@@ -746,9 +751,7 @@ def scan_one(
     probes = probe_calls() - before
     if facts is None:
         return None, probes
-    found = advise(
-        relpath, facts, protected_by=protecting_root(relpath, protected_roots(conn))
-    )
+    found = advise(relpath, facts, protected_by=protecting(conn, relpath))
     if found is None:
         return None, probes
     return (

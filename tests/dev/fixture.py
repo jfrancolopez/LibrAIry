@@ -591,10 +591,14 @@ def build_app(root: Path):  # noqa: ANN201
     #  what it is for. See `_a_file_nobody_scanned`.
     _photo_companions(conn, settings)
     _decisions_that_split_a_pair(conn, settings)
+    #  Also before the unscanned file, and for the same reason: it writes
+    #  protected folders and then scans the library to index them.
+    _a_format_policy(conn, settings)
     _a_file_nobody_scanned(settings)
     _four_manuals_already_filed(conn, settings)
     _an_imported_camera_card(conn, settings)
     _an_imported_film_with_companions(conn, settings)
+    _measure_format_impact(conn, settings)
 
     return create_app(settings, conn)
 
@@ -1034,6 +1038,50 @@ def _decisions_that_split_a_pair(conn, settings: Settings) -> None:  # noqa: ANN
         approve_plan(conn, plan_id, settings)
         if commit:
             execute_plan(conn, plan_id, settings)
+
+
+def _a_format_policy(conn, settings: Settings) -> None:  # noqa: ANN001
+    """The two protections the owner actually described, and a measurement.
+
+    A RAW wedding and a set of WAV keepsakes — the two examples that made
+    folder exclusions worth building at all. Written through the same resolver
+    the Settings page writes through, so the scene is the feature rather than a
+    hand-seeded row.
+
+    The music preference is deliberately *not* set here: it arrives from
+    migration 044, which is the state a real upgraded library is in.
+    """
+    from librairy.format_policy import PolicyError, protect_folder  # noqa: PLC0415
+
+    for folder in ("Photos/Wedding", "Music/Family Recordings"):
+        target = settings.library_dir / folder
+        target.mkdir(parents=True, exist_ok=True)
+        try:
+            protect_folder(conn, folder, library_dir=settings.library_dir)
+        except PolicyError:  # pragma: no cover - the folder was just created
+            continue
+    #  A keepsake in each, so the protected byte counts are not zero and the
+    #  page shows what a protected scope actually looks like.
+    wedding = settings.library_dir / "Photos" / "Wedding"
+    for index in range(1, 4):
+        (wedding / f"IMG_90{index:02d}.CR3").write_bytes(b"RAW" * 400)
+        (wedding / f"IMG_90{index:02d}.JPG").write_bytes(JPEG)
+    keepsakes = settings.library_dir / "Music" / "Family Recordings"
+    for year in (1994, 1998):
+        (keepsakes / f"Grandad {year}.wav").write_bytes(b"WAVE" * 600)
+    scan_root(conn, "library", settings.library_dir, settings)
+
+
+def _measure_format_impact(conn, settings: Settings) -> None:  # noqa: ANN001
+    """Last, because the measurement counts library files.
+
+    Run before anything else that scans and the fixture opens with "your
+    library has changed since this was measured" — a true statement about a
+    fixture and a confusing one to look at.
+    """
+    from librairy.format_impact import analyse  # noqa: PLC0415
+
+    analyse(conn, settings)
 
 
 def _an_imported_camera_card(conn, settings: Settings) -> None:  # noqa: ANN001

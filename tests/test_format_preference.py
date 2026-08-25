@@ -26,8 +26,8 @@ from librairy.audit import record_findings
 from librairy.config import Settings
 from librairy.db import connect
 from librairy.format_preference import (
+    CATEGORY,
     DEFAULT,
-    KEY,
     is_music,
     name,
     prefer_among,
@@ -141,19 +141,36 @@ def test_mp3_is_preferred_over_every_other_representation(
     assert view.preferred == f"{ALBUM}/01 - Song.mp3"
 
 
-def test_the_preference_is_a_named_setting_not_a_hidden_rule(tmp_path: Path) -> None:
-    """Inspectable with a SELECT, changeable with an UPDATE, and testable."""
+def test_the_preference_is_a_named_policy_not_a_hidden_rule(tmp_path: Path) -> None:
+    """Inspectable with a SELECT, changeable through the resolver, and testable.
+
+    It lived in `settings` under `music.preferred_format` until Format Policy
+    existed. It is now the `music` category scope — one authoritative value,
+    read through one resolver, so a Settings page and a comparison row cannot
+    disagree about what the owner said.
+    """
     conn, _ = library(tmp_path, {f"{ALBUM}/01 - Song.mp3": "x"})
 
     assert preferred(conn) == DEFAULT == "mp3"
-    assert KEY == "music.preferred_format"
+    assert CATEGORY == "music"
 
     set_preferred(conn, "flac")
 
     assert preferred(conn) == "flac"
     assert name(conn) == "FLAC"
-    row = conn.execute("SELECT value FROM settings WHERE key=?", (KEY,)).fetchone()
-    assert row["value"] == "flac"
+    row = conn.execute(
+        "SELECT preferred_format FROM format_policy_scopes"
+        " WHERE scope_kind='category' AND scope_value='music'"
+    ).fetchone()
+    assert row["preferred_format"] == "flac"
+    #  And nowhere else. Two rows that both claim to be the preferred music
+    #  format can disagree, and which one wins would depend on who asked.
+    assert (
+        conn.execute(
+            "SELECT COUNT(*) FROM settings WHERE key='music.preferred_format'"
+        ).fetchone()[0]
+        == 0
+    )
 
 
 def test_a_declared_preference_for_flac_reverses_the_answer(tmp_path: Path) -> None:

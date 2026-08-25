@@ -148,6 +148,29 @@ src/librairy/
 
 Processes communicate only through SQLite (WAL) and the filesystem. No queues, no brokers.
 
+## Format Policy (permanent principle, added 2026-08-25)
+
+**Among representations that are valid choices, what does the owner prefer or
+prohibit?** One central policy, consulted by Review, comparisons, replacement
+and Storage Optimization — never re-invented per subsystem.
+
+Written up in [../format-policy.md](../format-policy.md). The parts that must
+not drift:
+
+- four separate questions: identity, relationship, policy, learned habit. None
+  of them may answer another's question
+- preferred representation, transformation permission and preserve-originals
+  are three fields, not one
+- unset is not "no". Every category starts unstated, and that is what keeps the
+  policy from changing behaviour the day it appears
+- Music → MP3 is the only thing configured. Photos, Video and Documents stay
+  neutral until somebody says otherwise
+- precedence is per field, most-specific-first: folder > category > global
+- policy sits under safety and above Decision Memory, always
+- `Preserve originals` is about representation, not a filesystem permission —
+  a protected file can still be indexed, searched, organised and filed
+- policy creates no plan, no job, no move. It is input to workflows
+
 ## Relationships (permanent principle, added 2026-08-25)
 
 **A relationship is evidence about files. It may explain a decision or warn

@@ -28,6 +28,12 @@
               <p class="muted">also matched more narrowly:
                 {% for detail in pattern.narrower %}{{ detail }}{% if not loop.last %}; {% endif %}{% endfor %}</p>
             {% endif %}
+            {% if pattern.policy %}
+              {# The authority model, on screen. A habit is the weakest kind of
+                 evidence in this program, and it must never read as competing
+                 with an instruction the owner actually gave. #}
+              <p class="muted">{{ pattern.policy }}</p>
+            {% endif %}
           </div>
           <p class="muted">
             {{ pattern.support }} confirmation{{ 's' if pattern.support != 1 else '' }} ·

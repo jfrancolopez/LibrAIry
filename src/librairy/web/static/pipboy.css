@@ -3379,3 +3379,37 @@ summary.timeline-head::-webkit-details-marker { display: none; }
    of". Same shape so the two pages read as one program. */
 .quarantine-related { margin: var(--space-1) 0 0; font-size: var(--text-sm); }
 .quarantine-related > p { margin: 0 0 calc(var(--space-1) / 2); overflow-wrap: anywhere; }
+
+/* Format Policy. Four short category sections, a list of protected folders and
+   a measurement — deliberately not twenty codecs with twenty toggles, which is
+   a page nobody can hold in their head and which answers none of the questions
+   somebody actually has. */
+.policy-section { margin-bottom: var(--space-3); }
+.policy-section h2 { margin-top: 0; }
+.policy-section > p { margin: 0 0 var(--space-2); }
+.policy-section .button-row { flex-wrap: wrap; align-items: center; }
+/* A label beside a control wraps like prose rather than being pinned at
+   `flex: 0 0 auto` with the buttons — the mistake that ran 156px past the edge
+   on the collection page. */
+.policy-section .button-row > label { flex: 0 0 auto; font-size: var(--text-sm); }
+.policy-section .button-row > input[type="text"] { flex: 1 1 14rem; min-width: 0; }
+
+.policy-protected { list-style: none; padding: 0; margin: 0 0 var(--space-2); }
+.policy-protected > li {
+  display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-2);
+  align-items: baseline; justify-content: space-between;
+  padding: var(--space-1) 0; border-bottom: 1px solid var(--border);
+}
+.policy-protected-what { flex: 1 1 18rem; min-width: 0; }
+.policy-protected-what > p { margin: 0; overflow-wrap: anywhere; }
+
+/* One measured consequence. Bordered rather than boxed in a warning colour:
+   this is arithmetic, and nothing here is about to happen. */
+.policy-impact {
+  margin: var(--space-2) 0;
+  padding-left: var(--space-2);
+  border-left: 2px solid var(--border);
+}
+.policy-impact > h3 { margin: 0 0 var(--space-1); font-size: var(--text-md); }
+.policy-impact > p { margin: 0 0 var(--space-1); }
+.policy-stale { color: var(--warn); margin: var(--space-1) 0 var(--space-2); }

@@ -211,6 +211,11 @@ def make_active(
             f"{PurePosixPath(swap.dest_relpath).name} already exists and is not "
             f"the version you are replacing"
         )
+    #  The version being displaced goes to Quarantine, which is exactly the
+    #  trade a protected folder exists to refuse. Blocked rather than warned
+    #  about: "are you sure?" over a WAV keepsake is a dialog somebody
+    #  dismisses, and the policy is the owner's own explicit instruction.
+    _assert_not_protected(conn, swap.displaced.relpath)
     plan_id = approve_coherent(
         conn,
         settings,
@@ -226,6 +231,19 @@ def make_active(
         "UPDATE plans SET audit_finding_id=? WHERE id=?", (finding_id, plan_id)
     )
     return plan_id
+
+
+def _assert_not_protected(conn: sqlite3.Connection, relpath: str) -> None:
+    """Refuse to displace a file whose originals the owner has protected."""
+    from librairy.corrections import CorrectionRefused
+    from librairy.format_policy import resolve
+
+    policy = resolve(conn, relpath)
+    if policy.protected_original:
+        raise CorrectionRefused(
+            f"{PurePosixPath(relpath).name} is protected by your Format Policy: "
+            f"{policy.explanation} Change that first if you want to replace it."
+        )
 
 
 def _claimed(conn: sqlite3.Connection, swap: Swap) -> bool:

@@ -104,6 +104,8 @@ def test_fresh_db_migrates_to_current_schema(tmp_path: Path) -> None:
         "idx_decision_events_plan",
         # What a decision was told about the relationships it touches.
         "idx_plan_relationships_plan",
+        # What the owner prefers, permits and protects.
+        "idx_format_policy_kind",
     }
 
     columns = {row[1] for row in conn.execute("PRAGMA table_info(provider_status)")}
@@ -171,6 +173,8 @@ def test_migration_011_closes_proposals_for_files_already_filed(tmp_path: Path) 
         DROP TABLE IF EXISTS audit_runs;
         DROP TABLE IF EXISTS optimization_jobs;
         DROP TABLE IF EXISTS optimization_opportunities;
+        DROP INDEX IF EXISTS idx_format_policy_kind;
+        DROP TABLE IF EXISTS format_policy_scopes;
         DROP INDEX IF EXISTS idx_plan_relationships_plan;
         DROP TABLE IF EXISTS plan_relationships;
         DROP INDEX IF EXISTS idx_decision_events_signature;

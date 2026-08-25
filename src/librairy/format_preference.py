@@ -51,14 +51,19 @@ from __future__ import annotations
 import sqlite3
 from pathlib import PurePosixPath
 
-#  One key, in the table every other runtime preference lives in. Readable with
-#  a SELECT, changeable with an UPDATE, and visible to anybody who wonders why
-#  a row came up with the MP3 already ticked.
-KEY = "music.preferred_format"
+#  Where the value lives now. It used to be a `settings` row keyed
+#  `music.preferred_format`, and migration 044 moved it into the central
+#  Format Policy as the `music` category scope — one authoritative value, read
+#  through one resolver, so a Settings page and a comparison row cannot
+#  disagree about what the owner said. This module stayed: it is the *music*
+#  vocabulary — which extensions are music, what they are called on screen, and
+#  when a preference may be applied at all — and none of that belongs in a
+#  general policy resolver.
+CATEGORY = "music"
 
-#  The declared preference. A default rather than a hard-coded rule: the
-#  setting is what decides, and this is what it says when nobody has changed
-#  it.
+#  What the migration seeds when nothing had been configured. A default rather
+#  than a hard-coded rule: the policy is what decides, and this is what it says
+#  when nobody has changed it.
 DEFAULT = "mp3"
 
 #  Formats the preference can be *about*. Anything outside this is not a music
@@ -81,33 +86,46 @@ NOT_MUSIC = ("Music Videos",)
 
 
 def preferred(conn: sqlite3.Connection) -> str:
-    """The declared preferred music format, lower-case and without a dot."""
-    row = conn.execute("SELECT value FROM settings WHERE key=?", (KEY,)).fetchone()
-    value = str(row["value"] if row else "").strip().lower().lstrip(".")
-    return value if value in MUSIC_FORMATS else DEFAULT
+    """The declared preferred music format, lower-case and without a dot.
+
+    Read through the central policy, never from a second copy. Empty is a real
+    answer — somebody may clear the preference — and callers here treat it as
+    "prefer nothing", which is exactly what `prefer_among` already does with a
+    format none of the candidates have.
+    """
+    from librairy.format_policy import canonical, preferred_for
+
+    value = canonical(preferred_for(conn, CATEGORY))
+    return value if value in MUSIC_FORMATS else ""
 
 
 def set_preferred(conn: sqlite3.Connection, value: str) -> None:
     """Declare a different one. Refuses anything that is not a music format."""
+    from librairy.format_policy import PolicyError, set_preferred_format
+
     clean = str(value or "").strip().lower().lstrip(".")
     if clean not in MUSIC_FORMATS:
         raise ValueError(f"{value!r} is not a music format LibrAIry knows")
-    conn.execute(
-        "INSERT INTO settings(key, value) VALUES (?, ?)"
-        " ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-        (KEY, clean),
-    )
+    try:
+        set_preferred_format(conn, CATEGORY, clean)
+    except PolicyError as exc:  # pragma: no cover - MUSIC_FORMATS already refused it
+        raise ValueError(str(exc)) from exc
 
 
 def name(conn: sqlite3.Connection) -> str:
-    """`MP3` — for a sentence, not a filename."""
+    """`MP3` — for a sentence, not a filename. Empty when none is configured."""
     value = preferred(conn)
-    return DISPLAY.get(value, value.upper())
+    return DISPLAY.get(value, value.upper()) if value else ""
 
 
 def sentence(conn: sqlite3.Connection) -> str:
-    """The one line a row prints. Whose preference it is, said out loud."""
-    return f"{name(conn)} is your preferred music format."
+    """The one line a row prints. Whose preference it is, said out loud.
+
+    Empty when nothing is configured, so a caller that prints it unconditionally
+    prints nothing rather than a sentence about a preference that is not there.
+    """
+    found = name(conn)
+    return f"{found} is your preferred music format." if found else ""
 
 
 def format_of(relpath: str) -> str:
@@ -128,7 +146,12 @@ def is_music(relpath: str) -> bool:
 
 
 def is_preferred(conn: sqlite3.Connection, relpath: str) -> bool:
-    return is_music(relpath) and format_of(relpath) == preferred(conn)
+    #  Compared canonically, because `.aif` and `.aiff` are one format under
+    #  two spellings and a preference for either has to match both.
+    from librairy.format_policy import canonical
+
+    wanted = canonical(preferred(conn))
+    return bool(wanted) and is_music(relpath) and canonical(format_of(relpath)) == wanted
 
 
 def label_for(conn: sqlite3.Connection, relpath: str) -> str:
