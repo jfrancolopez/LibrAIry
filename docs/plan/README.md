@@ -148,6 +148,24 @@ src/librairy/
 
 Processes communicate only through SQLite (WAL) and the filesystem. No queues, no brokers.
 
+## Undo sequencing (permanent principle, added 2026-08-26)
+
+**Reversing an old decision must not quietly reverse a newer one.**
+
+Written up in [../undo-sequencing.md](../undo-sequencing.md). The parts that
+must not drift:
+
+- a dependency is a later *committed filesystem decision*, never a read. Audits,
+  measurements, relationship discovery and decision memory create none
+- derived from the journal and `plan_ops`, never stored. A dependency table
+  would be a second account of the same events, free to disagree
+- identity first (`item_id`), continuation second (a later operation read
+  exactly where an earlier one wrote). Not a general path comparison
+- ordering comes from `history.id`, not timestamps — one-second resolution made
+  a filing and its immediate correction look simultaneous
+- it never cascades. It names the later decision and stops
+- ambiguity is refused, not guessed
+
 ## Format Policy (permanent principle, added 2026-08-25)
 
 **Among representations that are valid choices, what does the owner prefer or

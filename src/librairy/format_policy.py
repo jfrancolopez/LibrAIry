@@ -665,3 +665,64 @@ def answers(conn: sqlite3.Connection, kind: str, features: dict) -> str:
     label = DISPLAY.get(canonical(wanted), canonical(wanted).upper())
     section = SECTION_LABEL.get(SECTION_OF.get(category, category), category.title())
     return f"Your Format Policy answers this: {label} is your preferred {section} format."
+
+
+#  How an optimization's quality class maps onto the two permissions the owner
+#  can actually express. `remux` repacks streams without re-encoding them, so
+#  it discards nothing and is governed by the lossless permission; `derivative`
+#  makes an additional smaller copy and keeps the original, which is a lossy
+#  encode whatever it is called.
+LOSSLESS_CLASSES = frozenset({"lossless", "remux"})
+LOSSY_CLASSES = frozenset({"lossy", "derivative"})
+
+
+def refused_classes(
+    conn: sqlite3.Connection,
+    relpath: str,
+    *,
+    cached: Index | None = None,
+    roots: tuple[str, ...] | None = None,
+) -> frozenset[str]:
+    """Optimization quality classes the owner has explicitly forbidden here.
+
+    **Unset is not "no".** A category nobody has answered returns an empty set,
+    which is what keeps this from silently switching off behaviour that worked
+    before Format Policy existed. Only an explicit `false` refuses anything.
+
+    Permission is also not capability. Saying *yes, you may propose lossy
+    conversions* does not create a FLAC-to-MP3 encoder; it only stops the
+    policy standing in the way of one that already exists. Nothing here can
+    manufacture an opportunity — it can only take one away.
+    """
+    policy = resolve(conn, relpath, cached=cached, roots=roots)
+    refused: set[str] = set()
+    if policy.allow_lossless is False:
+        refused |= LOSSLESS_CLASSES
+    if policy.allow_lossy is False:
+        refused |= LOSSY_CLASSES
+    return frozenset(refused)
+
+
+def refuses(
+    conn: sqlite3.Connection,
+    relpath: str,
+    quality: str,
+    *,
+    cached: Index | None = None,
+    roots: tuple[str, ...] | None = None,
+) -> str:
+    """The sentence to print when policy forbids this transformation, or "".
+
+    Asked again at the moment of action, not only when the opportunity was
+    written: a permission can be withdrawn between an opportunity appearing and
+    somebody pressing the button, and the button is the part that spends an
+    hour of CPU.
+    """
+    if quality not in refused_classes(conn, relpath, cached=cached, roots=roots):
+        return ""
+    policy = resolve(conn, relpath, cached=cached, roots=roots)
+    kind = "lossless" if quality in LOSSLESS_CLASSES else "lossy"
+    where = policy.transform_from or "your library"
+    return (
+        f"your Format Policy does not permit {kind} conversions for {where}"
+    )

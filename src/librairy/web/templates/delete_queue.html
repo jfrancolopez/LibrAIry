@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% from "partials/ext_info.html" import ext_info %}
+{% block content %}
+  <header class="page-head">
+    <div>
+      <h1>Delete queue</h1>
+      {# The sentence this page exists to make true. LibrAIry has never
+         emptied this folder and does not start now: what was missing was any
+         way to see what you had put in it. #}
+      <p class="muted">Files you decided you were finished with. <strong>Nothing
+        here is deleted automatically</strong> — LibrAIry never removes a file.
+        These sit in <span class="mono">quarantine/_to-delete</span> until you
+        empty that folder yourself, and until then any of them can come back.</p>
+    </div>
+    <a class="btn-ghost" href="/quarantine">Quarantine</a>
+  </header>
+
+  {% if error %}<p class="error-note">{{ error }}</p>{% endif %}
+
+  <section class="metric wide">
+    <h2>What is waiting</h2>
+    <ul class="facts">
+      <li><span class="badge badge-info">{{ summary.files }}</span>
+        file{{ 's' if summary.files != 1 else '' }}</li>
+      {# "Waiting", never "saved". Every byte counted here is still on the
+         disk, in full — calling it a saving would be a claim about storage the
+         disk does not support. #}
+      <li><span class="badge badge-info">{{ summary.bytes_label }}</span>
+        still on disk, waiting</li>
+      {% if summary.oldest %}
+        <li><span class="badge">oldest</span> queued {{ summary.oldest }}</li>
+      {% endif %}
+    </ul>
+  </section>
+
+  {% if decisions %}
+    <section class="metric wide">
+      <h2>Queued together</h2>
+      <p class="muted">Grouped by the decision that sent them here — never by
+        date or reason. Two answers you gave separately stay two decisions.</p>
+      {% for decision in decisions %}
+        <article class="decision-card">
+          <div class="decision-head">
+            <h3>{{ decision.total }} files · {{ decision.size_label }}</h3>
+            <span class="muted">{{ decision.when }}</span>
+          </div>
+          <details class="decision-files">
+            <summary>Show files</summary>
+            <ul class="sample-moves">
+              {% for name in decision.names %}<li class="mono">{{ name }}</li>{% endfor %}
+            </ul>
+            {% if decision.more %}
+              <p class="muted">and {{ decision.more }} more.</p>
+            {% endif %}
+          </details>
+        </article>
+      {% endfor %}
+    </section>
+  {% endif %}
+
+  <section class="metric wide">
+    <h2>Waiting to be removed</h2>
+    {% if not entries %}
+      <p class="muted">The delete queue is empty.</p>
+    {% endif %}
+    <ul class="queue-list">
+      {% for row in entries %}
+        <li class="queue-row{{ ' is-gone' if row.state != 'present' else '' }}">
+          <div class="queue-what">
+            <p class="mono">{{ row.name }}{{ ext_info(row.relpath) }}</p>
+            <p class="muted">{{ row.size_label }} · queued {{ row.when }}</p>
+            {% if row.came_from %}
+              <p class="mono muted">came from {{ row.came_from }}</p>
+            {% endif %}
+            {% if row.state_note %}
+              <p class="queue-state">{{ row.state_note }}</p>
+            {% endif %}
+            {% if row.protected_by %}
+              {# The decision stands; the context has changed. Both matter
+                 before somebody empties this folder. #}
+              <p class="queue-state">The folder this came from,
+                <span class="mono">{{ row.protected_by }}</span>, is now set to
+                preserve originals. Queuing it was still your decision — this is
+                only worth knowing before you remove it.</p>
+            {% endif %}
+            {% for mate in row.related %}
+              <p class="muted"><span class="muted">{{ mate.label }}:</span>
+                <span class="mono">{{ mate.path }}</span></p>
+            {% endfor %}
+          </div>
+          <div class="button-row">
+            {% if row.waiting %}
+              <span class="muted">A decision on this file is waiting for Commit.</span>
+            {% elif row.restorable %}
+              {# Deferred like every other decision in LibrAIry. Nothing moves
+                 on this click; it becomes a card in Commit. #}
+              <form method="post" action="/delete-queue/{{ row.entry_id }}/restore">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button type="submit">Restore</button>
+              </form>
+            {% endif %}
+            {% if row.item_id %}
+              <a class="btn-ghost" href="/items/{{ row.item_id }}">Details</a>
+            {% endif %}
+          </div>
+        </li>
+      {% endfor %}
+    </ul>
+    {% if page_count > 1 %}
+      <div class="button-row">
+        {% if has_prev %}<a class="btn" href="/delete-queue?page={{ page - 1 }}">Previous</a>{% endif %}
+        <span class="muted">{{ range_start }}–{{ range_end }} of {{ total }} ·
+          page {{ page }} of {{ page_count }}</span>
+        {% if has_next %}<a class="btn" href="/delete-queue?page={{ page + 1 }}">Next</a>{% endif %}
+      </div>
+    {% endif %}
+  </section>
+
+  <section class="metric wide">
+    <h2>Removing these</h2>
+    <p class="muted">LibrAIry has never deleted a file and does not offer to.
+      When you want the space back, open
+      <span class="mono">quarantine/_to-delete</span> in your own file manager
+      and empty it. There is no schedule, no expiry, and no button here that
+      does it for you.</p>
+  </section>
+{% endblock %}

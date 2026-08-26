@@ -90,6 +90,18 @@
                   {% if group.undo.note %}
                     <span class="muted">{{ group.undo.note }}</span>
                   {% endif %}
+                  {% for blocker in group.undo.blockers %}
+                    {# Named and linked. "This cannot be undone yet" without
+                       saying which decision is in the way leaves somebody
+                       scrolling a journal looking for it. #}
+                    <a class="btn-ghost" href="{{ blocker.href }}"
+                       title="{{ blocker.summary }}{% if blocker.when %} · {{ blocker.when }}{% endif %}"
+                       >View later decision</a>
+                  {% endfor %}
+                  {% if group.undo.blockers_more %}
+                    <span class="muted">and {{ group.undo.blockers_more }} more
+                      later decision{{ 's' if group.undo.blockers_more != 1 else '' }}.</span>
+                  {% endif %}
                 {% else %}
                 <button type="button" class="btn-ghost"
                         hx-post="/history/plans/{{ group.plan_id }}/undo"
@@ -109,6 +121,9 @@
                        operations on its own leaves the library holding both
                        versions or neither, which is precisely what the ordered
                        reversal above exists to prevent. #}
+                    {# Nor when a later decision depends on this plan: the
+                       whole plan is blocked, and one file of it is no safer
+                       than all of it. #}
                     {% if entry.outcome == 'ok' and not group.undo %}
                       <button class="btn-ghost" hx-post="/history/undo/{{ entry.id }}" hx-target="#history-result" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>Undo</button>
                     {% endif %}

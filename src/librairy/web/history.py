@@ -76,18 +76,61 @@ def _adoption_undo(conn: sqlite3.Connection, plan_id: object) -> dict[str, objec
 
 
 def _plan_undo(
-    conn: sqlite3.Connection, plan_id: object, *, adoption: bool
+    conn: sqlite3.Connection,
+    plan_id: object,
+    *,
+    adoption: bool,
+    sequence=None,  # noqa: ANN001
 ) -> dict[str, object]:
     """Whether this plan can still be reversed. Empty means "ask the usual way".
 
     Index-only, deliberately. Answering it in general would mean hashing every
-    file on the page, and History is a page somebody scrolls. The two cases that
+    file on the page, and History is a page somebody scrolls. The cases that
     can be answered from rows already in the database are the ones where the
     answer is most often no: an adoption whose preserved original has been
-    removed, and a quarantine decision whose file is no longer there.
+    removed, a quarantine decision whose file is no longer there — and now a
+    decision another decision has since built on.
+
+    The sequence comes in already computed. It is one query for the whole page
+    rather than one per card, which is the difference between a History page
+    and a History page that gets slower the longer the journal is.
     """
-    if adoption:
-        return _adoption_undo(conn, plan_id)
+    #  The "file is gone" answers first, and deliberately. They are a hard no —
+    #  there is nothing left to put back — while the sequence answer is a "not
+    #  yet" that tells somebody to reverse a later decision. Telling them to do
+    #  that when the thing they would get back no longer exists sends them to
+    #  undo one decision for nothing.
+    gone = _adoption_undo(conn, plan_id) if adoption else _quarantine_undo(conn, plan_id)
+    if gone:
+        return gone
+    if sequence is not None and not sequence.undoable:
+        from librairy.undo_sequence import BLOCKED
+
+        return {
+            "available": False,
+            "note": sequence.explanation,
+            #  Named and linked. A disabled button with nothing beside it tells
+            #  somebody they cannot do the thing, and not what to do instead.
+            "blockers": [
+                {
+                    "plan_id": blocker.plan_id,
+                    "summary": blocker.summary,
+                    "when": str(blocker.when or "")[:10],
+                    "href": f"/history/plans/{blocker.plan_id}",
+                }
+                for blocker in sequence.blockers
+            ]
+            if sequence.state == BLOCKED
+            else [],
+            "blockers_more": sequence.blockers_more,
+        }
+    return {}
+
+
+def _quarantine_undo(
+    conn: sqlite3.Connection, plan_id: object
+) -> dict[str, object]:
+    """A quarantine decision whose file is no longer on disk."""
     row = conn.execute(
         """
         SELECT i.id AS item_id, i.missing_since
@@ -167,9 +210,16 @@ def _days(
     "yesterday you filed 12 files", and both are computed here at render time
     from the rows themselves.
     """
+    from librairy.undo_sequence import sequences
+
+    groups = _timeline(entries, plans)
+    #  One query for the page. A dependency lookup per card, each of them
+    #  walking every operation ever executed, is the shape that works on a
+    #  fixture and stops working on a real journal.
+    order = sequences(conn, [str(group["plan_id"]) for group in groups if group.get("plan_id")])
     days: list[dict[str, object]] = []
     by_day: dict[str, dict[str, object]] = {}
-    for group in _timeline(entries, plans):
+    for group in groups:
         day = str(group.get("ts") or "")[:10]
         bucket = by_day.get(day)
         if bucket is None:
@@ -183,7 +233,10 @@ def _days(
         group["correction"] = _is_correction(group["entries"])
         group["adoption"] = _is_adoption(group["entries"])
         group["undo"] = _plan_undo(
-            conn, group["plan_id"], adoption=bool(group["adoption"])
+            conn,
+            group["plan_id"],
+            adoption=bool(group["adoption"]),
+            sequence=order.get(str(group["plan_id"] or "")),
         )
         bucket["plans"].append(group)
         bucket["files"] = int(bucket["files"]) + len(group["entries"])

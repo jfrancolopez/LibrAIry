@@ -318,14 +318,33 @@ def _int(value: object) -> int:
 # --- deciding whether there is anything worth saying ---------------------------
 
 
-def advise(relpath: str, facts: MediaFacts, *, protected_by: str = "") -> Opportunity | None:
-    """The one entry point. None means "this file is fine", which is common."""
+def advise(
+    relpath: str,
+    facts: MediaFacts,
+    *,
+    protected_by: str = "",
+    refused: frozenset[str] = frozenset(),
+) -> Opportunity | None:
+    """The one entry point. None means "this file is fine", which is common.
+
+    `refused` is the quality classes the owner's Format Policy explicitly
+    forbids for this path. Empty by default and empty whenever nobody has
+    answered — unset is not "no", and reading it as "no" would switch off
+    behaviour that worked before there was a policy to consult.
+
+    It can only ever take an opportunity away. Permitting lossy conversions
+    does not conjure an encoder for one, so nothing here is reachable by
+    setting a permission to true.
+    """
     suffix = PurePosixPath(relpath).suffix.lower()
+    found = None
     if suffix in UNCOMPRESSED_AUDIO:
-        return _uncompressed_audio(relpath, facts, protected_by)
-    if facts.is_video:
-        return _video(relpath, facts, protected_by)
-    return None
+        found = _uncompressed_audio(relpath, facts, protected_by)
+    elif facts.is_video:
+        found = _video(relpath, facts, protected_by)
+    if found is not None and found.quality in refused:
+        return None
+    return found
 
 
 def _uncompressed_audio(
@@ -740,7 +759,7 @@ def scan_one(
     #  are not to be traded away — and an optimization that replaces the
     #  original with a smaller encode is exactly that trade. The opportunity is
     #  still recorded and still shown; what it cannot become is a job.
-    from librairy.format_policy import protecting
+    from librairy.format_policy import protecting, refused_classes
 
     item_id = int(row["id"]) if row is not None else None
     fingerprint = (row["fingerprint"] or "") if row is not None else ""
@@ -751,7 +770,12 @@ def scan_one(
     probes = probe_calls() - before
     if facts is None:
         return None, probes
-    found = advise(relpath, facts, protected_by=protecting(conn, relpath))
+    found = advise(
+        relpath,
+        facts,
+        protected_by=protecting(conn, relpath),
+        refused=refused_classes(conn, relpath),
+    )
     if found is None:
         return None, probes
     return (

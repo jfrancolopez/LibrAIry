@@ -91,10 +91,11 @@ def test_the_migration_keeps_every_ffprobe_row(tmp_path: Path) -> None:
         INSERT INTO items(id, root, relpath, size, mtime_ns, fingerprint, state,
           first_seen_at, last_seen_at)
           VALUES (1, 'library', 'a.mkv', 10, 0, 'the-bytes', 'committed', 'x', 'x');
-        -- Not what this test is about, and a real database from before 037
-        -- has one. Migration 040 adds a column to it, and a fixture that
-        -- omitted it was asserting that the upgrade works on a database
-        -- nobody has.
+        -- None of the tables below are what this test is about, and a real
+        -- database from before 037 has every one of them. Later migrations
+        -- alter them and — since 046 — rebuild the search index from them, so
+        -- a fixture that omitted them was asserting that the upgrade works on
+        -- a database nobody has.
         CREATE TABLE plans (id TEXT PRIMARY KEY, status TEXT NOT NULL,
           plan_hash TEXT, created_at TEXT NOT NULL, approved_at TEXT,
           finished_at TEXT);
@@ -102,6 +103,47 @@ def test_the_migration_keeps_every_ffprobe_row(tmp_path: Path) -> None:
         -- migration 044 reads the music format preference out of it on its way
         -- into the central Format Policy.
         CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+        -- Migration 045 indexes both of these; a database from before 037 has
+        -- had them since the first release.
+        CREATE TABLE plan_ops (id INTEGER PRIMARY KEY, plan_id TEXT NOT NULL,
+          seq INTEGER NOT NULL, op_type TEXT NOT NULL, item_id INTEGER,
+          src_root TEXT NOT NULL, src_relpath TEXT NOT NULL,
+          src_fingerprint TEXT NOT NULL, dest_root TEXT NOT NULL,
+          dest_relpath TEXT NOT NULL, result TEXT, final_relpath TEXT,
+          executed_at TEXT);
+        -- Migration 046 recreates the search index, and rebuilding it reads
+        -- these. A database from before 037 has all of them.
+        CREATE TABLE proposals (id INTEGER PRIMARY KEY, item_id INTEGER NOT NULL,
+          category TEXT NOT NULL, clean_name TEXT NOT NULL, dest_relpath TEXT,
+          confidence REAL NOT NULL, group_id INTEGER, status TEXT NOT NULL
+          DEFAULT 'proposed', evidence TEXT NOT NULL, created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL);
+        CREATE TABLE groups (id INTEGER PRIMARY KEY, kind TEXT NOT NULL,
+          key TEXT NOT NULL, created_at TEXT NOT NULL);
+        CREATE TABLE worker_state (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+        CREATE TABLE track_identity (item_id INTEGER PRIMARY KEY,
+          fingerprint TEXT NOT NULL DEFAULT '', provider TEXT NOT NULL,
+          recording_id TEXT NOT NULL DEFAULT '', artist TEXT NOT NULL DEFAULT '',
+          artist_id TEXT NOT NULL DEFAULT '', title TEXT NOT NULL DEFAULT '',
+          score REAL, releases TEXT NOT NULL DEFAULT '[]',
+          looked_up_at TEXT NOT NULL);
+        CREATE TABLE catalog_identity (id INTEGER PRIMARY KEY,
+          scope_kind TEXT NOT NULL, scope_key TEXT NOT NULL,
+          provider TEXT NOT NULL, entity TEXT NOT NULL,
+          catalog_id TEXT NOT NULL DEFAULT '',
+          canonical_title TEXT NOT NULL DEFAULT '',
+          canonical_artist TEXT NOT NULL DEFAULT '',
+          artist_id TEXT NOT NULL DEFAULT '', looked_up_at TEXT NOT NULL);
+        CREATE TABLE vision_results (item_id INTEGER PRIMARY KEY,
+          fingerprint TEXT NOT NULL, provider TEXT NOT NULL, model TEXT NOT NULL,
+          category TEXT, caption TEXT, subjects TEXT NOT NULL DEFAULT '[]',
+          tags TEXT NOT NULL DEFAULT '[]', name_tokens TEXT NOT NULL DEFAULT '[]',
+          visible_text TEXT, looked_at TEXT);
+        CREATE TABLE history (id INTEGER PRIMARY KEY, ts TEXT NOT NULL,
+          plan_id TEXT, op_id INTEGER, action TEXT NOT NULL,
+          src_root TEXT NOT NULL, src_relpath TEXT NOT NULL,
+          dest_root TEXT NOT NULL, dest_relpath TEXT NOT NULL,
+          fingerprint TEXT, outcome TEXT NOT NULL);
         CREATE TABLE item_metadata (
           item_id INTEGER PRIMARY KEY REFERENCES items(id),
           fingerprint TEXT NOT NULL, tool TEXT NOT NULL,

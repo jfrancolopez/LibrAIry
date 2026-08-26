@@ -383,6 +383,12 @@ PAGES = {
     # anything is filed — counts at the top, and a companion row that says
     # what it belongs to. The widest lines on it are those sentences.
     "collection-pairs": "/review/collection/CameraCard-Aug24?section=unresolved",
+    # What is waiting to be removed, why, and since when. The widest lines on
+    # it are the provenance path and the Format Policy note under a row.
+    "delete-queue": "/delete-queue",
+    # A blocked Undo, explained. The dev fixture files a photograph and then
+    # corrects it, so the earlier decision names the later one.
+    "history-blocked": "/history",
     # The one page whose subject is a policy: four category sections, the two
     # protections told apart, and a measurement under them. The widest things
     # on it are a label beside a select and a folder path beside a Remove.

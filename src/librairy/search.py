@@ -11,10 +11,19 @@ from typing import Any
 from librairy.config import Settings
 from librairy.live import live
 from librairy.relationships import context as relationship_context
+from librairy.search_identity import identity_of
 from librairy.taxonomy import CATEGORIES as TAXONOMY_CATEGORIES
 
 PAGE_SIZE = 50
-TEXT_FIELDS = ("name", "clean_name", "tags", "artist", "album", "title", "show", "genre", "event")
+TEXT_FIELDS = (
+    "name", "clean_name", "tags", "artist", "album", "title", "show", "genre",
+    "event",
+    #  What LibrAIry knows the file *is* — a catalog title, a recording, an
+    #  ISBN. Its own column, because the physical name, the embedded tags and
+    #  the catalog identity are three facts about one file. See
+    #  `search_identity`.
+    "identity",
+)
 #  Taken from the taxonomy rather than written out again. This was a hand-kept
 #  copy and it had already drifted: `music_videos` was added to the taxonomy and
 #  never here, so every music video in the library fell through to `misc` and
@@ -95,11 +104,11 @@ def sync_search_item(conn: sqlite3.Connection, item_id: int) -> None:
     conn.execute("DELETE FROM search_fts WHERE rowid=?", (item_id,))
     if row is None:
         return
-    fields = _fields_from_row(row)
+    fields = _fields_from_row(conn, row)
     conn.execute(
         f"""
         INSERT INTO search_fts(rowid, {", ".join(TEXT_FIELDS)}, category, root, item_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             item_id,
@@ -112,6 +121,7 @@ def sync_search_item(conn: sqlite3.Connection, item_id: int) -> None:
             fields["show"],
             fields["genre"],
             fields["event"],
+            fields["identity"],
             fields["category"],
             row["root"],
             item_id,
@@ -133,6 +143,7 @@ CREATE VIRTUAL TABLE search_fts USING fts5(
   show,
   genre,
   event,
+  identity,
   category UNINDEXED,
   root UNINDEXED,
   item_id UNINDEXED,
@@ -372,7 +383,7 @@ def perf_search(conn: sqlite3.Connection, query: str) -> float:
     return time.perf_counter() - started
 
 
-def _fields_from_row(row: sqlite3.Row) -> dict[str, str]:
+def _fields_from_row(conn: sqlite3.Connection, row: sqlite3.Row) -> dict[str, str]:
     evidence = _evidence(row["evidence"])
     name = row["relpath"].replace("/", " ")
     tags = " ".join(entry["detail"] for entry in evidence if entry.get("source") == "hashtag")
@@ -392,6 +403,10 @@ def _fields_from_row(row: sqlite3.Row) -> dict[str, str]:
         "show": by_field.get("show", ""),
         "genre": by_field.get("genre", ""),
         "event": by_field.get("event", ""),
+        #  Persisted identity only, and only where it is current. Search never
+        #  asks a provider: the query is typed by somebody waiting, and a
+        #  lookup would be both slow and a disclosure.
+        "identity": identity_of(conn, int(row["id"])),
         "category": row["category"] or _category_from_path(row["relpath"]),
     }
 

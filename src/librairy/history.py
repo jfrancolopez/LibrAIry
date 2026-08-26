@@ -154,7 +154,14 @@ def undo_plan(conn: sqlite3.Connection, plan_id: str, settings: Settings) -> lis
     nothing at all remains in them — see `subtree.remove_emptied_directories`.
     """
     from librairy.subtree import remove_emptied_directories
+    from librairy.undo_sequence import assert_clear
 
+    #  Before anything is read, let alone moved. LibrAIry now produces
+    #  sequences — file, then correct, then replace — and reversing the first
+    #  of those blindly discards the decisions taken after it. This is the one
+    #  function every reversal goes through, so it is the one place the check
+    #  belongs.
+    assert_clear(conn, plan_id)
     entries = plan_journal(conn, plan_id)
     results = [undo_op(conn, row["id"], settings) for row in entries]
     vacated = [
@@ -255,6 +262,20 @@ def plan_journal(conn: sqlite3.Connection, plan_id: str) -> list[sqlite3.Row]:
 
 
 def undo_op(conn: sqlite3.Connection, history_id: int, settings: Settings) -> UndoResult:
+    """Reverse one journalled operation.
+
+    The sequence check is asked of the operation's *plan*, not of the operation
+    alone: reversing one file of a decision that a later decision built on is
+    no safer than reversing all of it, and the answer somebody needs is the
+    same either way — which later decision to reverse first.
+    """
+    from librairy.undo_sequence import assert_clear
+
+    entry = conn.execute(
+        "SELECT plan_id FROM history WHERE id=?", (history_id,)
+    ).fetchone()
+    if entry is not None and entry["plan_id"]:
+        assert_clear(conn, str(entry["plan_id"]))
     with acquire_lock(settings):
         return _undo_op_unlocked(conn, history_id, settings)
 

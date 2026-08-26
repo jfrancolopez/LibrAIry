@@ -474,6 +474,48 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             {"title": "Format Policy", "error": error, **page_data(conn)},
         )
 
+    @app.get("/delete-queue", response_class=HTMLResponse)
+    def delete_queue_screen(request: Request, page: int = 1) -> HTMLResponse:
+        """What is waiting to be removed, and what it was.
+
+        Read-only, and it stats nothing: every fact on it is already in the
+        database, and a page that walked the folder would be one network round
+        trip per row on a NAS.
+        """
+        from librairy.web.delete_queue_page import page_data
+
+        return TEMPLATES.TemplateResponse(
+            request,
+            "delete_queue.html",
+            {"title": "Delete queue", **page_data(conn, page=page)},
+        )
+
+    @app.post("/delete-queue/{entry_id}/restore", response_class=HTMLResponse)
+    def delete_queue_restore(request: Request, entry_id: int) -> Response:
+        """Take one file back out of the queue — deferred, like everything else.
+
+        Nothing moves on this click. It becomes an approved plan and a card in
+        Commit, verified by hash on the way, exactly as a restore from
+        Quarantine already is: one implementation, so a file that came back
+        from the delete queue and one that came back from Quarantine cannot
+        behave differently.
+        """
+        from librairy.quarantine import QuarantineError
+        from librairy.quarantine_requests import request_restore
+        from librairy.web.delete_queue_page import page_data
+
+        try:
+            with transaction(conn):
+                request_restore(conn, settings, entry_id)
+        except QuarantineError as exc:
+            return TEMPLATES.TemplateResponse(
+                request,
+                "delete_queue.html",
+                {"title": "Delete queue", **page_data(conn, error=str(exc))},
+                status_code=409,
+            )
+        return RedirectResponse("/commit?type=restore", status_code=303)
+
     @app.get("/settings/format-policy", response_class=HTMLResponse)
     def format_policy_screen(request: Request) -> HTMLResponse:
         """Read-only, and it stays read-only.

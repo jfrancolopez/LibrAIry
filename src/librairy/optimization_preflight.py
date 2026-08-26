@@ -186,6 +186,15 @@ def adoption_preflight(
     from librairy.format_policy import protecting
 
     protector = protecting(conn, item["relpath"])
+    if not protector:
+        #  And the transformation permission, asked at the moment of action for
+        #  the same reason. Adoption is the step that replaces the original, so
+        #  a permission withdrawn since the encode ran still counts.
+        from librairy.format_policy import refuses
+
+        forbidden = refuses(conn, str(item["relpath"]), str(job["quality"]))
+        if forbidden:
+            return Refusal("policy", forbidden)
     if protector:
         return Refusal(
             "protected",

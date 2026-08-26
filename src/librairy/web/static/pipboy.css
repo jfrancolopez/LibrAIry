@@ -3413,3 +3413,23 @@ summary.timeline-head::-webkit-details-marker { display: none; }
 .policy-impact > h3 { margin: 0 0 var(--space-1); font-size: var(--text-md); }
 .policy-impact > p { margin: 0 0 var(--space-1); }
 .policy-stale { color: var(--warn); margin: var(--space-1) 0 var(--space-2); }
+
+/* The delete queue, as a place rather than a folder path. Plain rows: every
+   file here is one somebody deliberately finished with, and a list styled like
+   a warning would be arguing with a decision they already took. */
+.queue-list { list-style: none; padding: 0; margin: var(--space-2) 0; }
+.queue-row {
+  display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-2);
+  align-items: baseline; justify-content: space-between;
+  padding: var(--space-2) 0; border-bottom: 1px solid var(--border);
+}
+.queue-row.is-gone { opacity: 0.6; }
+.queue-what { flex: 1 1 20rem; min-width: 0; }
+.queue-what > p { margin: 0 0 calc(var(--space-1) / 2); overflow-wrap: anywhere; }
+/* Bytes that are not what was queued, or not there at all. Amber rather than
+   red: nothing is broken — the file simply is not what the decision was
+   about, and Restore already refuses on both. */
+.queue-state { color: var(--warn); font-size: var(--text-sm); }
+
+/* Why an older decision cannot be reversed yet, on its History card. */
+.undo-blocked { color: var(--warn); font-size: var(--text-sm); }

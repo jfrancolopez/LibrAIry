@@ -275,6 +275,13 @@ def _fingerprint_lookup(settings: Settings, *, root: str, tool):  # noqa: ANN001
 
 
 def remember(conn: sqlite3.Connection, identity: Identity) -> None:
+    """Write down what the audio turned out to be, and make it findable.
+
+    The refresh is the point. Identity used to be written and Search left
+    untouched, so a recording LibrAIry had positively identified stayed
+    unfindable by the name it had just learned — which is the whole value of
+    having asked.
+    """
     conn.execute(
         """
         INSERT INTO track_identity
@@ -316,6 +323,18 @@ def remember(conn: sqlite3.Connection, identity: Identity) -> None:
             utc_now(),
         ),
     )
+    _refresh_search(conn, identity.item_id)
+
+
+def _refresh_search(conn: sqlite3.Connection, item_id: int) -> None:
+    """One item's index row, not the whole index.
+
+    A rebuild for a single identification would read every file in the library
+    to make one of them findable.
+    """
+    from librairy.search import sync_search_item
+
+    sync_search_item(conn, int(item_id))
 
 
 def recall(

@@ -9,7 +9,7 @@ from pathlib import Path
 from librairy.config import Settings
 
 LOGGER = logging.getLogger(__name__)
-SCHEMA_VERSION = 44
+SCHEMA_VERSION = 46
 
 
 class DatabaseVersionError(RuntimeError):
@@ -1299,6 +1299,55 @@ SELECT 'category', 'music',
 DELETE FROM settings WHERE key='music.preferred_format';
 """
 
+MIGRATION_045 = """
+-- Undo asks which later decisions consumed the state an earlier one created,
+-- and the answer comes from `plan_ops.item_id` — the identity a file keeps
+-- across every move. Without this index that question is a full scan of every
+-- operation ever executed, once per plan on the History page.
+--
+-- No new table. What a plan did is already recorded, immutably, in `plan_ops`
+-- and `history`; a dependency graph stored alongside them would be a second
+-- account of the same events, free to disagree with the first.
+CREATE INDEX IF NOT EXISTS idx_plan_ops_item ON plan_ops(item_id);
+CREATE INDEX IF NOT EXISTS idx_history_op ON history(op_id);
+"""
+
+MIGRATION_046 = """
+-- What LibrAIry knows a file *is*, made searchable.
+--
+-- A film identified against TMDB, a recording against MusicBrainz, a paper by
+-- its DOI — none of it reached Search, which was built from the filename, the
+-- proposal and the tags. A library that knew perfectly well it held *Arrival*
+-- could not find it under that name if the file was called
+-- `arrvl.2016.PROPER.1080p.x264-GRP.mkv`, which is the exact case
+-- identification exists for.
+--
+-- A new column rather than more text in `title`: the physical name, the
+-- embedded tags and the catalog identity are three facts about one file, and
+-- collapsing them would quietly rewrite what a file says about itself.
+--
+-- FTS5 cannot add a column, so the table is recreated. Everything in it is
+-- derived from `items`, `proposals` and the identity tables, which is what
+-- makes it rebuildable — `migrate` repopulates it immediately afterwards.
+DROP TABLE IF EXISTS search_fts;
+CREATE VIRTUAL TABLE search_fts USING fts5(
+  name,
+  clean_name,
+  tags,
+  artist,
+  album,
+  title,
+  show,
+  genre,
+  event,
+  identity,
+  category UNINDEXED,
+  root UNINDEXED,
+  item_id UNINDEXED,
+  tokenize='unicode61 remove_diacritics 2'
+);
+"""
+
 MIGRATIONS = {
     1: MIGRATION_001,
     2: MIGRATION_002,
@@ -1344,6 +1393,8 @@ MIGRATIONS = {
     42: MIGRATION_042,
     43: MIGRATION_043,
     44: MIGRATION_044,
+    45: MIGRATION_045,
+    46: MIGRATION_046,
 }
 
 
@@ -1583,7 +1634,11 @@ def migrate(conn: sqlite3.Connection) -> None:
             if conn.in_transaction:
                 conn.execute("ROLLBACK")
             raise _migration_error(version, exc) from exc
-    if starting_version < 8 <= SCHEMA_VERSION:
+    #  The search index is derived, so a migration that changes its shape has
+    #  to refill it. Migration 008 created it; migration 046 added the identity
+    #  column and dropped the table to do so — either way an upgraded database
+    #  reaches this line with an index that does not match the code.
+    if starting_version < 8 <= SCHEMA_VERSION or starting_version < 46 <= SCHEMA_VERSION:
         from librairy.search import rebuild_search_index
 
         rebuild_search_index(conn)

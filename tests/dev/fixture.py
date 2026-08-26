@@ -598,6 +598,7 @@ def build_app(root: Path):  # noqa: ANN201
     _four_manuals_already_filed(conn, settings)
     _an_imported_camera_card(conn, settings)
     _an_imported_film_with_companions(conn, settings)
+    _a_delete_queue(conn, settings)
     _measure_format_impact(conn, settings)
 
     return create_app(settings, conn)
@@ -1070,6 +1071,52 @@ def _a_format_policy(conn, settings: Settings) -> None:  # noqa: ANN001
     for year in (1994, 1998):
         (keepsakes / f"Grandad {year}.wav").write_bytes(b"WAVE" * 600)
     scan_root(conn, "library", settings.library_dir, settings)
+
+
+def _a_delete_queue(conn, settings: Settings) -> None:  # noqa: ANN001
+    """Several files finished with, including four from one decision.
+
+    Built by actually taking the decisions — set aside, then queue for deletion
+    — so the page reads the provenance it will read in production rather than
+    rows a fixture invented. One of them comes from the protected wedding
+    folder, which is the context worth seeing before anybody empties this.
+    """
+    from librairy.executor import execute_plan  # noqa: PLC0415
+    from librairy.planner import OperationSpec, approve_plan, create_plan  # noqa: PLC0415
+    from librairy.quarantine_requests import request_delete_queue  # noqa: PLC0415
+
+    batch = [f"Photos/Wedding/IMG_90{index:02d}.JPG" for index in (1, 2, 3)]
+    batch.append("Photos/2024/Backyard/IMG_5402.jpeg")
+    present = [
+        relpath for relpath in batch if (settings.library_dir / relpath).is_file()
+    ]
+    if not present:
+        return
+    aside = create_plan(
+        conn,
+        [
+            OperationSpec(
+                op_type="quarantine",
+                src_root="library",
+                src_relpath=relpath,
+                dest_root="quarantine",
+                dest_relpath=f"2026-08-20/{relpath.rsplit('/', 1)[-1]}",
+            )
+            for relpath in present
+        ],
+        settings,
+    )
+    conn.execute("UPDATE plans SET coherent=1 WHERE id=?", (aside,))
+    approve_plan(conn, aside, settings)
+    execute_plan(conn, aside, settings)
+    #  And then the second decision: finished with them. Two plans, because
+    #  that is two answers somebody gave — which is exactly what the queue
+    #  groups by.
+    for row in conn.execute(
+        "SELECT id FROM quarantine_entries WHERE plan_id=? ORDER BY id", (aside,)
+    ).fetchall():
+        plan_id = request_delete_queue(conn, settings, int(row["id"]))
+        execute_plan(conn, plan_id, settings)
 
 
 def _measure_format_impact(conn, settings: Settings) -> None:  # noqa: ANN001

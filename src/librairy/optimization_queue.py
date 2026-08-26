@@ -192,6 +192,16 @@ def enqueue(
         raise QueueRefused("that opportunity has already been answered")
     if row["protected_by"]:
         raise QueueRefused(f"it is inside the protected root {row['protected_by']}")
+    #  Asked again here, not only when the opportunity was written: a
+    #  permission can be withdrawn between an opportunity appearing and
+    #  somebody pressing the button, and the button is the part that spends an
+    #  hour of CPU. Unset still means "the owner has not said", so this refuses
+    #  nothing unless they explicitly said no.
+    from librairy.format_policy import refuses
+
+    forbidden = refuses(conn, str(row["relpath"]), str(row["quality"]))
+    if forbidden:
+        raise QueueRefused(forbidden)
     if row["kind"] not in EXECUTABLE_KINDS:
         raise QueueRefused("automatic conversion is not supported for this file yet")
     if _live_job_for(conn, row["relpath"], row["kind"]) is not None:

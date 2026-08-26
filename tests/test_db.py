@@ -106,7 +106,15 @@ def test_fresh_db_migrates_to_current_schema(tmp_path: Path) -> None:
         "idx_plan_relationships_plan",
         # What the owner prefers, permits and protects.
         "idx_format_policy_kind",
+        # Which later decision consumed the state an earlier one created.
+        "idx_plan_ops_item",
+        "idx_history_op",
     }
+
+    #  The identity column migration 046 added, so a rebuild and a fresh
+    #  database cannot drift apart about what Search indexes.
+    search_columns = {row[1] for row in conn.execute("PRAGMA table_info(search_fts)")}
+    assert "identity" in search_columns
 
     columns = {row[1] for row in conn.execute("PRAGMA table_info(provider_status)")}
     assert "available_models" in columns
@@ -173,6 +181,8 @@ def test_migration_011_closes_proposals_for_files_already_filed(tmp_path: Path) 
         DROP TABLE IF EXISTS audit_runs;
         DROP TABLE IF EXISTS optimization_jobs;
         DROP TABLE IF EXISTS optimization_opportunities;
+        DROP INDEX IF EXISTS idx_plan_ops_item;
+        DROP INDEX IF EXISTS idx_history_op;
         DROP INDEX IF EXISTS idx_format_policy_kind;
         DROP TABLE IF EXISTS format_policy_scopes;
         DROP INDEX IF EXISTS idx_plan_relationships_plan;

@@ -86,6 +86,12 @@ class CatalogRun:
 def remember(
     conn: sqlite3.Connection, scope_kind: str, scope_key: str, identity: Identity
 ) -> None:
+    """Write down what a catalog said this folder is, and make it findable.
+
+    Identity belongs to the folder, so refreshing Search means refreshing every
+    file under it — an album's forty tracks all become findable by the release
+    name at once. Bounded by the folder, never a whole-index rebuild.
+    """
     conn.execute(
         """
         INSERT INTO catalog_identity
@@ -112,6 +118,29 @@ def remember(
             utc_now(),
         ),
     )
+    _refresh_search(conn, scope_key)
+
+
+def _refresh_search(conn: sqlite3.Connection, scope_key: str) -> None:
+    """Reindex the files this identity now describes.
+
+    Identity used to be written and Search left untouched, so a film LibrAIry
+    had positively identified stayed unfindable by the title it had just
+    learned — which is the whole value of having asked.
+    """
+    from librairy.search import sync_search_item
+
+    prefix = str(scope_key or "").strip("/")
+    if not prefix:
+        return
+    rows = conn.execute(
+        "SELECT id FROM items WHERE root='library'"
+        " AND (relpath = ? OR relpath LIKE ? ESCAPE '\\')",
+        (prefix, prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "/%"),
+    ).fetchall()
+    for row in rows:
+        sync_search_item(conn, int(row["id"]))
+
 
 
 def recall(

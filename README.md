@@ -37,6 +37,8 @@ Open `http://localhost:8080` and drop files into `data/inbox`. No password is re
 - [Content search](docs/content-search.md)
 - [Files that belong together](docs/relationships.md)
 - [Format Policy](docs/format-policy.md)
+- [Undo and the order of decisions](docs/undo-sequencing.md)
+- [The delete queue](docs/delete-queue.md)
 - [Performance](docs/performance.md)
 - [FAQ](docs/faq.md)
 

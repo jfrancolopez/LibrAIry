@@ -184,6 +184,12 @@ def facts_for_item(
         set_cached_metadata(
             conn, item_id, fingerprint, DOCUMENT_TOOL, _as_payload(facts), utc_now()
         )
+        #  A title, an author and an ISBN are what somebody searches a document
+        #  by, and measuring them used to leave Search knowing none of it. One
+        #  item's index row, not a rebuild.
+        from librairy.search import sync_search_item
+
+        sync_search_item(conn, int(item_id))
     return facts
 
 
