@@ -12,6 +12,8 @@ from pathlib import Path
 from librairy.ai.orchestrator import provider_for_config
 from librairy.ai.registry import configured_providers, find_configured_provider
 from librairy.ai.status import provider_models, upsert_provider_status
+from librairy.attention import LEVEL_LABEL, LEVEL_NOTE, LEVELS
+from librairy.attention import report as attention_report
 from librairy.backup import backup_status
 from librairy.config import Settings
 from librairy.db import database_path
@@ -87,7 +89,20 @@ def prune_provider_status(conn: sqlite3.Connection, settings: Settings) -> int:
 
 
 def health_data(conn: sqlite3.Connection, settings: Settings) -> dict[str, object]:
-    prune_provider_status(conn, settings)
+    """Everything the Health page draws.
+
+    Two halves that answer two different questions and are deliberately not
+    merged. `attention` is about the library and the decisions taken over it —
+    derived from the database, cheap, and the reason somebody opens this page
+    once the program has been running a while. Everything below it is about the
+    machinery: the helper binaries, the AI endpoints, the disks, the worker.
+
+    Neither half writes. Provider records used to be pruned here, as a side
+    effect of drawing the page — a `DELETE` on a GET, which is exactly the
+    shape that turns a page view colliding with the worker's write lock into a
+    "System Fault" on whatever you were reading. It happens when a provider is
+    tested instead, which is when the set of providers can actually change.
+    """
     providers = live_provider_status(conn, settings)
     tools = tool_statuses(settings)
     db = db_status(settings)
@@ -114,6 +129,13 @@ def health_data(conn: sqlite3.Connection, settings: Settings) -> dict[str, objec
         ),
         "search_index": search_index_panel(conn),
         "backup_queue": backup_queue_panel(conn),
+        #  What needs a person, read from what is already recorded. See
+        #  `librairy/attention.py` for why this is derived rather than stored
+        #  and why it never repairs anything it finds.
+        "attention": attention_report(conn, settings),
+        "attention_levels": LEVELS,
+        "attention_labels": LEVEL_LABEL,
+        "attention_notes": LEVEL_NOTE,
         **health_metrics(conn, settings),
     }
 
@@ -493,6 +515,10 @@ def test_provider(
     config = find_configured_provider(conn, settings, name)
     if config is None:
         return None
+    #  The one moment the set of providers can actually have changed under the
+    #  record — somebody is here because they edited their settings. Drawing
+    #  the page is not that moment, and doing it there made rendering a write.
+    prune_provider_status(conn, settings)
     provider = provider_for_config(config, settings)
     health = provider.health(settings.ai_timeout)
     upsert_provider_status(conn, config, health)

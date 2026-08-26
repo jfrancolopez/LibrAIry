@@ -107,6 +107,9 @@ TYPE_NOTE = {
 #  A marker, not a message. The sentence a reader sees comes from
 #  `relationship_impact`, which knows which of the three things changed.
 RELATED_DRIFT = "related"
+#  The same, for an approval that would set aside an original the owner has
+#  since protected. `correction_state` owns both words.
+PROTECTED_DRIFT = "protected"
 
 PAGE_SIZE = 50
 
@@ -273,15 +276,69 @@ def queue_rows(
     """
     offset = max(0, (max(1, page) - 1) * page_size)
     if kind == NEW_FILE:
-        return _inbox_rows(conn, kind, page_size, offset)
-    if kind == SET_ASIDE:
+        rows = _inbox_rows(conn, kind, page_size, offset)
+    elif kind == SET_ASIDE:
         #  The one group with two sources. An arrival being set aside is an
         #  approved proposal; a library copy being set aside is an approved
         #  plan. They are the same decision seen from the two places a file can
         #  be leaving from, and one heading is the honest number.
         rows = _inbox_rows(conn, kind, page_size, offset)
-        return [*rows, *_plan_rows(conn, settings, kind, page_size - len(rows), offset)]
-    return _plan_rows(conn, settings, kind, page_size, offset)
+        rows = [*rows, *_plan_rows(conn, settings, kind, page_size - len(rows), offset)]
+    else:
+        rows = _plan_rows(conn, settings, kind, page_size, offset)
+    return _with_conflicts(conn, rows)
+
+
+def _with_conflicts(
+    conn: sqlite3.Connection, rows: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Mark the decisions on this page that cannot both remain valid.
+
+    Asked for the page, never for the database: the keys these decisions claim
+    are looked up, and only then the other claimants of those keys. The far
+    side of a collision is found without walking every waiting decision, which
+    is what keeps this two queries whether ten decisions are waiting or a
+    thousand.
+
+    A conflict is not staleness and does not borrow its badge. Both stop the
+    same button being drawn, and they are two different sentences: one says a
+    file changed underneath an approval, the other says you approved two things
+    that cannot both happen. Telling somebody the wrong one sends them looking
+    in the wrong place.
+    """
+    from librairy.plan_conflicts import PLAN, PROPOSAL, SHOWN, for_decisions
+
+    decisions = [
+        (PLAN, str(row["plan_id"])) if row.get("plan_id") else (PROPOSAL, str(row["back_id"]))
+        for row in rows
+        if row.get("plan_id") or row.get("back_id")
+    ]
+    found = for_decisions(conn, decisions)
+    if not found:
+        return rows
+    for row in rows:
+        key = (
+            (PLAN, str(row["plan_id"]))
+            if row.get("plan_id")
+            else (PROPOSAL, str(row.get("back_id") or ""))
+        )
+        conflicts = found.get(key, [])
+        if not conflicts:
+            continue
+        first = conflicts[0]
+        others = first.without(*key)
+        row["conflict"] = {
+            "headline": first.headline,
+            "subject": first.subject,
+            "detail": first.detail,
+            "others": [party.summary for party in others[:SHOWN] if party.summary],
+            "others_more": max(0, len(others) - SHOWN),
+            #  Every other collision this decision is in, counted rather than
+            #  listed. One card explaining four collisions is a card nobody
+            #  finishes reading.
+            "more": len(conflicts) - 1,
+        }
+    return rows
 
 
 def _inbox_rows(
@@ -488,7 +545,16 @@ def _plan_row(
         "stale": bool(stale),
         #  Why, in the words the reader needs. "Approval is outdated" on its
         #  own sends somebody looking through a folder for what changed.
-        "stale_reason": related_drift if stale == RELATED_DRIFT else "",
+        "stale_reason": (
+            related_drift
+            if stale == RELATED_DRIFT
+            #  The one reason that is not about bytes. Nothing changed on the
+            #  disk — the owner changed their mind about whether this original
+            #  may be traded away, and the later instruction wins.
+            else "This folder is now set to preserve its originals"
+            if stale == PROTECTED_DRIFT
+            else ""
+        ),
         #  What this decision does to pairs LibrAIry already knows about.
         #  Bounded: a photo group holds dozens, and a card that lists every one
         #  of them is no longer a card. `None` when it touches none.

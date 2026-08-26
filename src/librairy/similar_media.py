@@ -615,15 +615,11 @@ def _assert_not_protected(
     conn: sqlite3.Connection, going: list[str], error: type[Exception]
 ) -> None:
     """Refuse to set aside a file whose originals the owner has protected."""
-    from librairy.format_policy import protected_among
+    from librairy.format_policy import protection_refusal
 
-    for relpath, policy in protected_among(conn, list(going)).items():
-        if policy.protected_original:
-            raise error(
-                f"{PurePosixPath(relpath).name} is protected by your Format "
-                f"Policy: {policy.explanation} Change that first if you want "
-                f"to set it aside."
-            )
+    refused = protection_refusal(conn, list(going), verb="set it aside")
+    if refused:
+        raise error(refused)
 
 
 def set_aside(

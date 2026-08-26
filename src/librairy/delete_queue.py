@@ -378,3 +378,45 @@ def is_queued(relpath: str) -> bool:
     """Whether this quarantine-relative path is inside the delete queue."""
     text = str(relpath or "").replace("\\", "/").strip("/")
     return bool(text) and text.split("/", 1)[0] == DELETE_PILE
+
+
+def health(conn: sqlite3.Connection) -> dict[str, object]:
+    """The queue in four numbers, for a page that is only summarising it.
+
+    One query rather than `summary` plus a page of `entries`: Health wants
+    counts, and building fifty `Entry` objects to count two of them is the
+    shape that makes a summary page slower than the page it summarises.
+
+    `files` and `bytes` describe what is *waiting* — present, unchanged bytes
+    still occupying storage. `changed` and `gone` are counted separately
+    because they are the two states where Restore is not offered, and where a
+    person needs to know before they empty anything.
+    """
+    row = conn.execute(
+        f"""
+        SELECT
+          SUM(CASE WHEN i.missing_since IS NULL THEN 1 ELSE 0 END) AS files,
+          SUM(CASE WHEN i.missing_since IS NULL THEN i.size ELSE 0 END) AS bytes,
+          SUM(CASE WHEN i.missing_since IS NOT NULL THEN 1 ELSE 0 END) AS gone,
+          SUM(CASE WHEN i.missing_since IS NULL AND queued.src_fingerprint IS NOT NULL
+                    AND i.fingerprint IS NOT NULL
+                    AND queued.src_fingerprint <> i.fingerprint
+                   THEN 1 ELSE 0 END) AS changed,
+          MIN(CASE WHEN i.missing_since IS NULL THEN qe.quarantined_at END) AS oldest
+        FROM quarantine_entries qe
+        JOIN items i ON i.id = qe.item_id
+        LEFT JOIN plan_ops queued ON queued.id = (
+          SELECT o.id FROM plan_ops o
+           WHERE o.plan_id = qe.plan_id AND o.item_id = qe.item_id
+           ORDER BY o.seq LIMIT 1
+        )
+        WHERE qe.restored_at IS NULL AND i.root='quarantine' AND {_IN_QUEUE}
+        """,  # noqa: S608 - `_IN_QUEUE` is a module constant
+    ).fetchone()
+    return {
+        "files": int(row["files"] or 0) if row else 0,
+        "bytes": int(row["bytes"] or 0) if row else 0,
+        "changed": int(row["changed"] or 0) if row else 0,
+        "gone": int(row["gone"] or 0) if row else 0,
+        "oldest": human_ago(str(row["oldest"] or "")) if row and row["oldest"] else "",
+    }

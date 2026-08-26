@@ -713,6 +713,10 @@ def _proposal_rows(
     #  One lookup for the whole page. A history scan per row is the shape that
     #  stops working at fifty rows and is unusable at five hundred.
     suggested = learned_suggestions(conn, rows)
+    #  What the destination's Format Policy will mean once the file is there.
+    #  Batched for the same reason: the scope table and the protected roots are
+    #  read once, not once per row.
+    arriving = arriving_policies(conn, rows)
     return [
         {
             **dict(row),
@@ -766,9 +770,39 @@ def _proposal_rows(
             #  agreeing with the destination already on the row is a sentence
             #  that changes nothing.
             "suggestion": suggested.get(int(row["id"])),
+            #  What this file's *destination* says about originals, said before
+            #  it is filed rather than discovered afterwards. Context, never a
+            #  refusal: preserve-originals has never meant LibrAIry may not
+            #  file a photograph into a better folder — it means nothing may
+            #  later decide that photograph is the dispensable copy. Absent on
+            #  every ordinary row, because a note saying "no policy applies
+            #  here" is noise on the page where somebody is choosing a folder.
+            "arriving_policy": arriving.get(int(row["id"]), ""),
         }
         for row in rows
     ]
+
+
+def arriving_policies(
+    conn: sqlite3.Connection, rows: list[sqlite3.Row]
+) -> dict[int, str]:
+    """The sentence each proposed destination will make true, once filed.
+
+    Keyed by proposal id and empty for every row whose destination has nothing
+    to say, which on most libraries is every row.
+    """
+    from librairy.format_policy import after_filing_among
+
+    wanted = {
+        int(row["id"]): (str(row["dest_relpath"]), str(row["category"] or ""))
+        for row in rows
+        if row["dest_relpath"] and str(row["dest_root"] or "library") == "library"
+    }
+    return {
+        key: note
+        for key, policy in after_filing_among(conn, wanted).items()
+        if (note := policy.arriving_note)
+    }
 
 
 def learned_suggestions(

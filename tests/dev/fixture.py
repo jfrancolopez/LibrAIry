@@ -598,8 +598,12 @@ def build_app(root: Path):  # noqa: ANN201
     _four_manuals_already_filed(conn, settings)
     _an_imported_camera_card(conn, settings)
     _an_imported_film_with_companions(conn, settings)
-    _a_delete_queue(conn, settings)
     _measure_format_impact(conn, settings)
+    #  After the measurement on purpose: this scene takes four files out of the
+    #  library, so the snapshot above stops describing it — which is exactly
+    #  the "measured, then the library moved on" state Health reports.
+    _a_delete_queue(conn, settings)
+    _two_arrivals_wanting_one_place(conn, settings)
 
     return create_app(settings, conn)
 
@@ -1071,6 +1075,44 @@ def _a_format_policy(conn, settings: Settings) -> None:  # noqa: ANN001
     for year in (1994, 1998):
         (keepsakes / f"Grandad {year}.wav").write_bytes(b"WAVE" * 600)
     scan_root(conn, "library", settings.library_dir, settings)
+    _an_arrival_headed_for_a_protected_folder(conn, settings)
+
+
+def _an_arrival_headed_for_a_protected_folder(conn, settings: Settings) -> None:  # noqa: ANN001
+    """One more RAW from the same wedding, still in the inbox.
+
+    The scene the arrival-side policy exists for. Its proposal points at
+    `Photos/Wedding`, which preserves originals — so Review can say what filing
+    it there will mean, before it is filed, while a different folder is still
+    one edit away.
+
+    It is emphatically **not** protected yet. The file is in the inbox, and a
+    proposal is a suggestion about where it will go rather than a claim about
+    where it is.
+    """
+    from librairy.lifecycle import transition_item  # noqa: PLC0415
+    from librairy.proposals import upsert_proposal  # noqa: PLC0415
+
+    (settings.inbox_dir / "IMG_9042.CR3").write_bytes(b"RAW" * 420)
+    scan_root(conn, "inbox", settings.inbox_dir, settings)
+    row = conn.execute(
+        "SELECT id FROM items WHERE root='inbox' AND relpath='IMG_9042.CR3'"
+    ).fetchone()
+    if row is None:  # pragma: no cover - the file was just written
+        return
+    upsert_proposal(
+        conn,
+        item_id=int(row["id"]),
+        category="photos",
+        clean_name="IMG_9042.CR3",
+        dest_relpath="Photos/Wedding/IMG_9042.CR3",
+        confidence=0.91,
+        evidence=[
+            EvidenceEntry("filesystem", "extension", ".CR3", 0.9),
+            EvidenceEntry("library-pattern", "folder", "Photos/Wedding", 0.85),
+        ],
+    )
+    transition_item(conn, int(row["id"]), "proposed")
 
 
 def _a_delete_queue(conn, settings: Settings) -> None:  # noqa: ANN001
@@ -1117,15 +1159,83 @@ def _a_delete_queue(conn, settings: Settings) -> None:  # noqa: ANN001
     ).fetchall():
         plan_id = request_delete_queue(conn, settings, int(row["id"]))
         execute_plan(conn, plan_id, settings)
+    _queued_files_that_moved_on(conn, settings)
+
+
+def _queued_files_that_moved_on(conn, settings: Settings) -> None:  # noqa: ANN001
+    """One queued file rewritten outside LibrAIry, and one deleted outside it.
+
+    Both are real states of a real queue — somebody tidying up over SMB — and
+    both are the states where Restore must not be offered, because putting the
+    file back would not put back what the decision was about. Made by actually
+    touching the bytes and rescanning, so the index reaches the same conclusion
+    it would in production.
+    """
+    from librairy.scanner import scan_root  # noqa: PLC0415
+
+    queued = sorted((settings.quarantine_dir / "_to-delete").rglob("*.JPG"))
+    if len(queued) < 2:
+        return
+    queued[0].write_bytes(b"somebody edited this after queuing it, over SMB")
+    queued[1].unlink()
+    scan_root(conn, "quarantine", settings.quarantine_dir, settings)
+
+
+def _two_arrivals_wanting_one_place(conn, settings: Settings) -> None:  # noqa: ANN001
+    """Two approved arrivals, both filed to the same path.
+
+    Each was a reasonable answer on its own — two scans of the same manual,
+    approved on different days — and they cannot both be right. Before this
+    pass the collision was discovered by Commit failing; now both cards say so
+    and neither offers a Commit button.
+
+    Deliberately built from *proposals* rather than plans. An arrival approved
+    in Review never passes through `approve_plan`, which is where a conflicting
+    plan is refused outright, so this is the shape that can still reach the
+    queue.
+    """
+    from librairy.lifecycle import transition_item  # noqa: PLC0415
+    from librairy.proposals import upsert_proposal  # noqa: PLC0415
+    from librairy.scanner import scan_root  # noqa: PLC0415
+    from librairy.web.review import ReviewFilters, apply_review_action  # noqa: PLC0415
+    from tests.support.documents import build_pdf  # noqa: PLC0415
+
+    destination = "Documents/Manuals/Honda Motor Co/2019 Civic Owner's Manual.pdf"
+    for name in ("civic-2019-scan.pdf", "civic-2019-copy.pdf"):
+        (settings.inbox_dir / name).write_bytes(
+            build_pdf(
+                title="2019 Civic Owner's Manual",
+                author="Honda Motor Co.",
+                lines=("2019 Civic Owner's Manual", name),
+                pages=2,
+            )
+        )
+    scan_root(conn, "inbox", settings.inbox_dir, settings)
+    for name in ("civic-2019-scan.pdf", "civic-2019-copy.pdf"):
+        row = conn.execute(
+            "SELECT id FROM items WHERE root='inbox' AND relpath=?", (name,)
+        ).fetchone()
+        if row is None:
+            continue
+        proposal = upsert_proposal(
+            conn,
+            item_id=int(row["id"]),
+            category="documents",
+            clean_name="2019 Civic Owner's Manual.pdf",
+            dest_relpath=destination,
+            confidence=0.86,
+            evidence=[
+                EvidenceEntry("heuristic", "category", "document extension", 0.86),
+                EvidenceEntry("document", "title", "2019 Civic Owner's Manual", 0.9),
+            ],
+        )
+        transition_item(conn, int(row["id"]), "proposed")
+        apply_review_action(conn, "approve", ReviewFilters(), proposal_ids=[proposal])
 
 
 def _measure_format_impact(conn, settings: Settings) -> None:  # noqa: ANN001
-    """Last, because the measurement counts library files.
-
-    Run before anything else that scans and the fixture opens with "your
-    library has changed since this was measured" — a true statement about a
-    fixture and a confusing one to look at.
-    """
+    """Measured while the library is whole, so the delete-queue scene below can
+    take four files out of it and leave the snapshot honestly out of date."""
     from librairy.format_impact import analyse  # noqa: PLC0415
 
     analyse(conn, settings)
@@ -1880,9 +1990,17 @@ def _running_audit(conn) -> None:  # noqa: ANN001
     of the fixture is a deterministic page to photograph, and a real slice
     would finish in milliseconds and render the completed panel instead.
     """
-    from librairy.audit_job import RUNNING, Counters
+    from librairy.audit_job import CANCELLED, RUNNING, Counters
     from librairy.planner import utc_now
 
+    #  And the run before it, which somebody stopped part way through. Health
+    #  reports both, because a run starting now does not undo the fact that
+    #  the previous one never reached the stages after Similar media.
+    conn.execute(
+        "INSERT INTO audit_runs(scope, state, stage, counters, requested_at,"
+        " started_at, finished_at) VALUES ('', ?, 'similar', '{}', ?, ?, ?)",
+        (CANCELLED, utc_now(), utc_now(), utc_now()),
+    )
     counters = Counters(
         files_seen=140,
         files_checked=140,

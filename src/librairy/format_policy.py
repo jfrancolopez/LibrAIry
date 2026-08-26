@@ -183,6 +183,12 @@ class Policy:
     allow_lossy: bool | None = None
     allow_lossless: bool | None = None
     transform_from: str = ""
+    #  Whether this answer is about where the file *is* or where it is
+    #  *going*. The two are different claims and only one of them is currently
+    #  true, so the flag travels with the answer rather than being remembered
+    #  by whoever asked. An arriving file destined for a protected folder is
+    #  not protected — it is going somewhere that will protect it.
+    prospective: bool = False
 
     @property
     def preferred_label(self) -> str:
@@ -226,6 +232,48 @@ class Policy:
             or self.allow_lossy is not None
             or self.allow_lossless is not None
         )
+
+    @property
+    def arriving_note(self) -> str:
+        """What filing this file here will mean, once it is filed. Or "".
+
+        Only ever said about a *destination*, and only when the destination
+        actually has an opinion. A note on every arrival that says "no policy
+        applies here" is noise on the page where somebody is trying to decide
+        where a file goes.
+
+        It is deliberately not a warning and deliberately not a refusal.
+        Preserve-originals means no representation preference and no
+        optimization may decide this file is the dispensable copy; it has never
+        meant LibrAIry may not file, rename or reorganise it, and filing is
+        exactly what is being proposed. Saying so here is context, in the one
+        place where somebody can still choose a different folder.
+        """
+        if not self.prospective:
+            return ""
+        if self.protected_original:
+            if self.protection_kind == BY_ROOT:
+                return (
+                    f"After filing, this will be inside {self.protected_by}, a "
+                    f"protected root — nothing there is queued for change."
+                )
+            return (
+                f"After filing, this original will be protected from "
+                f"representation-changing workflows, because {self.protected_by} "
+                f"is set to preserve originals."
+            )
+        refused = []
+        if self.allow_lossless is False:
+            refused.append("lossless")
+        if self.allow_lossy is False:
+            refused.append("lossy")
+        if refused:
+            where = self.transform_from or "that folder"
+            return (
+                f"After filing, {where} does not permit "
+                f"{' or '.join(refused)} conversions."
+            )
+        return ""
 
 
 def _parts(relpath: str) -> tuple[str, ...]:
@@ -381,6 +429,55 @@ def resolve(
         allow_lossless=lossless,
         transform_from=transform_from,
     )
+
+
+def after_filing(
+    conn: sqlite3.Connection,
+    destination: str,
+    *,
+    category: str = "",
+    cached: Index | None = None,
+    roots: tuple[str, ...] | None = None,
+) -> Policy:
+    """The policy that *will* apply, once this file is filed at `destination`.
+
+    The same resolver, asked about a path the file does not occupy yet. One
+    implementation, because a second one — `format_policy_for_inbox` — would
+    be a second set of precedence rules for the same table, free to disagree
+    with the first the day somebody adds a field to one of them.
+
+    The argument is named `destination` and the answer is marked `prospective`
+    so that a caller cannot confuse the two questions by accident. That
+    confusion is the whole risk here: an arriving RAW whose proposal points at
+    a protected folder is **not protected**, and treating it as though it were
+    would quietly turn a representation policy into a filesystem permission
+    system nobody asked for.
+    """
+    found = resolve(conn, destination, category=category, cached=cached, roots=roots)
+    return Policy(**{**found.__dict__, "prospective": True})
+
+
+def after_filing_among(
+    conn: sqlite3.Connection, destinations: dict[int, tuple[str, str]]
+) -> dict[int, Policy]:
+    """The future policy for a page of proposed destinations, resolved once.
+
+    `{key: (destination, category)}` in, `{key: Policy}` out. The scope table
+    and the protected roots are read once for the whole page — a Review page of
+    fifty rows must not be fifty reads of a table that has not changed between
+    them.
+    """
+    from librairy.protected import protected_roots
+
+    if not destinations:
+        return {}
+    cached, roots = index(conn), protected_roots(conn)
+    return {
+        key: after_filing(
+            conn, destination, category=category, cached=cached, roots=roots
+        )
+        for key, (destination, category) in destinations.items()
+    }
 
 
 #  Where a category lives in a filed library, so a path can be read back to the
@@ -616,6 +713,31 @@ def protected_among(
         relpath: resolve(conn, relpath, category=category, cached=cached, roots=roots)
         for relpath in relpaths
     }
+
+
+def protection_refusal(
+    conn: sqlite3.Connection, relpaths: list[str], *, verb: str
+) -> str:
+    """The sentence to print when one of these originals may not be traded away.
+
+    One wording, one resolver, three callers: the library-to-library
+    replacement, the comparison that sets a representation aside, and the
+    arriving file that would displace a filed one. Each raises its own error
+    type — they are three different workflows — and none of them gets to
+    phrase the refusal differently, because a person meeting the same rule from
+    three directions should meet the same explanation.
+
+    Returns "" when nothing here is protected. Never raises: the caller owns
+    which exception this becomes.
+    """
+    for relpath, policy in protected_among(conn, list(relpaths)).items():
+        if policy.protected_original:
+            return (
+                f"{PurePosixPath(relpath).name} is protected by your Format "
+                f"Policy: {policy.explanation} Change that first if you want "
+                f"to {verb}."
+            )
+    return ""
 
 
 def protecting(

@@ -88,6 +88,19 @@
         {% endif %}
       </p>
 
+      {# What the destination will mean once this file is there.
+
+         Not an alarm and not a refusal — this is the one place somebody can
+         still pick a different folder, and knowing that Photos/Wedding
+         preserves its originals is exactly the kind of thing worth knowing
+         before you file a RAW into it rather than after. It never blocks the
+         filing: preserving originals stops a representation preference
+         deciding a file is dispensable, and has never stopped LibrAIry putting
+         a photograph somewhere better. #}
+      {% if proposal.arriving_policy %}
+        <p class="row-policy">{{ proposal.arriving_policy }}</p>
+      {% endif %}
+
       {# What this person has repeatedly chosen for files like this one, when
          it differs from today's guess. Shown as decisions and not as a score:
          "6 previous decisions" is checkable and "93% confident" is not.

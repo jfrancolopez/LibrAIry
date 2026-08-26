@@ -86,6 +86,52 @@ Where a decision would trade away a protected original, it is **blocked**
 rather than warned about: "are you sure?" over a keepsake is a dialog people
 dismiss, and the policy is an instruction you gave.
 
+## Where the file is, and where it is going
+
+Policy resolves against a path. An arriving file has two of them: the one it
+occupies now, and the one its proposal points at.
+
+```
+resolve(conn, relpath)                    where it is now
+after_filing(conn, destination=...)       where it would be after Commit
+```
+
+One resolver, one precedence table, one set of scopes — a second reader for
+inbox files would be a second set of rules over the same table, free to
+disagree the day somebody adds a field. The argument is named for the question
+and the answer is marked `prospective`, because confusing the two is the whole
+risk here.
+
+An arriving RAW whose proposal says `Photos/Wedding` is **not protected**. It
+is on its way somewhere that will protect it, and Review says so:
+
+> After filing, this original will be protected from representation-changing
+> workflows, because Photos/Wedding is set to preserve originals.
+
+That is context, not a refusal, and it is shown only where the destination
+actually has an opinion — a note on every arrival is noise on the page where
+you are choosing a folder. Three consequences follow, and each is pinned by a
+test:
+
+* **Filing into a protected folder is still allowed.** Preserve-originals stops
+  a representation preference deciding a file is dispensable. It has never
+  stopped LibrAIry putting a photograph somewhere better.
+* **Protecting a folder does not make an ordinary filing into it stale.** The
+  decision still does exactly what it said. Protecting it *does* invalidate a
+  waiting decision that would move an original out of the library, because that
+  is precisely the trade the folder now forbids.
+* **A proposed destination does not protect the arriving bytes.** Choosing to
+  keep a filed copy — which sends the arrival to Quarantine — is not blocked by
+  a folder the arrival has never been in. The other direction is: an arrival
+  may not displace a *filed* protected original, and that is refused before any
+  plan exists.
+
+A preferred format and a refused transformation behave the same way. Filing a
+lone FLAC into a folder that prefers MP3 is fine — a preference is among
+representations that exist, and there is no MP3 to prefer. Policy applies to
+the operation being performed, and this operation is putting a file in a
+folder.
+
 ## Relationships outrank format simplification
 
 A RAW and its JPEG render genuinely are one exposure in two encodings, so

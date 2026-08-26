@@ -134,7 +134,25 @@ def index_counts(conn: sqlite3.Connection) -> dict[str, int]:
             """
         ).fetchone()[0]
     )
-    unindexed = int(
+    return {
+        "current": current,
+        "missing_retained": missing,
+        "total": total,
+        # A present file with no index row. Unlike the others, this one means
+        # something is actually wrong.
+        "unindexed": unindexed(conn),
+    }
+
+
+def unindexed(conn: sqlite3.Connection) -> int:
+    """Files on disk with no index entry — the only count here that is a problem.
+
+    Its own function because Health asks for exactly this and nothing else. It
+    used to read the whole of `index_counts` to get at one number, which meant
+    the page ran the same four counts twice: once for the attention line and
+    once for the panel below it.
+    """
+    return int(
         conn.execute(
             """
             SELECT COUNT(*) FROM items i
@@ -143,11 +161,3 @@ def index_counts(conn: sqlite3.Connection) -> dict[str, int]:
             """
         ).fetchone()[0]
     )
-    return {
-        "current": current,
-        "missing_retained": missing,
-        "total": total,
-        # A present file with no index row. Unlike the others, this one means
-        # something is actually wrong.
-        "unindexed": unindexed,
-    }

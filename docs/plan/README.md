@@ -148,6 +148,56 @@ src/librairy/
 
 Processes communicate only through SQLite (WAL) and the filesystem. No queues, no brokers.
 
+## Operational safety: two directions (permanent principle, added 2026-08-26)
+
+The same mistake — one decision quietly invalidating another — pointing two
+ways. They are related, they are **not** the same thing, and neither creates
+the other.
+
+```
+COMMITTED DEPENDENCY   a later decision has been carried out on top of an
+                       earlier one.       Affects Undo.
+
+PENDING CONFLICT       two decisions that have not run cannot both remain
+                       valid against current state.
+                                          Affects approval and Commit.
+```
+
+A plan that has not executed has moved no files, so it can be depended on by
+nothing: a pending conflict never becomes an Undo dependency. Written up in
+[../plan-conflicts.md](../plan-conflicts.md). The parts that must not drift:
+
+- three kinds only: the same file, the same place, a file another decision was
+  explained by. Sharing a folder, a category or a mention is not a conflict
+- one decision vacating a path another fills is not a conflict — run in the
+  right order both succeed, and choosing the order is the executor's job
+- one shared member of a group is enough
+- refused at approval, where approval already refuses the within-plan version
+  of the identical rule; marked on Commit for the decisions approval cannot see
+- nothing is ever auto-cancelled. The person withdraws one
+- pre-Commit detection is an acceleration; the hash-verified executor preflight
+  is still authoritative
+- derived, never stored; grouped by the thing claimed, never a pairwise join
+
+## Health (permanent principle, added 2026-08-26)
+
+**Health explains state and links to the workflow that owns it. It does not
+repair state.**
+
+Written up in [../health.md](../health.md). The parts that must not drift:
+
+- a view over `plans`, `audit_runs`, the delete queue, the impact snapshot and
+  the journal. **No `health_events` table** — a second account of facts that
+  already exist would be free to disagree with them
+- `GET /health` writes zero rows, runs no subprocess and calls no provider
+- three levels, and each has to mean something. A blocked Undo is the
+  safeguard working and is reported as information
+- never re-measures the Format Policy impact while drawing the page
+- never says "overdue" — there is no configured audit cadence to be late for
+- no `Fix all`. Every remedy lives on the page that owns it
+- aggregate counts, bounded examples, and a page body that does not grow with
+  the database
+
 ## Undo sequencing (permanent principle, added 2026-08-26)
 
 **Reversing an old decision must not quietly reverse a newer one.**
@@ -187,6 +237,10 @@ not drift:
 - policy sits under safety and above Decision Memory, always
 - `Preserve originals` is about representation, not a filesystem permission —
   a protected file can still be indexed, searched, organised and filed
+- one resolver answers about the path a file occupies **and** about the
+  destination it is proposed for. `after_filing` marks its answer
+  `prospective`; a proposed destination never protects the arriving bytes, and
+  never blocks the filing itself
 - policy creates no plan, no job, no move. It is input to workflows
 
 ## Relationships (permanent principle, added 2026-08-25)

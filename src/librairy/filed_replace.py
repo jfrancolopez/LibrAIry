@@ -236,14 +236,11 @@ def make_active(
 def _assert_not_protected(conn: sqlite3.Connection, relpath: str) -> None:
     """Refuse to displace a file whose originals the owner has protected."""
     from librairy.corrections import CorrectionRefused
-    from librairy.format_policy import resolve
+    from librairy.format_policy import protection_refusal
 
-    policy = resolve(conn, relpath)
-    if policy.protected_original:
-        raise CorrectionRefused(
-            f"{PurePosixPath(relpath).name} is protected by your Format Policy: "
-            f"{policy.explanation} Change that first if you want to replace it."
-        )
+    refused = protection_refusal(conn, [relpath], verb="replace it")
+    if refused:
+        raise CorrectionRefused(refused)
 
 
 def _claimed(conn: sqlite3.Connection, swap: Swap) -> bool:

@@ -4,16 +4,72 @@
     <div>
       <h1>Health</h1>
       <p class="muted">
-        Whether the parts LibrAIry depends on are working: the helper tools it
-        shells out to, the AI providers it asks, your disks, the background
-        worker and the backup. Nothing here changes any of your files.
+        What currently needs attention, and whether the parts LibrAIry depends
+        on are working. Everything here is read — opening this page changes
+        nothing, repairs nothing and moves no files.
       </p>
     </div>
-    <span class="badge badge-{{ 'ok' if summary_status=='OK' else 'fail' if summary_status=='FAIL' else 'warn' }} badge-lg">{{ 'All good' if summary_status=='OK' else 'Needs a look' }}</span>
+    {% if attention.needing %}
+      <span class="badge badge-warn badge-lg">{{ attention.needing }} to look at</span>
+    {% elif summary_status != 'OK' %}
+      <span class="badge badge-warn badge-lg">Needs a look</span>
+    {% else %}
+      <span class="badge badge-ok badge-lg">All good</span>
+    {% endif %}
   </header>
+
+  {# What needs a person, before what needs a package manager.
+
+     The three levels are not decoration. `Needs a decision` means something
+     can no longer do what it says it will; `Worth knowing` means it will not
+     surprise you later; `Information` means nothing is wrong. Colouring an
+     ordinary backlog like a fault is how a page teaches people to ignore it. #}
+  {% if attention.settled %}
+    <p class="muted">Nothing needs your attention. Everything below is current
+      state.</p>
+  {% endif %}
+  {% for level in attention_levels %}
+    {% set concerns = attention.at(level) %}
+    {% if concerns %}
+      <section class="card attention attention-{{ level }}">
+        <h2>{{ attention_labels[level] }}</h2>
+        <p class="muted">{{ attention_notes[level] }}</p>
+        <ul class="attention-list">
+          {% for concern in concerns %}
+            <li class="attention-item">
+              {# No per-item badge. Every item in this card is the same level
+                 and the heading above already says which — repeating it on
+                 each row is the page shouting a word it has just said. #}
+              <strong class="attention-head">{{ concern.headline }}</strong>
+              {% if concern.detail %}<p class="muted">{{ concern.detail }}</p>{% endif %}
+              {% if concern.examples %}
+                <ul class="attention-examples">
+                  {% for example in concern.examples %}
+                    <li>{{ example.text }}{% if example.detail %}
+                      <span class="muted">— {{ example.detail }}</span>{% endif %}</li>
+                  {% endfor %}
+                </ul>
+                {% if concern.more %}
+                  <p class="muted">and {{ concern.more }} more.</p>
+                {% endif %}
+              {% endif %}
+              {# Health diagnoses and navigates. It does not repair: every
+                 remedy lives on the page that owns the workflow, where the
+                 rest of the context is. #}
+              {% if concern.href %}
+                <a class="btn" href="{{ concern.href }}">{{ concern.action }}</a>
+              {% endif %}
+            </li>
+          {% endfor %}
+        </ul>
+      </section>
+    {% endif %}
+  {% endfor %}
+
   {% if recommendations %}
     <section class="card recommendations">
-      <h2>Worth doing something about</h2>
+      <h2>The machinery</h2>
+      <p class="muted">The tools, endpoints and disks LibrAIry runs on.</p>
       <ul>
         {% for rec in recommendations %}
           <li>
@@ -24,8 +80,6 @@
         {% endfor %}
       </ul>
     </section>
-  {% else %}
-    <p class="muted">Everything looks healthy — no action needed.</p>
   {% endif %}
   <div class="widget-grid">
     <section class="widget card">

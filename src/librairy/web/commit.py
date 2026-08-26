@@ -73,6 +73,7 @@ def commit_overview(
 def _queue(
     conn: sqlite3.Connection, settings: Settings | None, kind: str, page: int
 ) -> dict[str, Any]:
+    from librairy.plan_conflicts import arrivals_in_conflict
     from librairy.web.commit_queue import (
         PAGE_SIZE,
         PREVIEW_SIZE,
@@ -83,6 +84,10 @@ def _queue(
     )
 
     summary = queue_summary(conn)
+    #  Counted over the whole queue, not over the page being drawn: the group's
+    #  button files every approved arrival at once, so a collision on page two
+    #  is still a collision the button would run into.
+    conflicting = arrivals_in_conflict(conn)
     kind = kind if kind in TYPE_ORDER else ""
     shown = [kind] if kind else [g["type"] for g in summary["groups"]]
     total = 0
@@ -118,7 +123,12 @@ def _queue(
             continue
         rows = queue_rows(conn, settings, kind=key, page=page, page_size=size)
         groups.append(
-            {**group, "rows": rows, "more": max(0, int(group["decisions"]) - len(rows))}
+            {
+                **group,
+                "rows": rows,
+                "more": max(0, int(group["decisions"]) - len(rows)),
+                "conflicts": conflicting.get(key, 0),
+            }
         )
     return {
         "summary": summary,
@@ -228,9 +238,22 @@ def _unfinished_plans(conn: sqlite3.Connection) -> list[sqlite3.Row]:
 
 
 def create_commit_plan(conn: sqlite3.Connection, settings: Settings) -> str:
-    specs = [
-        OperationSpec(row["action"], row["src_relpath"], row["dest_root"], row["dest_relpath"])
-        for row in conn.execute(
+    """One plan for every approved arrival — except the ones in conflict.
+
+    Every arrival is filed by a single plan, so two of them wanting one
+    destination used to stop all of them: approval refuses a plan that names
+    two files into one place, and eighteen perfectly good decisions went down
+    with the two that collided.
+
+    Left out rather than cancelled. Both conflicting decisions stay approved,
+    both cards say what they collide with, and both come back into the batch
+    the moment one of them is sent back. Which of the two to keep is not a
+    question this function is allowed to answer.
+    """
+    from librairy.plan_conflicts import PROPOSAL, for_decisions
+
+    rows = list(
+        conn.execute(
             """
             SELECT p.*, i.relpath AS src_relpath
             FROM proposals p
@@ -240,7 +263,22 @@ def create_commit_plan(conn: sqlite3.Connection, settings: Settings) -> str:
             ORDER BY p.id
             """
         )
+    )
+    conflicted = for_decisions(
+        conn, [(PROPOSAL, str(row["id"])) for row in rows]
+    )
+    specs = [
+        OperationSpec(row["action"], row["src_relpath"], row["dest_root"], row["dest_relpath"])
+        for row in rows
+        if (PROPOSAL, str(row["id"])) not in conflicted
     ]
+    if rows and not specs:
+        from librairy.planner import PlanConflict
+
+        raise PlanConflict(
+            "every arrival waiting here is in conflict with another decision. "
+            "Send one of each pair back and the rest can be filed."
+        )
     plan_id = create_plan(conn, specs, settings)
     approve_plan(conn, plan_id, settings)
     return plan_id

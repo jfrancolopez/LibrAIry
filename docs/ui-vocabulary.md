@@ -162,8 +162,24 @@ persisted anywhere.
 
     Ready to approve · Observation · Needs analysis again · Not on disk
     Waiting for Commit · Approval is outdated · Applying · Corrected · Dismissed
+    Conflicts with another decision
 
 Derived, never the stored status column. See `web/actionability.py`.
+
+`Approval is outdated` and `Conflicts with another decision` both stop Commit
+being offered and they are **not** the same badge. The first says a file
+changed underneath an approval; the second says two decisions were approved
+that cannot both happen. Telling somebody the wrong one sends them looking in
+the wrong place.
+
+## How much something matters, on Health
+
+    Needs a decision · Worth knowing · Information
+
+Three levels, and each has to mean something — see [health.md](health.md).
+Not `Critical / High / Medium / Low`: that is incident-response vocabulary, and
+applying it to an ordinary backlog teaches people that the red section contains
+things that are fine.
 
 ## Operation types on Commit
 

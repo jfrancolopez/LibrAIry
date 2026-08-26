@@ -82,6 +82,15 @@
            act; `tests/test_control_inventory.py` records the repeat. #}
         {% if group.arrivals %}
           <div class="commit-group-actions">
+            {# Said out loud rather than discovered. Every approved arrival is
+               filed by one plan, and the ones in conflict are left out of it —
+               they stay approved, they keep their cards, and they rejoin the
+               batch the moment one of each pair is sent back. #}
+            {% if group.conflicts %}
+              <p class="notice-warn">{{ group.conflicts }} of these decisions
+                {{ 'is' if group.conflicts == 1 else 'are' }} in conflict and
+                will not be filed yet. The rest will.</p>
+            {% endif %}
             <form method="post" action="/commit/create">
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <button type="submit" class="btn-primary">Review moves</button>
@@ -105,6 +114,11 @@
                 <span class="badge badge-op">{{ row.badge }}</span>
                 {% if row.applying %}<span class="badge badge-status-applying">Applying</span>{% endif %}
                 {% if row.stale %}<span class="badge badge-status-approval-outdated">Approval is outdated</span>{% endif %}
+                {# Its own badge, deliberately not the outdated one. Both stop
+                   Commit being offered and they are two different problems:
+                   one says a file changed underneath an approval, the other
+                   says you approved two things that cannot both happen. #}
+                {% if row.conflict %}<span class="badge badge-status-conflict">Conflicts with another decision</span>{% endif %}
                 <span class="muted">{{ row.size }}{% if row.op_count > 1 %} · {{ row.op_count }} files{% endif %}</span>
               </div>
               {# The `?` explains a file extension, so it belongs on a card
@@ -188,6 +202,32 @@
                          until you empty it yourself</dd></div>
                 {% endif %}
               </dl>
+              {% endif %}
+              {% if row.conflict %}
+                {# Named, and the other decision named with it. "Conflict" on
+                   its own is a word; knowing it is the album rename you
+                   approved this morning is what lets somebody decide which of
+                   the two to keep. #}
+                <div class="plan-conflict">
+                  <h4>{{ row.conflict.headline }}</h4>
+                  <p class="mono">{{ row.conflict.subject }}</p>
+                  {% if row.conflict.others %}
+                    <ul class="conflict-others">
+                      {% for other in row.conflict.others %}
+                        <li>{{ other }}</li>
+                      {% endfor %}
+                    </ul>
+                    {% if row.conflict.others_more %}
+                      <p class="muted">and {{ row.conflict.others_more }} more.</p>
+                    {% endif %}
+                  {% endif %}
+                  <p class="muted">{{ row.conflict.detail }}</p>
+                  {% if row.conflict.more %}
+                    <p class="muted">This decision is in
+                      {{ row.conflict.more }} other
+                      conflict{{ 's' if row.conflict.more != 1 else '' }}.</p>
+                  {% endif %}
+                </div>
               {% endif %}
               {% if row.stale_reason %}
                 {# Named, not just flagged. "Approval is outdated" on its own
@@ -282,7 +322,10 @@
               <div id="cpreview-{{ row.item_id }}-{{ loop.index }}" class="commit-preview"></div>
               {% endif %}
               <div class="button-row">
-                {% if row.plan_id and not row.applying and not row.stale %}
+                {# Nothing to press while two decisions contradict each other.
+                   Withdrawing one is the answer, and the button for that is
+                   the one already on both cards. #}
+                {% if row.plan_id and not row.applying and not row.stale and not row.conflict %}
                   <form method="post" action="/commit/execute/{{ row.plan_id }}">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                     <button type="submit" class="btn-primary">Commit</button>

@@ -39,6 +39,8 @@ Open `http://localhost:8080` and drop files into `data/inbox`. No password is re
 - [Format Policy](docs/format-policy.md)
 - [Undo and the order of decisions](docs/undo-sequencing.md)
 - [The delete queue](docs/delete-queue.md)
+- [Two decisions that cannot both be right](docs/plan-conflicts.md)
+- [Health — what needs attention now](docs/health.md)
 - [Performance](docs/performance.md)
 - [FAQ](docs/faq.md)
 

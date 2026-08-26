@@ -232,6 +232,7 @@ def resolve(
     re-offering a decision that was already made.
     """
     from librairy.corrections import CorrectionRefused
+    from librairy.format_policy import protection_refusal
 
     if choice not in CHOICES:
         raise CorrectionRefused("that is not one of the choices")
@@ -246,6 +247,14 @@ def resolve(
         return _keep_both(conn, arrival)
     if choice == KEEP_LIBRARY:
         return _keep_library(conn, settings, arrival)
+    #  The filed copy is about to be displaced into Quarantine, which is
+    #  exactly the trade a protected original forbids. Asked of the *library*
+    #  path, because that is the file the policy is about: the arrival is
+    #  still in the inbox and nothing there is protected by a library folder,
+    #  however confidently its proposal points at one.
+    refused = protection_refusal(conn, [arrival.twin.relpath], verb="replace it")
+    if refused:
+        raise CorrectionRefused(refused)
     return _use_arrival(conn, settings, arrival)
 
 

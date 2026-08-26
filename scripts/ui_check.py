@@ -389,6 +389,17 @@ PAGES = {
     # A blocked Undo, explained. The dev fixture files a photograph and then
     # corrects it, so the earlier decision names the later one.
     "history-blocked": "/history",
+    # What needs a person, grouped by how much it matters. The widest lines on
+    # it are the sentences under a concern, and there are three levels of them
+    # stacked above the machinery panels.
+    "health": "/health",
+    # Two arrivals that want the same destination, each card naming the other.
+    # The widest line is the shared destination path, which is unbreakable.
+    "commit-conflict": "/commit?type=new-file",
+    # An arriving RAW whose proposal points at a folder that preserves
+    # originals. The note is a full sentence inside a row that already carries
+    # a path, a badge row and an edit panel.
+    "review-policy": "/review",
     # The one page whose subject is a policy: four category sections, the two
     # protections told apart, and a measurement under them. The widest things
     # on it are a label beside a select and a folder path beside a Remove.

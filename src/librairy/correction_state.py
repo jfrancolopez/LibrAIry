@@ -47,6 +47,11 @@ DRIFT_MISSING = "missing"
 #  not touch. "The still stays in Photos" is a claim about a file no operation
 #  names, so nothing else in the commit path would ever notice it changing.
 DRIFT_RELATED = "related"
+#  The owner protected the original after approving a decision that would trade
+#  it away. Not a claim about the bytes at all — the file is exactly what it
+#  was — but the answer to "may this one leave" changed, and it changed because
+#  somebody said so.
+DRIFT_PROTECTED = "protected"
 
 
 @dataclass(frozen=True)
@@ -148,10 +153,15 @@ def plan_drift(conn: sqlite3.Connection, settings: Settings, plan_id: str) -> st
     gone-versus-changed, and one operation is enough to establish either.
     """
     rows = conn.execute(
-        "SELECT src_root, src_relpath, src_fingerprint FROM plan_ops"
+        "SELECT src_root, src_relpath, src_fingerprint, dest_root FROM plan_ops"
         " WHERE plan_id=? AND executed_at IS NULL ORDER BY seq",
         (plan_id,),
     ).fetchall()
+    #  Asked first because it is the only one that needs no filesystem at all,
+    #  and because it is the most specific answer this function can give.
+    protected = _protected_original(conn, rows)
+    if protected:
+        return DRIFT_PROTECTED
     for row in rows:
         #  Every root a plan can read from, by name. Folding "not library" into
         #  "inbox" was fine while only those two could be sources; a decision
@@ -177,3 +187,33 @@ def plan_drift(conn: sqlite3.Connection, settings: Settings, plan_id: str) -> st
     from librairy.relationship_impact import drift as relationship_drift
 
     return DRIFT_RELATED if relationship_drift(conn, plan_id) else ""
+
+
+def _protected_original(conn: sqlite3.Connection, rows: list) -> str:
+    """A library original this decision would set aside, now protected.
+
+    Narrow on purpose. A `preserve originals` folder is **not** a filesystem
+    permission: LibrAIry may still file, rename and reorganise everything
+    inside it, and an ordinary filing into such a folder is not made stale by
+    the folder being protected — that would be a second, quieter permissions
+    system, which is exactly what Format Policy was written not to become.
+
+    What the folder does forbid is a *representation* decision trading the
+    original away. So this looks for the one shape that is: an operation
+    taking a library file out of the library and into Quarantine. Approving
+    that and then protecting the folder is a contradiction, and the later
+    instruction is the one the owner meant.
+    """
+    from librairy.format_policy import protected_among
+
+    leaving = [
+        str(row["src_relpath"])
+        for row in rows
+        if str(row["src_root"]) == "library" and str(row["dest_root"]) == "quarantine"
+    ]
+    if not leaving:
+        return ""
+    for relpath, policy in protected_among(conn, leaving).items():
+        if policy.protected_original:
+            return relpath
+    return ""

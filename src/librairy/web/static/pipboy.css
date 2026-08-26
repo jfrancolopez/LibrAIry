@@ -2523,6 +2523,10 @@ summary.timeline-head::-webkit-details-marker { display: none; }
    something to ignore: the files are not where the approval says they are. */
 .badge-status-approval-outdated { color: var(--warn, var(--text)); border-color: var(--warn, var(--border)); }
 .badge-status-applying { color: var(--audit); border-color: var(--audit); }
+/* Two waiting decisions that cannot both be right. Its own badge rather
+   than the outdated one: they stop the same button being drawn and they
+   are not the same problem. */
+.badge-status-conflict { color: var(--fail); border-color: var(--fail); }
 
 /* Said where the decision is, not in a banner at the top of the page. */
 .notice-warn {
@@ -3433,3 +3437,52 @@ summary.timeline-head::-webkit-details-marker { display: none; }
 
 /* Why an older decision cannot be reversed yet, on its History card. */
 .undo-blocked { color: var(--warn); font-size: var(--text-sm); }
+
+/* The attention centre: what needs a person, above what needs a package
+   manager. One card per level, told apart by its heading rather than by
+   colour alone — a page that says "this is urgent" only in red says nothing
+   to a reader who cannot see red, and the border is a reinforcement. */
+.attention { border-left: 2px solid var(--border); }
+.attention-action { border-left-color: var(--fail); }
+.attention-attention { border-left-color: var(--warn); }
+.attention > h2 { margin: 0 0 var(--space-1); font-size: var(--text-md); }
+.attention > p { margin: 0 0 var(--space-2); }
+.attention-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-3); }
+.attention-item { display: grid; gap: var(--space-1); justify-items: start; }
+.attention-head { display: block; overflow-wrap: anywhere; }
+.attention-item > p { margin: 0; }
+.attention-examples {
+  list-style: none; margin: 0; padding: 0 0 0 var(--space-2);
+  border-left: 1px solid var(--border);
+  display: grid; gap: calc(var(--space-1) / 2);
+  font-size: var(--text-sm);
+}
+.attention-examples li { overflow-wrap: anywhere; }
+
+/* The other decision, on the card of the one that collides with it. Quiet
+   framing on purpose: nothing has gone wrong with either decision on its own,
+   and the answer is to withdraw one rather than to panic about both. */
+.plan-conflict {
+  margin: var(--space-2) 0;
+  padding: var(--space-2);
+  border-left: 2px solid var(--fail);
+  background: var(--surface-2, transparent);
+}
+.plan-conflict > h4 { margin: 0 0 var(--space-1); font-size: var(--text-sm); }
+.plan-conflict > p { margin: 0 0 var(--space-1); overflow-wrap: anywhere; }
+.conflict-others {
+  list-style: none; margin: 0 0 var(--space-1); padding: 0;
+  display: grid; gap: calc(var(--space-1) / 2); font-size: var(--text-sm);
+}
+
+/* What the proposed destination will mean once the file is there. Quiet, and
+   deliberately not amber: nothing is wrong, and a Review page that flags every
+   protected destination in warning colours is a page arguing with the folder
+   the owner configured. */
+.row-policy {
+  margin: var(--space-1) 0;
+  font-size: var(--text-sm);
+  color: var(--muted, var(--text));
+  border-left: 1px solid var(--border);
+  padding-left: var(--space-2);
+}

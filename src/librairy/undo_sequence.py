@@ -409,49 +409,13 @@ def _labels(
 ) -> dict[str, tuple[str, str]]:
     """A date and a short description for each blocking plan, in one query.
 
-    Enough to go and find it. Not a second History page rendered inside a
-    warning — "Rename album files, 25 August" is the whole of what somebody
-    needs to know which decision to reverse first.
+    `planner.summarise` is the implementation. It used to live here, and then
+    `plan_conflicts` needed the same sentence about the same plans — at which
+    point two modules describing one decision differently was a matter of time.
     """
-    if not plan_ids:
-        return {}
-    ordered = sorted(plan_ids)
-    placeholders = ",".join("?" * len(ordered))
-    rows = conn.execute(
-        f"""
-        SELECT p.id AS plan_id, p.finished_at AS finished_at,
-               (SELECT COUNT(*) FROM plan_ops o WHERE o.plan_id = p.id) AS ops,
-               (SELECT o.dest_relpath FROM plan_ops o WHERE o.plan_id = p.id
-                 ORDER BY o.seq LIMIT 1) AS first_dest,
-               (SELECT o.dest_root FROM plan_ops o WHERE o.plan_id = p.id
-                 ORDER BY o.seq LIMIT 1) AS first_root,
-               p.restore_of_plan_id AS restore_of, p.audit_finding_id AS finding
-        FROM plans p WHERE p.id IN ({placeholders})
-        """,  # noqa: S608 - placeholders are counted from the id set
-        ordered,
-    ).fetchall()
-    return {
-        str(row["plan_id"]): (
-            str(row["finished_at"] or ""),
-            _describe(row),
-        )
-        for row in rows
-    }
+    from librairy.planner import summarise
 
-
-def _describe(row: sqlite3.Row) -> str:
-    """One line naming a decision, from what the plan already records."""
-    from pathlib import PurePosixPath
-
-    count = int(row["ops"] or 0)
-    name = PurePosixPath(str(row["first_dest"] or "")).name
-    if row["restore_of"]:
-        return f"a restore of {count} file{'' if count == 1 else 's'}"
-    if str(row["first_root"]) == "quarantine":
-        return f"setting aside {count} file{'' if count == 1 else 's'}"
-    if row["finding"] is not None:
-        return f"a library correction to {name}" if name else "a library correction"
-    return f"filing {name}" if name else f"a decision over {count} files"
+    return summarise(conn, sorted(plan_ids))
 
 
 def assert_clear(conn: sqlite3.Connection, plan_id: str) -> None:
@@ -472,3 +436,63 @@ def assert_clear(conn: sqlite3.Connection, plan_id: str) -> None:
     if found.state in (CLEAR, UNDONE):
         return
     raise UndoError(found.explanation)
+
+
+#  How far back the summary looks.
+#
+#  A count over the whole journal is a self-join over every operation ever
+#  carried out — 186 ms at ten thousand plans, growing with the journal rather
+#  than with anything a person is looking at. History itself is paginated
+#  newest-first for the same reason, and a decision from two years ago that
+#  nobody can see the Undo button for is not something a health page needs to
+#  count. So the summary is over the recent journal and says so in as many
+#  words; the per-plan answer, which is the one that actually gates a reversal,
+#  is never bounded.
+WINDOW = 200
+
+
+@dataclass(frozen=True)
+class Blocked:
+    """How many recent decisions a later decision has built on."""
+
+    count: int = 0
+    window: int = WINDOW
+    examples: tuple[tuple[str, str], ...] = ()
+
+
+def blocked(conn: sqlite3.Connection, *, window: int = WINDOW) -> Blocked:
+    """A bounded count of decisions that cannot currently be reversed.
+
+    For a summary only. Nothing decides anything from this — `assert_clear` is
+    the gate, and it asks about one plan with no window at all.
+    """
+    recent = [
+        str(row["plan_id"])
+        for row in conn.execute(
+            #  Newest by *journal position*, never by plan id: a plan id is
+            #  a UUID, and sorting those descending returns two hundred
+            #  arbitrary decisions rather than the two hundred most recent.
+            "SELECT h.plan_id AS plan_id, MAX(h.id) AS latest FROM history h"
+            " WHERE h.plan_id IS NOT NULL AND h.outcome='ok'"
+            f" AND h.action IN ({_FORWARD_IN})"
+            " GROUP BY h.plan_id ORDER BY latest DESC LIMIT ?",  # noqa: S608 - counted
+            (*FORWARD_ACTIONS, max(1, window)),
+        )
+    ]
+    if not recent:
+        return Blocked(window=window)
+    found = sequences(conn, recent)
+    stuck = [item for item in found.values() if item.state == BLOCKED]
+    labels = _labels(conn, {item.plan_id for item in stuck[:SHOWN]})
+    return Blocked(
+        count=len(stuck),
+        window=window,
+        examples=tuple(
+            (
+                labels.get(item.plan_id, ("", ""))[1].capitalize()
+                or "A decision",
+                item.explanation,
+            )
+            for item in stuck[:SHOWN]
+        ),
+    )

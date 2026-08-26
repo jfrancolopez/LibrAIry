@@ -20,6 +20,10 @@ class PlanError(RuntimeError):
     pass
 
 
+class PlanConflict(PlanError):
+    """This decision cannot be approved while another waiting one contradicts it."""
+
+
 class PlanApprovalError(PlanError):
     def __init__(self, errors: list[str]) -> None:
         super().__init__("; ".join(errors))
@@ -123,6 +127,7 @@ def approve_plan(conn: sqlite3.Connection, plan_id: str, settings: Settings) -> 
     errors = _approval_errors(conn, plan_id, settings)
     if errors:
         raise PlanApprovalError(errors)
+    _refuse_conflicts(conn, plan_id)
     plan_hash = compute_plan_hash(conn, plan_id)
     conn.execute(
         "UPDATE plans SET status='approved', plan_hash=?, approved_at=? WHERE id=?",
@@ -139,6 +144,44 @@ def approve_plan(conn: sqlite3.Connection, plan_id: str, settings: Settings) -> 
 
     snapshot(conn, plan_id)
     return plan_hash
+
+
+def _refuse_conflicts(conn: sqlite3.Connection, plan_id: str) -> None:
+    """Refuse to approve a decision another waiting decision contradicts.
+
+    Approval already refuses a plan that names one file twice, or two files
+    into one destination — `_approval_errors` checks both. This is the identical
+    rule one scope up: two *decisions* that expect to change the same file, or
+    to put different files in the same place, cannot both be right either, and
+    the fact that they were approved separately does not make them compatible.
+
+    Refused rather than allowed-and-flagged, because the alternative is two
+    cards that both look valid and one of which is guaranteed to fail at
+    Commit. Nothing is cancelled by this: the decision already waiting is
+    untouched, and the answer is to send that one back — the button for which
+    is on its card — and then make this one again.
+
+    The Commit page still marks conflicts. A conflict can appear after both
+    decisions were approved: an arriving file approved in Review is a decision
+    that never passes through here, and a database written by an older version
+    has never been asked this question at all.
+    """
+    from librairy.plan_conflicts import check
+
+    found = check(conn, plan_id)
+    if not found:
+        return
+    first = found[0]
+    others = [
+        party.summary
+        for party in first.without("plan", plan_id)
+        if party.summary
+    ]
+    named = f" — {others[0]}" if others else ""
+    raise PlanConflict(
+        f"another waiting decision already covers {first.name}{named}. "
+        f"Send that one back or complete it first."
+    )
 
 
 def compute_plan_hash(conn: sqlite3.Connection, plan_id: str) -> str:
@@ -274,3 +317,57 @@ def _root_path(settings: Settings, root: str) -> Path:
     if root == "quarantine":
         return settings.quarantine_dir
     raise PlanError(f"unknown root: {root}")
+
+
+def summarise(
+    conn: sqlite3.Connection, plan_ids: list[str]
+) -> dict[str, tuple[str, str]]:
+    """A date and one line naming each of these plans, in one query.
+
+    Enough to go and find a decision: "a library correction to A Night at the
+    Opera, 25 August" is the whole of what somebody needs in order to know
+    which one is meant. Never a second card rendered inside a warning.
+
+    Lives here rather than in either of the two modules that ask. `undo_sequence`
+    names a decision a later one built on; `plan_conflicts` names a decision
+    that collides with the one being read. Both are asking the same question —
+    *what is this plan* — and answering it twice is how two pages come to call
+    one decision two different things.
+    """
+    if not plan_ids:
+        return {}
+    ordered = sorted(set(plan_ids))
+    placeholders = ",".join("?" * len(ordered))
+    rows = conn.execute(
+        f"""
+        SELECT p.id AS plan_id,
+               COALESCE(p.finished_at, p.approved_at, p.created_at) AS when_at,
+               (SELECT COUNT(*) FROM plan_ops o WHERE o.plan_id = p.id) AS ops,
+               (SELECT o.dest_relpath FROM plan_ops o WHERE o.plan_id = p.id
+                 ORDER BY o.seq LIMIT 1) AS first_dest,
+               (SELECT o.dest_root FROM plan_ops o WHERE o.plan_id = p.id
+                 ORDER BY o.seq LIMIT 1) AS first_root,
+               p.restore_of_plan_id AS restore_of, p.audit_finding_id AS finding
+        FROM plans p WHERE p.id IN ({placeholders})
+        """,  # noqa: S608 - placeholders are counted from the id list
+        ordered,
+    ).fetchall()
+    return {
+        str(row["plan_id"]): (str(row["when_at"] or ""), _describe_plan(row))
+        for row in rows
+    }
+
+
+def _describe_plan(row: sqlite3.Row) -> str:
+    """One line naming a decision, from what the plan already records."""
+    from pathlib import PurePosixPath
+
+    count = int(row["ops"] or 0)
+    name = PurePosixPath(str(row["first_dest"] or "")).name
+    if row["restore_of"]:
+        return f"a restore of {count} file{'' if count == 1 else 's'}"
+    if str(row["first_root"]) == "quarantine":
+        return f"setting aside {count} file{'' if count == 1 else 's'}"
+    if row["finding"] is not None:
+        return f"a library correction to {name}" if name else "a library correction"
+    return f"filing {name}" if name else f"a decision over {count} files"
