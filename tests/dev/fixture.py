@@ -594,6 +594,15 @@ def build_app(root: Path):  # noqa: ANN201
     #  Also before the unscanned file, and for the same reason: it writes
     #  protected folders and then scans the library to index them.
     _a_format_policy(conn, settings)
+    #  Also before the unscanned file, and for the same reason: it scans the
+    #  library twice — once to index the album it is about to move, and once to
+    #  find out where it went.
+    _files_somebody_moved_in_finder(conn, settings)
+    #  Also before it, and for the same reason: it writes a track, scans, and
+    #  then withdraws an approval over it. Every library scan after
+    #  `_a_file_nobody_scanned` puts back the row that scene exists to be
+    #  without.
+    _a_withdrawn_decision(conn, settings)
     _a_file_nobody_scanned(settings)
     _four_manuals_already_filed(conn, settings)
     _an_imported_camera_card(conn, settings)
@@ -1231,6 +1240,118 @@ def _two_arrivals_wanting_one_place(conn, settings: Settings) -> None:  # noqa: 
         )
         transition_item(conn, int(row["id"]), "proposed")
         apply_review_action(conn, "approve", ReviewFilters(), proposal_ids=[proposal])
+
+
+def _a_withdrawn_decision(conn, settings: Settings) -> None:  # noqa: ANN001
+    """A correction taken back because an arrival wanted the same destination.
+
+    The whole loop the withdrawal view exists for: two decisions were found to
+    contradict each other, somebody resolved it by taking one back, and the
+    record says which conflict it resolved. Built by really approving a plan
+    and really withdrawing it, so the page reads what production writes.
+    """
+    from librairy.lifecycle import transition_item  # noqa: PLC0415
+    from librairy.planner import OperationSpec, approve_plan, create_plan  # noqa: PLC0415
+    from librairy.proposals import upsert_proposal  # noqa: PLC0415
+    from librairy.web.review import ReviewFilters, apply_review_action  # noqa: PLC0415
+    from librairy.withdrawals import SENT_BACK  # noqa: PLC0415
+    from librairy.withdrawals import record as record_withdrawal  # noqa: PLC0415
+
+    destination = "Music/Rock/Wire/Chairs Missing/03 - Outdoor Miner.flac"
+    source = settings.library_dir / "Music/Rock/Wire/03 - Outdoor Miner.flac"
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_bytes(b"FLaC" + b"outdoor miner" * 40)
+    (settings.inbox_dir / "outdoor-miner.flac").write_bytes(
+        b"FLaC" + b"outdoor miner, a second copy" * 30
+    )
+    scan_root(conn, "library", settings.library_dir, settings)
+    scan_root(conn, "inbox", settings.inbox_dir, settings)
+
+    #  The correction goes first, and is approved cleanly — nothing else wants
+    #  that path yet.
+    plan_id = create_plan(
+        conn,
+        [
+            OperationSpec(
+                op_type="move",
+                src_root="library",
+                src_relpath="Music/Rock/Wire/03 - Outdoor Miner.flac",
+                dest_root="library",
+                dest_relpath=destination,
+            )
+        ],
+        settings,
+    )
+    conn.execute("UPDATE plans SET coherent=1 WHERE id=?", (plan_id,))
+    approve_plan(conn, plan_id, settings)
+
+    #  Then the arrival is approved in Review, which never passes through
+    #  `approve_plan` and so cannot be refused there. Now two decisions want
+    #  one path — which is exactly the collision the Commit page marks.
+    arriving = conn.execute(
+        "SELECT id FROM items WHERE root='inbox' AND relpath='outdoor-miner.flac'"
+    ).fetchone()
+    if arriving is not None:
+        proposal = upsert_proposal(
+            conn,
+            item_id=int(arriving["id"]),
+            category="music",
+            clean_name="03 - Outdoor Miner.flac",
+            dest_relpath=destination,
+            confidence=0.87,
+            evidence=[EvidenceEntry("tags", "album", "Chairs Missing", 0.9)],
+        )
+        transition_item(conn, int(arriving["id"]), "proposed")
+        apply_review_action(conn, "approve", ReviewFilters(), proposal_ids=[proposal])
+
+    #  And the owner resolves it by sending the correction back. The record
+    #  keeps which conflict it resolved, captured while that was still true.
+    record_withdrawal(conn, plan_id, source=SENT_BACK)
+    conn.execute("DELETE FROM plan_ops WHERE plan_id=?", (plan_id,))
+    conn.execute("DELETE FROM plans WHERE id=?", (plan_id,))
+
+
+def _files_somebody_moved_in_finder(conn, settings: Settings) -> None:  # noqa: ANN001
+    """An album moved outside LibrAIry, one loose file, and one that is unclear.
+
+    Three shapes on one page, because they are answered three different ways: a
+    folder whose members pair one-to-one is a single decision, a lone file is
+    its own, and bytes that exist in two places at once are nobody's to guess.
+
+    Its own files rather than any of the library above, so that reorganising
+    them behind the index's back cannot disturb a scene some other page is
+    about. Really moved and really rescanned, so the index reaches the same
+    conclusion it would on somebody's NAS.
+    """
+    album = settings.library_dir / "Music/Rock/Talking Heads/Remain in Light"
+    album.mkdir(parents=True, exist_ok=True)
+    for index in range(1, 9):
+        (album / f"{index:02d} - track.flac").write_bytes(
+            b"FLaC" + f"remain in light {index}".encode() * 40
+        )
+    loose = settings.library_dir / "Music/Rock/Television/Marquee Moon.flac"
+    loose.parent.mkdir(parents=True, exist_ok=True)
+    loose.write_bytes(b"FLaC" + b"marquee moon" * 60)
+    unclear = settings.library_dir / "Music/Rock/Magazine/Shot by Both Sides.flac"
+    unclear.parent.mkdir(parents=True, exist_ok=True)
+    unclear.write_bytes(b"FLaC" + b"shot by both sides" * 40)
+    scan_root(conn, "library", settings.library_dir, settings)
+
+    #  Now somebody rearranges them in Finder, which LibrAIry never sees.
+    moved = settings.library_dir / "Music/Talking Heads/Remain in Light"
+    moved.parent.mkdir(parents=True, exist_ok=True)
+    album.rename(moved)
+    (settings.library_dir / "Music/Television").mkdir(parents=True, exist_ok=True)
+    loose.rename(settings.library_dir / "Music/Television/Marquee Moon.flac")
+    #  And this one they copied twice and deleted the original, so the bytes
+    #  cannot say which copy is the file LibrAIry lost.
+    body = unclear.read_bytes()
+    for folder in ("Music/Magazine", "Music/Imported"):
+        target = settings.library_dir / folder / "Shot by Both Sides.flac"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(body)
+    unclear.unlink()
+    scan_root(conn, "library", settings.library_dir, settings)
 
 
 def _measure_format_impact(conn, settings: Settings) -> None:  # noqa: ANN001

@@ -81,6 +81,9 @@ def test_fresh_db_migrates_to_current_schema(tmp_path: Path) -> None:
         # finished plan never blocks correcting the same folder again.
         "idx_plans_one_active_per_finding",
         "idx_plan_withdrawals_finding",
+        "idx_plan_withdrawals_at",
+        "idx_reconciliations_item",
+        "idx_reconciliations_batch",
         # A quarantine decision is a plan too, and gets the same guarantee:
         # one active decision per held file.
         "idx_plans_quarantine_entry",
@@ -171,6 +174,9 @@ def test_migration_011_closes_proposals_for_files_already_filed(tmp_path: Path) 
     # so anything a later migration creates has to be put back first.
     conn.executescript(
         """
+        DROP INDEX IF EXISTS idx_reconciliations_item;
+        DROP INDEX IF EXISTS idx_reconciliations_batch;
+        DROP TABLE IF EXISTS reconciliations;
         DROP TABLE IF EXISTS duplicate_reports;
         DROP TABLE IF EXISTS review_undo;
         DROP TABLE IF EXISTS vision_results;
@@ -213,6 +219,7 @@ def test_migration_011_closes_proposals_for_files_already_filed(tmp_path: Path) 
         DROP INDEX IF EXISTS idx_quarantine_optimization_job;
         DROP INDEX IF EXISTS idx_plans_quarantine_entry;
         DROP INDEX IF EXISTS idx_plan_withdrawals_finding;
+        DROP INDEX IF EXISTS idx_plan_withdrawals_at;
         DROP TABLE IF EXISTS plan_withdrawals;
         -- Migrations 030 and 031. Before `audit_findings` below, which both
         -- of them point at.

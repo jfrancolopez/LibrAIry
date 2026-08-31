@@ -158,6 +158,7 @@ def report(conn: sqlite3.Connection, settings=None) -> Report:  # noqa: ANN001
     probes = (
         _stale_approvals,
         _conflicting_plans,
+        _moved_files,
         _delete_queue,
         _audit,
         _search,
@@ -320,6 +321,42 @@ def _conflicting_plans(conn: sqlite3.Connection, settings=None) -> list[Concern]
             ),
             href="/commit",
             action="View in Commit",
+            count=found,
+        )
+    ]
+
+
+# --- files that turned up somewhere else --------------------------------------
+
+
+def _moved_files(conn: sqlite3.Connection, settings=None) -> list[Concern]:  # noqa: ANN001, ARG001
+    """Indexed files whose bytes are on disk at a path LibrAIry does not expect.
+
+    One count and a link. Health is frozen at the shape it reached: it says
+    what needs a person and points at the page that owns the answer, and the
+    answer here — which of these moves to agree to — is Reconcile's.
+    """
+    from librairy.reconcile import total as moved
+
+    found = moved(conn)
+    if not found:
+        return []
+    return [
+        Concern(
+            code="moved-files",
+            level=ATTENTION,
+            headline=(
+                f"{found} file{'' if found == 1 else 's'} "
+                f"{'is' if found == 1 else 'are'} not where LibrAIry expects"
+            ),
+            detail=(
+                "The exact same bytes are on disk at a different path, so "
+                "nothing has been lost — somebody moved them, or a restore put "
+                "them back somewhere else. Agreeing to the new location moves "
+                "no files."
+            ),
+            href="/reconcile",
+            action="Reconcile",
             count=found,
         )
     ]

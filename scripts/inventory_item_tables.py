@@ -116,6 +116,13 @@ CLASSIFIED = {
         "The journal of what moved. Adoption writes its own two rows; older"
         " ones stay attached to the original item and must.",
     ),
+    "reconciliations": (
+        "neither", "historic",
+        "A record that somebody agreed a file is at a new path. It is about an"
+        " identity rather than about bytes, and an optimized copy is a"
+        " different identity that has never been anywhere — so it has nothing"
+        " to inherit and must not appear to have moved.",
+    ),
     "quarantine_entries": (
         "neither", "historic",
         "Belongs to the original, which is what gets preserved. The result"

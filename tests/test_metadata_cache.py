@@ -148,6 +148,13 @@ def test_the_migration_keeps_every_ffprobe_row(tmp_path: Path) -> None:
           item_id INTEGER PRIMARY KEY REFERENCES items(id),
           fingerprint TEXT NOT NULL, tool TEXT NOT NULL,
           payload TEXT NOT NULL, updated_at TEXT NOT NULL);
+        -- Migration 047 adds columns to this, so it has to be here for the
+        -- replay to reach 037 at all.
+        CREATE TABLE plan_withdrawals (
+          id INTEGER PRIMARY KEY, plan_id TEXT NOT NULL, plan_hash TEXT,
+          audit_finding_id INTEGER, relpath TEXT NOT NULL, dest_relpath TEXT,
+          op_count INTEGER NOT NULL DEFAULT 0, approved_at TEXT,
+          withdrawn_at TEXT NOT NULL);
         INSERT INTO item_metadata(item_id, fingerprint, tool, payload, updated_at)
           VALUES (1, 'the-bytes', 'ffprobe-media', '{"duration": 5820}', 'then');
         """

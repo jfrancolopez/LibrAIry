@@ -148,6 +148,53 @@ src/librairy/
 
 Processes communicate only through SQLite (WAL) and the filesystem. No queues, no brokers.
 
+## Restore reconciliation (permanent principle, added 2026-08-31)
+
+**Backups restore bytes and state. LibrAIry must then establish that its
+persisted knowledge still corresponds to the current bytes before treating
+fingerprint-bound or path-dependent state as current.**
+
+Written up in [../restore-reconciliation.md](../restore-reconciliation.md). The
+parts that must not drift:
+
+- three kinds of persisted state, and they are not interchangeable:
+  **authoritative** (History, Format Policy, Decision Memory, suppressions,
+  withdrawals, recognised moves) which nothing may regenerate or discard;
+  **derived** (Search, findings, discovery) which may be rebuilt freely;
+  **fingerprint-bound** (metadata, track identity, extractions, vision) which is
+  checked against the bytes it was measured from and is a *miss* when stale
+- validation writes nothing, moves nothing, opens no file and calls no provider
+- index-first, and it says "scan first" rather than pretending otherwise
+- a path mismatch is not data loss. Exact fingerprint identity is the **only**
+  thing allowed to say a file moved — never a filename, a size or a title
+- identical bytes in more than one place are **ambiguous** and stay that way.
+  Alphabetical order is not a tiebreak
+- recognising a move changes an understanding, not a location: zero bytes move,
+  and the file is never put back where LibrAIry would have filed it
+- a folder is one decision only on a complete one-to-one correspondence; one
+  member in doubt and the folder is not offered at all
+- recognition is refused where the row at the new path already carries an
+  operation, a quarantine record, a decision or a job
+- approved plans naming the old path go **stale**, never rewritten. History
+  keeps the paths its operations used. Undo is answered by the existing
+  preflight and declines rather than guessing
+- a `reconciliations` row records a human decision; the *candidates* are
+  derived, always
+
+## Withdrawn decisions (permanent principle, added 2026-08-31)
+
+**A withdrawal moved nothing, so it is not History.**
+
+Written up in [../withdrawn-decisions.md](../withdrawn-decisions.md):
+
+- one implementation for all five ways of taking a decision back
+- reasons are recorded at the moment, never inferred afterwards; "unrecorded"
+  is a real answer
+- a stale approval is not a user cancellation
+- withdrawals teach Decision Memory nothing, and being visible must not change
+  that
+- no re-open: a withdrawn decision may name files that have since moved
+
 ## Operational safety: two directions (permanent principle, added 2026-08-26)
 
 The same mistake — one decision quietly invalidating another — pointing two

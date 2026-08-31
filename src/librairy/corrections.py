@@ -706,29 +706,22 @@ def withdraw_approval(conn: sqlite3.Connection, finding_id: int) -> None:
 
 
 def _record_withdrawal(conn: sqlite3.Connection, row: sqlite3.Row, plan) -> None:
-    """Keep the fact that this was approved, after the plan is gone.
+    """Keep the fact that this was approved, before the plan is gone.
 
-    Written before the delete, so the hash and the approval time are still
-    readable. It is one row describing one decision — not a journal, not
-    something Undo can reach, and never a claim that files moved.
+    One implementation for every way a decision can be taken back — see
+    `librairy/withdrawals.py`. This one supplies the finding's own paths,
+    because a correction is named for the thing it was correcting rather than
+    for its first operation.
     """
-    plan_hash = conn.execute(
-        "SELECT plan_hash FROM plans WHERE id=?", (plan.plan_id,)
-    ).fetchone()
-    conn.execute(
-        "INSERT INTO plan_withdrawals(plan_id, plan_hash, audit_finding_id, relpath,"
-        " dest_relpath, op_count, approved_at, withdrawn_at)"
-        " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        (
-            plan.plan_id,
-            plan_hash["plan_hash"] if plan_hash else None,
-            row["id"],
-            row["relpath"],
-            row["dest_relpath"],
-            plan.op_count,
-            plan.approved_at,
-            utc_now(),
-        ),
+    from librairy.withdrawals import SENT_BACK, record
+
+    record(
+        conn,
+        plan.plan_id,
+        source=SENT_BACK,
+        audit_finding_id=row["id"],
+        relpath=str(row["relpath"] or ""),
+        dest_relpath=row["dest_relpath"],
     )
 
 

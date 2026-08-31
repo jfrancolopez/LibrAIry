@@ -9,7 +9,7 @@ from pathlib import Path
 from librairy.config import Settings
 
 LOGGER = logging.getLogger(__name__)
-SCHEMA_VERSION = 46
+SCHEMA_VERSION = 47
 
 
 class DatabaseVersionError(RuntimeError):
@@ -1348,6 +1348,55 @@ CREATE VIRTUAL TABLE search_fts USING fts5(
 );
 """
 
+MIGRATION_047 = """
+-- Two records of decisions that move no bytes.
+--
+-- `reconciliations` is what LibrAIry recognised rather than what it did. When
+-- somebody moves an album with Finder, the file is fine and the *index* is
+-- wrong; agreeing to recognise it at its new path changes an understanding and
+-- touches nothing on disk. That is not History — History is the journal of
+-- operations that moved files, and putting a recognition in it would claim a
+-- move that never happened. It is not derivable either: the candidate is
+-- derived from fingerprints, but the fact that a person accepted one is a
+-- decision, and decisions are recorded.
+CREATE TABLE reconciliations (
+  id            INTEGER PRIMARY KEY,
+  item_id       INTEGER NOT NULL REFERENCES items(id),
+  -- 'moved' today. Named so a later kind does not have to pretend to be this
+  -- one.
+  kind          TEXT NOT NULL DEFAULT 'moved',
+  from_root     TEXT NOT NULL,
+  from_relpath  TEXT NOT NULL,
+  to_root       TEXT NOT NULL,
+  to_relpath    TEXT NOT NULL,
+  -- The bytes that proved the two paths were the same file. Recorded so the
+  -- record can be checked later rather than believed.
+  fingerprint   TEXT NOT NULL DEFAULT '',
+  -- Set when this was one member of a folder that moved as a unit, so a
+  -- subtree reads back as one decision rather than thirty.
+  batch         TEXT NOT NULL DEFAULT '',
+  decided_at    TEXT NOT NULL
+);
+CREATE INDEX idx_reconciliations_item ON reconciliations(item_id);
+CREATE INDEX idx_reconciliations_batch ON reconciliations(batch);
+
+-- Why an approval was taken back, where the code that took it back knows.
+--
+-- `plan_withdrawals` recorded that a decision was withdrawn and nothing about
+-- who withdrew it or why. That was tolerable while withdrawals were rare; now
+-- that two waiting decisions can be found to contradict each other, sending
+-- one back is a thing the program actively asks people to do, and "you
+-- withdrew this" without saying which conflict it resolved is a record that
+-- explains nothing.
+--
+-- Empty means the withdrawal predates these columns or the caller genuinely
+-- did not know. It is never filled in by guessing afterwards.
+ALTER TABLE plan_withdrawals ADD COLUMN source TEXT NOT NULL DEFAULT '';
+ALTER TABLE plan_withdrawals ADD COLUMN reason TEXT NOT NULL DEFAULT '';
+ALTER TABLE plan_withdrawals ADD COLUMN conflicted_with TEXT;
+CREATE INDEX idx_plan_withdrawals_at ON plan_withdrawals(withdrawn_at);
+"""
+
 MIGRATIONS = {
     1: MIGRATION_001,
     2: MIGRATION_002,
@@ -1395,6 +1444,7 @@ MIGRATIONS = {
     44: MIGRATION_044,
     45: MIGRATION_045,
     46: MIGRATION_046,
+    47: MIGRATION_047,
 }
 
 

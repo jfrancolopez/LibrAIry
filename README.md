@@ -41,6 +41,8 @@ Open `http://localhost:8080` and drop files into `data/inbox`. No password is re
 - [The delete queue](docs/delete-queue.md)
 - [Two decisions that cannot both be right](docs/plan-conflicts.md)
 - [Health — what needs attention now](docs/health.md)
+- [Restoring, and agreeing about what you have](docs/restore-reconciliation.md)
+- [Decisions you took back](docs/withdrawn-decisions.md)
 - [Performance](docs/performance.md)
 - [FAQ](docs/faq.md)
 

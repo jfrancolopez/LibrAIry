@@ -400,6 +400,13 @@ PAGES = {
     # originals. The note is a full sentence inside a row that already carries
     # a path, a badge row and an edit panel.
     "review-policy": "/review",
+    # What the index and the disk disagree about after somebody rearranged
+    # things: a folder that moved as a unit, a loose file, and bytes that are
+    # in two places at once. The widest lines are two full paths stacked.
+    "reconcile": "/reconcile",
+    # Decisions taken back, beside the journal rather than in it. Each row is a
+    # badge, a filename, a sentence and a destination path.
+    "history-withdrawn": "/history?view=withdrawn",
     # The one page whose subject is a policy: four category sections, the two
     # protections told apart, and a measurement under them. The widest things
     # on it are a label beside a select and a folder path beside a Remove.

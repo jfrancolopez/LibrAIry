@@ -150,13 +150,28 @@ def _quarantine_undo(
     return {}
 
 
+#  The two things this page can be about, and they are not the same thing.
+#  Completed is the journal: operations that moved files. Withdrawn is the
+#  decisions that were taken back before anything moved — no journal row, no
+#  Undo, nothing to reverse. Mixing them would put rows in front of Undo that
+#  Undo cannot act on, and would claim moves that never happened.
+COMPLETED_VIEW = "completed"
+WITHDRAWN_VIEW = "withdrawn"
+VIEWS = (COMPLETED_VIEW, WITHDRAWN_VIEW)
+VIEW_LABEL = {COMPLETED_VIEW: "Completed", WITHDRAWN_VIEW: "Withdrawn"}
+
+
 def history_data(
     conn: sqlite3.Connection,
     limit: int = 50,
     query: str = "",
     kind: str = "all",
     page: int = 1,
+    view: str = COMPLETED_VIEW,
 ) -> dict[str, object]:
+    view = view if view in VIEWS else COMPLETED_VIEW
+    if view == WITHDRAWN_VIEW:
+        return _withdrawn_data(conn, page=page)
     if kind not in HISTORY_KINDS:
         kind = "all"
     page = max(1, page)
@@ -197,7 +212,63 @@ def history_data(
         "showing": len(rows),
         "matching": counts.get(kind, 0),
         "total": _journal_size(conn),
+        "view": COMPLETED_VIEW,
+        "views": _view_tabs(conn, COMPLETED_VIEW),
+        "withdrawals": [],
     }
+
+
+def _withdrawn_data(conn: sqlite3.Connection, *, page: int = 1) -> dict[str, object]:
+    """Decisions taken back, newest first. Bounded like every other list.
+
+    Deliberately spare. There is no Undo here and no re-open: a decision that
+    was withdrawn a month ago may name files that have since moved, and
+    offering to reinstate it would be offering to approve something nobody has
+    looked at. Visibility first — what was withdrawn, when, and why, where the
+    withdrawal knew why.
+    """
+    from librairy.withdrawals import PAGE_SIZE, listing, total
+
+    page = max(1, page)
+    count = total(conn)
+    rows = listing(conn, limit=PAGE_SIZE, offset=(page - 1) * PAGE_SIZE)
+    return {
+        "view": WITHDRAWN_VIEW,
+        "views": _view_tabs(conn, WITHDRAWN_VIEW),
+        "withdrawals": rows,
+        "entries": [],
+        "settings_changes": [],
+        "plans": [],
+        "timeline": [],
+        "days": [],
+        "query": "",
+        "kind": "all",
+        "kinds": [],
+        "page": page,
+        "has_next": page * PAGE_SIZE < count,
+        "has_prev": page > 1,
+        "showing": len(rows),
+        "matching": count,
+        "total": count,
+    }
+
+
+def _view_tabs(conn: sqlite3.Connection, current: str) -> list[dict[str, object]]:
+    from librairy.withdrawals import total as withdrawn_total
+
+    counts = {
+        COMPLETED_VIEW: _journal_size(conn),
+        WITHDRAWN_VIEW: withdrawn_total(conn),
+    }
+    return [
+        {
+            "key": key,
+            "label": VIEW_LABEL[key],
+            "count": counts[key],
+            "current": key == current,
+        }
+        for key in VIEWS
+    ]
 
 
 def _days(

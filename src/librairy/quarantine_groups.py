@@ -406,6 +406,10 @@ def cancel_restore(conn: sqlite3.Connection, plan_id: str) -> None:
     ).fetchone()["n"]
     if executed:
         raise RestoreGroupError("part of this has already run")
+    from librairy.withdrawals import CANCELLED
+    from librairy.withdrawals import record as record_withdrawal
+
+    record_withdrawal(conn, pending, source=CANCELLED)
     conn.execute("DELETE FROM plan_ops WHERE plan_id=?", (pending,))
     conn.execute("DELETE FROM plans WHERE id=?", (pending,))
 

@@ -1,0 +1,183 @@
+{% extends "base.html" %}
+{% block content %}
+  <header class="page-head">
+    <div>
+      <h1>Reconcile</h1>
+      {# The sentence the page exists to make true. A restore puts bytes and a
+         database back; whether they still describe each other is a separate
+         question, and this is where it is answered. #}
+      <p class="muted">What LibrAIry has recorded, checked against what is on
+        disk now. <strong>Nothing here moves a file.</strong> Recognising a move
+        updates where LibrAIry thinks a file lives — it never puts the file
+        back where LibrAIry would have filed it.</p>
+    </div>
+  </header>
+
+  {% if error %}<p class="error-note">{{ error }}</p>{% endif %}
+  {% if done %}<p class="notice-ok">{{ done }}</p>{% endif %}
+
+  {% if report.scan_needed %}
+    <section class="card attention attention-attention">
+      <h2>Scan first</h2>
+      <p>{{ report.unscanned }} file{{ 's' if report.unscanned != 1 else '' }}
+        on disk {{ 'is' if report.unscanned == 1 else 'are' }} not in the index
+        yet. Everything below is true about the index; it is not yet true about
+        the disk.</p>
+      <p class="muted">Run <span class="mono">librairy scan</span>, or let the
+        worker's next cycle pick them up, then look at this page again.</p>
+    </section>
+  {% endif %}
+
+  {% for level, title, note in [
+       ('blocking', 'Needs a decision', 'These cannot be answered from the bytes on disk.'),
+       ('attention', 'Worth knowing', 'True, and better known before it becomes the first kind.'),
+       ('rebuildable', 'Can be rebuilt', 'Derived from the files and your decisions. Losing it costs time, not information.')
+     ] %}
+    {% set findings = report.at(level) %}
+    {% if findings %}
+      <section class="card attention attention-{{ level }}">
+        <h2>{{ title }}</h2>
+        <p class="muted">{{ note }}</p>
+        <ul class="attention-list">
+          {% for item in findings %}
+            <li class="attention-item">
+              <strong class="attention-head">{{ item.headline }}</strong>
+              {% if item.detail %}<p class="muted">{{ item.detail }}</p>{% endif %}
+              {% if item.examples %}
+                <ul class="attention-examples">
+                  {% for example in item.examples %}<li class="mono">{{ example }}</li>{% endfor %}
+                </ul>
+                {% if item.more %}<p class="muted">and {{ item.more }} more.</p>{% endif %}
+              {% endif %}
+            </li>
+          {% endfor %}
+        </ul>
+      </section>
+    {% endif %}
+  {% endfor %}
+
+  {% if subtrees %}
+    <section class="metric wide">
+      <h2>Folders that appear to have moved</h2>
+      <p class="muted">Every file in the old folder has exactly one match in the
+        new one, byte for byte. One decision, because moving a folder was one
+        thing you did.</p>
+      {% for tree in subtrees %}
+        <article class="decision-card">
+          <div class="decision-head">
+            <h3>{{ tree.total }} files</h3>
+          </div>
+          <p class="mono muted">{{ tree.from_parent }}</p>
+          <p class="mono">→ {{ tree.to_parent }}</p>
+          <details class="decision-files">
+            <summary>Show files</summary>
+            <ul class="sample-moves">
+              {% for name in tree.names %}<li class="mono">{{ name }}</li>{% endfor %}
+            </ul>
+            {% if tree.more %}<p class="muted">and {{ tree.more }} more.</p>{% endif %}
+          </details>
+          <div class="button-row">
+            <form method="post" action="/reconcile/folder">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="hidden" name="key" value="{{ tree.key }}">
+              <button type="submit">Recognize new location</button>
+            </form>
+          </div>
+        </article>
+      {% endfor %}
+    </section>
+  {% endif %}
+
+  {% if candidates %}
+    <section class="metric wide">
+      <h2>Files that appear to have moved</h2>
+      <p class="muted">The exact same bytes are at a different path. Recognising
+        one updates LibrAIry's record and touches no file.</p>
+      <ul class="queue-list">
+        {% for row in candidates %}
+          <li class="queue-row">
+            <div class="queue-what">
+              <p class="mono"><strong>{{ row.name }}</strong></p>
+              <p class="mono muted">was {{ row.root }}/{{ row.from_relpath }}</p>
+              <p class="mono">now {{ row.root }}/{{ row.to_relpath }}</p>
+              {% if row.renamed %}
+                <p class="queue-state">Its name changed too. The bytes are
+                  identical, so this is still the same file.</p>
+              {% endif %}
+            </div>
+            <div class="button-row">
+              <form method="post" action="/reconcile/{{ row.item_id }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button type="submit">Recognize new location</button>
+              </form>
+            </div>
+          </li>
+        {% endfor %}
+      </ul>
+      {% if candidate_total > candidates|length + (subtrees|sum(attribute='total')) %}
+        <p class="muted">and {{ candidate_total - candidates|length - (subtrees|sum(attribute='total')) }} more.</p>
+      {% endif %}
+    </section>
+  {% endif %}
+
+  {% if ambiguous %}
+    <section class="metric wide">
+      <h2>More than one possibility</h2>
+      {# Refused rather than guessed. Which copy is the one the index lost
+         cannot be established from the bytes, and picking the first one
+         alphabetically would be a guess wearing a decision's clothes. #}
+      <p class="muted">These bytes are in several places at once, so which one
+        LibrAIry lost track of cannot be worked out from the file. Nothing is
+        offered here — remove the copy you do not want, or leave it as it is.</p>
+      <ul class="queue-list">
+        {% for row in ambiguous %}
+          <li class="queue-row">
+            <div class="queue-what">
+              <p class="mono"><strong>{{ row.name }}</strong></p>
+              <p class="mono muted">was {{ row.root }}/{{ row.from_relpath }}</p>
+              {% for place in row.places %}
+                <p class="mono">could be {{ row.root }}/{{ place }}</p>
+              {% endfor %}
+              {% if row.more %}
+                <p class="muted">and {{ row.more }} more file{{ 's' if row.more != 1 else '' }}
+                  with exactly these bytes.</p>
+              {% endif %}
+            </div>
+          </li>
+        {% endfor %}
+      </ul>
+    </section>
+  {% endif %}
+
+  {% if preserved %}
+    <section class="metric wide">
+      <h2>Your decisions are untouched</h2>
+      <p class="muted">None of this is derived from your files, so nothing a
+        rebuild does can remove it. A stale index is not the same thing as a
+        decision you never made.</p>
+      <dl class="queue-facts">
+        {% for row in preserved %}
+          <div><dt>{{ row.label }}</dt><dd>{{ row.count }}</dd></div>
+        {% endfor %}
+      </dl>
+    </section>
+  {% endif %}
+
+  {% if recognised %}
+    <section class="metric wide">
+      <h2>Already recognised</h2>
+      <p class="muted">Moves you agreed to. No file was touched by any of them.</p>
+      <ul class="queue-list">
+        {% for row in recognised %}
+          <li class="queue-row">
+            <div class="queue-what">
+              <p><strong>{{ row.name }}</strong>{% if row.total > 1 %}
+                <span class="muted">and {{ row.total - 1 }} more, together</span>{% endif %}</p>
+              <p class="mono muted">{{ row.from_relpath }} → {{ row.to_relpath }}</p>
+            </div>
+          </li>
+        {% endfor %}
+      </ul>
+    </section>
+  {% endif %}
+{% endblock %}

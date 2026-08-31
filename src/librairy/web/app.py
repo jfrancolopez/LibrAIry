@@ -450,6 +450,56 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             },
         )
 
+    def _reconcile_page(
+        request: Request, error: str = "", done: str = ""
+    ) -> HTMLResponse:
+        from librairy.web.reconcile_page import page_data
+
+        return TEMPLATES.TemplateResponse(
+            request,
+            "reconcile.html",
+            {
+                "title": "Reconcile",
+                "csrf_token": request.state.session["csrf_token"],
+                **page_data(conn, settings, error=error, done=done),
+            },
+        )
+
+    @app.get("/reconcile", response_class=HTMLResponse)
+    def reconcile_screen(request: Request) -> HTMLResponse:
+        return _reconcile_page(request)
+
+    @app.post("/reconcile/folder", include_in_schema=False)
+    def reconcile_folder(request: Request, key: str = Form("")) -> HTMLResponse:
+        from librairy.reconcile import ReconcileRefused, recognize_subtree
+
+        try:
+            with transaction(conn):
+                recognised = recognize_subtree(conn, key)
+        except ReconcileRefused as exc:
+            return _reconcile_page(request, error=str(exc))
+        return _reconcile_page(
+            request,
+            done=(
+                f"{len(recognised)} files recognised at their new location. "
+                f"Nothing was moved."
+            ),
+        )
+
+    @app.post("/reconcile/{item_id}", include_in_schema=False)
+    def reconcile_one(request: Request, item_id: int) -> HTMLResponse:
+        from librairy.reconcile import ReconcileRefused, recognize
+
+        try:
+            with transaction(conn):
+                found = recognize(conn, item_id)
+        except ReconcileRefused as exc:
+            return _reconcile_page(request, error=str(exc))
+        return _reconcile_page(
+            request,
+            done=f"{found.name} recognised at its new location. Nothing was moved.",
+        )
+
     @app.get("/settings", response_class=HTMLResponse)
     def settings_screen(request: Request) -> HTMLResponse:
         return TEMPLATES.TemplateResponse(
@@ -2838,7 +2888,11 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
 
     @app.get("/history", response_class=HTMLResponse)
     def history(
-        request: Request, q: str = "", kind: str = "all", page: int = 1
+        request: Request,
+        q: str = "",
+        kind: str = "all",
+        page: int = 1,
+        view: str = "completed",
     ) -> HTMLResponse:
         return TEMPLATES.TemplateResponse(
             request,
@@ -2849,7 +2903,12 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
                 # A search wants a wider net than the default fifty rows: the
                 # move you are hunting for is usually not a recent one.
                 **history_data(
-                    conn, limit=500 if q.strip() else 50, query=q, kind=kind, page=page
+                    conn,
+                    limit=500 if q.strip() else 50,
+                    query=q,
+                    kind=kind,
+                    page=page,
+                    view=view,
                 ),
             },
         )

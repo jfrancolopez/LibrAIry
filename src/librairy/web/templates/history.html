@@ -4,10 +4,17 @@
   <header class="page-head">
     <div>
       <h1>History</h1>
-      <p class="muted">Every committed move, grouped by plan — newest first. Undo anything; nothing is ever deleted.</p>
+      {% if view == 'withdrawn' %}
+        <p class="muted">Decisions you took back before anything moved. No file
+          was touched by any of these — that is the difference between
+          withdrawing a decision and undoing one.</p>
+      {% else %}
+        <p class="muted">Every committed move, grouped by plan — newest first. Undo anything; nothing is ever deleted.</p>
+      {% endif %}
     </div>
     {# The journal only grows, and scrolling stops working somewhere in the low
        hundreds. Half a filename you remember is enough. #}
+    {% if view != 'withdrawn' %}
     <form class="filter-grid" action="/history" method="get" role="search">
       <label class="field">Find a move
         <input type="search" name="q" value="{{ query }}" placeholder="part of a file name">
@@ -18,7 +25,22 @@
       <button type="submit">Search</button>
       {% if query or kind != 'all' %}<a class="btn btn-ghost" href="/history">Clear</a>{% endif %}
     </form>
+    {% endif %}
   </header>
+
+  {# Two different things, side by side and never merged. Completed is the
+     journal of operations that moved files; Withdrawn is the decisions taken
+     back before anything moved. A withdrawal has no journal row and nothing to
+     undo, so putting one in the list above would offer a reversal of nothing. #}
+  <nav class="view-tabs" aria-label="What to show">
+    {% for tab in views %}
+      <a class="chip{% if tab.current %} is-on{% endif %}"
+         href="/history?view={{ tab.key }}"
+         {% if tab.current %}aria-current="true"{% endif %}>
+        {{ tab.label }} <span class="chip-count">{{ tab.count }}</span>
+      </a>
+    {% endfor %}
+  </nav>
 
   {# Every one of these is a predicate over columns the journal actually has —
      which is why each can show a real count. There is deliberately no
@@ -34,6 +56,43 @@
     {% endfor %}
   </nav>
 
+  {% if view == 'withdrawn' %}
+    <p class="muted">{{ total }} withdrawn decision{{ 's' if total != 1 else '' }}.</p>
+    {% if not withdrawals %}
+      <p class="muted">Nothing has been withdrawn. A decision sent back from
+        Commit appears here.</p>
+    {% endif %}
+    <ul class="queue-list">
+      {% for row in withdrawals %}
+        <li class="queue-row">
+          <div class="queue-what">
+            <p><span class="badge">{{ row.action }}</span>
+              <strong>{{ row.name }}</strong></p>
+            <p class="muted">{{ row.files }} · {{ row.when }}</p>
+            {# The sentence this view exists for. A withdrawal is not an
+               operation, and saying so on every row is cheaper than letting
+               somebody wonder what it did to their library. #}
+            <p class="muted">No files moved.</p>
+            {% if row.conflict_summary %}
+              <p class="queue-state">Withdrawn while it conflicted with
+                {{ row.conflict_summary }}.</p>
+            {% elif row.reason %}
+              <p class="queue-state">Withdrawn because {{ row.reason }}.</p>
+            {% endif %}
+            {% if row.dest_relpath %}
+              <p class="mono muted">would have become {{ row.dest_relpath }}</p>
+            {% endif %}
+          </div>
+        </li>
+      {% endfor %}
+    </ul>
+    {% if has_prev or has_next %}
+      <div class="button-row">
+        {% if has_prev %}<a class="btn" href="/history?view=withdrawn&page={{ page - 1 }}">Previous</a>{% endif %}
+        {% if has_next %}<a class="btn" href="/history?view=withdrawn&page={{ page + 1 }}">Next</a>{% endif %}
+      </div>
+    {% endif %}
+  {% else %}
   <p class="muted">
     {% if query or kind != 'all' %}
       Showing {{ showing }} of {{ matching }} matching
@@ -165,5 +224,6 @@
         {% endfor %}
       </ul>
     </details>
+  {% endif %}
   {% endif %}
 {% endblock %}

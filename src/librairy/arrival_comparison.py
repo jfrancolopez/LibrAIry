@@ -470,6 +470,10 @@ def withdraw(conn: sqlite3.Connection, settings: Settings, plan_id: str) -> None
             (plan_id,),
         )
     ]
+    from librairy.withdrawals import SENT_BACK
+    from librairy.withdrawals import record as record_withdrawal
+
+    record_withdrawal(conn, plan_id, source=SENT_BACK)
     conn.execute("DELETE FROM plan_ops WHERE plan_id=?", (plan_id,))
     conn.execute("DELETE FROM plans WHERE id=?", (plan_id,))
     for item in items:

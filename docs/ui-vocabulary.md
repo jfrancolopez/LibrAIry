@@ -172,6 +172,19 @@ changed underneath an approval; the second says two decisions were approved
 that cannot both happen. Telling somebody the wrong one sends them looking in
 the wrong place.
 
+## Reconciling
+
+**Recognize new location**
+
+The one control on the Reconcile page. It agrees that a file is where it now
+is; it moves nothing, and it never puts the file back where LibrAIry would have
+filed it. Deliberately not `Restore`, `Relink` or `Fix` — the first two already
+mean something else here, and nothing is being fixed.
+
+There is no `Re-open` on a withdrawn decision. A month-old withdrawal may name
+files that have since moved, so making the decision again is a decision, not a
+button.
+
 ## How much something matters, on Health
 
     Needs a decision · Worth knowing · Information

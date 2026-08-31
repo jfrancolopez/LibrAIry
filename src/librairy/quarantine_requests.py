@@ -318,6 +318,13 @@ def cancel_request(conn: sqlite3.Connection, entry_id: int) -> None:
     ).fetchone()["n"]
     if executed:
         raise QuarantineError("part of this has already run")
+    #  Recorded before the delete, like every other way of taking a decision
+    #  back. Three of the five used to remove the plan and leave no trace at
+    #  all, which meant `Cancel request` was an act with no account of itself.
+    from librairy.withdrawals import CANCELLED
+    from librairy.withdrawals import record as record_withdrawal
+
+    record_withdrawal(conn, request.plan_id, source=CANCELLED)
     conn.execute("DELETE FROM plan_ops WHERE plan_id=?", (request.plan_id,))
     conn.execute("DELETE FROM plans WHERE id=?", (request.plan_id,))
 

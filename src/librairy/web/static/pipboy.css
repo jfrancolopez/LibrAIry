@@ -3486,3 +3486,11 @@ summary.timeline-head::-webkit-details-marker { display: none; }
   border-left: 1px solid var(--border);
   padding-left: var(--space-2);
 }
+
+/* Completed against Withdrawn. Two different things, told apart at the top of
+   the page rather than mixed into one list — a withdrawal has no journal row
+   and nothing to undo, and a reader has to be able to see which they are in. */
+.view-tabs {
+  display: flex; flex-wrap: wrap; gap: var(--space-2);
+  margin: var(--space-3) 0 var(--space-2);
+}

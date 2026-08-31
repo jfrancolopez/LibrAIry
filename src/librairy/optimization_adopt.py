@@ -387,24 +387,14 @@ def cancel_adoption(conn: sqlite3.Connection, plan_id: str) -> bool:
     if any(op["result"] is not None for op in ops):
         return False
 
+    from librairy.withdrawals import CANCELLED
+    from librairy.withdrawals import record as record_withdrawal
+
     with transaction(conn):
         # Written before the delete, while the hash and the approval time are
         # still readable. One row describing one decision — never a claim that
-        # files moved.
-        conn.execute(
-            "INSERT INTO plan_withdrawals(plan_id, plan_hash, audit_finding_id,"
-            " relpath, dest_relpath, op_count, approved_at, withdrawn_at)"
-            " VALUES (?, ?, NULL, ?, ?, ?, ?, ?)",
-            (
-                plan_id,
-                plan["plan_hash"],
-                ops[0]["src_relpath"] if ops else "",
-                ops[-1]["dest_relpath"] if ops else None,
-                len(ops),
-                plan["approved_at"],
-                utc_now(),
-            ),
-        )
+        # files moved. `Cancel request` is the word on the button.
+        record_withdrawal(conn, plan_id, source=CANCELLED)
         conn.execute("DELETE FROM plan_ops WHERE plan_id=?", (plan_id,))
         conn.execute("DELETE FROM plans WHERE id=?", (plan_id,))
     return True
