@@ -122,6 +122,13 @@ def build_parser() -> argparse.ArgumentParser:
     quarantine_restore.add_argument("entry_id", nargs="?", type=int)
     quarantine_restore.add_argument("--all", action="store_true")
 
+    #  One command that answers "what am I running, and against what". The
+    #  three facts live together because they are asked together — before an
+    #  upgrade, during a support conversation, after a rollback.
+    subparsers.add_parser(
+        "version", help="Show application version, schema and build revision"
+    )
+
     db = subparsers.add_parser("db", help="Database utilities")
     db_subparsers = db.add_subparsers(dest="db_command", required=True)
     db_subparsers.add_parser("path", help="Print database path")
@@ -229,6 +236,16 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command is None:
         parser.print_help()
+        return EXIT_OK
+    #  Before anything is validated or opened. "What am I running" is the
+    #  question you ask *because* something is wrong — an unconfigured
+    #  container, a read-only mount, a database that will not open — and a
+    #  version command that needs a working installation to answer cannot be
+    #  used at the moment it is needed.
+    if args.command == "version":
+        from librairy.build_info import describe
+
+        _emit(args, describe())
         return EXIT_OK
     try:
         settings = validate_or_die()

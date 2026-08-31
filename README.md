@@ -28,6 +28,7 @@ Open `http://localhost:8080` and drop files into `data/inbox`. No password is re
 - [UNRAID install](docs/install-unraid.md)
 - [Configuration](docs/configuration.md)
 - [LM Studio on your LAN](docs/lm-studio.md)
+- [Running LibrAIry — install, upgrade, backup, restore, reconcile, roll back](docs/operations.md)
 - [Using LibrAIry](docs/using-librairy.md)
 - [The command line](docs/cli.md)
 - [Troubleshooting](docs/troubleshooting.md)
@@ -43,6 +44,7 @@ Open `http://localhost:8080` and drop files into `data/inbox`. No password is re
 - [Health — what needs attention now](docs/health.md)
 - [Restoring, and agreeing about what you have](docs/restore-reconciliation.md)
 - [Decisions you took back](docs/withdrawn-decisions.md)
+- [Release acceptance](docs/release-acceptance.md)
 - [Performance](docs/performance.md)
 - [FAQ](docs/faq.md)
 

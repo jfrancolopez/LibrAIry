@@ -2,9 +2,100 @@
 
 ## Unreleased
 
-Review becomes usable on a real queue, and four detectors that had never worked
-start working. Most of what follows was found by pointing the new comparison
-panel at a real library and reading what it said.
+The program learns to say what it knows and to refuse what it cannot do safely.
+Review becomes usable on a real queue, four detectors that had never worked
+start working, and — later in the same window — every decision the program can
+take gains a rule about when it may not be taken.
+
+### Added — Format Policy
+
+One place that answers *among representations that are valid choices, what do
+you prefer, permit or protect?* Scoped globally, by category or by folder, with
+precedence per field and most-specific-first.
+
+- **Preferred existing representation.** MP3 is the one thing configured, and
+  it preselects and labels — it never acts. If the only copy is a FLAC there is
+  no MP3 to prefer and nothing happens.
+- **Transformation permission**, tri-state. Unset is *not* "no", which is what
+  keeps the table from changing anything the day it appears. Permission is also
+  not capability: saying yes to lossy conversion does not create an encoder,
+  and none was added.
+- **Preserve originals** on a folder. It stops a representation preference or
+  an optimization deciding those originals are dispensable. It has never meant
+  LibrAIry may not file, rename or reorganise them — it is not a filesystem
+  permission, and there is a separate, stronger protected-root list that is.
+- **A read-only impact analysis**, run on request, that reports what a policy is
+  about in bytes that *would eventually leave active representation storage* —
+  never "savings", because nothing has been deleted.
+- The policy resolves against a file's **current** path and against a
+  **proposed destination**, so Review can say what filing a RAW into a folder
+  that preserves originals will mean, before it is filed. That is context; it
+  never blocks the filing.
+
+### Added — decisions that cannot both be right
+
+Two safeguards, one on each side of the moment files actually move.
+
+- **Undo understands order.** A decision a later decision was built on cannot
+  be reversed blind — the reversal is refused and the later decision is named,
+  so a chain unwinds newest-first. Nothing cascades. Dependencies are derived
+  from the journal, never stored, and reads (audits, measurements, relationship
+  discovery, search indexing, decision memory) create none.
+- **Two waiting decisions that collide are found before Commit runs one.** Same
+  file, same destination, or a file another decision's approval was explained
+  by. Refused at approval where a plan is involved; marked on the Commit page
+  for arrivals, which are left out of the batch rather than cancelled. The
+  hash-verified executor preflight is unchanged and still authoritative.
+
+### Added — Health as an attention surface
+
+`Health` now answers *what needs me now* before it answers *is the machinery
+working*. Stale approvals, conflicting decisions, queued files that changed or
+vanished, an audit that stopped, arrivals nobody has measured, an out-of-date
+policy measurement, and — as information, because it is the safeguard working —
+decisions that cannot be undone yet.
+
+Three levels that mean something, no `Critical/High/Medium/Low`, no invented
+"overdue", no `Fix all`. It writes nothing and repairs nothing.
+
+### Added — restoring, and agreeing about what you have
+
+A backup puts bytes and a database back; whether they still describe each other
+is a separate question, and `Reconcile` is where it is answered.
+
+- Persisted state is classified as **authoritative** (History, Format Policy,
+  Decision Memory, suppressions, withdrawals — never regenerated, never
+  discarded), **derived** (rebuild freely) or **fingerprint-bound** (checked
+  against the bytes it was measured from, and a mismatch is a miss).
+- A path mismatch is not data loss. Where exactly the same bytes are on disk
+  somewhere else, the file has moved — and **only an exact fingerprint may say
+  so**. Identical bytes in more than one place stay ambiguous.
+- **Recognising a move changes an understanding, not a location.** Zero bytes
+  move, and the file is never put back where LibrAIry would have filed it.
+  Approved plans naming the old path go stale rather than being rewritten;
+  History keeps the paths its operations used.
+
+### Added — the delete queue, catalog search, and withdrawn decisions
+
+- **Delete queue** is a place you can look at: what is waiting, how much disk it
+  holds, when it arrived, which decision sent it, and whether it changed or
+  vanished since. Restore goes through Commit like everything else. Still no
+  expiry, no TTL, no *Empty queue*, and nothing on disk is ever called *saved*.
+- **Search knows what a file is**, not only what it is called. A film by its
+  catalog title or TMDB id, a recording by artist or release, a paper by DOI, a
+  book by ISBN — from identity already stored, with no provider called and the
+  physical filename still visible.
+- **Withdrawn decisions have a place**, beside the journal and never in it: a
+  withdrawal moved nothing. All five ways of taking a decision back now record
+  one, with the reason captured while it is still true.
+
+### Added — `librairy version`
+
+One command answering what you are running and what it is running against:
+application version, the schema this build supports, the schema the database is
+actually at, and the commit the image was built from. It answers without a
+database, a configuration or a writable mount — because it is what you run when
+something is wrong.
 
 ### Added — Library Audit
 

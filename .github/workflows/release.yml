@@ -76,6 +76,11 @@ jobs:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
+          # So the running container can answer which commit it came from.
+          # `librairy version` reads it from the environment; there is no
+          # runtime fallback, because a container has no repository in it.
+          build-args: |
+            LIBRAIRY_REVISION=${{ github.sha }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha

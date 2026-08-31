@@ -55,16 +55,25 @@ RUN pip wheel --no-cache-dir --wheel-dir /wheels . \
 
 FROM python:3.12-slim-trixie AS runtime
 
+#  The commit this image was built from. Supplied by the build, never read
+#  from a repository at runtime: a container has no checkout in it, and a
+#  fallback that shelled out to git would report the *builder's* working tree.
+#  Empty is the honest answer for a local build, and `librairy version` says
+#  `unknown` rather than inventing one.
+ARG LIBRAIRY_REVISION=""
+
 LABEL org.opencontainers.image.title="LibrAIry" \
       org.opencontainers.image.description="Privacy-first file organizer" \
       org.opencontainers.image.version="1.2.0" \
+      org.opencontainers.image.revision="${LIBRAIRY_REVISION}" \
       org.opencontainers.image.source="https://github.com/jfrancolopez/LibrAIry"
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     DEBIAN_FRONTEND=noninteractive \
     PUID=99 \
-    PGID=100
+    PGID=100 \
+    LIBRAIRY_REVISION="${LIBRAIRY_REVISION}"
 
 # No gosu: Debian's build is the other Go-1.19 binary. setpriv ships in
 # util-linux (C, no Go runtime) and drops privileges the same way — exec, no
@@ -93,6 +102,10 @@ COPY --from=builder /wheels /tmp/wheels
 COPY --from=builder /out/czkawka_cli /out/rclone /usr/local/bin/
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
+# The last two checks are the build's own smoke test: every helper binary the
+# product shells out to must be present, and `librairy version` must answer
+# without a database, a configuration or a writable mount — which is the state
+# it has to work in, because it is what you run when something is wrong.
 RUN pip install --no-cache-dir /tmp/wheels/*.whl \
     && chmod 0755 /usr/local/bin/czkawka_cli /usr/local/bin/rclone \
                   /usr/local/bin/docker-entrypoint.sh \
@@ -105,7 +118,8 @@ RUN pip install --no-cache-dir /tmp/wheels/*.whl \
     && rmlint --version >/dev/null \
     && czkawka_cli --version >/dev/null \
     && setpriv --help >/dev/null \
-    && librairy --help >/dev/null
+    && librairy --help >/dev/null \
+    && librairy version >/dev/null
 
 EXPOSE 8080
 
