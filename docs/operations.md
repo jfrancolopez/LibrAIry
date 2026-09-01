@@ -42,7 +42,9 @@ the image.
    `HOST_INBOX_DIR`, `HOST_LIBRARY_DIR`, `HOST_QUARANTINE_DIR`,
    `HOST_APPDATA_DIR`.
 2. `docker compose up -d`
-3. Open `http://<host>:8080` and set a password.
+3. Open `http://<host>:8080` and set a password. `DASHBOARD_PORT` changes
+   that number; under compose it is the host side only, and the port inside
+   the container stays 8080.
 
 The database is created and migrated on first start. No AI provider and no
 catalog key is required: without them LibrAIry organises on its own rules, and

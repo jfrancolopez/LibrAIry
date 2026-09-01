@@ -12,7 +12,7 @@ If the container exits, run `docker logs librairy`. Startup failures are numbere
 - Unwritable root path: fix ownership or set `PUID`/`PGID`.
 - Inbox inside library or other nested roots: use separate top-level folders.
 - Database cannot open: check appdata permissions and free disk space.
-- Port is busy: change `DASHBOARD_PORT` or the compose port mapping.
+- Port is busy: change `DASHBOARD_PORT`. Under compose that is the host side of the mapping; the container's own port is always 8080.
 
 ## "database disk image is malformed"
 

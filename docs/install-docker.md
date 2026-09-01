@@ -86,7 +86,7 @@ docker exec librairy librairy --version
 docker exec librairy librairy ai status
 ```
 
-If startup fails, the logs list numbered errors in plain language. Common fixes are creating the host directories, correcting ownership for `PUID:PGID`, separating nested inbox/library paths, or changing `DASHBOARD_PORT`.
+If startup fails, the logs list numbered errors in plain language. Common fixes are creating the host directories, correcting ownership for `PUID:PGID`, separating nested inbox/library paths, or moving off a busy port — under compose that is `DASHBOARD_PORT`, and with the `docker run` above it is the left-hand side of `-p 8080:8080`.
 
 ## Reclaiming Docker disk space
 
