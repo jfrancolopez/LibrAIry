@@ -39,6 +39,13 @@ packages = ["src/librairy"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Expensive large-population benchmarks are opt-in. A suite that takes twenty
+# minutes is a suite that stops being run, and the whole value of the scale
+# tests is that the cheap ones run every time.
+addopts = "-m 'not scale'"
+markers = [
+  "scale: large-population benchmark; opt in with `-m scale`",
+]
 
 [tool.ruff]
 line-length = 100
