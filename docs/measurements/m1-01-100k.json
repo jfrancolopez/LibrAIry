@@ -1,0 +1,127 @@
+{
+  "decisions": {
+    "as_presented_today": 1704,
+    "groups_split_across_pages": 127,
+    "groups_total": 127,
+    "ideal_grouped_decisions": 891,
+    "pages": 90,
+    "pending_proposals": 4500,
+    "per_file_decisions": 4500
+  },
+  "peak_rss_mb": 65,
+  "population": {
+    "build_seconds": 16.51,
+    "db_bytes": 59150336,
+    "findings": 5000,
+    "groups": 139,
+    "history": 10000,
+    "inbox": 5000,
+    "library": 100000,
+    "proposals": 5000,
+    "quarantine": 1000
+  },
+  "surfaces": [
+    {
+      "hottest": "x3051: SELECT p.id, p.status, p.approved_at, (SELECT COUNT(*) FROM plan_ops WHERE plan_id=p.id) AS op_count",
+      "ms": 60007.0,
+      "queries": 3969,
+      "status": "EXCEEDED 60s budget",
+      "surface": "Review page 1"
+    },
+    {
+      "hottest": "x2998: SELECT p.id, p.status, p.approved_at, (SELECT COUNT(*) FROM plan_ops WHERE plan_id=p.id) AS op_count",
+      "ms": 60006.1,
+      "queries": 3906,
+      "status": "EXCEEDED 60s budget",
+      "surface": "Review page 50"
+    },
+    {
+      "hottest": "x3062: SELECT p.id, p.status, p.approved_at, (SELECT COUNT(*) FROM plan_ops WHERE plan_id=p.id) AS op_count",
+      "ms": 60005.8,
+      "queries": 3985,
+      "status": "EXCEEDED 60s budget",
+      "surface": "Review sorted (ungrouped)"
+    },
+    {
+      "hottest": "",
+      "ms": 52.1,
+      "queries": 22,
+      "status": "ok",
+      "surface": "Dashboard"
+    },
+    {
+      "hottest": "x3: SELECT value FROM settings WHERE key=?",
+      "ms": 60000.6,
+      "queries": 10,
+      "status": "EXCEEDED 60s budget",
+      "surface": "Health"
+    },
+    {
+      "hottest": "",
+      "ms": 60000.5,
+      "queries": 8,
+      "status": "EXCEEDED 60s budget",
+      "surface": "Health (attention)"
+    },
+    {
+      "hottest": "",
+      "ms": 0.6,
+      "queries": 2,
+      "status": "ok",
+      "surface": "Commit summary"
+    },
+    {
+      "hottest": "",
+      "ms": 2.2,
+      "queries": 2,
+      "status": "ok",
+      "surface": "Commit page 1 (new files)"
+    },
+    {
+      "hottest": "",
+      "ms": 0.1,
+      "queries": 1,
+      "status": "ok",
+      "surface": "Commit page 20 (new files)"
+    },
+    {
+      "hottest": "x17: SELECT * FROM items WHERE id=?",
+      "ms": 9.9,
+      "queries": 24,
+      "status": "ok",
+      "surface": "Quarantine page 1"
+    },
+    {
+      "hottest": "",
+      "ms": 1.9,
+      "queries": 6,
+      "status": "ok",
+      "surface": "Quarantine page 50"
+    },
+    {
+      "hottest": "x50: SELECT COUNT(*) FROM history WHERE dest_root=? AND dest_relpath=?",
+      "ms": 248.2,
+      "queries": 153,
+      "status": "ok",
+      "surface": "Search 'Album'"
+    },
+    {
+      "hottest": "x50: SELECT COUNT(*) FROM history WHERE dest_root=? AND dest_relpath=?",
+      "ms": 66.9,
+      "queries": 153,
+      "status": "ok",
+      "surface": "Search unfiltered"
+    },
+    {
+      "hottest": "",
+      "ms": 93.8,
+      "queries": 1,
+      "status": "ok",
+      "surface": "Browse home"
+    }
+  ],
+  "throughput": {
+    "count_library_ms": 4.24,
+    "search_index_items_per_second": 3442.9
+  }
+}

@@ -47,7 +47,16 @@ sized against.
 
 ## M1-01 · Measure the current program at scale
 
-**P0 · M · Low risk**
+**P0 · M · Low risk · DONE 2026-09-01** — results in
+[performance.md](performance.md), raw data in [measurements/](measurements/),
+harness in `scripts/scale_bench.py`.
+
+> **What it found.** Review and Health do not work at 100,000 files, let alone
+> a million. Commit, Quarantine and Dashboard hold. Search and Browse degrade
+> linearly with clear, small causes. And the human-decision number: a million
+> files reach a person as **16,930 decisions** where the coherent answer is
+> **8,889** — with *every* group split across pages, for two compounding
+> reasons rather than one. See M1-02, whose problem statement this changed.
 
 **Problem.** The only end-to-end evidence is a 50,000-file run from
 2026-07-22, recorded in [performance.md](performance.md). It predates
@@ -93,11 +102,25 @@ each population; `test_scale.py` extended so the bounded-page rule is held on
 
 **P0 · L · Medium risk**
 
-**Problem.** Review pages first and groups second. `_proposal_rows` applies
-`LIMIT 50 OFFSET n` and `_group_rows` then groups whatever landed on that page.
-An 84-file group is split across pages by construction, and `_fold_singletons`
-decides "is this even a group" from one page's worth of evidence. Decision-first
-Review cannot be built on top of this — not as a UI change, not at any scale.
+**Problem.** Measured by M1-01, and worse than it looked when this item was
+written.
+
+*Two* mechanisms split groups, and they compound. Review pages first and groups
+second — `_proposal_rows` applies `LIMIT 50 OFFSET n` and `_group_rows` groups
+whatever landed — so any group larger than a page is split by construction. And
+the default sort is `confidence DESC`, which scatters the members of one camera
+card across the entire ordering *before* the page boundary ever applies. The
+result at every population measured: **100% of groups split** — 1,239 of 1,239
+at a million. `_fold_singletons` then correctly concludes that most of those
+fragments are not groups, because on their page they are not.
+
+Paging groups instead of rows is therefore necessary and **not sufficient**.
+The group has to become the thing that is ordered.
+
+Separately, and blocking any Review work at all: `audit_view` materializes the
+entire findings table on every render, one query per finding, with no `LIMIT`
+— 50,000 statements before a single proposal is looked at. One Review page
+never finished inside sixty seconds at 100k, 300k or 1M.
 
 **Desired outcome.** Review pages *groups*. A group knows its own size, its own
 confidence and its own membership, whether it holds three files or three
@@ -109,8 +132,13 @@ models "a folder is one arrival and one decision" with its own page and its own
 bounded counts. That is the shape — this generalizes it.
 
 **Work.**
+- Bound `audit_view` first. Nothing else in Review can be measured or improved
+  while every render costs the findings table; this is the precondition, not a
+  parallel task.
 - Group identity, counts and confidence resolved in SQL, not in Python after a
   `LIMIT`.
+- An ordering that keeps a group together, since sorting by confidence is half
+  the splitting.
 - Group-level paging, with member paging inside a group.
 - One approve action per group, with per-member removal before it.
 - The existing flat and sorted views kept for the cases where a list is right.
@@ -122,7 +150,11 @@ Collections page; absorb it.
 
 **Acceptance.** A 3,000-file group renders in one bounded page with an exact
 count; approving it produces one decision; paging its members neither repeats
-nor drops a row; the query count does not grow with group size.
+nor drops a row; the query count does not grow with group size, with the
+findings table, or with the library. The two `xfail(strict=True)` Review tests
+in `tests/test_scale_surfaces.py` pass and their markers are removed. Re-running
+`scripts/scale_bench.py --library 1000000` shows Review completing, and the
+decision count moving from 16,930 toward 8,889.
 
 **Scale.** Thousands of groups, hundreds of thousands of members.
 
@@ -220,6 +252,48 @@ deterministic item can answer "why am I here"; disabling the tier restores
 today's behaviour exactly.
 
 **Scale.** Tens of thousands of pending decisions.
+
+---
+
+## M1-06 · The pages that do not survive their own tables
+
+**P1 · M · Low risk** — added 2026-09-01 from M1-01's measurements.
+
+**Problem.** Three surfaces have a specific, small, non-architectural fault that
+makes them degrade or fail with the size of a table they read. All three are
+named with file and line in [performance.md](performance.md).
+
+- **Health is quadratic and unusable at 100,000 files.**
+  `search_health.py:156` counts unindexed items with a `NOT EXISTS` against
+  `search_fts`, whose `item_id` is declared `UNINDEXED` — so it scans the whole
+  FTS table once per row of `items`. The query planner says so without any
+  timing. `health_data` then asks for it **twice** per render. Health is the
+  page that exists to say something is wrong, and it is the most broken page in
+  the program.
+- **Search counts history per result row.** `search.py:343`, fifty full scans of
+  `history` per page, which has no index on `(dest_root, dest_relpath)`. 3.1 s
+  at a million.
+- **Browse home reads the whole library in one statement.** Bounded in
+  statements, unbounded in rows. 1.2 s at a million; headroom, but not another
+  order of magnitude.
+
+**Desired outcome.** Every surface's cost is bounded by what it displays, not by
+what the database holds.
+
+**Work.** A different shape for the unindexed count, and asked once. A batched
+history count, or an index, or neither if the number turns out not to be worth
+a query. An index or a bound for Browse home.
+
+**Do not.** Fix these by removing what they tell people — the unindexed count is
+one of the few genuinely important numbers on Health. Add an index without
+measuring that it is used. Treat this as architecture: it is three queries.
+
+**Acceptance.** Health completes in well under a second at 1M; the
+`xfail(strict=True)` test on the correlated scan passes and its marker is
+removed; Search and Browse stay flat as the library grows, held by
+`tests/test_scale_surfaces.py`.
+
+**Scale.** 1M items, 100k history rows, 50k findings.
 
 ---
 
