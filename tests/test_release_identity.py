@@ -35,8 +35,8 @@ def _tags() -> list[str]:
     ).stdout.split()
 
 
-def test_this_release_is_1_3_0_and_the_schema_is_unchanged() -> None:
-    assert __version__ == "1.3.0"
+def test_this_release_is_1_3_1_and_the_schema_is_unchanged() -> None:
+    assert __version__ == "1.3.1"
     # A release number is not a schema change. 47 is what acceptance passed on.
     assert SCHEMA_VERSION == 47
 
@@ -143,3 +143,32 @@ def test_the_release_notes_say_no_configuration_has_to_change() -> None:
 
 def test_the_workflow_still_stamps_the_commit_it_built_from() -> None:
     assert "LIBRAIRY_REVISION=${{ github.sha }}" in WORKFLOW
+
+
+def test_a_tag_that_published_nothing_is_not_recorded_as_a_release() -> None:
+    """The 1.2.0 lesson, in the other direction.
+
+    `v1.3.0` was tagged and its release run failed in the test step before any
+    login, push or release creation. The tag was left where it was rather than
+    moved. So a tag exists that names no published build — and the changelog,
+    which is this project's record of what shipped, must not claim otherwise.
+    A future reader has to be able to tell the two apart without guessing.
+    """
+    released = {version for version, _ in RELEASED}
+
+    assert "1.3.0" not in released, "1.3.0 published nothing and is not a release"
+    assert __version__ in released
+    # And the release notes say what happened, so nobody has to reconstruct it.
+    notes = CHANGELOG.split(f"## v{__version__} - ", 1)[1].split("\n## v", 1)[0]
+    assert "v1.3.0" in notes
+    assert "first published release of this line" in notes
+
+
+def test_the_workflow_guard_would_refuse_the_abandoned_tag() -> None:
+    """Pushing `v1.3.0` again must not publish: the source now says 1.3.1, and
+    the guard compares the two before it logs in to any registry."""
+    assert 'tag_version="${GITHUB_REF_NAME#v}"' in WORKFLOW
+    assert '"${tag_version}" != "${source_version}"' in WORKFLOW
+    # The changelog check is the second half: v1.3.0 has no released section.
+    assert 'grep -q "^## ${GITHUB_REF_NAME} - " CHANGELOG.md' in WORKFLOW
+    assert not re.search(r"^## v1\.3\.0 - ", CHANGELOG, re.M)

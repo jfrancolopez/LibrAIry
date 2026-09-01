@@ -64,7 +64,7 @@ ARG LIBRAIRY_REVISION=""
 
 LABEL org.opencontainers.image.title="LibrAIry" \
       org.opencontainers.image.description="Privacy-first file organizer" \
-      org.opencontainers.image.version="1.3.0" \
+      org.opencontainers.image.version="1.3.1" \
       org.opencontainers.image.revision="${LIBRAIRY_REVISION}" \
       org.opencontainers.image.source="https://github.com/jfrancolopez/LibrAIry"
 

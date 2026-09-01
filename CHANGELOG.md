@@ -2,7 +2,12 @@
 
 ## Unreleased
 
-## v1.3.0 - 2026-09-01
+## v1.3.1 - 2026-09-01
+
+> `v1.3.0` was tagged and its release run failed before publishing anything — no
+> release, no image, nothing on any registry. The tag is left where it was rather
+> than moved, because a pushed tag is not something to rewrite. **1.3.1 is the
+> first published release of this line**, and everything below describes it.
 
 The program learns to say what it knows and to refuse what it cannot do safely.
 Review becomes usable on a real queue, four detectors that had never worked
