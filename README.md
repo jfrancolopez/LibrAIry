@@ -53,6 +53,7 @@ Open `http://localhost:8080` and drop files into `data/inbox`. No password is re
 - [Configuration](docs/configuration.md)
 - [LM Studio on your LAN](docs/lm-studio.md)
 - [Running LibrAIry — install, upgrade, backup, restore, reconcile, roll back](docs/operations.md)
+- [Deploying a release to a NAS](docs/deploying-a-release.md)
 - [Using LibrAIry](docs/using-librairy.md)
 - [The command line](docs/cli.md)
 - [Troubleshooting](docs/troubleshooting.md)

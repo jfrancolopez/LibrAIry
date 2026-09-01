@@ -1,0 +1,49 @@
+# Deployment compose for a PUBLISHED LibrAIry release.
+#
+# The repository's own docker-compose.yml carries `build:` — it is the developer
+# file, and `docker compose up --build` there produces an image tagged
+# `librairy:latest` whose source commit nothing records. That is fine for
+# development and wrong for a release: the thing running should be the exact
+# artifact that passed acceptance, named by a tag that cannot be rebuilt into
+# something else.
+#
+# So this file has no `build:` at all. It can only run what has been published.
+#
+#   docker compose -p librairy -f docker-compose.deploy.yml --env-file <.env> up -d
+#
+# Everything else — mounts, ports, healthcheck, PUID/PGID remapping — is copied
+# from the repository compose so that the only difference between what was
+# running and what will run is the image.
+
+services:
+  librairy:
+    image: ghcr.io/jfrancolopez/librairy:v1.3.1
+    container_name: librairy
+    user: "${LIBRAIRY_USER:-0:0}"
+    env_file:
+      - path: ${LIBRAIRY_ENV_FILE:-.env}
+        required: false
+    environment:
+      PUID: ${PUID:-99}
+      PGID: ${PGID:-100}
+      # Host-side port only. Inside the container it is always 8080 — EXPOSE,
+      # the healthcheck and the right-hand side of the mapping all agree, and
+      # letting env_file hand the operator's value to the application makes
+      # uvicorn bind a port nothing is mapped to.
+      DASHBOARD_PORT: 8080
+    volumes:
+      - ${HOST_INBOX_DIR:-./data/inbox}:/data/inbox
+      - ${HOST_LIBRARY_DIR:-./data/library}:/data/library
+      - ${HOST_QUARANTINE_DIR:-./data/quarantine}:/data/quarantine
+      - ${HOST_APPDATA_DIR:-./data/appdata}:/data/appdata
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "${DASHBOARD_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    command: ["librairy", "run"]
