@@ -2,10 +2,102 @@
 
 ## Unreleased
 
+## v1.3.0 - 2026-09-01
+
 The program learns to say what it knows and to refuse what it cannot do safely.
 Review becomes usable on a real queue, four detectors that had never worked
 start working, and — later in the same window — every decision the program can
 take gains a rule about when it may not be taken.
+
+This is the first release since v1.2.0, and it is a large one. Nothing you have
+configured needs changing: every setting added since v1.2.0 has a default, none
+was removed, and none changed meaning.
+
+### Before you upgrade
+
+**Take a snapshot of your database first.** This release moves the database from
+schema 10 to schema 47. Migration is automatic and happens on first start — it
+keeps your history, your approvals, your quarantine provenance, your policy and
+everything you have decided — but it is a **one-way** step. A v1.2.0 image cannot
+read a schema-47 database, and will refuse it rather than downgrade it.
+
+So rolling back is not "start the previous image". It is three things together:
+
+1. the **previous image**, and
+2. that image's own **pre-upgrade database snapshot**, and
+3. **reconciliation**, if files have moved on disk since the snapshot was taken.
+
+Rolling back is **not lossless**: every decision taken after the snapshot is gone
+from the restored database, while the files those decisions moved are still where
+they were moved to. Reconcile is how you agree about that afterwards. There is one
+genuinely simple case, and only one — if you pulled the new image but never started
+it, the database was never migrated, so pull the previous tag and carry on.
+
+`docs/operations.md` is the canonical path for install, backup, upgrade, restore,
+reconcile and roll back. Those are four different actions and this release does not
+use them as synonyms.
+
+### What is new since v1.2.0
+
+**Deciding**
+
+- **Collections.** A folder that arrives as one thing — an album, a season, a
+  shoot — is reviewed and filed as one decision instead of forty unrelated rows.
+- **Relationships between files are recorded, not guessed each time.** A RAW and
+  its JPEG, the two halves of a Live Photo, a subtitle and its film, artwork and
+  its album. Commit and Quarantine understand them: setting one aside tells you
+  what else it affects, and a decision that would break a pair says so.
+- **Documents gain identity.** Editions, revisions and versions of the same
+  document are recognised as the same work rather than four unrelated files.
+- **Photo similarity at real scale.** Near-duplicates, resizes and re-encodes are
+  grouped for one decision instead of found one pair at a time.
+- **Decision Memory.** LibrAIry notices what you keep choosing and says so on the
+  next similar file. It only ever preselects and explains — it never acts, never
+  approves, and never applies a remembered choice on its own.
+- **Format Policy.** One place to say, among representations that are all valid,
+  which you prefer, which transformations you permit, and which originals must be
+  preserved. Preference preselects and labels; it never converts anything, and
+  permitting something does not create the ability to do it.
+- **Two decisions that cannot both be right are now refused.** If a waiting
+  decision already covers a file or a destination, approving a second one that
+  contradicts it is stopped, and the page names the decision to finish first.
+- **Undo understands sequence.** If you filed something and then corrected it,
+  reversing the first decision would discard the second — so it refuses, and tells
+  you which to reverse first.
+
+**Seeing**
+
+- **Health** collects what needs attention in one place: what needs a decision,
+  what is worth knowing, and what is merely current state. It reads only. It never
+  repairs anything, and it never tells you something is overdue, because there is
+  no schedule it could be late against.
+- **Search knows your catalogs**, and runs entirely on your machine — typing a
+  query contacts nothing.
+- **Withdrawn decisions** are visible. A decision you took back before anything
+  moved is not History, and is now kept somewhere that says so.
+- **The delete queue** is a place to gather files you have finished with, so you
+  can empty it yourself, deliberately. LibrAIry still never deletes anything.
+
+**Recovering**
+
+- **Restore checks.** After restoring a database, LibrAIry tells you where its
+  record and your disk disagree — what is missing, what changed, what merely moved
+  — and repairs none of it by itself.
+- **Reconcile.** When you reorganise files outside LibrAIry, it can recognise the
+  move and update where it thinks a file lives, so metadata, relationships and
+  history follow. It matches on content, never on a similar name or size, and a
+  folder is only offered as one decision when every file in it matches exactly.
+
+**Running it**
+
+- **`librairy version`** answers with the version, the schema it supports and the
+  exact commit the image was built from — without a database, a configuration or
+  a writable mount, because it is what you run when something is wrong. Run it
+  inside a configured installation and it also reports the schema your database is
+  actually at, and whether a migration is pending.
+- **Published images now carry their source revision** as an OCI label and report
+  it at runtime. A build with none recorded says `unknown` rather than inventing
+  one.
 
 ### Fixed — what a running container actually did
 

@@ -33,6 +33,25 @@ jobs:
       - name: Install dependencies
         run: python -m pip install -e ".[dev]"
 
+      # A version number is a release identity: one number, one build. The tag
+      # that triggered this run and the version in the source have to be the
+      # same, or the registry ends up with an image tagged one number and
+      # labelled another — and two different builds can come to claim the same
+      # identity, which is exactly what happened to 1.2.0.
+      - name: Refuse a tag that disagrees with the source version
+        run: |
+          source_version="$(python -c 'import librairy; print(librairy.__version__)')"
+          tag_version="${GITHUB_REF_NAME#v}"
+          echo "tag=${GITHUB_REF_NAME}  source=${source_version}"
+          if [ "${tag_version}" != "${source_version}" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} does not match __version__ ${source_version}"
+            exit 1
+          fi
+          if ! grep -q "^## ${GITHUB_REF_NAME} - " CHANGELOG.md; then
+            echo "::error::CHANGELOG.md has no released section for ${GITHUB_REF_NAME}"
+            exit 1
+          fi
+
       - name: Test
         run: |
           ruff check src tests scripts

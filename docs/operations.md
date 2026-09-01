@@ -21,7 +21,7 @@ docker compose exec librairy librairy version
 ```
 
 ```
-version: 1.2.0
+version: 1.3.0
 schema_supported: 47
 revision: 9f2c41ab…        # "unknown" for a build with none recorded
 ```
