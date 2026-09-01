@@ -2,7 +2,7 @@
 
 After Undo the optimized file is back under `appdata/optimization/jobs/<id>/`
 and its `items` row stays behind at the library path it used to occupy, marked
-missing. `docs/plan/adoption-architecture.md` records why the row cannot follow
+missing. `docs/architecture/adoption-architecture.md` records why the row cannot follow
 the file and cannot be deleted.
 
 The model is only correct if every consumer reads `root='library'` as *recorded

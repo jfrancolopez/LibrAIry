@@ -91,4 +91,4 @@ thousand.
 
 See also [Undo and the order of decisions](undo-sequencing.md),
 [Waiting-decision conflicts](plan-conflicts.md), and
-[The delete queue](delete-queue.md).
+[The delete queue](../delete-queue.md).

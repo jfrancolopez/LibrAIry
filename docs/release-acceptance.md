@@ -80,6 +80,6 @@ So the safe rollback unit is the previous image *plus* the pre-upgrade database
 snapshot *plus* whatever reconciliation the gap needs. Everything decided after
 that snapshot is not in it, and the files those decisions moved are still where
 they were moved to. That gap is expected, and closing it is what
-[Reconcile](restore-reconciliation.md) is for.
+[Reconcile](architecture/restore-reconciliation.md) is for.
 
 The full procedure is in [Running LibrAIry](operations.md#roll-back).

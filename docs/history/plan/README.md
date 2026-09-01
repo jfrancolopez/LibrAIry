@@ -1,3 +1,13 @@
+> **ARCHIVED — superseded 2026-09-01. Nothing below is current.**
+>
+> This plan took LibrAIry from a bash prototype to a published `v1.3.1`. It is
+> kept intact as a record of decisions, not as instructions. The current
+> documents are [PRODUCT.md](../../PRODUCT.md), [ROADMAP.md](../../ROADMAP.md)
+> and [architecture/](../../architecture/). Known-stale statements in this file
+> are listed in [../README.md](../README.md) — notably `SCHEMA_VERSION = 10`
+> (it is 47), the phase map disagreeing with the phase docs, and the
+> "library is READ-ONLY" invariant, which stopped being true.
+
 # LibrAIry Completion Plan — Master Overview
 
 This directory contains the complete, phased backlog to take LibrAIry from its current CLI prototype (v2.2) to a dependable v1.0: a privacy-first, Docker-shipped, web-managed file organizer for NAS systems.
@@ -154,7 +164,7 @@ Processes communicate only through SQLite (WAL) and the filesystem. No queues, n
 persisted knowledge still corresponds to the current bytes before treating
 fingerprint-bound or path-dependent state as current.**
 
-Written up in [../restore-reconciliation.md](../restore-reconciliation.md). The
+Written up in [architecture/restore-reconciliation.md](../../architecture/restore-reconciliation.md). The
 parts that must not drift:
 
 - three kinds of persisted state, and they are not interchangeable:
@@ -185,7 +195,7 @@ parts that must not drift:
 
 **A withdrawal moved nothing, so it is not History.**
 
-Written up in [../withdrawn-decisions.md](../withdrawn-decisions.md):
+Written up in [architecture/withdrawn-decisions.md](../../architecture/withdrawn-decisions.md):
 
 - one implementation for all five ways of taking a decision back
 - reasons are recorded at the moment, never inferred afterwards; "unrecorded"
@@ -212,7 +222,7 @@ PENDING CONFLICT       two decisions that have not run cannot both remain
 
 A plan that has not executed has moved no files, so it can be depended on by
 nothing: a pending conflict never becomes an Undo dependency. Written up in
-[../plan-conflicts.md](../plan-conflicts.md). The parts that must not drift:
+[architecture/plan-conflicts.md](../../architecture/plan-conflicts.md). The parts that must not drift:
 
 - three kinds only: the same file, the same place, a file another decision was
   explained by. Sharing a folder, a category or a mention is not a conflict
@@ -231,7 +241,7 @@ nothing: a pending conflict never becomes an Undo dependency. Written up in
 **Health explains state and links to the workflow that owns it. It does not
 repair state.**
 
-Written up in [../health.md](../health.md). The parts that must not drift:
+Written up in [architecture/health.md](../../architecture/health.md). The parts that must not drift:
 
 - a view over `plans`, `audit_runs`, the delete queue, the impact snapshot and
   the journal. **No `health_events` table** — a second account of facts that
@@ -249,7 +259,7 @@ Written up in [../health.md](../health.md). The parts that must not drift:
 
 **Reversing an old decision must not quietly reverse a newer one.**
 
-Written up in [../undo-sequencing.md](../undo-sequencing.md). The parts that
+Written up in [architecture/undo-sequencing.md](../../architecture/undo-sequencing.md). The parts that
 must not drift:
 
 - a dependency is a later *committed filesystem decision*, never a read. Audits,
@@ -269,7 +279,7 @@ must not drift:
 prohibit?** One central policy, consulted by Review, comparisons, replacement
 and Storage Optimization — never re-invented per subsystem.
 
-Written up in [../format-policy.md](../format-policy.md). The parts that must
+Written up in [architecture/format-policy.md](../../architecture/format-policy.md). The parts that must
 not drift:
 
 - four separate questions: identity, relationship, policy, learned habit. None
@@ -300,7 +310,7 @@ acts on. A relationship may change what a page explains, which choices it
 offers, and whether an approval is still valid — it may never change what is in
 a plan without somebody pressing something that says so.
 
-Written up in full in [../relationships.md](../relationships.md). The parts
+Written up in full in [architecture/relationships.md](../../architecture/relationships.md). The parts
 that must not drift:
 
 - no relationship ever adds a filesystem operation
@@ -328,7 +338,7 @@ A learned pattern is (4) on purpose: it is a statement about files that
 that **learned behaviour accelerates Review; it does not bypass Review** — no
 suggestion approves anything, builds a plan, or moves a file.
 
-See [../decision-memory.md](../decision-memory.md) for what is learned, what is
+See [architecture/decision-memory.md](../../architecture/decision-memory.md) for what is learned, what is
 deliberately not, and the suggest → promote → auto-apply roadmap. Phase 1
 (suggest only) shipped at schema 41; phases 2 and 3 are future work and still
 converge at Commit.

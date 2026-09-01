@@ -11,7 +11,7 @@ That row still needs a `relpath`, because `items` has:
 
 and it cannot keep the library path it used to hold — an HEVC re-encode of an
 MP4 lands on the original's own path, so on Undo the original would come back
-to a path the dormant row was still claiming. (`docs/plan/adoption-architecture.md`
+to a path the dormant row was still claiming. (`docs/architecture/adoption-architecture.md`
 records that measurement.)
 
 ## Why a convention was not enough

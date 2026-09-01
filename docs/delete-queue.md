@@ -62,8 +62,8 @@ delete queue and one that came back from Quarantine cannot behave differently.
 ## Current context, historical decision
 
 A file queued last month may now sit under a folder you have since set to
-[preserve originals](format-policy.md), or be half of a [Live
-Photo](relationships.md). Both are worth knowing before it is removed for good,
+[preserve originals](architecture/format-policy.md), or be half of a [Live
+Photo](architecture/relationships.md). Both are worth knowing before it is removed for good,
 and neither retroactively cancels the decision that put it there. LibrAIry shows
 them and pulls nothing back out on its own.
 

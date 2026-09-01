@@ -9,7 +9,7 @@ one there anyway.
 
 ## Why there is almost nothing to carry forward
 
-`docs/plan/adoption-architecture.md` records the audit. The short version is
+`docs/architecture/adoption-architecture.md` records the audit. The short version is
 that `items` is a **file record**, not an identity record: root, relpath, size,
 mtime, fingerprint, state. Every one of those is a property of the actual bytes
 at the actual path, so every one is read from the new file.

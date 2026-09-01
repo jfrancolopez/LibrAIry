@@ -118,6 +118,6 @@ after a run that copied something. Two consequences worth knowing:
 - a file moved outside LibrAIry is copied again under its new path, and the old
   copy stays on the remote until you remove it.
 
-Neither is changed by this pass. See [Backup and restore](backup-restore.md)
+Neither is changed by this pass. See [Backup and restore](../backup-restore.md)
 for the procedure, and [Health](health.md) for where a pending reconciliation
 is counted.

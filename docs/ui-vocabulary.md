@@ -189,7 +189,7 @@ button.
 
     Needs a decision · Worth knowing · Information
 
-Three levels, and each has to mean something — see [health.md](health.md).
+Three levels, and each has to mean something — see [health.md](architecture/health.md).
 Not `Critical / High / Medium / Low`: that is incident-response vocabulary, and
 applying it to an ordinary backlog teaches people that the red section contains
 things that are fine.

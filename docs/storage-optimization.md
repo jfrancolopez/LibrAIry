@@ -13,10 +13,11 @@ Opportunity  ->  Queue  ->  Waiting  ->  Running  ->  Verifying  ->  Ready for r
   (advice)     (you ask)   (a reason)   (encoding)   (checking)      (your decision)
 ```
 
-There is no step after **Ready for review**. LibrAIry cannot put a converted
-file into your library, and the only action offered on a finished result is
-**Discard result**. Your original was never touched, so there is nothing to
-undo and nothing to keep — it is already what your library holds.
+**Ready for review** is where the machinery stops and you start. A finished
+result is never live because it finished: you either discard it, or you
+**adopt** it — one decision, recorded as one immutable plan of two operations,
+described under [Adopting a result](#adopting-a-result) below. Until you do,
+your original is what your library holds and nothing has been traded away.
 
 ## Advisor and executor disagree, on purpose
 

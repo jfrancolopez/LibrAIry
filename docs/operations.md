@@ -72,7 +72,7 @@ a database snapshot up after any run that copied something. See
 
 **The two snapshots are not coordinated.** The database copy and the file copies
 are taken at different moments, and nothing claims otherwise. That is exactly
-why [Reconcile](restore-reconciliation.md) exists, and why a restore is not
+why [Reconcile](architecture/restore-reconciliation.md) exists, and why a restore is not
 finished until you have run it.
 
 ## Upgrade
@@ -99,7 +99,7 @@ finished until you have run it.
 9. Open Health, then Review and Commit. Anything that was waiting for Commit is
    still waiting; nothing is executed or cancelled by an upgrade.
 10. If the filesystem changed while the app was down, open
-    [Reconcile](restore-reconciliation.md).
+    [Reconcile](architecture/restore-reconciliation.md).
 
 **Supported range.** Every schema generation from 1 to 47 has a migration and
 the chain is tested end to end from representative historical databases. There
@@ -140,7 +140,7 @@ place are left ambiguous rather than guessed.
 What no rebuild can remove: History, Format Policy, Decision Memory,
 suppressions, withdrawals and recognised moves. A stale index is not the same
 thing as a decision you never made. Full detail in
-[restore reconciliation](restore-reconciliation.md).
+[restore reconciliation](architecture/restore-reconciliation.md).
 
 ## Roll back
 
@@ -196,4 +196,4 @@ against the current database is describing a different program.
 - repair what a validation finds
 
 See [using LibrAIry](using-librairy.md) for the workflow itself, and
-[Health](health.md) for what currently needs attention.
+[Health](architecture/health.md) for what currently needs attention.

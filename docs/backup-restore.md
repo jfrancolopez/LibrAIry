@@ -36,4 +36,4 @@ can recognise; recognising one updates LibrAIry's record without touching the
 file. Your decisions — History, Format Policy, Decision Memory, suppressions,
 withdrawals — are never derived from the files and so are never rebuilt away.
 
-See [Restoring, and agreeing about what you have](restore-reconciliation.md).
+See [Restoring, and agreeing about what you have](architecture/restore-reconciliation.md).

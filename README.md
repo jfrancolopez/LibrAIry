@@ -44,9 +44,16 @@ Open `http://localhost:8080` and drop files into `data/inbox`. No password is re
 - **Format Policy.** What you prefer, what you permit, and what you protect — answered once, applied to proposals, and never acted on by itself.
 - **Health, Reconcile and History.** What needs a decision now, what the database and the disk disagree about, and exactly what has already happened.
 - **SQLite + FTS5 index** in appdata, rebuildable at any time with `librairy index rebuild`.
-- **A Fallout/Pip-Boy-style LAN portal** that is light enough to run on a NAS and usable on a phone.
+- **A clean LAN portal** that is light enough to run on a NAS and usable on a phone. Retro looks — green-on-black, amber CRT — survive as optional colour themes, not as the shape of the thing.
 
 ## Documentation
+
+**Start here**
+
+- [What LibrAIry is — principles, authority, safety invariants](docs/PRODUCT.md)
+- [Roadmap — the current plan of work](docs/ROADMAP.md)
+
+**Installing and running**
 
 - [Docker install](docs/install-docker.md)
 - [UNRAID install](docs/install-unraid.md)
@@ -61,17 +68,21 @@ Open `http://localhost:8080` and drop files into `data/inbox`. No password is re
 - [Backup and restore](docs/backup-restore.md)
 - [One-way backup](docs/backup.md)
 - [Content search](docs/content-search.md)
-- [Files that belong together](docs/relationships.md)
-- [Format Policy](docs/format-policy.md)
-- [Undo and the order of decisions](docs/undo-sequencing.md)
+
+**How it thinks** — the permanent principles, in [docs/architecture/](docs/architecture/)
+
+- [Files that belong together](docs/architecture/relationships.md)
+- [Format Policy](docs/architecture/format-policy.md)
+- [Undo and the order of decisions](docs/architecture/undo-sequencing.md)
 - [The delete queue](docs/delete-queue.md)
-- [Two decisions that cannot both be right](docs/plan-conflicts.md)
-- [Health — what needs attention now](docs/health.md)
-- [Restoring, and agreeing about what you have](docs/restore-reconciliation.md)
-- [Decisions you took back](docs/withdrawn-decisions.md)
+- [Two decisions that cannot both be right](docs/architecture/plan-conflicts.md)
+- [Health — what needs attention now](docs/architecture/health.md)
+- [Restoring, and agreeing about what you have](docs/architecture/restore-reconciliation.md)
+- [Decisions you took back](docs/architecture/withdrawn-decisions.md)
 - [Release acceptance](docs/release-acceptance.md)
 - [Performance](docs/performance.md)
 - [FAQ](docs/faq.md)
+- [Superseded planning history](docs/history/README.md)
 
 ## Development
 

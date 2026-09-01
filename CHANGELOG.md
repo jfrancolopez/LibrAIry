@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Documentation
+
+The planning documentation was rebuilt around what LibrAIry is becoming rather
+than how it was built. `docs/PRODUCT.md` now holds the product principles, the
+authority order and the safety invariants — including a corrected one: "the
+existing library is READ-ONLY" had stopped being true (adoption moves files
+inside it, audits propose re-filing, normalization renames) and is replaced by
+the invariant that was always meant, *nothing moves without Commit*.
+`docs/ROADMAP.md` is the current plan of work and the only one. The permanent
+technical principles moved to `docs/architecture/`, and the seventeen numbered
+phases are archived intact under `docs/history/`, with their known-stale
+statements listed rather than edited away. No behaviour changed.
+
 ## v1.3.1 - 2026-09-01
 
 > `v1.3.0` was tagged and its release run failed before publishing anything — no
