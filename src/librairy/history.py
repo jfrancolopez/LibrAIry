@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import sqlite3
+import time
 from dataclasses import dataclass
 
 from librairy.config import Settings
 from librairy.executor import _move_verified, _root_path
 from librairy.fingerprint import blake2b_file
 from librairy.lifecycle import assert_transition
-from librairy.locks import acquire_lock
+from librairy.locks import WAIT_SECONDS, LockHeldError, acquire_lock
 from librairy.optimization_adopt import retire_result_item
 from librairy.optimization_source import (
     SourceRefused,
@@ -28,6 +29,12 @@ class UndoResult:
     history_id: int
     outcome: str
     dest_relpath: str | None = None
+
+
+#  Not journalled, unlike every other `undo_refused_*`: those record what
+#  was found to be true of the file. This one records nothing, because the
+#  file was never looked at.
+UNDO_REFUSED_BUSY = "undo_refused_busy"
 
 
 # What the journal can actually tell apart, and nothing more. There is no
@@ -163,7 +170,18 @@ def undo_plan(conn: sqlite3.Connection, plan_id: str, settings: Settings) -> lis
     #  belongs.
     assert_clear(conn, plan_id)
     entries = plan_journal(conn, plan_id)
-    results = [undo_op(conn, row["id"], settings) for row in entries]
+    #  One waiting budget for the whole reversal, not one per file. flock is
+    #  held per open description, so a nested acquire would refuse itself and
+    #  each operation has to take the lock on its own — which meant a plan of
+    #  fifty files could sit waiting five seconds fifty times over. Whatever is
+    #  left of the budget when the lock is finally free is what the rest of the
+    #  files get, and anything still contended after it reports `busy` like any
+    #  other refusal.
+    deadline = time.monotonic() + WAIT_SECONDS
+    results = [
+        undo_op(conn, row["id"], settings, wait=max(deadline - time.monotonic(), 0.0))
+        for row in entries
+    ]
     vacated = [
         row["dest_relpath"]
         for row, result in zip(entries, results, strict=True)
@@ -261,7 +279,13 @@ def plan_journal(conn: sqlite3.Connection, plan_id: str) -> list[sqlite3.Row]:
     )
 
 
-def undo_op(conn: sqlite3.Connection, history_id: int, settings: Settings) -> UndoResult:
+def undo_op(
+    conn: sqlite3.Connection,
+    history_id: int,
+    settings: Settings,
+    *,
+    wait: float = WAIT_SECONDS,
+) -> UndoResult:
     """Reverse one journalled operation.
 
     The sequence check is asked of the operation's *plan*, not of the operation
@@ -276,8 +300,15 @@ def undo_op(conn: sqlite3.Connection, history_id: int, settings: Settings) -> Un
     ).fetchone()
     if entry is not None and entry["plan_id"]:
         assert_clear(conn, str(entry["plan_id"]))
-    with acquire_lock(settings):
-        return _undo_op_unlocked(conn, history_id, settings)
+    try:
+        with acquire_lock(settings, wait=wait):
+            return _undo_op_unlocked(conn, history_id, settings)
+    except LockHeldError:
+        #  Nothing was read and nothing was moved, so nothing is journalled:
+        #  the other refusals are decisions about *this file*, and "the worker
+        #  is scanning" is not one of them. Answering it as an outcome is what
+        #  keeps a busy worker from turning Undo into a stack trace.
+        return UndoResult(history_id, UNDO_REFUSED_BUSY)
 
 
 def _undo_op_unlocked(

@@ -10,7 +10,7 @@ from librairy.config import Settings
 from librairy.db import connect
 from librairy.executor import execute_plan
 from librairy.lifecycle import vanished_count
-from librairy.locks import LockHeldError
+from librairy.locks import BUSY, LockHeldError
 from librairy.planner import OperationSpec, approve_plan, create_plan
 from librairy.web.commit_queue import NEW_FILE
 from librairy.web.evidence import humanize_evidence
@@ -385,7 +385,7 @@ def _execute_background(
         execute_plan(conn, plan_id, settings)
     except LockHeldError:
         with state.lock:
-            state.error = "LibrAIry is busy; retry when the worker releases the lock"
+            state.error = BUSY
     except Exception as exc:  # pragma: no cover - defensive result surfaced in UI
         with state.lock:
             state.error = str(exc)

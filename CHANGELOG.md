@@ -7,6 +7,33 @@ Review becomes usable on a real queue, four detectors that had never worked
 start working, and — later in the same window — every decision the program can
 take gains a rule about when it may not be taken.
 
+### Fixed — what a running container actually did
+
+Two defects that no amount of reading the files would have found, and that a
+release acceptance run on a real installation did.
+
+- **Undo answered a busy worker with a stack trace.** The worker holds the file
+  lock for a whole cycle — scan, dedup, analyse — and on a library with work in
+  it that is most of the time: measured free on 40 of 120 samples over a minute.
+  Every reversal in that window returned a 500 System Fault page. Commit had
+  handled the same condition for as long as it has existed; Undo had not. It now
+  waits a few seconds for the lock, the way SQLite already waits five seconds for
+  the same contention, and only then says *LibrAIry is busy; retry when the
+  worker releases the lock* — one sentence, defined once, used by both. Being
+  busy is not written to the journal: the other refusals record what was found
+  true of a file, and this one never looked at it. A whole-plan reversal shares
+  one waiting budget rather than spending it per file.
+
+- **Changing the dashboard port produced a container you could not reach.**
+  `DASHBOARD_PORT` named two different things: compose used it as the *host*
+  half of the port mapping, while `env_file` also handed it to the application,
+  which reads it as the port to *bind*. Setting it to anything but 8080 — which
+  is exactly what the sample configuration invited — made the server listen on
+  a port nothing was mapped to, the healthcheck find nothing on 8080, and the
+  container sit `unhealthy` for ever. The host port is now the only number an
+  operator changes; inside the container it is fixed, and matches `EXPOSE`, the
+  healthcheck and the mapping.
+
 ### Added — Format Policy
 
 One place that answers *among representations that are valid choices, what do

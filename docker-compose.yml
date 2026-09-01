@@ -17,6 +17,15 @@ services:
     environment:
       PUID: ${PUID:-99}
       PGID: ${PGID:-100}
+      # DASHBOARD_PORT means the port you browse to on the *host*, and it is
+      # the host half of the mapping below. `env_file` would also hand it to
+      # the application, which reads it as the port to *bind* — so setting it
+      # to anything but 8080 made uvicorn listen on a port nothing was mapped
+      # to, the healthcheck curl 8080 and find nothing, and the container sit
+      # `unhealthy` forever with a UI you could not reach. Inside the
+      # container the port is fixed: it matches EXPOSE, the healthcheck, and
+      # the right-hand side of the mapping.
+      DASHBOARD_PORT: 8080
     volumes:
       - ${HOST_INBOX_DIR:-./data/inbox}:/data/inbox
       - ${HOST_LIBRARY_DIR:-./data/library}:/data/library

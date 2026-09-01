@@ -6,6 +6,7 @@ from datetime import UTC, date, datetime, timedelta
 
 from librairy.config import Settings
 from librairy.history import HISTORY_KINDS, kind_counts, list_history, undo_op, undo_plan
+from librairy.locks import BUSY
 
 #  What an adoption's reversal is called and whether it can happen at all,
 #  derived from where the preserved original is right now rather than from the
@@ -21,6 +22,7 @@ UNDO_OUTCOMES = {
     "undo_refused_occupied": "not put back — something is already at its old path",
     "undo_refused_changed": "not put back — the file has been edited since",
     "undo_refused_source": "not put back — the file could not be read safely",
+    "undo_refused_busy": f"not put back — {BUSY}",
 }
 
 
