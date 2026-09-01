@@ -19,6 +19,14 @@ A candidate is `READY` only when every row is `PASS` — a gate that could not b
 run on the machine doing the running leaves the verdict `BLOCKED`, which is the
 honest answer and not a lesser kind of pass.
 
+Which means a gate has to be *answerable*. "apt package versions pinned" sat at
+`NOT TESTED` for ever, because the correct answer is "no, deliberately": moving
+the base image forward is how the image clears CVEs Debian will not backport.
+A question whose right answer is permanently unavailable is not a gate, it is a
+footnote, and it was keeping the matrix from ever reading anything. It was
+replaced by the property that is true and that protects somebody — the base is
+pinned to one tag and the image takes the security updates published since.
+
 It publishes nothing. It creates no tag, moves no tag, pushes no image and
 drafts no release; the point is to find out whether a release *would* be safe.
 Everything it writes goes to temporary directories it makes itself.
@@ -32,7 +40,9 @@ Everything it writes goes to temporary directories it makes itself.
 | **Migration** | representative historical databases reach the current schema with their history, approvals, provenance, policy and learned decisions intact; the chain has no gaps; a newer schema is refused rather than downgraded; a failed step leaves the pre-upgrade copy usable |
 | **Recovery** | a snapshot is a working database, an imperfect restore is explained and never repaired, authoritative state is never discarded, and a measurement of bytes that changed is never reused |
 | **Rollback** | the previous build with its own pre-upgrade snapshot — and the documentation is checked for the sentences that would make that untrue |
-| **Runtime** | the production image builds, starts, restarts and shuts down, and carries the binaries the product shells out to. Needs a container runtime |
+| **Runtime** | the production image builds, carries the revision it was built from, contains no developer tooling and no repository or fixture data, starts with no credentials, creates a sound database, serves every page, survives a clean restart and a SIGKILL without running anything by itself, and shuts down cleanly. Needs a container runtime |
+| **Compose** | the real topology comes up on throwaway volumes, reports healthy, publishes a port you can reach, can write every bind mount, and leaves the database behind when it goes down. Needs a container runtime |
+| **Quality** | ruff, and the whole test suite — not a subset |
 | **Documentation** | the canonical install, upgrade, backup, restore, reconcile and rollback path exists and is one path |
 
 Most of these are also tests: `pytest tests/test_release_acceptance.py`. The

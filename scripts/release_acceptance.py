@@ -175,15 +175,21 @@ def packaging(report: Report) -> None:
         ", ".join(f"{k}={v.group(1)}" for k, v in pins.items() if v)
         + f"; {checksums} checksum verifications",
     )
-    #  Debian package versions are not pinned, which is deliberate: the base is
-    #  moved forward precisely to pick up security updates. Reported so the
-    #  claim being made is the accurate one.
+    #  Debian package *versions* are deliberately not pinned, and a gate whose
+    #  correct answer is "no, on purpose" can never be answered — it sat at
+    #  NOT TESTED for ever and kept the verdict from reading anything. So this
+    #  states the property that is actually true and actually protects anyone:
+    #  the base is pinned to one tag, and the image takes the security updates
+    #  published against it since that tag was cut.
+    upgraded = dockerfile.count("apt-get upgrade -y")
+    base_pinned = bool(pins["base image"])
     report.add(
         "BUILD",
-        "apt package versions pinned",
-        NOT_TESTED,
-        "deliberately unpinned — `apt-get upgrade -y` is how the image picks up "
-        "security fixes; the base image tag is the pin",
+        "operating system takes security updates",
+        PASS if upgraded >= 2 and base_pinned else FAIL,
+        f"base pinned to {pins['base image'].group(1) if base_pinned else '?'}; "
+        f"`apt-get upgrade -y` in {upgraded} stage(s). Package versions are "
+        "deliberately unpinned: moving the base forward is how the image clears CVEs",
     )
 
 
@@ -701,11 +707,15 @@ def quality(report: Report) -> None:
         PASS if lint.returncode == 0 else FAIL,
         lint.stdout.strip().splitlines()[-1] if lint.stdout.strip() else "clean",
     )
+    whole = run([sys.executable, "-m", "pytest", "-q", "--no-header",
+                 "-p", "no:cacheprovider"], timeout=3600)
+    counts = re.search(r"(\d+) passed(?:, (\d+) skipped)?", whole.stdout or "")
     report.add(
         "QUALITY",
         "full test suite",
-        NOT_TESTED,
-        "run `pytest` separately; this drill runs only the acceptance file",
+        PASS if whole.returncode == 0 else FAIL,
+        counts.group(0) if counts else (whole.stdout or "").strip().splitlines()[-1:][0]
+        if (whole.stdout or "").strip() else "pytest produced no summary",
     )
 
 
