@@ -4,6 +4,26 @@ Privacy-first, AI-assisted file organization for a NAS or workstation.
 
 LibrAIry watches an inbox, analyzes stable files, stages reviewable proposals, and moves files only after you approve and commit a plan in the web portal. It never deletes user files, never overwrites existing destinations, and treats the existing library as read-only input.
 
+![The LibrAIry dashboard — what is waiting for review, what needs attention, and what the worker is doing](docs/images/dashboard.png)
+
+## Why I built this
+
+LibrAIry started as a tool for fixing the file structure on a company NAS.
+
+Nothing about that share was broken. It mounted, it was backed up, it held years of everybody's work. It was just that nobody could find anything on it, and nobody wanted to be the person who tidied it — because tidying a share other people depend on means moving other people's files, and if you get it wrong you have ruined somebody's afternoon and you get to explain why.
+
+Every tool I looked at proposed to solve that by doing it for me. That was the one thing I could not allow. So the first version had a single rule, and everything since has been built around it:
+
+**It may look at everything, and change nothing until I say so.**
+
+It read the share, worked out what each file probably was and where it probably belonged, and handed me a list. I made the decisions. It carried them out afterwards, as one batch, and wrote down exactly what it had done so any of it could be put back.
+
+That is still the shape of the program. It is why Review and Commit are two separate screens, why an approved plan is executed exactly as approved instead of being recomputed at the last moment, why every move is journaled and hash-verified, and why there is no delete button anywhere in the product.
+
+Once the NAS was in order I kept using it, and it moved to my homelab. It runs there in Docker against my own library — music, photos, films, documents, whatever comes off a camera card — and it grew the things a personal library needs that a work share did not: duplicate detection, quarantine instead of deletion, undo that understands the order decisions were made in, search inside file contents, files that belong together staying together, and a health screen that says what actually needs attention.
+
+It is a homelab app now. It is still the same program that is not allowed to touch anything without being told to.
+
 ## 5-Minute Docker Quickstart
 
 ```bash
@@ -16,11 +36,15 @@ Open `http://localhost:8080` and drop files into `data/inbox`. No password is re
 
 ## What You Get
 
-- Dashboard, health, review, commit, quarantine, history, search, browse, settings, and provider selector screens.
-- SQLite + FTS5 index in appdata, rebuildable with `librairy index rebuild`.
-- Local-first AI through Ollama; cloud AI is disabled unless you set a key and explicitly enable the provider.
-- Reversible quarantine for duplicates; no delete controls.
-- Fallout/Pip-Boy-style lightweight LAN portal.
+- **Local-first AI.** Ollama or LM Studio on your own network. Cloud providers stay off until you add a key and enable one deliberately, and prompts are structurally redacted before anything leaves the house.
+- **Review, then Commit.** Proposals you approve one at a time or in bulk, a plan you can read before it runs, and one execution that does what the plan says.
+- **Nothing gets deleted.** Duplicates go to a reversible quarantine. Files you are finished with go to a delete queue that you empty yourself, in your own file manager.
+- **Undo that is honest about order.** A newer decision that depends on an older one blocks reversing it, instead of half-succeeding and leaving you to work out what happened.
+- **Files that belong together stay together.** RAW/JPEG pairs, Live Photos, a film and its subtitles, a camera card imported as one collection.
+- **Format Policy.** What you prefer, what you permit, and what you protect — answered once, applied to proposals, and never acted on by itself.
+- **Health, Reconcile and History.** What needs a decision now, what the database and the disk disagree about, and exactly what has already happened.
+- **SQLite + FTS5 index** in appdata, rebuildable at any time with `librairy index rebuild`.
+- **A Fallout/Pip-Boy-style LAN portal** that is light enough to run on a NAS and usable on a phone.
 
 ## Documentation
 
@@ -70,6 +94,10 @@ harness that opens one in a real browser and measures it:
 It builds a throwaway library containing one of every finding shape,
 screenshots the page at 1280px and at a true 375px, and reports anything
 sticking out past the edge. Screenshots land in `.dev/`, which is gitignored.
+
+The screenshot at the top of this file was taken the same way, against the same
+throwaway fixture library — so it is a real page rendered by a real browser, and
+none of it is anybody's actual files.
 
 **Headless Chrome is a development validation tool only. It is not part of
 LibrAIry production runtime.** There is no browser in the image, no browser
