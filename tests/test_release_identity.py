@@ -29,6 +29,12 @@ WORKFLOW = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
 RELEASED = re.findall(r"^## v(\d+\.\d+\.\d+) - (\d{4}-\d{2}-\d{2})$", CHANGELOG, re.M)
 
 
+def _tags() -> list[str]:
+    return subprocess.run(  # noqa: S603
+        ["git", "tag", "-l"], capture_output=True, text=True, cwd=ROOT, check=False
+    ).stdout.split()
+
+
 def test_this_release_is_1_3_0_and_the_schema_is_unchanged() -> None:
     assert __version__ == "1.3.0"
     # A release number is not a schema change. 47 is what acceptance passed on.
@@ -58,21 +64,39 @@ def test_the_versions_already_released_are_not_available_again() -> None:
     assert __version__ not in previously
 
 
-def test_the_absence_of_a_git_tag_is_not_evidence_a_number_is_free() -> None:
-    """The mistake this file exists to prevent, stated as an assertion.
+def test_no_tag_is_ever_invented_for_a_release_that_never_had_one() -> None:
+    """`v1.2.0` has no tag and must never gain one.
 
-    `v1.2.0` has no tag and never will — inventing one now would be fabricating
-    history for a commit nobody released under it.
+    1.2.0 was published without going through the release workflow, so no commit
+    was ever released *under that tag*. Creating one now would fabricate history
+    — it would point at whichever commit looked right today, which is precisely
+    the guess this file exists to stop.
+
+    Deliberately not asserting that any tag is *present*: a tag-triggered CI
+    checkout fetches only the tag that triggered it, so "which tags exist" is a
+    fact about the checkout, not about the project. This says only what must
+    never appear, which is true in every checkout.
     """
-    tags = subprocess.run(  # noqa: S603
-        ["git", "tag", "-l"], capture_output=True, text=True, cwd=ROOT, check=False
-    ).stdout.split()
+    tags = set(_tags())
 
-    assert "v1.0.0" in tags, "the historical release tag must not be deleted or moved"
-    untagged = {v for v, _ in RELEASED} - {t.lstrip("v") for t in tags}
-    assert "1.2.0" in untagged, (
-        "1.2.0 is a released version with no tag; if a tag appears for it, check "
-        "it was not invented to represent history retroactively"
+    assert "v1.2.0" not in tags, (
+        "a v1.2.0 tag has appeared; no commit was released under that name, so "
+        "this can only have been invented after the fact"
+    )
+
+
+def test_the_historical_release_tag_still_names_the_commit_it_always_did() -> None:
+    """Checked only where the tag is actually fetched — a shallow, tag-triggered
+    CI checkout does not have it, and its absence there means nothing."""
+    if "v1.0.0" not in set(_tags()):
+        return
+    target = subprocess.run(  # noqa: S603
+        ["git", "rev-parse", "v1.0.0^{commit}"],
+        capture_output=True, text=True, cwd=ROOT, check=False,
+    ).stdout.strip()
+
+    assert target == "21bab76d18ce5eb072f020f6284aabbbbd2ad354", (
+        f"v1.0.0 now points at {target}; a published release tag is never moved"
     )
 
 
