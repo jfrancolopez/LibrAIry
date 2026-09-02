@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
+from unittest import mock
 
 from fastapi.testclient import TestClient
 
@@ -120,7 +121,7 @@ def test_health_summary_all_green_when_dependencies_ok(tmp_path: Path, monkeypat
     monkeypatch.setattr(
         health_module,
         "db_status",
-        lambda settings: health_module.HealthRow("SQLite", "OK", "quick_check=ok"),
+        lambda settings, conn=None: health_module.HealthRow("SQLite", "OK", "quick_check=ok"),
     )
 
     response = client.get("/health")
@@ -158,14 +159,49 @@ def test_health_screen_rebuilds_search_index(tmp_path: Path) -> None:
     assert conn.execute("SELECT item_id FROM search_fts").fetchone()[0] == item_id
 
 
-def test_db_status_checks_actual_database_path(tmp_path: Path) -> None:
+def test_the_database_check_verifies_the_actual_database_path(tmp_path: Path) -> None:
     _, _, settings = client_for(tmp_path)
 
-    row = health_module.db_status(settings)
+    result, at = health_module.check_database(settings)
 
     assert database_path(settings).exists()
+    assert result == "ok"
+    assert at
+
+
+def test_db_status_reports_the_recorded_verdict_and_its_age(tmp_path: Path) -> None:
+    _, conn, settings = client_for(tmp_path)
+
+    #  Nobody has looked yet, which is a fact about the check and not a fault
+    #  in the database — so it is not a warning.
+    fresh = health_module.db_status(settings, conn)
+    assert fresh.status == "OK"
+    assert "not checked yet" in fresh.detail
+
+    result, at = health_module.check_database(settings)
+    health_module.record_database_health(conn, result, at)
+
+    row = health_module.db_status(settings, conn)
     assert row.status == "OK"
     assert "quick_check=ok" in row.detail
+    assert "db=" in row.detail
+
+
+def test_drawing_health_does_not_verify_the_whole_database(tmp_path: Path) -> None:
+    """`PRAGMA quick_check` reads every page of the file.
+
+    It cost 3.2 seconds on a 587 MB index, on every render, growing with the
+    database forever — on the one page whose job is to say whether anything is
+    wrong. It belongs on an idle worker cycle, like the FTS integrity check it
+    now matches, and the page reports what that last found.
+    """
+    client, _conn, _settings = client_for(tmp_path)
+
+    def refuse(*args: object, **kwargs: object) -> tuple[str, str]:
+        raise AssertionError("the render verified the database")
+
+    with mock.patch.object(health_module, "check_database", refuse):
+        assert client.get("/health").status_code == 200
 
 
 def test_health_reports_the_backup_queue_and_what_it_can_be_believed_about(

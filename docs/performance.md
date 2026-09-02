@@ -9,15 +9,17 @@ That is the whole result. Everything below is how it was measured and what
 exactly is wrong, because [ROADMAP.md](ROADMAP.md) M1-01 says a measured
 bottleneck is a *result*, not a work order — none of it is fixed here.
 
-    Review      was unusable everywhere; now 1.4 s at 100,000, still over
-                budget at a million — one unbounded scan left, named below
-    Health      was quadratic and never finished; now completes at a million,
-                but takes 22 s and is not yet usable there
-    Search      3.1 s at a million; degrading linearly, and fixable
-    Browse      1.2 s at a million; one unbounded query
-    Dashboard   620 ms at a million; bounded, worth watching
-    Commit      11 ms at a million; bounded
-    Quarantine  36 ms at a million; bounded
+    Review      was unusable at every population; now 543 ms at a million,
+                on a flat 186 statements
+    Health      never finished; now 2.1 s at a million — usable, not yet good
+    Search      2.6 s at a million; degrading linearly, cause known, not fixed
+    Browse      1.2 s at a million; one unbounded query, not fixed
+    Dashboard   349 ms at a million; bounded
+    Commit      10 ms at a million; bounded
+    Quarantine  21 ms at a million; bounded
+
+Every surface completes at every population. The two that did not are fixed;
+the two that are merely slow are M1-06 and untouched.
 
 ## How it was measured
 
@@ -77,19 +79,26 @@ not finish; an arrow marks a figure this pass changed.
 
 | Surface | 100k | 300k | 1M |
 |---|---|---|---|
-| Review page 1 | >60,000 (3,969) → **1,357 (185)** | >60,000 (3,133) | >60,000 (1,613) → **>60,000 (159)** |
-| Review page 50 | >60,000 (3,906) → **1,193 (185)** | >60,000 (3,212) | >60,000 (1,663) → **>60,000 (159)** |
-| Review, ungrouped sort | >60,000 (3,985) → **1,181 (185)** | >60,000 (3,212) | >60,000 (1,598) → **>60,000 (159)** |
-| Health | >60,000 (10) | >60,000 (10) | >60,000 (10) → **22,264 (41)** |
-| Health (attention only) | >60,000 (8) | >60,000 (8) | >60,000 (8) → **17,362 (18)** |
-| Search `Album` | 248 (153) | 793 (153) | 3,108 (153) |
-| Search unfiltered | 67 (153) | 276 (153) | 919 (153) |
-| Browse home | 94 (1) | 294 (1) | 1,196 (1) |
-| Dashboard | 52 (22) | 132 (22) | 620 (22) |
-| Quarantine page 1 | 10 (24) | 12 (23) | 37 (24) |
-| Quarantine page 50 | 2 (6) | 6 (24) | 17 (24) |
-| Commit page 1 | 2 (2) | 4 (2) | 12 (2) |
-| Commit summary | 1 (2) | 1 (2) | 6 (2) |
+| Review page 1 | 79 (186) | 190 (186) | 543 (186) |
+| Review page 50 | 61 (186) | 150 (186) | 466 (186) |
+| Review, ungrouped sort | 55 (186) | 146 (186) | 457 (186) |
+| Health | 336 (42) | 927 (42) | 2,120 (42) |
+| Health (attention only) | 75 (18) | 192 (18) | 600 (18) |
+| Search `Album` | 243 (153) | 779 (153) | 2,572 (153) |
+| Browse home | 82 (1) | 297 (1) | 1,157 (1) |
+| Dashboard | 36 (22) | 137 (22) | 349 (22) |
+| Quarantine page 1 | 7 (24) | 10 (23) | 21 (24) |
+| Commit page 1 | 2 (2) | 3 (2) | 10 (2) |
+
+Review's statement count is **186 at every population** — the bounded-page rule
+holding, which is the thing worth checking. Where it was, on 2026-09-01:
+
+| Surface | 100k | 300k | 1M |
+|---|---|---|---|
+| Review page 1 | >60,000 (3,969) | >60,000 (3,133) | >60,000 (1,613) |
+| Health | >60,000 (10) | >60,000 (10) | >60,000 (10) |
+
+Counts under a `>60,000` are truncated by the interrupt, not totals.
 
 Worker throughput, unchanged by population within noise: the search index
 rebuilds at **3,400–5,200 items per second**, so re-indexing a million-file
@@ -99,87 +108,58 @@ library is three to five minutes.
 
 ### 1. Review renders the entire findings table, every time
 
-> **FIXED, 2026-09-02.** Two changes, and it needed both.
+> **FIXED, 2026-09-02.** Four changes, and it needed all four. Each was found by
+> profiling after the previous one landed — none of them was visible by reading.
 >
-> The per-finding plan lookup is batched — `correction_state.active_plans_for`
-> answers for a whole set in one statement — which took Review from 3,969
-> statements to 940 and moved the bottleneck to (5) without making the page
-> usable.
+> 1. **The plan lookup was batched** (`active_plans_for`): 3,969 statements to
+>    940, and the bottleneck moved rather than went away.
+> 2. **`audit_view` became a bounded page.** The bucket rule and `subject_key`
+>    are both expressible in SQL — `subject_key` reads only `kind` and
+>    `relpath` — so which findings matter is decided without building a row for
+>    any of them. Twenty-five *subjects*, whole cards, counts from SQL.
+> 3. **The bucket rule stopped asking per finding.** Bounding it made the
+>    bounding itself the bottleneck: `EXISTS (... p.audit_finding_id = f.id OR
+>    p.id = f.plan_id)` spans two columns, so no index satisfies both arms and
+>    SQLite scanned `plans` once per finding — **53.7 s for the counts alone at
+>    a million**, slower than the unbounded page it replaced. Driven from
+>    `plans` instead, which is the small side, as a CTE computed once.
+> 4. **`destination_folders` dropped a redundant `DISTINCT`.** `UNIQUE (root,
+>    relpath)` already guaranteed it, and it made SQLite build a sorted
+>    temporary B-tree over the whole library before yielding a row — quietly
+>    defeating the 200-folder early return the function already had.
 >
-> Then `audit_view` became a bounded page. The bucket rule and the subject key
-> are both expressible in SQL (`subject_key` reads only `kind` and `relpath`),
-> so which findings matter can be decided *without building a row for any of
-> them*: three counts over the whole table, then rows built only for a page of
-> twenty-five subjects, whole cards never cut off mid-card.
->
-> **Review at 100k: 1,357 ms and 185 statements, and it finishes.** The count
-> is now flat — the same 185 on page 1, page 50, and with grouping off — and
-> `_artist_folder_under` has left the hot list because it is called for a page
-> of subjects rather than for every finding in the database.
->
-> **At a million it is still over budget**, on 159 statements. That is no longer
-> a counting problem: a page runs a fixed, small number of queries and one of
-> them reads the whole library. See (5), which is now the only thing between
-> Review and a million files.
-
-
-`web/review.py:1213` — `audit_view` builds a row for **every** finding with
-status `open`, `accepted` or `kept`. No `LIMIT`, no paging. Each of those rows
-then calls `correction_state.active_plan` (`web/review.py:1954`), which is one
-query carrying two correlated subqueries, plus a drift measurement when a plan
-exists.
-
-So a Review page costs one query per audit finding in the database, and it is
-`review_data`'s unconditional first act. At 50,000 findings that is 50,000
-statements before a single proposal has been looked at. The measured page never
-got past 1,200 of them inside sixty seconds.
-
-This is a straight violation of the rule `tests/test_scale.py` already states
-for Quarantine and Commit: *the row count in the response does not grow with
-the table*. Review's proposal list obeys it. The audit list embedded beside it
-never did.
+> **Review at a million: 543 ms on 186 statements**, and the count is 186 at
+> 100k and 300k too.
 
 ### 2. Health asks a quadratic question, twice
 
-> **Quadratic part fixed, 2026-09-02.** `unindexed` is two counts and a
-> subtraction — live items, minus index rows belonging to a live item — which
-> is the same question without the correlated scan, and safe because
-> `search_fts` is written with `rowid = item_id` so there is at most one index
-> row per file. `index_counts` derives its copy from the join it had already
-> run instead of asking again.
+> **FIXED, 2026-09-02**, in two places.
 >
-> **Health at a million: from never finishing to 22.3 s**, and it completes.
-> That is not yet usable. What is left is not quadratic, just heavy — chiefly
-> `undo_sequence._later_decisions` at 17 s of the 22 inside
-> `attention.report`. M1-06 continues.
-
-`search_health.py:156`:
-
-```sql
-SELECT COUNT(*) FROM items i
-WHERE i.missing_since IS NULL
-  AND NOT EXISTS (SELECT 1 FROM search_fts s WHERE s.item_id = i.id)
-```
-
-`search_fts` declares `item_id UNINDEXED`, so there is no index to satisfy that
-subquery. The query planner confirms it without any timing:
-
-```
-SCAN i
-CORRELATED SCALAR SUBQUERY 1
-  SCAN s VIRTUAL TABLE INDEX 0:
-```
-
-A full scan of the FTS table for every row of `items`. 3.8 seconds at 5,000
-items; the shape is N×M. And `health_data` asks for it **twice** in one render
-— which is the same duplication the function's own docstring says was removed
-once already.
-
-Second contributor, far behind: `undo_sequence.py:378` `_later_decisions`, 940 ms
-at 2,000 history rows.
-
-Health is the page that exists to tell you something is wrong. It is currently
-the most broken page in the program.
+> `unindexed` is two counts and a subtraction — live items, minus index rows
+> belonging to a live item — instead of a `NOT EXISTS` against an FTS table
+> whose `item_id` is `UNINDEXED`. Exact, because `search_fts` is written with
+> `rowid = item_id`, so there is at most one index row per file.
+>
+> `undo_sequence._later_decisions` was the larger half at 17 s, and it was the
+> **same shape as (1) and (3)**: one join whose `ON` clause had an `OR` between
+> two different column pairs — the same file, or a later operation reading
+> where an earlier one wrote. Neither arm can use an index that way, and both
+> sides are derived tables with no indexes at all, so SQLite compared every row
+> against every row. Split into two equality joins with `UNION ALL`, each arm
+> gets an automatic index, and `COUNT(DISTINCT ...)` over the same key makes the
+> union exact rather than approximate.
+>
+> `PRAGMA quick_check` was the third: a full verification of the database file
+> on every render, 3.2 s on a 587 MB index and growing forever. It now runs on
+> an idle worker cycle and Health reports the recorded verdict and its age —
+> the arrangement `search_health.check_search_index` already used, for the same
+> reason.
+>
+> **Health at a million: 22.3 s → 2.1 s**, `attention.report` alone 600 ms.
+> Usable, not yet good: roughly a third of what is left is the FTS count, asked
+> three times per render because `attention._search` and `search_index_panel`
+> each ask independently. Counting a million FTS rows is ~300 ms and no cheaper
+> shape exists — measured — so the fix is to ask once, not to ask faster.
 
 ### 3. Search counts history per result row
 
@@ -200,19 +180,20 @@ so it is not urgent — but it will not survive another order of magnitude.
 
 ### 5. Review scans the whole library, once per candidate row
 
-`destination_choice.py:155` `_artist_folder_under` walks every library row under
-a section prefix in Python, comparing normalised folder keys, once per candidate
-finding. `LIKE 'Music/%'` on a music library is most of the library.
-
-It was dwarfed by (1), briefly became the top cost when (1) was half-fixed, and
-is now **bounded but not cured**: it is called for the findings on the page
-rather than for every finding in the database, which is why Review completes.
-Each call still walks the library.
-
-Looking a folder up by *normalised* name is not something the current schema can
-index, so the cure is a design question rather than a query rewrite, and it is
-not urgent now that the call count is bounded. The `xfail(strict=True)` on
-unbounded library scans in `tests/test_scale_surfaces.py` stays until it is.
+> **FIXED, 2026-09-02.** Two shapes, because the question has a common case and
+> a real one. Nearly always the folder is spelled exactly as the name says, so
+> that is asked first as a half-open range on `relpath`, which the existing
+> index answers without reading the section at all. Only a genuine spelling
+> difference falls through, and then it asks for the **distinct child folder
+> names** rather than every file beneath them: 250,000 rows crossing into
+> Python became 2,000.
+>
+> The sections on a page repeat, so a `ChildFolders` object computes each one
+> once for the whole render. It is not a cache — it is created by the caller,
+> lives for one render, and has no invalidation to get wrong.
+>
+> 1,006 ms a call, eight calls a page, to one 589 ms scan for the page; then to
+> nothing measurable once the seek covers the common case.
 
 ### 6. Dashboard is fine and worth watching
 

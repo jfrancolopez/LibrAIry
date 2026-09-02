@@ -24,6 +24,7 @@ from librairy.corrections import (
     plan_files,
     resolve_group,
 )
+from librairy.destination_choice import ChildFolders
 from librairy.document_works import is_work_finding
 from librairy.duplicates import items_with_reports, reports_for_item
 from librairy.flags import flags_for, unhidden_name
@@ -310,9 +311,18 @@ def destination_folders(conn: sqlite3.Connection) -> list[str]:
     feed a `<datalist>`, so the field stays a plain text input you can type
     anything into — it just suggests the places you already keep things.
     """
+    #  No `DISTINCT`. `UNIQUE (root, relpath)` already guarantees it inside one
+    #  root, so it removed nothing — and it made SQLite build a sorted temporary
+    #  B-tree over the whole library before yielding a single row, which quietly
+    #  defeated the early return below. At a million files that was 539 ms to
+    #  find two hundred folder names that were all in the first hundred rows.
+    #
+    #  `ORDER BY relpath` keeps the order the DISTINCT happened to give and
+    #  makes it explicit, and the index supplies it without sorting anything.
     seen: dict[str, None] = {}
     rows = conn.execute(
-        "SELECT DISTINCT relpath FROM items WHERE root='library' AND missing_since IS NULL"
+        "SELECT relpath FROM items WHERE root='library' AND missing_since IS NULL"
+        " ORDER BY relpath"
     )
     for row in rows:
         parts = PurePosixPath(row["relpath"]).parts[:-1]
@@ -1335,7 +1345,11 @@ def audit_view(conn: sqlite3.Connection, settings: Settings | None = None) -> di
     #  is what decides which of the three lists below a finding belongs in, so
     #  it cannot simply be dropped — but it never needed asking one at a time.
     plans = active_plans_for(conn, [int(row["id"]) for row in rows])
-    views = [_audit_row(conn, settings, row, plans) for row in rows]
+    #  One scan of a section for the whole page instead of one per finding.
+    #  Every candidate-folder question on this page asked about the same
+    #  section and got the same answer, each answer costing a scan of it.
+    folders = ChildFolders()
+    views = [_audit_row(conn, settings, row, plans, folders) for row in rows]
     # Which list a row belongs in is decided by its *effective* state, never by
     # the status column it was fetched under. Those two disagree on the live
     # database — a finding reading `open` that an approved plan already claims —
@@ -2011,7 +2025,10 @@ def _identity_asked(conn, track) -> bool:  # noqa: ANN001
 
 
 def _destination_view(  # noqa: ANN201
-    conn: sqlite3.Connection, settings: Settings | None, row: sqlite3.Row
+    conn: sqlite3.Connection,
+    settings: Settings | None,
+    row: sqlite3.Row,
+    folders: object | None = None,
 ):
     """The folders this artist could live in, and which one was picked.
 
@@ -2024,7 +2041,7 @@ def _destination_view(  # noqa: ANN201
 
     if settings is None or not is_destination_finding(row):
         return None
-    found = candidates(conn, row)
+    found = candidates(conn, row, folders)
     if len(found) < 2:
         return None
     return found, selected(conn, row)
@@ -2080,6 +2097,7 @@ def _audit_row(
     settings: Settings | None,
     row: sqlite3.Row,
     plans: dict[int, list] | None = None,
+    folders: object | None = None,
 ) -> dict[str, object]:
     # The plan, not the status column. A finding can be `open` and still own an
     # approved plan — that is the inconsistency this pass exists to stop
@@ -2106,7 +2124,7 @@ def _audit_row(
     #  And the per-item shape: one answer per loose track, which is the whole
     #  reason `loose-tracks` could never be a folder correction.
     filing = _filing_view(conn, settings, row) if not accepted else None
-    destination = _destination_view(conn, settings, row) if not accepted else None
+    destination = _destination_view(conn, settings, row, folders) if not accepted else None
     if destination is not None:
         merge = _destination_merge(conn, settings, row)
     else:

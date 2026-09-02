@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import sqlite3
@@ -105,7 +106,7 @@ def health_data(conn: sqlite3.Connection, settings: Settings) -> dict[str, objec
     """
     providers = live_provider_status(conn, settings)
     tools = tool_statuses(settings)
-    db = db_status(settings)
+    db = db_status(settings, conn)
     disk_stats = _disk_stats(settings)
     disks = disk_statuses(settings)
     worker = worker_status(conn)
@@ -526,23 +527,89 @@ def test_provider(
     return next((row for row in live if row["name"] == name), None)
 
 
-def db_status(settings: Settings) -> HealthRow:
+DB_CHECK_KEY = "database_check"
+
+
+def check_database(settings: Settings) -> tuple[str, str]:
+    """Verify the whole database. **Not to be called while drawing a page.**
+
+    `PRAGMA quick_check` reads and verifies every page of the file, so it costs
+    what the database is worth: 3.2 seconds on a 587 MB index, on every render
+    of Health, growing forever. Health is the page that says whether anything
+    is wrong, and it was the slowest page in the program partly because of the
+    check that says so.
+
+    Same shape as `search_health.check_search_index`, for the same reason and
+    into the same table: the expensive verification happens away from the
+    render, its verdict is recorded, and the page reports the verdict and how
+    old it is. Returns the result and the moment it was taken.
+    """
+    from librairy.planner import utc_now
+
+    db_path = database_path(settings)
+    if not db_path.exists():
+        return "missing", utc_now()
+    try:
+        with sqlite3.connect(db_path) as conn:
+            return str(conn.execute("PRAGMA quick_check").fetchone()[0]), utc_now()
+    except sqlite3.Error as exc:
+        return f"error: {exc}", utc_now()
+
+
+def record_database_health(conn: sqlite3.Connection, result: str, at: str) -> None:
+    """Remember the verdict, so a page can show it without checking again."""
+    conn.execute(
+        "INSERT INTO worker_state(key, value) VALUES (?, ?)"
+        " ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        (DB_CHECK_KEY, json.dumps({"result": result, "at": at})),
+    )
+
+
+def db_status(settings: Settings, conn: sqlite3.Connection | None = None) -> HealthRow:
+    """What the last verification found, and when it was taken.
+
+    Reads only. The size and the WAL size are two `stat` calls and stay live;
+    the verdict is whatever `check_database` last recorded.
+    """
     db_path = database_path(settings)
     if not db_path.exists():
         return HealthRow("SQLite", "WARN", "database has not been created", "start LibrAIry once")
-    try:
-        with sqlite3.connect(db_path) as conn:
-            result = conn.execute("PRAGMA quick_check").fetchone()[0]
-        size_mb = db_path.stat().st_size / 1024**2
-        wal_mb = _file_mb(db_path.with_name(f"{db_path.name}-wal"))
-    except sqlite3.Error as exc:
-        return HealthRow("SQLite", "FAIL", str(exc), "restore appdata or rebuild the index")
+    size_mb = db_path.stat().st_size / 1024**2
+    wal_mb = _file_mb(db_path.with_name(f"{db_path.name}-wal"))
+    sizes = f"db={size_mb:.1f}MB; wal={wal_mb:.1f}MB"
+    recorded = _recorded_db_check(conn) if conn is not None else None
+    if recorded is None:
+        #  Not "unknown, therefore warn". Nobody has looked yet, which is a
+        #  fact about the check and not about the database, and a warning
+        #  without evidence is a warning people learn to dismiss.
+        return HealthRow("SQLite", "OK", f"not checked yet; {sizes}")
+    result, when = recorded
     status = "OK" if result == "ok" else "FAIL"
     return HealthRow(
         "SQLite",
         status,
-        f"quick_check={result}; db={size_mb:.1f}MB; wal={wal_mb:.1f}MB",
+        f"quick_check={result} ({when}); {sizes}",
+        "" if status == "OK" else "restore appdata or rebuild the index",
     )
+
+
+def _recorded_db_check(conn: sqlite3.Connection) -> tuple[str, str] | None:
+    row = conn.execute(
+        "SELECT value FROM worker_state WHERE key=?", (DB_CHECK_KEY,)
+    ).fetchone()
+    if row is None:
+        return None
+    try:
+        payload = json.loads(str(row["value"]))
+    except (TypeError, ValueError):  # pragma: no cover - defensive
+        return None
+    return str(payload.get("result", "")), _ago(str(payload.get("at", "")))
+
+
+def _ago(when: str) -> str:
+    from librairy.settings_service import _ago as elapsed
+
+    return elapsed(when) if when else "at an unknown time"
 
 
 def disk_statuses(settings: Settings) -> list[HealthRow]:

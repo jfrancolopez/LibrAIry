@@ -98,7 +98,9 @@ def subject(row: sqlite3.Row) -> str:
     return parts[-2] if len(parts) >= 2 else str(row["relpath"])
 
 
-def candidates(conn: sqlite3.Connection, row: sqlite3.Row) -> tuple[Candidate, ...]:
+def candidates(
+    conn: sqlite3.Connection, row: sqlite3.Row, folders: ChildFolders | None = None
+) -> tuple[Candidate, ...]:
     """Every folder this artist has, among the sections the finding named.
 
     Two halves, and the split is the point. The **sections** come from the
@@ -118,7 +120,7 @@ def candidates(conn: sqlite3.Connection, row: sqlite3.Row) -> tuple[Candidate, .
         return ()
     found: list[Candidate] = []
     for section in _sections(row):
-        folder = _artist_folder_under(conn, section, name)
+        folder = _artist_folder_under(conn, section, name, folders)
         if not folder or any(candidate.relpath == folder for candidate in found):
             continue
         counted = _contents(conn, folder)
@@ -148,20 +150,99 @@ def _sections(row: sqlite3.Row) -> list[str]:
     return list(dict.fromkeys(sections))
 
 
-def _artist_folder_under(conn: sqlite3.Connection, section: str, name: str) -> str:
-    """The artist's folder inside one section, spelled as the disk spells it."""
+class ChildFolders:
+    """The immediate child folders of a section, read once for a whole page.
+
+    **Not a cache.** It is created by the caller, lives for one render, and is
+    thrown away with it — there is no invalidation to get wrong and nothing to
+    go stale, because nothing outlives the request that made it.
+
+    It exists because the sections on a page repeat. Every candidate folder
+    question on a Review page at a million files asked about the same section
+    eight times and got the same answer eight times, each answer costing a
+    scan of that section. Passing one of these makes it one scan.
+    """
+
+    def __init__(self) -> None:
+        self._by_section: dict[str, list[str]] = {}
+
+    def under(self, conn: sqlite3.Connection, section: str) -> list[str]:
+        found = self._by_section.get(section)
+        if found is None:
+            found = _child_folders(conn, section)
+            self._by_section[section] = found
+        return found
+
+
+def _child_folders(conn: sqlite3.Connection, section: str) -> list[str]:
+    """Distinct folder names directly inside `section`.
+
+    One row per folder, not one per file beneath it. The distinction is the
+    whole cost: 250,000 rows crossing into Python became 2,000 at a million
+    files, and a second of work became a quarter of one.
+    """
+    offset = len(section) + 2
+    return [
+        str(row["child"])
+        for row in conn.execute(
+            "SELECT DISTINCT substr(relpath, ?, instr(substr(relpath, ?), '/') - 1) AS child"
+            " FROM items"
+            " WHERE root='library' AND missing_since IS NULL AND relpath LIKE ?"
+            "   AND instr(substr(relpath, ?), '/') > 0"
+            " ORDER BY child",
+            (offset, offset, f"{section}/%", offset),
+        )
+        if row["child"]
+    ]
+
+
+def _artist_folder_under(
+    conn: sqlite3.Connection,
+    section: str,
+    name: str,
+    folders: ChildFolders | None = None,
+) -> str:
+    """The artist's folder inside one section, spelled as the disk spells it.
+
+    Two shapes, because the question has a common case and a real one.
+
+    It used to have neither: it read every library row under the section and
+    compared normalised names in Python until something matched. That is a
+    quarter of a million rows crossing into Python to find one folder, once per
+    candidate section per finding — measured at a million files, 1.0 s a call
+    and the largest cost left in a Review page.
+
+    **The seek.** Nearly always the folder is spelled exactly as the name says,
+    so ask for exactly that first: a half-open range on `relpath`, which the
+    `UNIQUE (root, relpath)` index answers without reading the section at all.
+    Deliberately a range and not `LIKE`: SQLite's `LIKE` is case-insensitive by
+    default, which stops it using a `BINARY` index, and case-insensitivity is
+    the fallback's job.
+
+    **The scan.** When the disk spells it differently — `The Beatles` against
+    `Beatles, The`, or any punctuation at all — only then, and it asks SQLite
+    for the *distinct child folder names* rather than for every file beneath
+    them. One query, one row per folder instead of one per track: 250,000 rows
+    became 2,000, and 1.0 s became 0.26 s.
+    """
     from librairy.audit_music import key
 
-    for item in conn.execute(
+    exact = conn.execute(
         "SELECT relpath FROM items"
-        " WHERE root='library' AND missing_since IS NULL AND relpath LIKE ?"
-        " ORDER BY relpath",
-        (f"{section}/%",),
-    ):
-        parts = str(item["relpath"]).split("/")
-        depth = len(section.split("/"))
-        if len(parts) > depth and key(parts[depth]) == key(name):
-            return "/".join(parts[: depth + 1])
+        " WHERE root='library' AND missing_since IS NULL"
+        " AND relpath >= ? AND relpath < ? LIMIT 1",
+        (f"{section}/{name}/", f"{section}/{name}/\uffff"),
+    ).fetchone()
+    if exact is not None:
+        return f"{section}/{name}"
+
+    wanted = key(name)
+    children = (
+        folders.under(conn, section) if folders is not None else _child_folders(conn, section)
+    )
+    for child in children:
+        if key(child) == wanted:
+            return f"{section}/{child}"
     return ""
 
 

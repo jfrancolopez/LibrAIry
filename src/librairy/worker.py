@@ -233,6 +233,11 @@ class Worker:
                 # very little on a job that is separately constrained to a
                 # small share of the machine.
                 if not audit_stage:
+                    #  Verifying the database reads every page of it, so it
+                    #  belongs on an idle cycle and never on a page render.
+                    #  Health reports what this last found. Same arrangement as
+                    #  the FTS integrity check, for the same reason.
+                    self._database_check(settings)
                     _set_worker_state(self.conn, "current_phase", "optimization")
                     self._optimization_slice(settings)
             else:
@@ -246,6 +251,20 @@ class Worker:
             if audit_stage:
                 _set_worker_state(self.conn, "last_audit_stage", audit_stage)
             return summary
+
+    def _database_check(self, settings: Settings) -> None:
+        """Record what a full verification finds. Never blocks the inbox.
+
+        Wrapped like every other maintenance call: a check that cannot run must
+        not be the thing that stops files being filed.
+        """
+        from librairy.web.health import check_database, record_database_health
+
+        try:
+            result, at = check_database(settings)
+            record_database_health(self.conn, result, at)
+        except Exception:  # noqa: BLE001 - maintenance must never break the worker
+            LOGGER.exception("database check failed")
 
     def _optimization_poll(self, settings: Settings) -> str:
         """Advance a running encode by reading what it has reported. Never waits.

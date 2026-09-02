@@ -51,8 +51,9 @@ sized against.
 [performance.md](performance.md), raw data in [measurements/](measurements/),
 harness in `scripts/scale_bench.py`.
 
-> **What it found.** Review and Health did not work at 100,000 files, let alone
-> a million. Commit, Quarantine and Dashboard hold. Search and Browse degrade
+> **What it found**, and what has since been done about it: Review and Health
+> did not work at 100,000 files, let alone a million. **Both are fixed** —
+> Review 543 ms and Health 2.1 s at a million, measured 2026-09-02. Commit, Quarantine and Dashboard hold. Search and Browse degrade
 > linearly with clear, small causes. Review is now fixed (see M1-02); Health is
 > M1-06.
 >
@@ -139,11 +140,11 @@ models "a folder is one arrival and one decision" with its own page and its own
 bounded counts. That is the shape — this generalizes it.
 
 **Work.**
-- ~~Bound `audit_view` first.~~ **Done 2026-09-02.** The plan lookup is batched
-  and the audit section is a bounded page of twenty-five subjects with counts
-  from SQL. Review at 100k went from not finishing to **1,357 ms / 185
-  statements**, and the count is now flat across pages. See
-  [performance.md](performance.md).
+- ~~Bound `audit_view` first.~~ **Done 2026-09-02**, and with it the whole of
+  Review's scale problem: **543 ms at a million on 186 statements**, and 186 at
+  100k and 300k as well. Four fixes, each found by profiling after the previous
+  one landed — see [performance.md](performance.md). Review is no longer a
+  scale item; what remains here is the interaction design.
 - Group identity, counts and confidence resolved in SQL, not in Python after a
   `LIMIT`.
 - An ordering that keeps a group together, since sorting by confidence is half
@@ -271,12 +272,14 @@ today's behaviour exactly.
 makes them degrade or fail with the size of a table they read. All three are
 named with file and line in [performance.md](performance.md).
 
-- ~~**Health is quadratic and unusable at 100,000 files.**~~ **Quadratic part
-  fixed 2026-09-02** — `unindexed` is now two counts and a subtraction, and
-  Health completes at a million for the first time. It takes **22 s**, which is
-  not usable; what remains is heavy rather than quadratic, chiefly
-  `undo_sequence._later_decisions` at 17 s of it. The original text follows
-  because the shape is worth remembering.
+- ~~**Health is quadratic and unusable at 100,000 files.**~~ **DONE
+  2026-09-02 — 22.3 s to 2.1 s at a million**, and it completes at every
+  population. Three causes, all measured: the quadratic `unindexed`, an
+  `OR`-joined dependency query at 17 s, and `PRAGMA quick_check` verifying the
+  whole database on every render. What is left is ~300 ms of FTS counting asked
+  three times per page; asking once is the next step and needs a shared count,
+  not a faster query. The original text follows because the shape is worth
+  remembering.
   `search_health.py:156` counts unindexed items with a `NOT EXISTS` against
   `search_fts`, whose `item_id` is declared `UNINDEXED` — so it scans the whole
   FTS table once per row of `items`. The query planner says so without any
@@ -301,10 +304,11 @@ a query. An index or a bound for Browse home.
 one of the few genuinely important numbers on Health. Add an index without
 measuring that it is used. Treat this as architecture: it is three queries.
 
-**Acceptance.** Health completes in well under a second at 1M; the
-`xfail(strict=True)` test on the correlated scan passes and its marker is
-removed; Search and Browse stay flat as the library grows, held by
-`tests/test_scale_surfaces.py`.
+**Acceptance.** Health completes in well under a second at 1M — **not yet met:
+2.1 s**, with the remaining cause named and cheap to fix. The `xfail(strict=True)`
+test on the correlated scan is gone, replaced by a real assertion on what the
+function actually executes. Search and Browse are **untouched** and still
+degrade with the library: 2.6 s and 1.2 s at a million.
 
 **Scale.** 1M items, 100k history rows, 50k findings.
 

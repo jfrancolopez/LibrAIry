@@ -375,21 +375,52 @@ def _later_decisions(
     ).fetchone()
     if floor is None or floor["floor"] is None:
         return {}
+    #  Two joins and a union, not one join with an `OR`.
+    #
+    #  The two ways a decision can depend on an earlier one — the same file, or
+    #  a later operation reading exactly where an earlier one wrote — used to
+    #  be one `ON` clause with an `OR` between them. Neither side of that `OR`
+    #  can be satisfied by the same index, and both sides are derived tables
+    #  with no indexes at all, so SQLite had nothing to do but compare every
+    #  row of one against every row of the other. At a hundred thousand journal
+    #  rows that is 17 seconds, and it was the whole of Health's remaining cost.
+    #
+    #  Split, each arm is an equality join on one pair of columns, which SQLite
+    #  can answer with an automatic index over the derived table.
+    #
+    #  The union is `ALL` and it is still exact: an operation matching both arms
+    #  appears twice, and `COUNT(DISTINCT ...)` over the same key collapses it
+    #  exactly as the single query's `DISTINCT` did. `MIN` does not care about
+    #  duplicates either. Same grouping, same key, same numbers.
     rows = conn.execute(
         f"""
-        SELECT mine.plan_id AS plan_id, later.plan_id AS blocker,
-               COUNT(DISTINCT COALESCE(mine.item_id, mine.dest_relpath)) AS shared,
-               MIN(later.ordinal) AS first_at
-        FROM ({_executed_for(plan_ids)}) mine
-        JOIN ({_executed_after("AND h.id > ?")}) later
-          ON later.plan_id <> mine.plan_id
-         AND later.ordinal > mine.ordinal
-         AND ((later.item_id IS NOT NULL AND mine.item_id IS NOT NULL
-               AND later.item_id = mine.item_id)
-              OR (later.src_root = mine.dest_root
-                  AND later.src_relpath = mine.dest_relpath))
-        GROUP BY mine.plan_id, later.plan_id
-        ORDER BY mine.plan_id, first_at, later.plan_id
+        WITH mine AS ({_executed_for(plan_ids)}),
+             later AS ({_executed_after("AND h.id > ?")}),
+             shared AS (
+               SELECT mine.plan_id AS plan_id, later.plan_id AS blocker,
+                      COALESCE(mine.item_id, mine.dest_relpath) AS subject,
+                      later.ordinal AS ordinal
+               FROM mine JOIN later
+                 ON later.item_id = mine.item_id
+                AND later.item_id IS NOT NULL AND mine.item_id IS NOT NULL
+                AND later.plan_id <> mine.plan_id
+                AND later.ordinal > mine.ordinal
+               UNION ALL
+               SELECT mine.plan_id AS plan_id, later.plan_id AS blocker,
+                      COALESCE(mine.item_id, mine.dest_relpath) AS subject,
+                      later.ordinal AS ordinal
+               FROM mine JOIN later
+                 ON later.src_root = mine.dest_root
+                AND later.src_relpath = mine.dest_relpath
+                AND later.plan_id <> mine.plan_id
+                AND later.ordinal > mine.ordinal
+             )
+        SELECT plan_id, blocker,
+               COUNT(DISTINCT subject) AS shared,
+               MIN(ordinal) AS first_at
+        FROM shared
+        GROUP BY plan_id, blocker
+        ORDER BY plan_id, first_at, blocker
         """,  # noqa: S608 - placeholders are counted; the rest is a constant
         (
             *FORWARD_ACTIONS, *plan_ids, *UNDO_ACTIONS,
