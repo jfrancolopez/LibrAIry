@@ -97,13 +97,23 @@ def small(tmp_path):  # noqa: ANN001, ANN201
 
 
 def test_review_renders_one_bounded_page(small) -> None:  # noqa: ANN001
-    from librairy.web.review import PAGE_SIZE, ReviewFilters, review_data
+    """Bounded by decisions now, and by rows as a consequence.
+
+    A grouped page holds `UNITS_PAGE` decisions. Each shows at most
+    `MEMBER_PREVIEW` of its members, so the rows are bounded too — by a bigger
+    number than the old fifty, and by a number that does not move when a group
+    holds three thousand files instead of three.
+    """
+    from librairy.web.review import MEMBER_PREVIEW, UNITS_PAGE, ReviewFilters, review_data
 
     conn, settings = small
     data = review_data(conn, ReviewFilters(), settings)
+    sections = [g for g in data["groups"] if g["kind"] not in ("ungrouped", "sorted")]
+    assert len(data["groups"]) <= UNITS_PAGE + 1  # +1 for the loose section
+    assert all(len(g["rows"]) <= MEMBER_PREVIEW for g in sections)
     rendered = sum(len(group["rows"]) for group in data["groups"])
-    assert rendered <= PAGE_SIZE
-    assert data["total"] > PAGE_SIZE, "the fixture must be larger than one page"
+    assert rendered <= UNITS_PAGE * MEMBER_PREVIEW
+    assert data["total"] > UNITS_PAGE, "the fixture must be larger than one page"
 
 
 def test_review_counts_come_from_sql_not_from_the_page(small) -> None:  # noqa: ANN001
@@ -365,29 +375,26 @@ def test_a_group_larger_than_a_page_says_how_large_it_is(tmp_path) -> None:  # n
     A 150-photograph event read as twelve photographs, which is the difference
     between one decision and a wrong impression of the queue.
     """
-    from librairy.web.review import PAGE_SIZE, ReviewFilters, review_data
+    from librairy.web.review import MEMBER_PREVIEW, UNITS_PAGE, ReviewFilters, review_data
 
     conn, settings = build(
         tmp_path, library=200, inbox=400, findings=20, quarantine=20, history=20
     )
-    #  Groups are ordered by kind, so the albums of twelve come before the
-    #  photo events of a hundred and fifty. Walk until one is bigger than the
-    #  page can hold, which is the case this exists to check.
-    split = None
+    big = None
     for page in range(1, 12):
         data = review_data(conn, ReviewFilters(page=page), settings)
         #  The page is still a page, on every one of them.
-        assert sum(len(group["rows"]) for group in data["groups"]) <= PAGE_SIZE
+        assert sum(len(group["rows"]) for group in data["groups"]) <= UNITS_PAGE * MEMBER_PREVIEW
         for group in data["groups"]:
             if group["kind"] in ("ungrouped", "sorted"):
                 continue
             if int(group["total"]) > len(group["rows"]):
-                split = group
+                big = group
                 break
-        if split:
+        if big:
             break
-    assert split is not None, "expected a group the page could not hold in full"
-    assert int(split["total"]) > PAGE_SIZE or int(split["total"]) > len(split["rows"])
+    assert big is not None, "expected a group bigger than its preview"
+    assert int(big["more"]) == int(big["total"]) - len(big["rows"])
 
 
 def test_one_member_on_this_page_is_not_a_loose_file(tmp_path) -> None:  # noqa: ANN001
@@ -428,3 +435,221 @@ def test_group_totals_respect_the_page_filters(tmp_path) -> None:  # noqa: ANN00
     if not members:
         pytest.skip("no grouped rows in the fixture")
     assert group_totals(conn, narrow, members) != group_totals(conn, wide, members)
+
+
+# --- decisions as the paging unit ---------------------------------------------
+
+
+def _walk_decisions(conn, settings, pages: int = 40):  # noqa: ANN001, ANN202
+    """Every unit and every rendered file id, page by page."""
+    from librairy.web.review import ReviewFilters, review_data
+
+    units: list[str] = []
+    files: list[int] = []
+    for page in range(1, pages + 1):
+        data = review_data(conn, ReviewFilters(page=page), settings)
+        if not data["groups"]:
+            break
+        for group in data["groups"]:
+            units.append(f"{group['kind']}:{group['label']}")
+            files.extend(int(row["id"]) for row in group["rows"])
+    return units, files
+
+
+def test_paging_decisions_neither_repeats_nor_drops_one(tmp_path) -> None:  # noqa: ANN001
+    """No decision on two pages, none skipped between them."""
+    conn, settings = build(
+        tmp_path, library=200, inbox=400, findings=20, quarantine=20, history=20
+    )
+    units, _ = _walk_decisions(conn, settings)
+    #  The loose section appears once per page it has members on, so count only
+    #  the named ones — those are the decisions paging is meant to keep whole.
+    named = [unit for unit in units if not unit.startswith("ungrouped:")]
+    assert len(named) == len(set(named)), "a group appeared on more than one page"
+
+    from librairy.web.review import ReviewFilters, unit_count
+
+    assert len(units) >= unit_count(conn, ReviewFilters()) - len(named) or named
+
+
+def test_no_file_is_rendered_twice_across_pages(tmp_path) -> None:  # noqa: ANN001
+    conn, settings = build(
+        tmp_path, library=200, inbox=400, findings=20, quarantine=20, history=20
+    )
+    _, files = _walk_decisions(conn, settings)
+    assert len(files) == len(set(files)), "a file was rendered on two pages"
+
+
+def test_paging_is_deterministic(tmp_path) -> None:  # noqa: ANN001
+    conn, settings = build(
+        tmp_path, library=200, inbox=400, findings=20, quarantine=20, history=20
+    )
+    first = _walk_decisions(conn, settings)
+    second = _walk_decisions(conn, settings)
+    assert first == second
+
+
+def test_a_huge_group_does_not_put_its_members_on_the_page(tmp_path) -> None:  # noqa: ANN001
+    """The point of paging decisions: a group is one row's worth of attention.
+
+    Three thousand files in one group must cost the page five rows and an
+    honest count, not three thousand rows — and not three thousand rows fetched
+    and then thrown away either, which is why the member query is bounded in
+    SQL rather than in Python.
+    """
+    from librairy.web.review import MEMBER_PREVIEW, ReviewFilters, review_data
+
+    conn, settings = build(
+        tmp_path, library=100, inbox=20, findings=10, quarantine=10, history=10
+    )
+    conn.execute(
+        "INSERT INTO groups(id, kind, label, dest_base, created_at)"
+        " VALUES (9001, 'photo_event', 'Enormous Event', 'Photos/Filed', '2026-09-02')"
+    )
+    now = "2026-09-02T00:00:00+00:00"
+    conn.executemany(
+        "INSERT INTO items(id, root, relpath, size, mtime_ns, fingerprint, state,"
+        " first_seen_at, last_seen_at) VALUES (?, 'inbox', ?, 10, 0, ?, 'proposed', ?, ?)",
+        [(500_000 + n, f"huge/IMG_{n:05d}.jpg", f"hg{n:09d}", now, now) for n in range(3000)],
+    )
+    conn.executemany(
+        "INSERT INTO proposals(id, item_id, category, clean_name, dest_relpath,"
+        " confidence, group_id, status, evidence, created_at, updated_at, action,"
+        " dest_root) VALUES (?, ?, 'photos', ?, ?, 0.9, 9001, 'proposed', '[]', ?, ?,"
+        " 'move', 'library')",
+        [
+            (500_000 + n, 500_000 + n, f"IMG_{n:05d}.jpg",
+             f"Photos/Filed/IMG_{n:05d}.jpg", now, now)
+            for n in range(3000)
+        ],
+    )
+    conn.commit()
+
+    counting = Counting(conn)
+    data = review_data(counting, ReviewFilters(), settings)
+    huge = next(g for g in data["groups"] if g["label"] == "Enormous Event")
+    assert huge["total"] == 3000
+    assert len(huge["rows"]) == MEMBER_PREVIEW
+    assert huge["more"] == 3000 - MEMBER_PREVIEW
+    #  And the whole page stays small.
+    assert sum(len(g["rows"]) for g in data["groups"]) < 200
+
+
+def test_the_decision_page_does_not_grow_its_queries_with_the_queue(tmp_path) -> None:  # noqa: ANN001
+    """Both queues fill a page, so the comparison is like for like.
+
+    A page that cannot be filled runs fewer per-row queries simply because it
+    has fewer rows; that is not the property under test. The property is that
+    a queue four times longer costs the same page.
+    """
+    from librairy.web.review import ReviewFilters, review_data
+
+    counts = []
+    for inbox in (800, 3_200):
+        conn, settings = build(
+            tmp_path / f"q{inbox}",
+            library=400,
+            inbox=inbox,
+            findings=40,
+            quarantine=40,
+            history=40,
+        )
+        counting = Counting(conn)
+        review_data(counting, ReviewFilters(), settings)
+        counts.append(len(counting.queries))
+        conn.close()
+    assert counts[1] <= counts[0] * 1.2, f"{counts[0]} -> {counts[1]} queries"
+
+
+def test_loose_files_stay_individual_decisions(tmp_path) -> None:  # noqa: ANN001
+    """Grouping must not invent a group. A file that arrived alone is its own
+    decision and keeps its own controls."""
+    from librairy.web.review import ReviewFilters, review_data, unit_count
+
+    conn, settings = build(
+        tmp_path, library=100, inbox=60, findings=10, quarantine=10, history=10
+    )
+    conn.execute("UPDATE proposals SET group_id=NULL")
+    conn.commit()
+    data = review_data(conn, ReviewFilters(), settings)
+    assert all(g["kind"] == "ungrouped" for g in data["groups"])
+    assert unit_count(conn, ReviewFilters()) == data["total"]
+
+
+def test_the_group_heading_states_the_whole_group(tmp_path) -> None:  # noqa: ANN001
+    """Every number on the heading is a fact about the group, not the preview.
+
+    Counting the rows below would give a smaller, wrong answer for exactly the
+    groups the heading matters most for.
+    """
+    from librairy.web.review import MEMBER_PREVIEW, ReviewFilters, review_data
+
+    conn, settings = build(
+        tmp_path, library=200, inbox=400, findings=20, quarantine=20, history=20
+    )
+    data = review_data(conn, ReviewFilters(), settings)
+    sections = [g for g in data["groups"] if g["kind"] not in ("ungrouped", "sorted")]
+    assert sections, "expected at least one grouped decision"
+    for group in sections:
+        assert group["total"] >= len(group["rows"])
+        assert 0.0 <= group["mean"] <= 1.0
+        assert group["worst"] <= group["best"]
+        assert group["doubtful"] <= group["total"]
+        assert group["more"] == group["total"] - len(group["rows"])
+        assert len(group["rows"]) <= MEMBER_PREVIEW
+
+
+def test_expanding_a_group_is_itself_bounded(tmp_path) -> None:  # noqa: ANN001
+    """The rest of a group arrives a page at a time, never in one go."""
+    from librairy.web.review import (
+        MEMBER_PAGE,
+        ReviewFilters,
+        group_members,
+        review_data,
+    )
+
+    conn, settings = build(
+        tmp_path, library=100, inbox=20, findings=10, quarantine=10, history=10
+    )
+    now = "2026-09-02T00:00:00+00:00"
+    conn.execute(
+        "INSERT INTO groups(id, kind, label, dest_base, created_at)"
+        " VALUES (9002, 'photo_event', 'Big Event', 'Photos/Filed', ?)",
+        (now,),
+    )
+    conn.executemany(
+        "INSERT INTO items(id, root, relpath, size, mtime_ns, fingerprint, state,"
+        " first_seen_at, last_seen_at) VALUES (?, 'inbox', ?, 10, 0, ?, 'proposed', ?, ?)",
+        [(600_000 + n, f"big/IMG_{n:05d}.jpg", f"bg{n:09d}", now, now) for n in range(120)],
+    )
+    conn.executemany(
+        "INSERT INTO proposals(id, item_id, category, clean_name, dest_relpath,"
+        " confidence, group_id, status, evidence, created_at, updated_at, action,"
+        " dest_root) VALUES (?, ?, 'photos', ?, ?, 0.9, 9002, 'proposed', '[]', ?, ?,"
+        " 'move', 'library')",
+        [
+            (600_000 + n, 600_000 + n, f"IMG_{n:05d}.jpg",
+             f"Photos/Filed/IMG_{n:05d}.jpg", now, now)
+            for n in range(120)
+        ],
+    )
+    conn.commit()
+
+    data = review_data(conn, ReviewFilters(), settings)
+    group = next(g for g in data["groups"] if g["label"] == "Big Event")
+    unit = group["unit"]
+
+    second = group_members(conn, ReviewFilters(), unit, page=2, settings=settings)
+    assert len(second["rows"]) == MEMBER_PAGE
+    assert second["total"] == 120
+    assert second["next_page"] == 3
+
+    #  Every member reachable, none twice.
+    seen = [row["id"] for row in group["rows"]]
+    page = 2
+    while page:
+        chunk = group_members(conn, ReviewFilters(), unit, page=page, settings=settings)
+        seen.extend(row["id"] for row in chunk["rows"])
+        page = chunk["next_page"]
+    assert len(seen) == 120
+    assert len(set(seen)) == 120

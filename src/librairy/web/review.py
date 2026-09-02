@@ -154,28 +154,40 @@ class ReviewFilters:
 def review_data(
     conn: sqlite3.Connection, filters: ReviewFilters, settings: Settings | None = None
 ) -> dict[str, object]:
-    rows = _proposal_rows(conn, filters, settings=settings)
     total = _proposal_count(conn, filters)
-    #  One query, and only when grouping is on: a flat list has no headings to
-    #  make true.
-    totals = group_totals(conn, filters, rows) if filters.grouped else {}
+    #  Two views, and they page different things. Grouped, the page is a page
+    #  of *decisions* — an album is one whether it holds three files or three
+    #  hundred, and dividing it at the fiftieth file was the thing that made a
+    #  camera card look like a hundred and fifty unrelated problems. Sorted,
+    #  the page is a page of files, because that is what the reader asked for.
+    if filters.grouped:
+        groups, decisions = grouped_page(conn, filters, settings)
+        page_size = UNITS_PAGE
+    else:
+        groups = _flat_group(_proposal_rows(conn, filters, settings=settings))
+        decisions = total
+        page_size = PAGE_SIZE
     audit_groups = audit_view(conn, settings)
     return {
         "filters": filters,
-        "groups": _group_rows(rows, totals) if filters.grouped else _flat_group(rows),
+        "groups": groups,
         "sorts": SORTS,
         "states": STATES,
         "filtered": filters.narrowed,
         "categories": CATEGORIES,
         "dest_folders": destination_folders(conn),
+        # Files, for the sentence that says how much is in the inbox.
         "total": total,
-        "page_size": PAGE_SIZE,
-        "has_next": filters.page * PAGE_SIZE < total,
+        # Decisions, which is what the pager moves through.
+        "decisions": decisions,
+        "grouped": filters.grouped,
+        "page_size": page_size,
+        "has_next": filters.page * page_size < decisions,
         "has_prev": filters.page > 1,
         # "page 3" alone tells you nothing about how much is left.
-        "page_count": max(1, -(-total // PAGE_SIZE)),
-        "range_start": 0 if not total else (filters.page - 1) * PAGE_SIZE + 1,
-        "range_end": min(filters.page * PAGE_SIZE, total),
+        "page_count": max(1, -(-decisions // page_size)),
+        "range_start": 0 if not decisions else (filters.page - 1) * page_size + 1,
+        "range_end": min(filters.page * page_size, decisions),
         # Filtered out of the list above; without a number the totals would
         # simply be wrong and nothing would say why.
         "vanished": vanished_count(conn),
@@ -700,12 +712,25 @@ def _proposal_rows(
     *,
     proposal_ids: list[int] | None = None,
     settings: Settings | None = None,
+    limit: int | None = None,
+    offset: int | None = None,
 ) -> list[dict[str, Any]]:
+    """One page of rows, enriched.
+
+    `limit`/`offset` exist for the grouped view, which has already decided
+    exactly which proposals belong on the page — it pages *decisions*, and the
+    rows follow from that rather than the other way round.
+    """
     where, params = _where(filters)
     if proposal_ids:
         where = f"{where} AND p.id IN ({_placeholders(proposal_ids)})"
         params.extend(proposal_ids)
-    params = [*params, PAGE_SIZE, (filters.page - 1) * PAGE_SIZE]
+    limit = len(proposal_ids) if limit is None and proposal_ids else limit
+    params = [
+        *params,
+        PAGE_SIZE if limit is None else limit,
+        (filters.page - 1) * PAGE_SIZE if offset is None else offset,
+    ]
     rows = conn.execute(
         f"""
         SELECT p.*, i.relpath AS item_relpath, i.state AS item_state,
@@ -961,6 +986,261 @@ def _matching_ids(conn: sqlite3.Connection, filters: ReviewFilters) -> list[int]
             params,
         )
     ]
+
+
+#  How many *decisions* a grouped Review page holds, and how much of each one it
+#  shows before you ask for more.
+#
+#  The page used to hold fifty files, which meant a coherent thing — an album, a
+#  camera card, a document set — was divided wherever the fiftieth file happened
+#  to fall. One thing is one decision, so the page counts things.
+#
+#  Five members is a preview, not the group: enough to see what the group is
+#  made of, few enough that twenty groups is a page and not a scroll. The rest
+#  is one click away and counted honestly in the heading.
+UNITS_PAGE = 25
+MEMBER_PREVIEW = 5
+#  How much more arrives each time somebody asks to see more of one group.
+MEMBER_PAGE = 25
+
+
+def _unit_select(filters: ReviewFilters) -> tuple[str, list[object]]:
+    """Every decision waiting, one row each, with what the heading needs.
+
+    A *unit* is a group with more than one member, or a single loose proposal.
+    Both are one decision, so both are one row here, and the page is a page of
+    these rather than a page of files.
+
+    Deliberately an aggregate over the existing tables and not a new one. The
+    `groups` table already says what belongs together; nothing here needs
+    storing, and a materialised copy would be a second account of the same
+    fact, free to disagree with it.
+    """
+    where, params = _where(filters)
+    return (
+        f"""
+        SELECT COALESCE('g' || p.group_id, 'p' || p.id) AS unit,
+               p.group_id AS group_id,
+               COALESCE(g.kind, 'ungrouped') AS kind,
+               COALESCE(g.label, 'Ungrouped') AS label,
+               COUNT(*) AS members,
+               MAX(p.confidence) AS best,
+               MIN(p.confidence) AS worst,
+               AVG(p.confidence) AS mean,
+               SUM(CASE WHEN p.confidence < ? THEN 1 ELSE 0 END) AS doubtful,
+               SUM(CASE WHEN p.dest_relpath IS NULL OR p.dest_relpath = '' THEN 1 ELSE 0 END)
+                 AS undecided,
+               COUNT(DISTINCT p.category) AS categories,
+               MIN(p.category) AS category,
+               MAX(p.id) AS anchor
+        FROM proposals p
+        JOIN items i ON i.id = p.item_id
+        LEFT JOIN groups g ON g.id = p.group_id
+        WHERE {where}
+        GROUP BY unit
+        """,  # noqa: S608 - where comes from _where; every value is bound
+        [CONFIDENT, *params],
+    )
+
+
+#  Groups first, in the order they have always been shown, then the loose files
+#  — `ungrouped` sorts after every real kind, which is why the heading order has
+#  never needed spelling out. Within that, best guess first and then the newest,
+#  which is the default row sort applied to whole decisions.
+_UNIT_ORDER = "ORDER BY kind, label, best DESC, anchor DESC"
+
+
+def unit_count(conn: sqlite3.Connection, filters: ReviewFilters) -> int:
+    """How many decisions are waiting. Never `len()` of a page."""
+    sql, params = _unit_select(filters)
+    return int(
+        conn.execute(f"SELECT COUNT(*) FROM ({sql})", params).fetchone()[0]  # noqa: S608
+    )
+
+
+def unit_page(conn: sqlite3.Connection, filters: ReviewFilters) -> list[dict[str, Any]]:
+    """One bounded page of decisions, without reading a single member."""
+    sql, params = _unit_select(filters)
+    offset = max(0, (max(1, filters.page) - 1) * UNITS_PAGE)
+    rows = conn.execute(
+        f"SELECT * FROM ({sql}) {_UNIT_ORDER} LIMIT ? OFFSET ?",  # noqa: S608
+        [*params, UNITS_PAGE, offset],
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def member_ids(
+    conn: sqlite3.Connection,
+    filters: ReviewFilters,
+    units: list[dict[str, Any]],
+    *,
+    limit: int = MEMBER_PREVIEW,
+) -> dict[str, list[int]]:
+    """A bounded slice of each unit's members, in one statement.
+
+    `ROW_NUMBER` per unit is what keeps a three-thousand-file group from
+    putting three thousand rows on a page that shows five of them. Without it
+    the only ways to bound this are one query per group, or fetching
+    everything and throwing most of it away.
+    """
+    keys = [str(unit["unit"]) for unit in units]
+    if not keys:
+        return {}
+    where, params = _where(filters)
+    placeholders = ",".join("?" * len(keys))
+    rows = conn.execute(
+        f"""
+        SELECT unit, id FROM (
+          SELECT COALESCE('g' || p.group_id, 'p' || p.id) AS unit, p.id AS id,
+                 ROW_NUMBER() OVER (
+                   PARTITION BY COALESCE('g' || p.group_id, 'p' || p.id)
+                   ORDER BY p.confidence DESC, p.id DESC
+                 ) AS seat
+          FROM proposals p
+          JOIN items i ON i.id = p.item_id
+          WHERE {where} AND COALESCE('g' || p.group_id, 'p' || p.id) IN ({placeholders})
+        )
+        WHERE seat <= ?
+        """,  # noqa: S608 - where comes from _where; keys are bound
+        [*params, *keys, limit],
+    ).fetchall()
+    found: dict[str, list[int]] = {}
+    for row in rows:
+        found.setdefault(str(row["unit"]), []).append(int(row["id"]))
+    return found
+
+
+def group_members(
+    conn: sqlite3.Connection,
+    filters: ReviewFilters,
+    unit: str,
+    *,
+    page: int = 1,
+    settings: Settings | None = None,
+) -> dict[str, object]:
+    """One bounded page of a single decision's members.
+
+    The rest of a group, asked for rather than sent. A three-thousand-file
+    event costs the Review page five rows until somebody wants more, and then
+    it costs a page at a time — the expansion is bounded for the same reason
+    the list is.
+
+    Filters are the page's, so expanding a group inside a narrowed view shows
+    the members that view is about and not the ones it excluded.
+    """
+    page = max(1, page)
+    #  Expansion continues where the preview stopped, not where a page of
+    #  twenty-five would have. Page 1 *is* the preview; page 2 starts at seat
+    #  six, not seat twenty-six. Getting this wrong leaves a silent hole in the
+    #  middle of a group — twenty members no page ever shows — which is the one
+    #  failure this whole design exists to prevent.
+    lower = 0 if page <= 1 else MEMBER_PREVIEW + (page - 2) * MEMBER_PAGE
+    upper = MEMBER_PREVIEW if page <= 1 else lower + MEMBER_PAGE
+    where, params = _where(filters)
+    rows = conn.execute(
+        f"""
+        SELECT id FROM (
+          SELECT p.id AS id, COALESCE('g' || p.group_id, 'p' || p.id) AS unit,
+                 ROW_NUMBER() OVER (
+                   PARTITION BY COALESCE('g' || p.group_id, 'p' || p.id)
+                   ORDER BY p.confidence DESC, p.id DESC
+                 ) AS seat
+          FROM proposals p
+          JOIN items i ON i.id = p.item_id
+          WHERE {where}
+        )
+        WHERE unit = ? AND seat > ? AND seat <= ?
+        ORDER BY seat
+        """,  # noqa: S608 - where comes from _where; the rest is bound
+        [*params, unit, lower, upper],
+    ).fetchall()
+    ids = [int(row["id"]) for row in rows]
+    if not ids:
+        return {"rows": [], "unit": unit, "more": 0, "next_page": 0}
+    found = {
+        int(row["id"]): row
+        for row in _proposal_rows(conn, filters, proposal_ids=ids, settings=settings)
+    }
+    members = [found[pid] for pid in ids if pid in found]
+    total = _unit_total(conn, filters, unit)
+    seen = lower + len(members)
+    return {
+        "rows": members,
+        "unit": unit,
+        "total": total,
+        "shown": seen,
+        "more": max(0, total - seen),
+        "next_page": page + 1 if total > seen else 0,
+    }
+
+
+def _unit_total(conn: sqlite3.Connection, filters: ReviewFilters, unit: str) -> int:
+    where, params = _where(filters)
+    return int(
+        conn.execute(
+            f"""
+            SELECT COUNT(*) FROM proposals p JOIN items i ON i.id = p.item_id
+            WHERE {where} AND COALESCE('g' || p.group_id, 'p' || p.id) = ?
+            """,  # noqa: S608 - where comes from _where
+            [*params, unit],
+        ).fetchone()[0]
+    )
+
+
+def grouped_page(
+    conn: sqlite3.Connection, filters: ReviewFilters, settings: Settings | None = None
+) -> tuple[list[dict[str, object]], int]:
+    """The grouped view: decisions paged, members previewed.
+
+    Returns the sections the template already knows how to draw, so the page
+    keeps its shape — what changed is that a section is chosen as a whole
+    rather than assembled from whichever files a row-limit happened to catch.
+    """
+    units = unit_page(conn, filters)
+    total = unit_count(conn, filters)
+    if not units:
+        return [], total
+    by_unit = member_ids(conn, filters, units)
+    wanted = [pid for ids in by_unit.values() for pid in ids]
+    rows = {
+        int(row["id"]): row
+        for row in _proposal_rows(conn, filters, proposal_ids=wanted, settings=settings)
+    }
+    sections: list[dict[str, object]] = []
+    loose: list[dict[str, Any]] = []
+    for unit in units:
+        members = [rows[pid] for pid in by_unit.get(str(unit["unit"]), []) if pid in rows]
+        if not members:
+            continue
+        #  A decision about one file is a row, not a section with a heading, a
+        #  select-all and a margin above it. That was true before groups were
+        #  paged and is still true; what changed is that "one file" now means
+        #  the whole group has one, never "one landed on this page".
+        if int(unit["members"]) <= 1:
+            loose.extend(members)
+            continue
+        section = {
+            "kind": str(unit["kind"]),
+            "label": str(unit["label"]),
+            "rows": members,
+            "total": int(unit["members"]),
+            "unit": str(unit["unit"]),
+            "group_id": unit["group_id"],
+            "best": float(unit["best"] or 0.0),
+            "worst": float(unit["worst"] or 0.0),
+            "mean": float(unit["mean"] or 0.0),
+            "doubtful": int(unit["doubtful"] or 0),
+            "undecided": int(unit["undecided"] or 0),
+            "category": "" if int(unit["categories"] or 0) > 1 else str(unit["category"] or ""),
+            "more": max(0, int(unit["members"]) - len(members)),
+        }
+        _shorten_names(section)
+        sections.append(section)
+    if loose:
+        sections.append(
+            {"kind": "ungrouped", "label": "Ungrouped", "rows": loose, "total": len(loose)}
+        )
+    return sections, total
 
 
 def _flat_group(rows: list[dict[str, Any]]) -> list[dict[str, object]]:

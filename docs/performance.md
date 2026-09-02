@@ -201,6 +201,32 @@ so it is not urgent — but it will not survive another order of magnitude.
 is the per-statement cost of larger tables, not a structural fault. It polls
 every five seconds, so 620 ms at a million is worth a look eventually.
 
+## Review pages decisions, 2026-09-02
+
+Review now pages *decisions* rather than files: twenty-five units a page, where
+a unit is a group with more than one member or a single loose file, and each
+group shows five members with an honest count and a bounded expansion.
+
+At a million files, the page still completes and its cost still does not grow
+with the library:
+
+| | before (files) | after (decisions) |
+|---|---|---|
+| Review page 1 | 543 ms (186 queries) | 737 ms (414) |
+| Review page 50 | 466 ms (186) | 621 ms (34) |
+| Review, sorted view | 457 ms (186) | 534 ms (186) |
+
+The statement count now varies with **how many rows the page draws** — 34 on a
+page of large groups, 414 on a page of loose files — because three queries per
+row (`is_duplicate_proposal`, and `similar_arrival` twice) have always been
+per-row and the page can now draw up to 125 rows instead of 50. It is bounded
+by `UNITS_PAGE × MEMBER_PREVIEW` and does not move with the library or the
+queue, which `tests/test_scale_surfaces.py` holds.
+
+Batching those three is the next performance item and would take the page back
+under 400 ms while making a larger preview cheap. It is recorded rather than
+done, for the same reason as everything else here.
+
 ## Human decision scale
 
 The question M1-01 exists to answer: *how many decisions does a library of this

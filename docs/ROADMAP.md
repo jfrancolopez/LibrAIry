@@ -145,8 +145,16 @@ bounded counts. That is the shape — this generalizes it.
   100k and 300k as well. Four fixes, each found by profiling after the previous
   one landed — see [performance.md](performance.md). Review is no longer a
   scale item; what remains here is the interaction design.
-- Group identity, counts and confidence resolved in SQL, not in Python after a
-  `LIMIT`.
+- ~~Group identity, counts and confidence resolved in SQL, not in Python after a
+  `LIMIT`.~~ **Done 2026-09-02.** `_unit_select` aggregates the existing
+  `groups`/`proposals` tables into one row per decision — total members,
+  best/worst/mean confidence, how many are doubtful, how many have no
+  destination, category — and the page is a `LIMIT` over *that*. No new table:
+  `groups` already says what belongs together, and a materialised copy would be
+  a second account of the same fact.
+- ~~An ordering that keeps a group together.~~ **Already true**, which the
+  M1-01 correction established: `_order_by` sorts by `g.kind, g.label` before
+  confidence.
 - An ordering that keeps a group together, since sorting by confidence is half
   the splitting.
 - Group-level paging, with member paging inside a group.

@@ -137,6 +137,7 @@ from librairy.web.review import (
     duplicate_comparison,
     edit_proposal,
     filters_from_query,
+    group_members,
     queue_data,
     review_data,
 )
@@ -985,6 +986,46 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             request,
             "partials/review_list.html",
             review_data(conn, filters, settings),
+        )
+
+    @app.get("/review/group/{unit}", response_class=HTMLResponse)
+    def review_group_members(
+        request: Request,
+        unit: str,
+        category: str | None = None,
+        state: str = "proposed",
+        min_confidence: OptionalFloat = None,
+        max_confidence: OptionalFloat = None,
+        has_destination: str | None = None,
+        page: PageNumber = 1,
+        sort: str | None = None,
+    ) -> HTMLResponse:
+        """More of one decision, a page at a time.
+
+        The Review page shows a preview of each group; this is the rest of one,
+        asked for rather than sent. Bounded like everything else — a
+        three-thousand-file event expands twenty-five at a time and never in
+        one go.
+        """
+        filters = filters_from_query(
+            category=category,
+            state=state,
+            min_confidence=min_confidence,
+            max_confidence=max_confidence,
+            has_destination=has_destination,
+            page=1,
+            sort=sort,
+        )
+        data = group_members(conn, filters, unit, page=page, settings=settings)
+        return TEMPLATES.TemplateResponse(
+            request,
+            "partials/review_members.html",
+            {
+                **data,
+                "filters": filters,
+                "qs": f"state={filters.state}&category={filters.category or ''}"
+                f"&sort={filters.sort}",
+            },
         )
 
     @app.post("/review/undo", response_class=HTMLResponse)

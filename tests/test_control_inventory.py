@@ -244,6 +244,11 @@ ACTION_MAY_HAVE_SEVERAL_LABELS = {
     #  Filter links and navigation both arrive at Review. "Clear" empties the
     #  filters you are looking at; "Go to Review" is a signpost from elsewhere.
     "GET /review",
+    #  A pager. `Next ›` and `Last »` are one endpoint and two destinations —
+    #  the page number is the whole difference and it is in the href, not the
+    #  label. It became visible when Review started paging decisions rather
+    #  than files: the same fixture now has more than one page.
+    "GET /review/list",
     "GET /browse",
     "GET /history",
     #  Already in Review, the word is `Remove approval` — there is nowhere to

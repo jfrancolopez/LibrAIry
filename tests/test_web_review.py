@@ -42,7 +42,7 @@ def test_review_renders_groups_filters_and_htmx_pagination(tmp_path: Path) -> No
     filtered = client.get("/review/list?category=music")
 
     assert "Kind of Blue" in page.text
-    assert "2 shown" in page.text
+    assert "2 files" in page.text  # the heading counts the group, not the preview
     assert "Italy" not in page.text
     assert "hx-get=\"/review/list\"" in page.text
     assert "music/a.flac" in filtered.text
@@ -95,10 +95,13 @@ def test_review_large_seed_is_paginated_and_fast(tmp_path: Path) -> None:
     elapsed = time.perf_counter() - started
 
     assert response.status_code == 200
-    assert "of <strong>5000</strong>" in response.text
+    assert "of <strong>5000</strong>" in response.text  # 5000 loose files = 5000 decisions
     # Row checkboxes only — the header select-all is a checkbox too.
-    assert response.text.count('name="proposal_id" type="checkbox"') == 50
-    assert "Page <strong>1</strong> of <strong>100</strong>" in response.text
+    #  Twenty-five *decisions*, not fifty files. Every proposal in this seed is
+    #  loose, so a decision is a file and the page holds twenty-five of them;
+    #  a seed of albums would hold twenty-five albums.
+    assert response.text.count('name="proposal_id" type="checkbox"') == 25
+    assert "Page <strong>1</strong> of <strong>200</strong>" in response.text
     assert "Next" in response.text
     assert elapsed < 1.0
 
@@ -409,10 +412,12 @@ def test_pager_says_how_much_there_is_not_just_the_page_number(tmp_path: Path) -
     first = client.get("/review/list").text
     middle = client.get("/review/list?page=2").text
 
-    assert "Showing <strong>1–50</strong> of <strong>120</strong>" in first
-    assert "Page <strong>1</strong> of <strong>3</strong>" in first
+    assert "Showing <strong>1–25</strong> of" in first
+    assert "<strong>120</strong>" in first
+    #  120 loose files are 120 decisions; twenty-five to a page.
+    assert "Page <strong>1</strong> of <strong>5</strong>" in first
     assert "First" not in first  # already there
-    assert "Showing <strong>51–100</strong> of <strong>120</strong>" in middle
+    assert "Showing <strong>26–50</strong> of <strong>120</strong>" in middle
     assert "« First" in middle
     assert "Last »" in middle
 

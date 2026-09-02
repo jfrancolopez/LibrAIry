@@ -43,27 +43,46 @@
            selection survives it, because the checkboxes stay in the document
            and a closed `<details>` still submits them. #}
         <details class="review-group" open>
+          {# The heading is the decision. Everything on this line is a whole-group
+             fact read from SQL, never counted from the rows below it — the rows
+             are a preview and would give a different, smaller answer. #}
           <summary>
             <span class="group-name">{{ group.label }}</span>
-            {# "12 shown" of what? A group larger than a page shows the members
-               that landed on it, and the heading has to say so — otherwise a
-               150-photo event reads as twelve photographs. The total is
-               counted in SQL under the same filters as the list. #}
-            {% if group.total and group.total > group.rows|length %}
-              <span class="muted">{{ group.rows|length }} of {{ group.total }} shown</span>
-            {% else %}
-              <span class="muted">{{ group.rows|length }} shown</span>
+            <span class="muted">{{ group.total }} file{{ '' if group.total == 1 else 's' }}</span>
+            {% if group.category %}<span class="badge">{{ group.category }}</span>{% endif %}
+            {% if group.best is defined and group.best %}
+              {# One number would hide the case that matters: a group where most
+                 files are certain and three are not is not an 88% group, it is
+                 a confident group with three things to look at. #}
+              <span class="muted">{{ (group.mean * 100) | round | int }}%</span>
+              {% if group.doubtful %}
+                <span class="badge badge-warn">{{ group.doubtful }} to look at</span>
+              {% endif %}
+              {% if group.undecided %}
+                <span class="badge badge-warn">{{ group.undecided }} with no destination</span>
+              {% endif %}
             {% endif %}
           </summary>
           <label class="group-pick">
             <input type="checkbox" class="select-all" aria-label="Select every file in {{ group.label }}">
             Select group
           </label>
-          <div class="proposal-list">
+          <div class="proposal-list" id="members-{{ group.unit }}">
             {% for proposal in group.rows %}
               {% include "partials/review_row.html" %}
             {% endfor %}
           </div>
+          {% if group.more %}
+            {# The rest of the group, asked for rather than sent. A three-thousand
+               file event costs this page five rows until somebody wants more. #}
+            <p class="muted group-more">
+              Showing {{ group.rows|length }} of {{ group.total }}.
+              <button type="button" class="btn-ghost"
+                hx-get="/review/group/{{ group.unit }}?page=2&amp;{{ qs }}"
+                hx-target="#members-{{ group.unit }}" hx-swap="beforeend"
+                hx-indicator="closest .group-more">Show more</button>
+            </p>
+          {% endif %}
         </details>
       {% else %}
         <section class="review-group">
@@ -82,7 +101,11 @@
   {% if page_count > 1 or total %}
     <nav class="pager" aria-label="Review pages">
       <span class="pager-count">
-        {% if total %}Showing <strong>{{ range_start }}–{{ range_end }}</strong> of <strong>{{ total }}</strong>{% else %}No matches{% endif %}
+        {# The pager moves through decisions, not files, whenever grouping is on:
+           an album is one decision whether it holds three files or three hundred,
+           and a pager counting files would jump by a different amount on every
+           press. The file count rides alongside so neither number is a surprise. #}
+        {% if decisions %}Showing <strong>{{ range_start }}–{{ range_end }}</strong> of <strong>{{ decisions }}</strong>{% if grouped and total != decisions %} decisions <span class="muted">({{ total }} files)</span>{% endif %}{% else %}No matches{% endif %}
       </span>
       {% if page_count > 1 %}
         <span class="spacer"></span>

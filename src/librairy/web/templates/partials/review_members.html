@@ -1,0 +1,16 @@
+{# More of one decision, appended to the members already on the page.
+
+   Swapped in with `beforeend`, so what is already there — including anything
+   selected — stays exactly as it was. Selection is part of a decision in
+   progress and must never be thrown away by a view changing. #}
+{% for proposal in rows %}
+  {% include "partials/review_row.html" %}
+{% endfor %}
+{% if next_page %}
+  <p class="muted group-more" id="more-{{ unit }}">
+    Showing {{ shown }} of {{ total }}.
+    <button type="button" class="btn-ghost"
+      hx-get="/review/group/{{ unit }}?page={{ next_page }}&amp;{{ qs }}"
+      hx-target="#members-{{ unit }}" hx-swap="beforeend">Show more</button>
+  </p>
+{% endif %}
