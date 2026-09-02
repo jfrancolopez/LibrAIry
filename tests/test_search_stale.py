@@ -331,6 +331,13 @@ def test_the_page_does_not_render_a_ghost(tmp_path: Path) -> None:
     classify(conn)
     (settings.library_dir / "Photos" / "gone.jpg").unlink()
     scan(conn, settings)
+    #  What an idle worker cycle does. The consistency line reports the last
+    #  comparison rather than making one, because making one reads the whole
+    #  library and the whole index.
+    from librairy.consistency import library_consistency, record_consistency
+
+    record_consistency(conn, library_consistency(conn, settings))
+    conn.commit()
 
     page = client.get("/browse", params={"q": "jpg", "root": "library"}).text
     results = page.split('id="search-results"')[1]

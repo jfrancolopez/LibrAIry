@@ -54,6 +54,17 @@ you have been going through for a fortnight is still yours.
 
 ### Performance
 
+Every page in LibrAIry now completes at a million files, and what a page costs
+no longer depends on how much the library holds.
+
+**Browse** compared the whole library against the whole index every time you
+opened it. It reports the last comparison and how old it is now, the way the
+database check already did — 1,188 ms and a million-row read, to 0.2 ms.
+**Health** asked the same three expensive questions twice per render, from two
+halves of the page that could not see each other. **Search** asked three
+questions per result, so fifty results cost a hundred and fifty database
+queries; it costs six, and `history` gained the index it never had.
+
 Building a page of Review rows no longer asks a question per row. Whether a
 proposal was staged by the duplicate finder is read from evidence the page is
 already holding, and the filed copy an arrival resembles is found for the whole

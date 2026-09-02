@@ -1617,3 +1617,68 @@ def test_an_automatic_approval_teaches_the_learner_nothing(tmp_path: Path) -> No
     after = conn.execute("SELECT COUNT(*) FROM decision_events").fetchone()[0]
 
     assert after == before
+
+
+def test_groups_outliers_and_tiers_hold_together(tmp_path: Path) -> None:
+    """The three M1 Review features on one page, because they overlap.
+
+    A group with an outlier split out of it, under a filter, with a settled
+    file among its members. Each has its own notion of what an action covers,
+    and the whole point of `_UNIT_SPLIT` being one expression is that they
+    cannot disagree about it.
+    """
+    from librairy.web.review import ReviewFilters, unit_proposal_ids
+
+    client, conn = client_for(tmp_path)
+    group = insert_group(conn, "album", "Some Album")
+    conn.execute("UPDATE groups SET dest_base='Music/Rock/Some Album' WHERE id=?", (group,))
+    #  Four ordinary tracks, one identified by a catalog, one going elsewhere.
+    for n in range(4):
+        seed_proposal(
+            conn, f"al/{n}.flac", "music", f"Music/Rock/Some Album/{n}.flac", 0.94, group
+        )
+    settled = seed_member(
+        conn,
+        "al/known.flac",
+        "music",
+        "Music/Rock/Some Album/known.flac",
+        0.94,
+        group,
+        [EvidenceEntry("musicbrainz", "recording", "Some Track", 0.95)],
+    )
+    stray = seed_proposal(conn, "al/stray.flac", "music", "Music/Pop/stray.flac", 0.94, group)
+
+    page = client.get("/review/list").text
+    filters = ReviewFilters()
+
+    #  The group holds five; the odd one out is its own decision.
+    assert "Approve all 5" in page
+    assert "the odd ones out" in page
+    assert unit_proposal_ids(conn, filters, f"x{group}") == [stray]
+    assert stray not in unit_proposal_ids(conn, filters, f"g{group}")
+    assert settled in unit_proposal_ids(conn, filters, f"g{group}")
+
+    #  A settled file inside a group is still settled, and the batch takes it
+    #  without touching the group it belongs to.
+    client.post(
+        "/review/action",
+        data={"action": "approve", "settled": "true"},
+        headers={"x-csrf-token": client.cookies["csrf_token"]},
+    )
+    assert proposal_status(conn, settled) == "approved"
+    assert proposal_status(conn, stray) == "proposed"
+
+    #  And the group's own action still covers exactly what it says: four left
+    #  waiting, the outlier untouched.
+    narrowed = client.get("/review/list").text
+    assert "Approve all 4" in narrowed
+    client.post(
+        "/review/action",
+        data={"action": "approve", "unit": f"g{group}"},
+        headers={"x-csrf-token": client.cookies["csrf_token"]},
+    )
+    assert proposal_status(conn, stray) == "proposed"
+    still = conn.execute(
+        "SELECT COUNT(*) FROM proposals WHERE group_id=? AND status='proposed'", (group,)
+    ).fetchone()[0]
+    assert still == 1, "only the odd one out is left"

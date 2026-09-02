@@ -45,6 +45,22 @@ Effort is S / M / L / XL. Risk is Low / Medium / High.
 The milestone that changes daily use the most, and the one everything else is
 sized against.
 
+## M1 at close — 2026-09-02
+
+| | |
+|---|---|
+| **M1-01** Scale measured | COMPLETE |
+| **M1-02** The group is a real object | COMPLETE |
+| **M1-03** Media-specific group previews | **PARTIAL** — photos, music, video complete; documents have no group to render, carried to M2-06 |
+| **M1-04** Outliers found for you | COMPLETE |
+| **M1-05** Confidence tiers | COMPLETE |
+| **M1-06** Pages that do not survive their tables | **PARTIAL** — Browse and Search complete; Health at 1.8 s against "well under a second", carried to M2 |
+
+Nothing here is called complete because a template exists. M1-03 built four
+faces and only three of them can be reached, and it says so.
+
+---
+
 ## M1-01 · Measure the current program at scale
 
 **P0 · M · Low risk · DONE 2026-09-01** — results in
@@ -425,25 +441,33 @@ makes them degrade or fail with the size of a table they read. All three are
 named with file and line in [performance.md](performance.md).
 
 - ~~**Health is quadratic and unusable at 100,000 files.**~~ **DONE
-  2026-09-02 — 22.3 s to 2.1 s at a million**, and it completes at every
-  population. Three causes, all measured: the quadratic `unindexed`, an
-  `OR`-joined dependency query at 17 s, and `PRAGMA quick_check` verifying the
-  whole database on every render. What is left is ~300 ms of FTS counting asked
-  three times per page; asking once is the next step and needs a shared count,
-  not a faster query. The original text follows because the shape is worth
-  remembering.
+  2026-09-02 — 22.3 s to 1.8 s at a million**, and it completes at every
+  population. Four causes, all measured: the quadratic `unindexed`, an
+  `OR`-joined dependency query at 17 s, `PRAGMA quick_check` verifying the
+  whole database on every render, and — the last of them — the same three
+  counts asked twice from two parts of the page that could not see each other,
+  1,373 ms of one render. Counted once now and `current` derived by subtraction
+  rather than paying 325 ms for a join that returns the same number. The
+  original text follows because the shape is worth remembering.
   `search_health.py:156` counts unindexed items with a `NOT EXISTS` against
   `search_fts`, whose `item_id` is declared `UNINDEXED` — so it scans the whole
   FTS table once per row of `items`. The query planner says so without any
   timing. `health_data` then asks for it **twice** per render. Health is the
   page that exists to say something is wrong, and it is the most broken page in
   the program.
-- **Search counts history per result row.** `search.py:343`, fifty full scans of
-  `history` per page, which has no index on `(dest_root, dest_relpath)`. 3.1 s
-  at a million.
-- **Browse home reads the whole library in one statement.** Bounded in
-  statements, unbounded in rows. 1.2 s at a million; headroom, but not another
-  order of magnitude.
+- ~~**Search counts history per result row.**~~ **DONE 2026-09-02 — 153
+  statements to 6.** Three queries per result, not one: the item, its proposal,
+  and the history count. Batched to three for the page, and `history` gained
+  the index it had never had (**migration 050**). The latency did not move,
+  because the per-row queries were never the latency — 31 ms of a 2.2 s page —
+  and the real finding is below.
+- ~~**Browse home reads the whole library in one statement.**~~ **DONE
+  2026-09-02 — 1,188 ms and a million-row read, to 0.2 ms and one statement.**
+  Comparing the library against the index is maintenance, not a render: the
+  worker does it on an idle cycle and Browse reports the verdict and its age.
+  The same arrangement `PRAGMA quick_check` already has, and it also fixes the
+  half this harness never measured — the filesystem walk, which has no files to
+  walk here and would have every one of a million in a real library.
 
 **Desired outcome.** Every surface's cost is bounded by what it displays, not by
 what the database holds.
@@ -456,11 +480,31 @@ a query. An index or a bound for Browse home.
 one of the few genuinely important numbers on Health. Add an index without
 measuring that it is used. Treat this as architecture: it is three queries.
 
-**Acceptance.** Health completes in well under a second at 1M — **not yet met:
-2.1 s**, with the remaining cause named and cheap to fix. The `xfail(strict=True)`
-test on the correlated scan is gone, replaced by a real assertion on what the
-function actually executes. Search and Browse are **untouched** and still
-degrade with the library: 2.6 s and 1.2 s at a million.
+**Acceptance.** Every surface's cost bounded by what it displays.
+
+    Browse      COMPLETE   0.2 ms, one statement, at any population
+    Search      COMPLETE   6 statements; under 2 ms for a real query
+    Health      PARTIAL    1.8 s at 1M against a target of "well under a second"
+
+**Health is the one that did not fully land, and the reason is worth keeping.**
+What remains is not a mistake anywhere: counting an FTS5 table means reading it
+(224 ms at a million) and relating its rows to `items` means joining it
+(321 ms). Roughly a second of Health's 1.8 s is those two questions, asked once
+each, with no cheaper shape found. Making them cheap needs a *recorded* verdict
+— the arrangement `PRAGMA quick_check` and the FTS integrity check already have,
+and which Browse's consistency line just joined — or a different index shape.
+Neither is speculative and neither is done. **Carried into M2** rather than
+called complete.
+
+**Search's headline was a harness artefact, and that is the finding.** `Album*`
+matches all one million rows of the synthetic library, because the generator
+names every file after its category; a query that names a file has always been
+under two milliseconds. The genuine improvement underneath — ranking inside the
+index before joining, 4.7× — was implemented, measured and **reverted**: it
+moves the liveness filter after the `LIMIT`, which shortens a page and pushes a
+real result onto the next one, exactly as `search._where` warns and
+`tests/test_search_stale.py` catches. Carried into M2 with the constraint
+attached.
 
 **Scale.** 1M items, 100k history rows, 50k findings.
 

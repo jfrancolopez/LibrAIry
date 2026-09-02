@@ -1,19 +1,21 @@
 # Performance and scale
 
-**M1-01, measured 2026-09-01 against `v1.3.1` / schema 47.**
+**Measured 2026-09-01 against `v1.3.1` / schema 47, and again 2026-09-02 at
+the close of M1 against schema 50.**
 
-Two of LibrAIry's eight surfaces do not work at the scale it is designed for.
-Five do, comfortably. One is heading the wrong way and has time.
+M1-01 found two of LibrAIry's eight surfaces unusable at the scale it is
+designed for. This document is the measurement first and the work second,
+because M1-01's own rule is that a measured bottleneck is a *result* and not
+automatically a work order — the sections below are in the order they were
+found, and the summary of where everything landed is
+[M1 close](#m1-close-2026-09-02).
 
-That is the whole result. Everything below is how it was measured and what
-exactly is wrong, because [ROADMAP.md](ROADMAP.md) M1-01 says a measured
-bottleneck is a *result*, not a work order — none of it is fixed here.
-
-    Review      was unusable at every population; now pages decisions rather
-                than files, on a flat 40 statements at a million
-    Health      never finished; now 2.1 s at a million — usable, not yet good
-    Search      2.6 s at a million; degrading linearly, cause known, not fixed
-    Browse      1.2 s at a million; one unbounded query, not fixed
+    Review      was unusable at every population; now 728 ms at a million on
+                a flat 42 statements, paging decisions rather than files
+    Health      never finished; now 1.8 s at a million — usable, not yet good
+    Search      under 2 ms for a real query; 2.3 s for one matching the whole
+                library, which is what the old headline measured
+    Browse      1.2 s and a million-row read; now 0.2 ms and one statement
     Dashboard   349 ms at a million; bounded
     Commit      10 ms at a million; bounded
     Quarantine  21 ms at a million; bounded
@@ -255,6 +257,68 @@ exactly as `_later_decisions` was fixed. And the second column **had no index
 at all**: `UNIQUE (item_id, similar_item_id, kind)` indexes the first, and
 nothing indexed the second. That is **migration 048**, and the first schema
 change since 1.3.1 shipped.
+
+## M1 close, 2026-09-02
+
+Every surface, at every population, after M1-02 through M1-06. Milliseconds
+first, statements in brackets. Idle machine; the caveat about machine load
+applies to the numbers and never to the statement counts.
+
+| | 100k | 300k | 1M |
+|---|---|---|---|
+| Review page 1 | 103 (42) | 236 (42) | **728 (42)** |
+| Review page 50 | 67 (34) | 192 (36) | 624 (36) |
+| Review, sorted | 59 (38) | 147 (38) | 477 (38) |
+| Dashboard | 32 (22) | 125 (22) | 368 (22) |
+| Health | 248 (39) | 561 (39) | **1,773 (39)** |
+| Health, attention | 91 (19) | 255 (19) | 991 (19) |
+| Commit summary | 0.3 (2) | 0.7 (2) | 3.6 (2) |
+| Commit page 1 | 1.5 (2) | 3.4 (2) | 10.6 (2) |
+| Quarantine page 1 | 6 (24) | 35 (23) | 38 (24) |
+| Search, selective | — | — | **< 2 (6)** |
+| Search, matching everything | 206 (6) | 632 (6) | 2,260 (6) |
+| Search unfiltered | 41 (6) | 105 (6) | 367 (6) |
+| Browse home | 0.1 (1) | 0.1 (1) | **0.2 (1)** |
+
+Against where M1-01 found them: Review never finished at any population and is
+728 ms on a statement count that does not move; Health never finished and is
+1.8 s; Browse read a million rows to draw a line and reads none.
+
+**Statement counts are flat in the library and flat in the queue.** Review's 42
+is the shape of a page — twenty-five decisions, five members previewed each —
+and the only thing that moves it is how many rows the page draws. Search was
+153 and is 6.
+
+### What the "Search 2.6 s" headline actually was
+
+`Album*` matches **all one million rows** of the synthetic library, because the
+generator names every file after its category. That is not a search; it is a
+query for the whole library, and it is the number this report has been quoting.
+
+A selective query — `IMG_004221*`, `Bee*`, anything that names a file — is
+**under two milliseconds at a million**, and always was.
+
+The real finding underneath it is still worth having. `ORDER BY bm25()` over a
+join cannot be answered until every match has been joined and scored, so a
+query matching a large share of a real library pays for that share. Ranking
+inside the index first and joining the survivors is 4.7× faster — and it is
+**not taken**, because it moves the liveness filter after the `LIMIT`, and
+`search._where` explains why that is wrong: a stale row excluded after paging
+shortens the page and pushes a real result onto the next one.
+`tests/test_search_stale.py` catches it. Recorded, not done — see M1-06.
+
+### Health, and what is left in it
+
+1,373 ms of one render went on asking the same questions repeatedly: the FTS
+join twice, the item count twice, from two parts of the page that could not see
+each other. Counted once now, and `current` derived as `total - missing` rather
+than paying 325 ms for a join that returns the same number.
+
+What remains is irreducible with the current index shape: counting an FTS5
+table means reading it (224 ms), and relating its rows to `items` means joining
+it (321 ms). Health is 1.8 s at a million and roughly 1 s of that is those two
+questions. Making them cheap needs either a recorded verdict — the arrangement
+`PRAGMA quick_check` already has — or a different index shape. Neither is done.
 
 ## Human decision scale
 
