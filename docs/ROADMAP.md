@@ -265,12 +265,48 @@ compute the cohesion signals a mismatch would contradict.
 **Work.** A cohesion measure per group; a split threshold and a flag threshold,
 both stated and both settable; every split carries its reason in the UI.
 
+**Done 2026-09-02**, and the shape of it is the finding. The split is
+**derived, never stored** — `groups` still says what belongs together, and who
+currently disagrees with it is computed from where each member is going — which
+is what makes "turning both thresholds off returns exactly today's behaviour"
+true by construction rather than by a second code path.
+
+One signal splits, and it is structural: `groups.dest_base` is the folder the
+group was formed around, so a member whose destination is not under it is not a
+doubt about that file, it is a statement that the file belongs somewhere else.
+Everything weaker flags in place. Deliberately row-local: deciding this by
+comparing each member against its group's *most common* destination would need
+a window over every group in the library on every page render, which is the
+unbounded shape M1-01 spent a day removing.
+
+An outlier is a unit in every sense — `_UNIT_SPLIT` is the one expression the
+page, the preview, the expansion, the per-unit totals and `unit_proposal_ids`
+all key off — so it has its own count, its own heading and its own action, and
+the group it came out of excludes it from all three. That is what lets a
+derived split coexist with the action-scope rule from M1-02 instead of
+undermining it. It sorts immediately after its parent, and an exception of one
+is never folded into the loose pile: a group of one is not a group, but one
+file that is not going where its group is going is the entire case.
+
+The flag half needed one more thing than a count. "3 to look at" over a hundred
+and fifty files names a number and gives no way to reach it, which leaves
+reading a hundred and fifty rows as the way to find three — so the badge is a
+control: it replaces the members shown with exactly those three, and offers the
+way back.
+
 **Do not.** Split on a single weak signal. A wrongly split group is worse than
 a flagged one, because a flag is read and a split is trusted.
 
 **Acceptance.** The "three wrong among a hundred and fifty" case is findable
 without opening a hundred and fifty rows; every automatic split names why;
-turning both thresholds off returns exactly today's behaviour.
+turning both thresholds off returns exactly today's behaviour. All three are
+pinned by `tests/test_web_review.py`, the last one by `review.outliers.split`.
+
+**Still open:** removing a member from a group by hand. The split answers the
+machine-findable case; the case where a person looks at a grid and says *that
+one does not belong* has no control yet. It was deliberately not invented
+alongside the group actions in M1-02 — a control that could not finish its
+sentence would have been worse than none.
 
 **Scale.** Thousands of groups.
 

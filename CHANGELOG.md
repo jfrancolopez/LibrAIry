@@ -12,6 +12,20 @@ many files the group holds, and how many the current filters are about — and a
 whole-group action names the second, resolves it on the server under the
 filters the page was drawn with, and confirms the exact number before it acts.
 
+Review finds the odd one out for you. A member whose destination is not under
+the folder its group was formed around is not a doubt about that file — it is a
+statement that the file belongs somewhere else — so it becomes a decision of
+its own, headed *the odd ones out*, sitting beside the group it came from and
+saying why. Its files are not in the group's count and not covered by the
+group's actions, and the group's files are not covered by its. Nothing weaker
+splits anything: a flag is read and a split is trusted. The whole thing is
+derived rather than stored, and `review.outliers.split` turns it off and
+returns exactly the previous behaviour.
+
+And the number in a group heading is now a control. "3 to look at" over a
+hundred and fifty files named a number and gave no way to reach it; pressing it
+shows those three, with a way back to the whole group.
+
 Pager and expansion links now carry every filter. They carried the state, the
 category and the sort but not the confidence bounds, so the second page of a
 narrowed view was a page of something else and a group's members could go

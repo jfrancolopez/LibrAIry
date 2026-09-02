@@ -1,15 +1,33 @@
-{# More of one decision.
+{# More of one decision, or a view of part of it.
 
-   The reply replaces the `Show more` control itself, so the new members land
+   Expanding replaces the `Show more` control itself, so the new members land
    exactly where it was — after everything already drawn — and the control is
    renewed rather than duplicated. Nothing above it is touched, which is what
    matters: a selection is a decision in progress and must never be thrown away
-   by a view changing. #}
+   by a view changing.
+
+   The attention view replaces the members instead, because it is a view of the
+   group rather than more of it. Adding "the three to look at" underneath a
+   preview that may already show one of them would print the same file twice. #}
 {# The same member templates the list uses, chosen the same way — the layout
    comes from the whole unit, so a group cannot change shape halfway down as
    somebody expands it. #}
 {% include "partials/members/" ~ (layout or 'rows') ~ ".html" %}
-{% if next_page %}
+{% if only == 'attention' %}
+  <li class="muted group-more" id="more-{{ unit }}">
+    {% if matching %}
+      Showing {{ [shown, matching] | min }} of {{ matching }} worth a second look.
+    {% else %}
+      Nothing here needs a second look.
+    {% endif %}
+    {# Back to the whole decision. Page 1 *is* the preview, so this restores
+       exactly what was there before the badge was pressed. #}
+    <button type="button" class="btn-ghost"
+      hx-get="/review/group/{{ unit }}?page=1&amp;{{ qs }}"
+      hx-target="#members-{{ unit }}" hx-swap="innerHTML"
+      hx-indicator="closest .group-more">Show all {{ total }}</button>
+  </li>
+{% elif next_page %}
   <li class="muted group-more" id="more-{{ unit }}">
     Showing {{ shown }} of {{ matching }}.
     <button type="button" class="btn-ghost"

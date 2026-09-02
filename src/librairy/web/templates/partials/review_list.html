@@ -67,6 +67,7 @@
                    src="/preview/items/{{ group.rows[0].item_id }}/thumb" alt="">
             {% endif %}
             <span class="group-name">{{ group.label }}</span>
+            {% if group.outlier %}<span class="badge badge-warn">the odd ones out</span>{% endif %}
             <span class="muted">{{ group.total }} file{{ '' if group.total == 1 else 's' }}</span>
             {# How big the group is, and how much of it this view is about, as
                two numbers. Collapsing them into one is how an action comes to
@@ -80,11 +81,22 @@
                  files are certain and three are not is not an 88% group, it is
                  a confident group with three things to look at. #}
               <span class="muted">{{ (group.mean * 100) | round | int }}%</span>
-              {% if group.doubtful %}
-                <span class="badge badge-warn">{{ group.doubtful }} to look at</span>
-              {% endif %}
-              {% if group.undecided %}
-                <span class="badge badge-warn">{{ group.undecided }} with no destination</span>
+              {# And a number you cannot reach is not much better than no
+                 number: "3 to look at" over a hundred and fifty files left
+                 reading a hundred and fifty rows as the way to find three.
+                 The badge is the control now. It replaces the members shown
+                 with exactly those three, so nothing appears twice and the
+                 group's own counts never move. #}
+              {% if group.doubtful or group.undecided %}
+                <button type="button" class="badge badge-warn group-attention"
+                  hx-get="/review/group/{{ group.unit }}?only=attention&amp;{{ qs }}"
+                  hx-target="#members-{{ group.unit }}" hx-swap="innerHTML"
+                  hx-indicator="closest .review-group"
+                  title="Show only the members of {{ group.label }} worth a second look">
+                  {% if group.doubtful %}{{ group.doubtful }} to look at{% endif %}
+                  {%- if group.doubtful and group.undecided %} · {% endif -%}
+                  {% if group.undecided %}{{ group.undecided }} with no destination{% endif %}
+                </button>
               {% endif %}
             {% endif %}
           </summary>
@@ -99,27 +111,41 @@
              the same mistake in the other direction. `filters.form` is posted
              whole, so the server resolves the unit under exactly the view this
              button was drawn in. #}
+          {% if group.outlier %}
+            {# A split, and it names its reason. The only signal strong enough
+               to move a file out of its group is structural: it is not going
+               where the group is going. Everything weaker is a flag, because a
+               flag is read and a split is trusted. #}
+            <p class="group-reason status warn">
+              Not going where the rest of {{ group.label }} is going. Nothing has
+              moved — this is a separate decision so you can answer it separately.
+            </p>
+          {% endif %}
           {% set scope = group.matching %}
-          {% set names = 'all ' ~ scope if scope == group.total else scope ~ ' matching' %}
+          {# "Approve all 1" is not a sentence. One file is "this one", the
+             whole group is "all 14", and a filtered part of it is "7
+             matching" — three phrasings because they are three different
+             claims about what is being acted on. #}
+          {% set names = 'this one' if scope == 1 else ('all ' ~ scope if scope == group.total else scope ~ ' matching') %}
           <div class="group-actions">
             <button type="button" class="btn btn-primary"
               hx-post="/review/action"
               hx-vals='{{ dict(filters.form, action='approve', unit=group.unit, page=filters.page) | tojson }}'
               hx-target="#review-list" hx-swap="outerHTML"
               hx-headers='{"x-csrf-token":"{{ request.state.session.csrf_token }}"}'
-              hx-confirm="Approve {{ names }} file{{ '' if scope == 1 else 's' }} in {{ group.label }}? Nothing moves until you commit."
+              hx-confirm="Approve {{ names }}{{ ' file' if scope == 1 else ' files' }} in {{ group.label }}? Nothing moves until you commit."
               >Approve {{ names }}</button>
             <button type="button" class="btn"
               hx-post="/review/action"
               hx-vals='{{ dict(filters.form, action='postpone', unit=group.unit, page=filters.page) | tojson }}'
               hx-target="#review-list" hx-swap="outerHTML"
               hx-headers='{"x-csrf-token":"{{ request.state.session.csrf_token }}"}'
-              hx-confirm="Put off {{ names }} file{{ '' if scope == 1 else 's' }} in {{ group.label }}?"
+              hx-confirm="Put off {{ names }}{{ ' file' if scope == 1 else ' files' }} in {{ group.label }}?"
               >Later</button>
             <label class="group-pick">
               <input type="checkbox" class="select-all"
-                aria-label="Select the {{ group.rows|length }} shown files in {{ group.label }}">
-              Select the {{ group.rows|length }} shown
+                aria-label="Select the {{ group.rows|length }} shown file{{ '' if group.rows|length == 1 else 's' }} in {{ group.label }}">
+              {% if group.rows|length == 1 %}Select the one shown{% else %}Select the {{ group.rows|length }} shown{% endif %}
             </label>
           </div>
           {# The medium decides how a member is drawn and nothing else. The

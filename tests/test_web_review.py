@@ -1242,3 +1242,130 @@ def test_a_cell_opens_the_ordinary_row(tmp_path: Path) -> None:
     assert f'id="proposal-{proposal}"' in row.text
     assert "Approve" in row.text
     assert client.get("/review/proposals/999999/row").status_code == 404
+
+
+# --- the odd ones out ---------------------------------------------------------
+
+
+def test_a_member_going_elsewhere_becomes_its_own_decision(tmp_path: Path) -> None:
+    """One file that is not going where its group is going.
+
+    The whole "three wrong among a hundred and fifty" case. It is derived, not
+    stored — `groups` still says what belongs together — and it is a unit in
+    every sense: its own count, its own heading, its own action, and the group
+    it came out of does not include it in any of the three.
+    """
+    from librairy.web.review import ReviewFilters, unit_proposal_ids
+
+    client, conn = client_for(tmp_path)
+    group = insert_group(conn, "photo_event", "Backyard")
+    conn.execute("UPDATE groups SET dest_base='Photos/2024/Backyard' WHERE id=?", (group,))
+    for n in range(6):
+        seed_proposal(
+            conn,
+            f"party/DSC_{4100 + n:04d}.JPG",
+            "photos",
+            f"Photos/2024/Backyard/dsc_{4100 + n:04d}.jpg",
+            0.93,
+            group,
+        )
+    odd = seed_proposal(
+        conn, "party/receipt.jpg", "photos", "Documents/Receipts/receipt.jpg", 0.93, group
+    )
+
+    page = client.get("/review/list").text
+    filters = ReviewFilters()
+
+    assert "the odd ones out" in page
+    assert "Not going where the rest of Backyard is going" in page
+    #  Six in the group, one beside it, and neither count includes the other.
+    assert "Approve all 6" in page
+    assert "Approve this one" in page
+    assert len(unit_proposal_ids(conn, filters, f"g{group}")) == 6
+    assert odd not in unit_proposal_ids(conn, filters, f"g{group}")
+    assert unit_proposal_ids(conn, filters, f"x{group}") == [odd]
+
+
+def test_an_exception_of_one_is_never_folded_away(tmp_path: Path) -> None:
+    """A group of one is not a group; an exception of one is the entire point."""
+    client, conn = client_for(tmp_path)
+    group = insert_group(conn, "album", "Some Album")
+    conn.execute("UPDATE groups SET dest_base='Music/Rock/Some Album' WHERE id=?", (group,))
+    for n in range(4):
+        seed_proposal(
+            conn, f"al/{n}.flac", "music", f"Music/Rock/Some Album/{n}.flac", 0.94, group
+        )
+    seed_proposal(conn, "al/stray.flac", "music", "Music/Pop/stray.flac", 0.94, group)
+
+    page = client.get("/review/list").text
+
+    #  The stray keeps its heading and its reason rather than dropping into the
+    #  loose pile, where nothing would say it had been anywhere else.
+    assert "the odd ones out" in page
+    assert page.count("Not going where the rest of") == 1
+
+
+def test_turning_the_split_off_returns_exactly_the_old_behaviour(tmp_path: Path) -> None:
+    """The roadmap's own acceptance test. Both thresholds are switchable."""
+    from librairy.web.review import OUTLIER_SETTING, ReviewFilters, unit_proposal_ids
+
+    client, conn = client_for(tmp_path)
+    group = insert_group(conn, "photo_event", "Backyard")
+    conn.execute("UPDATE groups SET dest_base='Photos/2024/Backyard' WHERE id=?", (group,))
+    for n in range(4):
+        seed_proposal(
+            conn,
+            f"party/DSC_{4100 + n:04d}.JPG",
+            "photos",
+            f"Photos/2024/Backyard/dsc_{4100 + n:04d}.jpg",
+            0.93,
+            group,
+        )
+    seed_proposal(conn, "party/odd.jpg", "photos", "Documents/odd.jpg", 0.93, group)
+
+    conn.execute(
+        "INSERT INTO settings(key, value) VALUES (?, 'false')", (OUTLIER_SETTING,)
+    )
+    conn.commit()
+
+    page = client.get("/review/list").text
+
+    assert "the odd ones out" not in page
+    assert "Approve all 5" in page
+    assert len(unit_proposal_ids(conn, ReviewFilters(), f"g{group}")) == 5
+
+
+def test_the_number_to_look_at_is_a_control_that_shows_them(tmp_path: Path) -> None:
+    """A number you cannot reach is not much better than no number.
+
+    "3 to look at" over a hundred and fifty files left reading a hundred and
+    fifty rows as the way to find three.
+    """
+    client, conn = client_for(tmp_path)
+    group = insert_group(conn, "photo_event", "Backyard")
+    conn.execute("UPDATE groups SET dest_base='Photos/2024/Backyard' WHERE id=?", (group,))
+    for n in range(12):
+        seed_proposal(
+            conn,
+            f"party/DSC_{4100 + n:04d}.JPG",
+            "photos",
+            f"Photos/2024/Backyard/dsc_{4100 + n:04d}.jpg",
+            #  Two nobody is sure about, buried past the five that are previewed.
+            0.40 if n in (9, 10) else 0.95,
+            group,
+        )
+
+    page = client.get("/review/list").text
+    assert "2 to look at" in page
+    assert "only=attention" in page
+
+    looked = client.get(
+        f"/review/group/g{group}?only=attention&state=proposed&sort=confidence"
+    ).text
+
+    #  Exactly the two, and a way back to the whole group.
+    assert looked.count('name="proposal_id"') == 2
+    assert "DSC_4109.JPG" in looked
+    assert "DSC_4110.JPG" in looked
+    assert "DSC_4100.JPG" not in looked
+    assert "Show all 12" in looked

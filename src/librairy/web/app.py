@@ -1000,6 +1000,7 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         has_destination: str | None = None,
         page: PageNumber = 1,
         sort: str | None = None,
+        only: str = "",
     ) -> HTMLResponse:
         """More of one decision, a page at a time.
 
@@ -1017,7 +1018,12 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             page=1,
             sort=sort,
         )
-        data = group_members(conn, filters, unit, page=page, settings=settings)
+        #  `only=attention` is a view of the group rather than more of it: the
+        #  members its heading calls "to look at", replacing what is shown
+        #  instead of adding to it, so nothing appears twice.
+        data = group_members(
+            conn, filters, unit, page=page, only=only, settings=settings
+        )
         return TEMPLATES.TemplateResponse(
             request,
             "partials/review_members.html",

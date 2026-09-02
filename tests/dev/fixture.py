@@ -2332,6 +2332,26 @@ def _a_photo_event_in_the_inbox(conn, settings: Settings) -> None:  # noqa: ANN0
         #  The last three are the ones nobody is sure about: same evening, no
         #  usable date in the file, and a guess made from the folder alone.
         unsure = name >= "DSC_4111.JPG"
+        #  And one that is not a photograph of the party at all — a screenshot
+        #  of the invitation, heading somewhere else entirely. Confident about
+        #  itself and structurally out of place, which is the one signal strong
+        #  enough to split a member out of its group. See `_UNIT_SPLIT`.
+        if name == "DSC_4105.JPG":
+            upsert_proposal(
+                conn,
+                item_id=grouped.item_id,
+                category="photos",
+                clean_name=name,
+                dest_relpath="Photos/Screenshots/2024/invitation.jpg",
+                confidence=0.9,
+                evidence=[
+                    EvidenceEntry("filesystem", "folder", f"inbox/{event}", 0.9),
+                    EvidenceEntry("heuristic", "event", "screenshot, not a photograph", 0.9),
+                ],
+                group_id=grouped.group_id,
+            )
+            transition_item(conn, grouped.item_id, "proposed")
+            continue
         upsert_proposal(
             conn,
             item_id=grouped.item_id,

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
@@ -260,14 +261,16 @@ def unit_proposal_ids(
     shape of mistake Review exists to prevent.
     """
     where, params = _where(filters)
+    key = unit_key(conn)
     return [
         int(row["id"])
         for row in conn.execute(
             f"""
             SELECT p.id AS id FROM proposals p JOIN items i ON i.id = p.item_id
-            WHERE {where} AND COALESCE('g' || p.group_id, 'p' || p.id) = ?
+            LEFT JOIN groups g ON g.id = p.group_id
+            WHERE {where} AND {key} = ?
             ORDER BY {_MEMBER_ORDER}
-            """,  # noqa: S608 - where comes from _where; unit is bound
+            """,  # noqa: S608 - where and key are ours; unit is bound
             [*params, unit],
         )
     ]
@@ -1217,7 +1220,75 @@ MEMBER_PAGE = 25
 _MEMBER_ORDER = "COALESCE(p.dest_relpath, i.relpath), p.id"
 
 
-def _unit_select(filters: ReviewFilters) -> tuple[str, list[object]]:
+#  What makes a member an outlier, and what happens to it when it is one.
+#
+#  Two thresholds, both stated, both switchable, and neither one stored. A
+#  group's membership lives in `groups`; who currently disagrees with it is
+#  derived from where each member is going, so turning this off returns exactly
+#  the behaviour that was here before it — see `outliers_split`.
+#
+#  **Split** is one signal and a strong one: the file is not going where the
+#  group is going. `groups.dest_base` is the folder the group was formed
+#  around, so a member whose destination is not under it is not a doubt about
+#  this file, it is a statement that this file belongs somewhere else. A
+#  wrongly split group is worse than a wrongly flagged one — a flag is read and
+#  a split is trusted — so nothing weaker than a structural disagreement splits
+#  anything.
+#
+#  **Flagged** members stay exactly where they are and are marked: below the
+#  confident threshold, or no destination at all. Both are already counted for
+#  every group by `_unit_select`, which is what makes "3 to look at" a control
+#  that can show you the three rather than a number you act on by scrolling.
+OUTLIER_SETTING = "review.outliers.split"
+
+#  Row-local on purpose. Deciding this by comparing each member against its
+#  group's most common destination would need a window over every group in the
+#  library on every page render — the unbounded shape M1-01 spent a day
+#  removing. `dest_base` is already stored and already means this.
+_OFF_BASE = (
+    "(g.dest_base IS NOT NULL AND g.dest_base <> ''"
+    " AND p.dest_relpath IS NOT NULL AND p.dest_relpath <> ''"
+    " AND p.dest_relpath NOT LIKE g.dest_base || '/%')"
+)
+#  The one expression the whole machinery keys off: the page, the member
+#  preview, the expansion, the per-unit totals and `unit_proposal_ids` all use
+#  it, so an outlier unit is a unit in every sense — it has its own count, its
+#  own heading and its own action, and the group it came out of does not
+#  include it in any of the three. That is the whole reason the split can be
+#  derived without blurring what an action covers.
+_UNIT_SPLIT = (
+    "CASE WHEN p.group_id IS NULL THEN 'p' || p.id"
+    f" WHEN {_OFF_BASE} THEN 'x' || p.group_id"
+    " ELSE 'g' || p.group_id END"
+)
+_UNIT_WHOLE = "COALESCE('g' || p.group_id, 'p' || p.id)"
+
+
+def outliers_split(conn: sqlite3.Connection) -> bool:
+    """Is the split threshold on? Default yes; `review.outliers.split` turns it off."""
+    row = conn.execute(
+        "SELECT value FROM settings WHERE key=?", (OUTLIER_SETTING,)
+    ).fetchone()
+    if row is None:
+        return True
+    try:
+        return bool(json.loads(row["value"]))
+    except (TypeError, ValueError):
+        return True
+
+
+def unit_key(conn: sqlite3.Connection) -> str:
+    """The SQL that names a member's decision, under this library's thresholds.
+
+    Read once per request and threaded through every query that mentions a
+    unit. Two calls that disagreed about it would put a member in one unit for
+    the page and another for the action, which is the class of mistake this
+    whole area exists to prevent.
+    """
+    return _UNIT_SPLIT if outliers_split(conn) else _UNIT_WHOLE
+
+
+def _unit_select(filters: ReviewFilters, key: str) -> tuple[str, list[object]]:
     """Every decision waiting, one row each, with what the heading needs.
 
     A *unit* is a group with more than one member, or a single loose proposal.
@@ -1232,7 +1303,7 @@ def _unit_select(filters: ReviewFilters) -> tuple[str, list[object]]:
     where, params = _where(filters)
     return (
         f"""
-        SELECT COALESCE('g' || p.group_id, 'p' || p.id) AS unit,
+        SELECT {key} AS unit,
                p.group_id AS group_id,
                COALESCE(g.kind, 'ungrouped') AS kind,
                COALESCE(g.label, 'Ungrouped') AS label,
@@ -1260,20 +1331,29 @@ def _unit_select(filters: ReviewFilters) -> tuple[str, list[object]]:
 #  — `ungrouped` sorts after every real kind, which is why the heading order has
 #  never needed spelling out. Within that, best guess first and then the newest,
 #  which is the default row sort applied to whole decisions.
-_UNIT_ORDER = "ORDER BY kind, label, best DESC, anchor DESC"
+#
+#  A group's outliers sort immediately after it: same kind, same label, and the
+#  `x` prefix breaks the tie. An exception belongs beside the thing it is an
+#  exception to — a split that put three photographs forty decisions away from
+#  the event they came out of would be a worse answer than not splitting them.
+#  Loose files are unaffected: they all begin `p`, so the term is constant
+#  among them and confidence still orders them.
+_UNIT_ORDER = "ORDER BY kind, label, substr(unit, 1, 1) = 'x', best DESC, anchor DESC"
 
 
-def unit_count(conn: sqlite3.Connection, filters: ReviewFilters) -> int:
+def unit_count(conn: sqlite3.Connection, filters: ReviewFilters, key: str = "") -> int:
     """How many decisions are waiting. Never `len()` of a page."""
-    sql, params = _unit_select(filters)
+    sql, params = _unit_select(filters, key or unit_key(conn))
     return int(
         conn.execute(f"SELECT COUNT(*) FROM ({sql})", params).fetchone()[0]  # noqa: S608
     )
 
 
-def unit_page(conn: sqlite3.Connection, filters: ReviewFilters) -> list[dict[str, Any]]:
+def unit_page(
+    conn: sqlite3.Connection, filters: ReviewFilters, key: str = ""
+) -> list[dict[str, Any]]:
     """One bounded page of decisions, without reading a single member."""
-    sql, params = _unit_select(filters)
+    sql, params = _unit_select(filters, key or unit_key(conn))
     offset = max(0, (max(1, filters.page) - 1) * UNITS_PAGE)
     rows = conn.execute(
         f"SELECT * FROM ({sql}) {_UNIT_ORDER} LIMIT ? OFFSET ?",  # noqa: S608
@@ -1288,6 +1368,7 @@ def member_ids(
     units: list[dict[str, Any]],
     *,
     limit: int = MEMBER_PREVIEW,
+    key: str = "",
 ) -> dict[str, list[int]]:
     """A bounded slice of each unit's members, in one statement.
 
@@ -1300,18 +1381,20 @@ def member_ids(
     if not keys:
         return {}
     where, params = _where(filters)
+    key = key or unit_key(conn)
     placeholders = ",".join("?" * len(keys))
     rows = conn.execute(
         f"""
         SELECT unit, id FROM (
-          SELECT COALESCE('g' || p.group_id, 'p' || p.id) AS unit, p.id AS id,
+          SELECT {key} AS unit, p.id AS id,
                  ROW_NUMBER() OVER (
-                   PARTITION BY COALESCE('g' || p.group_id, 'p' || p.id)
+                   PARTITION BY {key}
                    ORDER BY {_MEMBER_ORDER}
                  ) AS seat
           FROM proposals p
           JOIN items i ON i.id = p.item_id
-          WHERE {where} AND COALESCE('g' || p.group_id, 'p' || p.id) IN ({placeholders})
+          LEFT JOIN groups g ON g.id = p.group_id
+          WHERE {where} AND {key} IN ({placeholders})
         )
         WHERE seat <= ?
         """,  # noqa: S608 - where comes from _where; keys are bound
@@ -1329,6 +1412,7 @@ def group_members(
     unit: str,
     *,
     page: int = 1,
+    only: str = "",
     settings: Settings | None = None,
 ) -> dict[str, object]:
     """One bounded page of a single decision's members.
@@ -1340,8 +1424,16 @@ def group_members(
 
     Filters are the page's, so expanding a group inside a narrowed view shows
     the members that view is about and not the ones it excluded.
+
+    `only="attention"` answers the other question a group heading raises. "3 to
+    look at" over a hundred and fifty files names a number and gives no way to
+    reach it, which leaves reading a hundred and fifty rows as the way to find
+    three — the exact thing this milestone exists to remove. It is a *view* of
+    the group, replacing the members shown rather than adding to them, so
+    nothing appears twice and the group's own count never moves.
     """
     page = max(1, page)
+    attention = only == "attention"
     #  Expansion continues where the preview stopped, not where a page of
     #  twenty-five would have. Page 1 *is* the preview; page 2 starts at seat
     #  six, not seat twenty-six. Getting this wrong leaves a silent hole in the
@@ -1349,18 +1441,34 @@ def group_members(
     #  failure this whole design exists to prevent.
     lower = 0 if page <= 1 else MEMBER_PREVIEW + (page - 2) * MEMBER_PAGE
     upper = MEMBER_PREVIEW if page <= 1 else lower + MEMBER_PAGE
+    if attention:
+        #  A view of its own, so it starts at the first one rather than
+        #  continuing the preview's seat numbering.
+        lower, upper = (page - 1) * MEMBER_PAGE, page * MEMBER_PAGE
     where, params = _where(filters)
+    key = unit_key(conn)
+    #  What "to look at" means, and it is the same two things the heading
+    #  counts: less certain than the page's own threshold, or with nowhere to
+    #  go yet. Both are flags and neither is a split — a flag is read, a split
+    #  is trusted, and nothing here is sure enough to be trusted.
+    needs = (
+        f" AND (p.confidence < {CONFIDENT}"
+        " OR p.dest_relpath IS NULL OR p.dest_relpath = '')"
+        if attention
+        else ""
+    )
     rows = conn.execute(
         f"""
         SELECT id FROM (
-          SELECT p.id AS id, COALESCE('g' || p.group_id, 'p' || p.id) AS unit,
+          SELECT p.id AS id, {key} AS unit,
                  ROW_NUMBER() OVER (
-                   PARTITION BY COALESCE('g' || p.group_id, 'p' || p.id)
+                   PARTITION BY {key}
                    ORDER BY {_MEMBER_ORDER}
                  ) AS seat
           FROM proposals p
           JOIN items i ON i.id = p.item_id
-          WHERE {where}
+          LEFT JOIN groups g ON g.id = p.group_id
+          WHERE {where}{needs}
         )
         WHERE unit = ? AND seat > ? AND seat <= ?
         ORDER BY seat
@@ -1369,8 +1477,10 @@ def group_members(
     ).fetchall()
     ids = [int(row["id"]) for row in rows]
     if not ids:
-        return {"rows": [], "unit": unit, "layout": ROWS, "matching": 0, "more": 0,
-                "next_page": 0}
+        return {
+            "rows": [], "unit": unit, "layout": ROWS, "matching": 0, "more": 0,
+            "next_page": 0, "only": only,
+        }
     found = {
         int(row["id"]): row
         for row in _proposal_rows(conn, filters, proposal_ids=ids, settings=settings)
@@ -1379,17 +1489,43 @@ def group_members(
     #  The matching count, under the page's filters — the same number the
     #  heading and the group buttons are about. Expansion walks the set the
     #  action would act on and nothing else.
-    matching, layout = _unit_facts(conn, filters, unit)
+    matching, layout = _unit_facts(conn, filters, unit, key)
+    #  In the attention view the total is the attention set, not the group:
+    #  "showing 3 of 3" is the honest sentence there, and "3 of 150" would
+    #  invite pressing Show more for a hundred and forty-seven files that are
+    #  not what was asked for.
+    counted = _attention_total(conn, filters, unit, key) if attention else matching
     seen = lower + len(members)
     return {
         "rows": members,
         "unit": unit,
         "layout": layout,
-        "matching": matching,
+        "matching": counted,
+        #  What the group holds, whatever view is being shown of it.
+        "total": matching,
+        "only": only,
         "shown": seen,
-        "more": max(0, matching - seen),
-        "next_page": page + 1 if matching > seen else 0,
+        "more": max(0, counted - seen),
+        "next_page": page + 1 if counted > seen else 0,
     }
+
+
+def _attention_total(
+    conn: sqlite3.Connection, filters: ReviewFilters, unit: str, key: str
+) -> int:
+    """How many members of one decision are worth a second look."""
+    where, params = _where(filters)
+    return int(
+        conn.execute(
+            f"""
+            SELECT COUNT(*) FROM proposals p JOIN items i ON i.id = p.item_id
+            LEFT JOIN groups g ON g.id = p.group_id
+            WHERE {where} AND {key} = ?
+              AND (p.confidence < ? OR p.dest_relpath IS NULL OR p.dest_relpath = '')
+            """,  # noqa: S608 - where and key are ours
+            [*params, unit, CONFIDENT],
+        ).fetchone()[0]
+    )
 
 
 def _unnarrowed(filters: ReviewFilters) -> ReviewFilters:
@@ -1410,7 +1546,7 @@ def _unnarrowed(filters: ReviewFilters) -> ReviewFilters:
 
 
 def unit_totals(
-    conn: sqlite3.Connection, filters: ReviewFilters, units: list[dict[str, Any]]
+    conn: sqlite3.Connection, filters: ReviewFilters, units: list[dict[str, Any]], key: str = ""
 ) -> dict[str, int]:
     """How big each decision on this page is, ignoring the narrowing filters.
 
@@ -1428,15 +1564,17 @@ def unit_totals(
     if not keys:
         return {}
     where, params = _where(_unnarrowed(filters))
+    key = key or unit_key(conn)
     placeholders = ",".join("?" * len(keys))
     return {
         str(row["unit"]): int(row["total"])
         for row in conn.execute(
             f"""
-            SELECT COALESCE('g' || p.group_id, 'p' || p.id) AS unit, COUNT(*) AS total
+            SELECT {key} AS unit, COUNT(*) AS total
             FROM proposals p
             JOIN items i ON i.id = p.item_id
-            WHERE {where} AND COALESCE('g' || p.group_id, 'p' || p.id) IN ({placeholders})
+            LEFT JOIN groups g ON g.id = p.group_id
+            WHERE {where} AND {key} IN ({placeholders})
             GROUP BY unit
             """,  # noqa: S608 - where comes from _where; keys are bound
             [*params, *keys],
@@ -1444,7 +1582,9 @@ def unit_totals(
     }
 
 
-def _unit_facts(conn: sqlite3.Connection, filters: ReviewFilters, unit: str) -> tuple[int, str]:
+def _unit_facts(
+    conn: sqlite3.Connection, filters: ReviewFilters, unit: str, key: str = ""
+) -> tuple[int, str]:
     """How many members this decision has under the filters, and its layout.
 
     Both in one statement, and the layout from the *whole* unit rather than
@@ -1453,12 +1593,14 @@ def _unit_facts(conn: sqlite3.Connection, filters: ReviewFilters, unit: str) -> 
     down as somebody expands it.
     """
     where, params = _where(filters)
+    key = key or unit_key(conn)
     row = conn.execute(
         f"""
         SELECT COUNT(*) AS total, COUNT(DISTINCT p.category) AS categories,
                MIN(p.category) AS category
         FROM proposals p JOIN items i ON i.id = p.item_id
-        WHERE {where} AND COALESCE('g' || p.group_id, 'p' || p.id) = ?
+        LEFT JOIN groups g ON g.id = p.group_id
+        WHERE {where} AND {key} = ?
         """,  # noqa: S608 - where comes from _where
         [*params, unit],
     ).fetchone()
@@ -1475,12 +1617,18 @@ def grouped_page(
     keeps its shape — what changed is that a section is chosen as a whole
     rather than assembled from whichever files a row-limit happened to catch.
     """
-    units = unit_page(conn, filters)
-    total = unit_count(conn, filters)
+    #  Read once and threaded through. Two calls that disagreed about what a
+    #  unit is would put a member in one decision for the page and another for
+    #  the action it is under.
+    key = unit_key(conn)
+    units = unit_page(conn, filters, key)
+    total = unit_count(conn, filters, key)
     if not units:
         return [], total
-    by_unit = member_ids(conn, filters, units)
-    sizes = unit_totals(conn, filters, units) if _unnarrowed(filters) != filters else {}
+    by_unit = member_ids(conn, filters, units, key=key)
+    sizes = (
+        unit_totals(conn, filters, units, key) if _unnarrowed(filters) != filters else {}
+    )
     wanted = [pid for ids in by_unit.values() for pid in ids]
     rows = {
         int(row["id"]): row
@@ -1496,7 +1644,12 @@ def grouped_page(
         #  select-all and a margin above it. That was true before groups were
         #  paged and is still true; what changed is that "one file" now means
         #  the whole group has one, never "one landed on this page".
-        if int(unit["members"]) <= 1:
+        #
+        #  An outlier of one is the exception: one file that is not going where
+        #  its group is going is the entire "three wrong among a hundred and
+        #  fifty" case, and folding it into the loose pile would drop both the
+        #  heading that says so and the reason it says.
+        if int(unit["members"]) <= 1 and not str(unit["unit"]).startswith("x"):
             loose.extend(members)
             continue
         #  Two numbers, never blurred into one. `matching` is what an action
@@ -1505,9 +1658,16 @@ def grouped_page(
         #  default page and the heading says one number; under a filter they
         #  are not, and the heading says both while the buttons name `matching`.
         matching = int(unit["members"])
+        #  An `x` unit is the part of a group that is not going where the group
+        #  is going. It is a unit in every sense — its own count, its own
+        #  heading, its own action — and the group it came out of does not
+        #  include it in any of the three, which is what lets the split be
+        #  derived without blurring what an action covers.
+        odd = str(unit["unit"]).startswith("x")
         section = {
             "kind": str(unit["kind"]),
             "label": str(unit["label"]),
+            "outlier": odd,
             "rows": members,
             "matching": matching,
             "total": int(sizes.get(str(unit["unit"]), matching)),
