@@ -1203,10 +1203,31 @@ AUDIT_PAGE = 25
 #  is dismissed, and what is left is open. Two spellings of one rule is one
 #  place for them to disagree, so the Python partition below still has the last
 #  word — this only decides which rows are worth building.
-_HAS_ACTIVE_PLAN = (
-    "EXISTS (SELECT 1 FROM plans p WHERE p.status IN ('approved','executing')"
-    " AND (p.audit_finding_id = f.id OR p.id = f.plan_id))"
-)
+#
+#  Driven from `plans` and never from `audit_findings`. The obvious spelling is
+#  a correlated EXISTS per finding:
+#
+#      EXISTS (SELECT 1 FROM plans p WHERE p.status IN (...)
+#                AND (p.audit_finding_id = f.id OR p.id = f.plan_id))
+#
+#  and the `OR` across two different columns is what ruins it — neither
+#  `idx_plans_audit_finding` nor the `plans` primary key can satisfy both arms,
+#  so it scans `plans` once per row of `audit_findings`. Measured at a million:
+#  54 seconds for the counts alone, which was slower than the unbounded page it
+#  replaced. Found by profiling rather than by reading, because the query looks
+#  perfectly ordinary.
+#
+#  Both arms are cheap read the other way round: active plans are the small
+#  side — approved or executing, which is the commit queue — so each arm is a
+#  seek, and the union of them is the set of claimed findings, computed once.
+_CLAIMED = """
+    SELECT p.audit_finding_id AS fid FROM plans p
+     WHERE p.status IN ('approved','executing') AND p.audit_finding_id IS NOT NULL
+    UNION
+    SELECT f2.id AS fid FROM audit_findings f2
+     WHERE f2.plan_id IN (SELECT id FROM plans WHERE status IN ('approved','executing'))
+"""
+_HAS_ACTIVE_PLAN = "(f.id IN (SELECT fid FROM claimed))"
 _WAITING = "(has_plan OR status='accepted')"
 _DISMISSED = "(NOT has_plan AND status='kept')"
 _OPEN = "(NOT has_plan AND status='open')"
@@ -1221,6 +1242,7 @@ def _audit_source() -> str:
     """
     kinds = ",".join(f"'{kind}'" for kind in sorted(FOLDER_KINDS))
     return f"""
+        WITH claimed(fid) AS ({_CLAIMED})
         SELECT f.id AS id, f.status AS status, f.severity AS severity,
                f.relpath AS relpath, {_HAS_ACTIVE_PLAN} AS has_plan,
                CASE WHEN f.kind IN ({kinds}) THEN 'folder:' || f.relpath
