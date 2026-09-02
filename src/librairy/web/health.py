@@ -107,11 +107,12 @@ def health_data(conn: sqlite3.Connection, settings: Settings) -> dict[str, objec
     """
     from librairy.search_health import counted
 
-    #  Counted once for the whole page. Three modules ask what the search index
-    #  holds — this panel, `attention`, and `restore_check` — and none of them
-    #  could see the others, so a render asked the expensive FTS join twice and
-    #  counted the items twice. Measured at a million: 1,373 ms of one render
-    #  spent answering the same three questions repeatedly.
+    #  Counted once for the whole page. Two parts of it ask what the search
+    #  index holds — this panel and the attention report — and neither could
+    #  see the other, so a render ran the expensive FTS join twice and counted
+    #  the items twice. Measured at a million: 1,373 ms of one render spent
+    #  answering the same questions repeatedly. (`restore_check` asks too, but
+    #  it draws the Reconcile page, where a *live* comparison is the point.)
     counts = counted(conn)
     providers = live_provider_status(conn, settings)
     tools = tool_statuses(settings)

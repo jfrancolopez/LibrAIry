@@ -249,6 +249,19 @@ def test_reading_the_status_changes_nothing(tmp_path: Path) -> None:
     assert _snapshot(conn, settings) == before
 
 
+def measured(conn, settings) -> None:  # noqa: ANN001
+    """What the worker does on an idle cycle, so a page has something to show.
+
+    Comparing the whole library against the whole index is maintenance, not a
+    render — at a million files it was a second of database time on Browse
+    before the filesystem walk. Browse reports the last comparison and its age.
+    """
+    from librairy.consistency import library_consistency, record_consistency
+
+    record_consistency(conn, library_consistency(conn, settings))
+    conn.commit()
+
+
 def test_opening_browse_does_not_index_or_repair_anything(tmp_path: Path) -> None:
     """Observation only. Looking at a folder is not consent to touch it."""
     settings = settings_for(tmp_path)
@@ -258,6 +271,7 @@ def test_opening_browse_does_not_index_or_repair_anything(tmp_path: Path) -> Non
     scan(conn, settings)
     (settings.library_dir / "Photos" / "stale.png").unlink()
     write(settings, "Photos/dropped-in.png")
+    measured(conn, settings)
     client = TestClient(create_app(settings, conn))
     client.post("/setup", data={"password": "correct horse battery"})
 
@@ -277,6 +291,7 @@ def test_the_status_line_is_quiet_when_there_is_nothing_to_say(tmp_path: Path) -
     conn = connect(settings)
     write(settings, "Photos/a.png")
     scan(conn, settings)
+    measured(conn, settings)
     client = TestClient(create_app(settings, conn))
     client.post("/setup", data={"password": "correct horse battery"})
 
@@ -291,6 +306,7 @@ def test_no_absolute_path_reaches_the_status_line(tmp_path: Path) -> None:
     client_settings = settings_for(tmp_path)
     conn = connect(client_settings)
     write(client_settings, "Photos/unscanned.png")
+    measured(conn, client_settings)
     client = TestClient(create_app(client_settings, conn))
     client.post("/setup", data={"password": "correct horse battery"})
 

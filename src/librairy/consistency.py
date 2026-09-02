@@ -9,11 +9,23 @@ empty for something you were looking straight at.
 
 This reports the difference. It does not repair it: no row is deleted, no scan
 is triggered, nothing is indexed because someone opened a page. Observation
-only, calculated per request off the same walk Browse already does.
+only.
+
+**Measured away from the page, and reported with its age.** Comparing the whole
+library against the whole index is not a render's work: it reads every library
+row into memory and every visible file off the disk, so at a million files it
+was a second of database time on Browse before the filesystem walk that the
+scale harness — which has no files on disk — did not even simulate. It is the
+same argument that moved `PRAGMA quick_check` and the FTS integrity check off
+their pages, and it takes the same shape: the worker measures it on an idle
+cycle, the verdict is recorded with the moment it was taken, and a page shows
+that verdict and how old it is. Before the first measurement it says nobody has
+looked yet, which is a fact about the check rather than about the library.
 """
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from dataclasses import dataclass
 from pathlib import PurePosixPath
@@ -26,6 +38,12 @@ from librairy.scanner import visible_files
 # Enough to recognise which files are meant without turning a status line into
 # a directory listing. The counts are always exact; only the examples are cut.
 SAMPLE = 5
+
+
+#  Recorded beside the other maintenance verdicts, in the table the worker
+#  already owns. See `web/health.py` for the same arrangement over
+#  `PRAGMA quick_check`.
+CONSISTENCY_KEY = "library_consistency"
 
 
 @dataclass(frozen=True)
@@ -108,7 +126,94 @@ def library_consistency(
     )
 
 
-def consistency_view(state: LibraryConsistency) -> dict[str, object]:
+def record_consistency(conn: sqlite3.Connection, state: LibraryConsistency) -> None:
+    """Remember what the last comparison found, so a page need not repeat it."""
+    from librairy.planner import utc_now
+
+    conn.execute(
+        "INSERT INTO worker_state(key, value) VALUES (?, ?)"
+        " ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        (
+            CONSISTENCY_KEY,
+            json.dumps(
+                {
+                    "at": utc_now(),
+                    "physical_files": state.physical_files,
+                    "indexed_files": state.indexed_files,
+                    "unindexed_files": state.unindexed_files,
+                    "missing_files": state.missing_files,
+                    "unindexed_sample": list(state.unindexed_sample),
+                    "missing_sample": list(state.missing_sample),
+                    "reserved_files": state.reserved_files,
+                    "reserved_sample": list(state.reserved_sample),
+                }
+            ),
+        ),
+    )
+
+
+def recorded_consistency(
+    conn: sqlite3.Connection,
+) -> tuple[LibraryConsistency, str] | None:
+    """The last comparison and when it was taken, or None if nobody has looked."""
+    row = conn.execute(
+        "SELECT value FROM worker_state WHERE key=?", (CONSISTENCY_KEY,)
+    ).fetchone()
+    if row is None:
+        return None
+    try:
+        payload = json.loads(str(row["value"]))
+    except (TypeError, ValueError):  # pragma: no cover - defensive
+        return None
+    return (
+        LibraryConsistency(
+            physical_files=int(payload.get("physical_files", 0)),
+            indexed_files=int(payload.get("indexed_files", 0)),
+            unindexed_files=int(payload.get("unindexed_files", 0)),
+            missing_files=int(payload.get("missing_files", 0)),
+            unindexed_sample=tuple(payload.get("unindexed_sample", ())),
+            missing_sample=tuple(payload.get("missing_sample", ())),
+            reserved_files=int(payload.get("reserved_files", 0)),
+            reserved_sample=tuple(payload.get("reserved_sample", ())),
+        ),
+        str(payload.get("at", "")),
+    )
+
+
+def consistency_panel(conn: sqlite3.Connection) -> dict[str, object]:
+    """What Browse draws: the last comparison, or a note that there is none.
+
+    One statement, and it does not grow with the library. What it replaced read
+    every library row into a set on every render.
+    """
+    from librairy.web.health import _ago
+
+    found = recorded_consistency(conn)
+    if found is None:
+        return unmeasured_view()
+    state, at = found
+    return consistency_view(state, _ago(at) if at else "")
+
+
+def unmeasured_view() -> dict[str, object]:
+    """What Browse says before anything has compared the two.
+
+    Not a warning. Nobody has looked, which is a fact about the check and not
+    about the library, and a warning without evidence is one people learn to
+    dismiss.
+    """
+    return {
+        "matches": True,
+        "measured": False,
+        "taken": "",
+        "physical_files": 0,
+        "indexed_files": 0,
+        "notes": [],
+        "summary": "The library and the index have not been compared yet.",
+    }
+
+
+def consistency_view(state: LibraryConsistency, taken: str = "") -> dict[str, object]:
     """The same numbers, phrased for a person.
 
     Deliberately factual. "Everything is synchronized" would be a claim about
@@ -176,6 +281,11 @@ def consistency_view(state: LibraryConsistency) -> dict[str, object]:
         )
     return {
         "matches": state.matches,
+        #  A measurement, and when it was taken. Browse used to compute this on
+        #  every render, which made it true *now* and made Browse pay for the
+        #  whole library to say so.
+        "measured": True,
+        "taken": taken,
         # The headline, short enough to sit under the page title.
         "summary": (
             f"{state.physical_files:,} {_files(state.physical_files)} · index up to date"

@@ -829,9 +829,9 @@ def test_a_page_of_search_results_costs_a_fixed_number_of_statements(tmp_path) -
 def test_health_counts_the_search_index_once(tmp_path) -> None:  # noqa: ANN001
     """Counting an FTS5 table means reading it.
 
-    Three modules ask what the index holds — the panel, the attention report
-    and the restore check — and none could see the others, so one render asked
-    the expensive join twice and counted the items twice.
+    The panel and the attention report both ask, and neither could see the
+    other, so one render asked the expensive join twice and counted the items
+    twice.
     """
     from librairy.web.health import health_data
 
@@ -846,3 +846,39 @@ def test_health_counts_the_search_index_once(tmp_path) -> None:  # noqa: ANN001
     live = "SELECT COUNT(*) FROM items WHERE missing_since IS NULL"
     lives = [query for query in counting.queries if query.startswith(live)]
     assert len(lives) == 1, lives
+
+
+def test_browse_does_not_read_the_whole_library_to_draw_a_page(tmp_path) -> None:  # noqa: ANN001
+    """Comparing the library against the index is maintenance, not a render.
+
+    It read every library row into a set on every render — a second of database
+    time at a million, before the filesystem walk that this harness, which puts
+    no files on disk, does not even simulate.
+    """
+    from librairy.web.browse import browse_home
+
+    conn, settings = build(
+        tmp_path, library=2_000, inbox=50, findings=10, quarantine=10, history=10
+    )
+    counting = Counting(conn)
+    data = browse_home(counting, settings)
+
+    assert data["consistency"]["measured"] is False, "nobody has compared them yet"
+    unbounded = [q for q in counting.queries if "SELECT relpath FROM items" in q]
+    assert unbounded == [], unbounded
+
+
+def test_browse_reports_the_last_comparison_and_says_how_old_it_is(tmp_path) -> None:  # noqa: ANN001
+    from librairy.consistency import library_consistency, record_consistency
+    from librairy.web.browse import browse_home
+
+    conn, settings = build(
+        tmp_path, library=200, inbox=20, findings=5, quarantine=5, history=5
+    )
+    record_consistency(conn, library_consistency(conn, settings))
+    conn.commit()
+
+    data = browse_home(conn, settings)
+
+    assert data["consistency"]["measured"] is True
+    assert data["consistency"]["taken"]

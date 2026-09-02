@@ -5,7 +5,7 @@ from pathlib import Path, PurePosixPath
 from urllib.parse import quote, urlencode
 
 from librairy.config import Settings
-from librairy.consistency import consistency_view, library_consistency, top_level
+from librairy.consistency import consistency_panel, top_level
 from librairy.mediakind import IMAGE_EXTENSIONS, VIDEO_EXTENSIONS
 from librairy.paths import PathValidationError, validate_relpath
 from librairy.proposals import decode_evidence
@@ -57,7 +57,7 @@ def browse_home(
         "folder": "",
         "page": page,
         "has_next": len(loose) > page * PAGE_SIZE,
-        "consistency": consistency_view(library_consistency(conn, settings, on_disk)),
+        "consistency": consistency_panel(conn),
     }
 
 
@@ -69,7 +69,7 @@ def library_panes(conn: sqlite3.Connection, settings: Settings) -> dict[str, obj
     on_disk = visible_files(settings.library_dir, settings.ignore_patterns)
     return {
         "roots": library_roots(settings, on_disk),
-        "consistency": consistency_view(library_consistency(conn, settings, on_disk)),
+        "consistency": consistency_panel(conn),
     }
 
 

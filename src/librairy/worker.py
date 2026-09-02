@@ -243,6 +243,10 @@ class Worker:
                     #  not urgent. Nothing moves — it changes where a settled
                     #  decision waits, and Commit still has to be pressed.
                     self._settled_approvals(settings)
+                    #  Comparing the whole library against the whole index is
+                    #  maintenance, not a render: Browse shows what this last
+                    #  found and how old it is.
+                    self._consistency_check(settings)
                     _set_worker_state(self.conn, "current_phase", "optimization")
                     self._optimization_slice(settings)
             else:
@@ -256,6 +260,20 @@ class Worker:
             if audit_stage:
                 _set_worker_state(self.conn, "last_audit_stage", audit_stage)
             return summary
+
+    def _consistency_check(self, settings: Settings) -> None:
+        """Compare the library against the index, and record what it finds.
+
+        Wrapped like every other maintenance step. A comparison that fails must
+        cost the worker nothing — Browse simply keeps showing the last one, with
+        its age, which is exactly what it is for.
+        """
+        from librairy.consistency import library_consistency, record_consistency
+
+        try:
+            record_consistency(self.conn, library_consistency(self.conn, settings))
+        except Exception:
+            LOGGER.exception("library consistency check failed")
 
     def _settled_approvals(self, settings: Settings) -> None:
         """Move the settled decisions to Ready for Commit, if that is switched on.

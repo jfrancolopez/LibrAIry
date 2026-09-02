@@ -62,7 +62,14 @@ def write(settings: Settings, relpath: str, body: str = "x") -> Path:
 
 
 def index_all(conn, settings: Settings, category: str = "photos") -> None:
-    """Scan and classify everything on disk — the fully-indexed baseline."""
+    """Scan and classify everything on disk — the fully-indexed baseline.
+
+    Records the library/index comparison too, the way an idle worker cycle
+    does: Browse reports the last comparison rather than making one, because
+    making one reads the whole library and the whole index.
+    """
+    from librairy.consistency import library_consistency, record_consistency
+
     scan_root(conn, "library", settings.library_dir, settings)
     for row in conn.execute("SELECT id, relpath FROM items WHERE root='library'").fetchall():
         upsert_proposal(
@@ -74,6 +81,8 @@ def index_all(conn, settings: Settings, category: str = "photos") -> None:
             confidence=0.9,
             evidence=[EvidenceEntry("heuristic", "category", category, 0.9)],
         )
+    record_consistency(conn, library_consistency(conn, settings))
+    conn.commit()
 
 
 def children(conn, settings, category: str, folder: str = "") -> tuple[set[str], set[str]]:

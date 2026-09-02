@@ -23,12 +23,18 @@
       {# Browse counts files on disk and Search answers from the index, so the
          two can legitimately disagree. One line saying whether they do beats
          finding out by searching for something you are looking straight at.
-         Measured when this page was rendered — nothing watches it after. #}
-      {% if consistency.matches %}
-        <p class="sync-line"><span class="sync-dot is-ok" aria-hidden="true"></span>{{ consistency.summary }}</p>
+         Measured away from this page and reported with its age: comparing the
+         whole library against the whole index reads both of them, which is
+         maintenance rather than something a render does. Before the first
+         comparison it says so, because nobody having looked is a fact about
+         the check and not about the library. #}
+      {% if not consistency.measured %}
+        <p class="sync-line muted">{{ consistency.summary }}</p>
+      {% elif consistency.matches %}
+        <p class="sync-line"><span class="sync-dot is-ok" aria-hidden="true"></span>{{ consistency.summary }}{% if consistency.taken %} <span class="muted">· checked {{ consistency.taken }}</span>{% endif %}</p>
       {% else %}
         <details class="sync-line is-drift">
-          <summary><span class="sync-dot is-warn" aria-hidden="true"></span>{{ consistency.summary }}</summary>
+          <summary><span class="sync-dot is-warn" aria-hidden="true"></span>{{ consistency.summary }}{% if consistency.taken %} <span class="muted">· checked {{ consistency.taken }}</span>{% endif %}</summary>
           {# Each note carries its own remedy, because they are not the same
              remedy: a scan finds an unscanned file, and nothing supported
              removes a stale record. #}
