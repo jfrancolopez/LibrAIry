@@ -1170,11 +1170,17 @@ tbody tr:hover { background: var(--bg-metric); }
    down to its headings without a line of script. */
 details.review-group > summary {
   display: flex;
+  /* Wrapping, so the counts and badges drop to a second line instead of
+     squeezing the name into a one-word-per-line column. Measured at 375px with
+     an album: "Pink Floyd - The Dark Side of the Moon" beside a cover, two
+     counts and two badges is more than a phone has room for on one line. */
+  flex-wrap: wrap;
   align-items: baseline;
   gap: var(--space-2);
   cursor: pointer;
   padding: var(--space-1) 0;
 }
+details.review-group > summary .group-name { min-width: 0; }
 details.review-group > summary .group-name {
   font-size: var(--text-lg);
   font-weight: 600;
@@ -3493,4 +3499,110 @@ summary.timeline-head::-webkit-details-marker { display: none; }
 .view-tabs {
   display: flex; flex-wrap: wrap; gap: var(--space-2);
   margin: var(--space-3) 0 var(--space-2);
+}
+
+/* ---- Media cells ------------------------------------------------------ */
+/* One decision foundation, four presentations. Everything above a group's
+   members — the heading, its two counts, the whole-group buttons, the bound on
+   the preview — is the same for all four; this is only how a member is drawn.
+
+   A cell is a face, not a smaller row: the picture or the identity, the same
+   selection checkbox the ordinary row carries, and the row itself one press
+   away. There is one row implementation and none of this is a second. */
+.member-list { list-style: none; padding: 0; margin: 0; display: grid; gap: var(--space-3); }
+/* The list layouts stay a column; the visual ones become a grid. Same element,
+   so the expansion appends into any of them by one rule. */
+.member-list.is-photos,
+.member-list.is-documents,
+.member-list.is-video {
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: var(--space-2);
+}
+.member-cell.photo-cell,
+.member-cell.doc-cell,
+.member-cell.video-cell {
+  border: var(--border-thin) solid var(--border);
+  border-radius: var(--radius-ui);
+  padding: var(--space-1);
+  background: var(--bg-metric);
+  display: grid; gap: calc(var(--space-1) / 2);
+  align-content: start;
+  min-width: 0;
+}
+.cell-pick { display: flex; gap: var(--space-1); align-items: center; font-size: var(--text-sm); }
+/* The picture is its own control, so it must not look like a button around a
+   picture — no chrome, and the pointer says it does something. */
+.cell-face {
+  padding: 0; border: 0; background: none; cursor: zoom-in; display: block; width: 100%;
+}
+.cell-face img {
+  width: 100%; height: auto; display: block;
+  border-radius: var(--radius-ui); background: var(--bg-input);
+}
+/* Where no picture can exist. An empty labelled box, not a broken image. */
+.cell-face.is-blank {
+  display: grid; place-items: center; min-height: 6rem; cursor: default;
+  border-radius: var(--radius-ui); background: var(--bg-input);
+  color: var(--text-dim); font-size: var(--text-sm); letter-spacing: 0.08em;
+}
+.cell-name { margin: 0; font-size: var(--text-sm); overflow-wrap: anywhere; }
+.cell-identity { margin: 0; font-size: var(--text-sm); display: flex; flex-wrap: wrap;
+  gap: calc(var(--space-1) / 2); align-items: baseline; }
+.cell-facts {
+  margin: 0; font-size: var(--text-sm);
+  display: flex; flex-wrap: wrap; gap: calc(var(--space-1) / 2); align-items: baseline;
+}
+.cell-score { font-variant-numeric: tabular-nums; font-weight: 600; }
+.cell-score.conf-high { color: var(--ok); }
+.cell-score.conf-mid { color: var(--warn); }
+.cell-score.conf-low { color: var(--fail); }
+/* The ordinary row, once somebody opens it. Empty until then, so it takes no
+   space in a grid of faces. */
+.cell-body:empty { display: none; }
+.cell-body { grid-column: 1 / -1; }
+
+/* An album is a list: twelve tracks are told apart by a number and a title,
+   which is a line of text, and twelve squares of the same cover would be
+   twelve copies of one fact. */
+.member-list.is-music { gap: 0; }
+.track-cell {
+  display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-2);
+  align-items: baseline; padding: var(--space-1) var(--space-2);
+  border-bottom: 1px solid var(--border); font-size: var(--text-sm);
+}
+.track-cell:last-of-type { border-bottom: 0; }
+.track-number { color: var(--text-dim); min-width: 2ch; text-align: right; }
+.track-title { flex: 1 1 12rem; min-width: 0; overflow-wrap: anywhere; }
+.track-facts, .track-actions {
+  display: flex; flex-wrap: wrap; gap: calc(var(--space-1) / 2); align-items: baseline;
+}
+.track-cell .cell-body { flex-basis: 100%; }
+/* The album's own face, beside its name. A fixed box, so a 404 leaves the
+   heading the shape it already was. */
+.group-cover {
+  flex: 0 0 auto;
+  width: 3rem; height: 3rem; object-fit: cover;
+  border-radius: var(--radius-ui); background: var(--bg-input);
+}
+/* The expansion control lives inside the list — it is the swap target and it
+   replaces itself — so in a grid it has to span the row rather than sit in a
+   cell of its own. */
+.member-list .group-more { grid-column: 1 / -1; font-size: var(--text-sm); }
+
+@media (max-width: 600px) {
+  .member-list.is-photos,
+  .member-list.is-documents,
+  .member-list.is-video { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+}
+
+/* A document's first page, beside what the file says it is. Small — this is a
+   row, not a grid — and enough to tell a novel from a bank statement, which
+   `PDF → Documents` never was. */
+.proposal-document { display: flex; gap: var(--space-2); align-items: flex-start; min-width: 0; }
+.proposal-document .proposal-identity { flex: 1 1 auto; min-width: 0; }
+.doc-page { padding: 0; border: 0; background: none; cursor: zoom-in; flex: 0 0 auto; }
+.doc-page img {
+  width: 3.5rem; height: auto; display: block;
+  border: var(--border-thin) solid var(--border);
+  border-radius: var(--radius-ui); background: var(--bg-input);
 }

@@ -9,8 +9,8 @@ That is the whole result. Everything below is how it was measured and what
 exactly is wrong, because [ROADMAP.md](ROADMAP.md) M1-01 says a measured
 bottleneck is a *result*, not a work order — none of it is fixed here.
 
-    Review      was unusable at every population; now 543 ms at a million,
-                on a flat 186 statements
+    Review      was unusable at every population; now pages decisions rather
+                than files, on a flat 40 statements at a million
     Health      never finished; now 2.1 s at a million — usable, not yet good
     Search      2.6 s at a million; degrading linearly, cause known, not fixed
     Browse      1.2 s at a million; one unbounded query, not fixed
@@ -216,16 +216,45 @@ with the library:
 | Review page 50 | 466 ms (186) | 621 ms (34) |
 | Review, sorted view | 457 ms (186) | 534 ms (186) |
 
-The statement count now varies with **how many rows the page draws** — 34 on a
-page of large groups, 414 on a page of loose files — because three queries per
-row (`is_duplicate_proposal`, and `similar_arrival` twice) have always been
-per-row and the page can now draw up to 125 rows instead of 50. It is bounded
-by `UNITS_PAGE × MEMBER_PREVIEW` and does not move with the library or the
-queue, which `tests/test_scale_surfaces.py` holds.
+The statement count varied with **how many rows the page drew** — 34 on a page
+of large groups, 414 on a page of loose files — because three queries per row
+(`is_duplicate_proposal`, and `similar_arrival` twice) had always been per-row
+and a decision page can draw up to 125 rows instead of 50.
 
-Batching those three is the next performance item and would take the page back
-under 400 ms while making a larger preview cheap. It is recorded rather than
-done, for the same reason as everything else here.
+### The three per-row queries, batched — 2026-09-02
+
+| | paging decisions | after batching |
+|---|---|---|
+| Review page 1 | 737 ms (414 queries) | 1,138 ms (**40**) |
+| Review page 50 | 621 ms (34) | 835 ms (34) |
+| Review, sorted view | 534 ms (186) | 585 ms (**37**) |
+
+Read the statement counts, not the milliseconds: this run shared the machine
+with the test suite, and every timing in this table is inflated by it. The
+counts are exact and are the thing that was changed.
+
+Building a page of rows now costs **7 statements whether it draws five rows or
+fifty**, which is what `test_building_rows_costs_the_same_for_five_as_for_fifty`
+pins. Three things did it:
+
+- **`is_duplicate_proposal` re-read the proposal's own evidence.** There is at
+  most one live proposal per item, so the row the caller is already holding
+  *is* the row that query fetched. It is now a string test on data in hand.
+- **`twins_of` asked one fingerprint at a time.** One `IN` for the page, and
+  only for the rows whose evidence says the duplicate finder staged them —
+  which on an ordinary page is none, so it runs no query at all.
+- **`similar_arrival` opened with a lookup of the item, then asked about the
+  pair.** The first is the row in hand. The second is one statement for the
+  page — and it is the fourth appearance of the shape in this document.
+
+That fourth appearance is worth naming. A `similar_media_flags` row is one
+pair, and either file may be `item_id`, so finding a file's twin means asking
+about two columns — `WHERE f.item_id IN (…) OR f.similar_item_id IN (…)`, which
+defeats both indexes and scans. Two indexed halves and a `UNION ALL` instead,
+exactly as `_later_decisions` was fixed. And the second column **had no index
+at all**: `UNIQUE (item_id, similar_item_id, kind)` indexes the first, and
+nothing indexed the second. That is **migration 048**, and the first schema
+change since 1.3.1 shipped.
 
 ## Human decision scale
 

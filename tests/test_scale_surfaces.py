@@ -419,22 +419,41 @@ def test_one_member_on_this_page_is_not_a_loose_file(tmp_path) -> None:  # noqa:
             )
 
 
-def test_group_totals_respect_the_page_filters(tmp_path) -> None:  # noqa: ANN001
-    """A heading counting the whole group above a narrowed list is a new lie."""
-    from librairy.web.review import ReviewFilters, group_totals, review_data
+def test_a_group_heading_holds_its_two_counts_apart(tmp_path) -> None:  # noqa: ANN001
+    """A heading counting the whole group above a narrowed list is a new lie.
+
+    So is an action saying "all" over a subset. The group keeps both numbers:
+    `total` is how many files it holds, `matching` is how many this view is
+    about — and every button is about `matching`.
+    """
+    from librairy.web.review import ReviewFilters, review_data, unit_proposal_ids
 
     conn, settings = build(
         tmp_path, library=200, inbox=400, findings=20, quarantine=20, history=20
     )
     wide = ReviewFilters()
     narrow = ReviewFilters(min_confidence=0.9)
-    rows = review_data(conn, wide, settings)["groups"]
-    members = [
-        row for group in rows for row in group["rows"] if row.get("group_id") is not None
+
+    for group in review_data(conn, wide, settings)["groups"]:
+        if group["kind"] in ("ungrouped", "sorted"):
+            continue
+        #  Nothing is narrowed, so there is one number and it is said once.
+        assert group["matching"] == group["total"]
+
+    narrowed = [
+        group
+        for group in review_data(conn, narrow, settings)["groups"]
+        if group["kind"] not in ("ungrouped", "sorted")
     ]
-    if not members:
-        pytest.skip("no grouped rows in the fixture")
-    assert group_totals(conn, narrow, members) != group_totals(conn, wide, members)
+    if not narrowed:
+        pytest.skip("no grouped rows survive the filter in this fixture")
+    for group in narrowed:
+        assert group["matching"] <= group["total"]
+        #  The number on the button is the number the server will act on.
+        assert len(unit_proposal_ids(conn, narrow, group["unit"])) == group["matching"]
+    assert any(group["matching"] < group["total"] for group in narrowed), (
+        "expected the filter to exclude part of at least one group"
+    )
 
 
 # --- decisions as the paging unit ---------------------------------------------
@@ -641,7 +660,7 @@ def test_expanding_a_group_is_itself_bounded(tmp_path) -> None:  # noqa: ANN001
 
     second = group_members(conn, ReviewFilters(), unit, page=2, settings=settings)
     assert len(second["rows"]) == MEMBER_PAGE
-    assert second["total"] == 120
+    assert second["matching"] == 120
     assert second["next_page"] == 3
 
     #  Every member reachable, none twice.
@@ -747,3 +766,41 @@ def test_a_group_action_respects_the_filters(tmp_path) -> None:  # noqa: ANN001
     unit = "g9101"
     assert len(unit_proposal_ids(conn, ReviewFilters(), unit)) == 10
     assert len(unit_proposal_ids(conn, ReviewFilters(min_confidence=0.9), unit)) == 4
+
+
+def test_building_rows_costs_the_same_for_five_as_for_fifty(tmp_path) -> None:  # noqa: ANN001
+    """The row builder must not ask a question per row.
+
+    Three did: whether the proposal was staged by the duplicate finder, and
+    two to find the filed copy an arrival resembles. All three were asked of
+    every row whether or not it had an answer, which is invisible on a page of
+    fifty and is the page at a million — and a decision page now draws up to
+    `UNITS_PAGE * MEMBER_PREVIEW` rows, so the multiplier grew too.
+    """
+    from librairy.web.review import ReviewFilters, _proposal_rows
+
+    conn, settings = build(
+        tmp_path, library=400, inbox=400, findings=20, quarantine=20, history=20
+    )
+    ids = [
+        int(row["id"])
+        for row in conn.execute(
+            "SELECT p.id FROM proposals p JOIN items i ON i.id = p.item_id"
+            " WHERE p.status='proposed' AND i.missing_since IS NULL"
+            " ORDER BY p.id LIMIT 50"
+        )
+    ]
+    assert len(ids) == 50, "fixture too small to tell a per-row cost from a fixed one"
+
+    counts = []
+    for wanted in (ids[:5], ids):
+        counting = Counting(conn)
+        rows = _proposal_rows(counting, ReviewFilters(), proposal_ids=wanted, settings=settings)
+        assert len(rows) == len(wanted)
+        counts.append(len(counting.queries))
+
+    small, large = counts
+    assert small == large, (
+        f"ten times the rows cost {large} statements against {small} — "
+        "something in the row builder is still per-row"
+    )

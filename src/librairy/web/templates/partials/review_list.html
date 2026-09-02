@@ -1,4 +1,9 @@
-{% set qs = 'state=' ~ filters.state ~ '&category=' ~ (filters.category or '') ~ '&sort=' ~ filters.sort %}
+{# Every filter, from one place. A pager link or an expansion carrying only
+   some of them means a different page than the one it was drawn on: the
+   confidence bounds used to be left out, so page 2 of a narrowed view was a
+   page of something else, and members could vanish between one page and the
+   next. See `ReviewFilters.form`. #}
+{% set qs = filters.query %}
 <div id="review-list" class="review-list">
   {% if toast %}<p><span class="badge badge-ok">{{ toast }}</span></p>{% endif %}
   {% if notice %}<p class="status ok">{{ notice }}</p>{% endif %}
@@ -47,8 +52,28 @@
              fact read from SQL, never counted from the rows below it — the rows
              are a preview and would give a different, smaller answer. #}
           <summary>
+            {# The album's cover, once, on the heading line. Twelve identical
+               squares of the same picture would be twelve copies of one fact,
+               which is why music is a list and not a grid — but the album still
+               has a face and it belongs to the album.
+
+               Fetched lazily by the browser from the first track. Most
+               libraries have no embedded art, so the route answers 404 often;
+               `alt=""` keeps that an empty box rather than the album's name
+               printed twice, which is right in both directions — the heading
+               beside it already says everything this picture would. #}
+            {% if (group.layout or 'rows') == 'music' %}
+              <img class="group-cover" loading="lazy" decoding="async"
+                   src="/preview/items/{{ group.rows[0].item_id }}/thumb" alt="">
+            {% endif %}
             <span class="group-name">{{ group.label }}</span>
             <span class="muted">{{ group.total }} file{{ '' if group.total == 1 else 's' }}</span>
+            {# How big the group is, and how much of it this view is about, as
+               two numbers. Collapsing them into one is how an action comes to
+               say a number it does not mean. #}
+            {% if group.matching != group.total %}
+              <span class="badge">{{ group.matching }} match this view</span>
+            {% endif %}
             {% if group.category %}<span class="badge">{{ group.category }}</span>{% endif %}
             {% if group.best is defined and group.best %}
               {# One number would hide the case that matters: a group where most
@@ -67,20 +92,29 @@
              A checkbox that "selects the group" could only ever select the
              five members drawn — approving five of a hundred and fifty while
              saying it approved the group — so the count is in the label and
-             the server resolves the unit, not the rendered rows. #}
+             the server resolves the unit, not the rendered rows.
+
+             The label is `matching`, never `total`: under a filter those are
+             different numbers, and "all 150" over an action that touches 73 is
+             the same mistake in the other direction. `filters.form` is posted
+             whole, so the server resolves the unit under exactly the view this
+             button was drawn in. #}
+          {% set scope = group.matching %}
+          {% set names = 'all ' ~ scope if scope == group.total else scope ~ ' matching' %}
           <div class="group-actions">
             <button type="button" class="btn btn-primary"
               hx-post="/review/action"
-              hx-vals='{"action": "approve", "unit": "{{ group.unit }}", "state": "{{ filters.state }}", "category": "{{ filters.category or '' }}", "sort": "{{ filters.sort }}", "page": "{{ filters.page }}"}'
+              hx-vals='{{ dict(filters.form, action='approve', unit=group.unit, page=filters.page) | tojson }}'
               hx-target="#review-list" hx-swap="outerHTML"
               hx-headers='{"x-csrf-token":"{{ request.state.session.csrf_token }}"}'
-              hx-confirm="Approve all {{ group.total }} files in {{ group.label }}? Nothing moves until you commit."
-              >Approve all {{ group.total }}</button>
+              hx-confirm="Approve {{ names }} file{{ '' if scope == 1 else 's' }} in {{ group.label }}? Nothing moves until you commit."
+              >Approve {{ names }}</button>
             <button type="button" class="btn"
               hx-post="/review/action"
-              hx-vals='{"action": "postpone", "unit": "{{ group.unit }}", "state": "{{ filters.state }}", "category": "{{ filters.category or '' }}", "sort": "{{ filters.sort }}", "page": "{{ filters.page }}"}'
+              hx-vals='{{ dict(filters.form, action='postpone', unit=group.unit, page=filters.page) | tojson }}'
               hx-target="#review-list" hx-swap="outerHTML"
               hx-headers='{"x-csrf-token":"{{ request.state.session.csrf_token }}"}'
+              hx-confirm="Put off {{ names }} file{{ '' if scope == 1 else 's' }} in {{ group.label }}?"
               >Later</button>
             <label class="group-pick">
               <input type="checkbox" class="select-all"
@@ -88,22 +122,40 @@
               Select the {{ group.rows|length }} shown
             </label>
           </div>
-          <div class="proposal-list" id="members-{{ group.unit }}">
-            {% for proposal in group.rows %}
-              {% include "partials/review_row.html" %}
-            {% endfor %}
-          </div>
-          {% if group.more %}
-            {# The rest of the group, asked for rather than sent. A three-thousand
-               file event costs this page five rows until somebody wants more. #}
-            <p class="muted group-more">
-              Showing {{ group.rows|length }} of {{ group.total }}.
-              <button type="button" class="btn-ghost"
-                hx-get="/review/group/{{ group.unit }}?page=2&amp;{{ qs }}"
-                hx-target="#members-{{ group.unit }}" hx-swap="beforeend"
-                hx-indicator="closest .group-more">Show more</button>
-            </p>
-          {% endif %}
+          {# The medium decides how a member is drawn and nothing else. The
+             heading above, the whole-group buttons, the preview bound and the
+             expansion below are the same for all four — there is one Review
+             here, wearing the face of whatever the group holds. A `<ul>` even
+             for the list layout, so the expansion can append into any of them
+             with one rule. #}
+          {% set layout = group.layout or 'rows' %}
+          <ul class="member-list is-{{ layout }}" id="members-{{ group.unit }}">
+            {# `rows` is what the member templates loop over, and it is what the
+               expansion endpoint calls them too — one name, so the same
+               template serves the first five members and the next twenty-five. #}
+            {% with rows = group.rows %}
+              {% include "partials/members/" ~ layout ~ ".html" %}
+            {% endwith %}
+            {% if group.more %}
+              {# The rest of the group, asked for rather than sent — a
+                 three-thousand-file event costs this page five rows until
+                 somebody wants more.
+
+                 The control is the swap target and it replaces itself, so
+                 there is one of it however many times it is pressed. Appending
+                 the reply after the members instead left this line where it
+                 was, stale, under a fresh copy of itself saying a different
+                 number. It lives inside the list because that is where the
+                 rows land when it is replaced. #}
+              <li class="muted group-more" id="more-{{ group.unit }}">
+                Showing {{ group.rows|length }} of {{ group.matching }}.
+                <button type="button" class="btn-ghost"
+                  hx-get="/review/group/{{ group.unit }}?page=2&amp;{{ qs }}"
+                  hx-target="#more-{{ group.unit }}" hx-swap="outerHTML"
+                  hx-indicator="closest .group-more">Show more</button>
+              </li>
+            {% endif %}
+          </ul>
         </details>
       {% else %}
         <section class="review-group">

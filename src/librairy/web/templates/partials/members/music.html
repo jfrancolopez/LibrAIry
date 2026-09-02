@@ -1,0 +1,35 @@
+{# An album is a list, not a grid.
+
+   Twelve tracks are told apart by their number and their title, which is a
+   line of text; twelve identical squares of cover art would be twelve copies
+   of one fact. The cover belongs to the *album* and is drawn once, above the
+   tracks, by the group heading — see review_list.html. #}
+{% from "partials/members/cell.html" import pick, score, open_row, body %}
+{% for proposal in rows %}
+  <li class="member-cell track-cell">
+    <label class="cell-pick">{{ pick(proposal) }}<span>Select</span></label>
+    <span class="track-number mono">{{ proposal.music.track if proposal.music and proposal.music.track else '—' }}</span>
+    <span class="track-title">
+      {{ proposal.music.title if proposal.music and proposal.music.title else (proposal.display_name or proposal.item_relpath) }}
+    </span>
+    <span class="track-facts muted">
+      {% if proposal.music and proposal.music.format %}<span class="badge">{{ proposal.music.format }}</span>{% endif %}
+      {# Where the identity came from, named rather than scored: a track number
+         off the file's own tags and one guessed from a filename read the same
+         on screen and are not the same claim. #}
+      {% if proposal.music and proposal.music.source %}<span class="muted">from {{ proposal.music.source }}</span>{% endif %}
+      {% if proposal.size_label %}{{ proposal.size_label }}{% endif %}
+    </span>
+    {# What this file's destination says about originals, said before it is
+       filed rather than discovered afterwards. Context, never a refusal. #}
+    {% if proposal.arriving_policy %}
+      <span class="track-facts"><span class="badge badge-info">{{ proposal.arriving_policy }}</span></span>
+    {% endif %}
+    <span class="track-actions">
+      {{ score(proposal) }}
+      {% if not proposal.dest_relpath %}<span class="badge badge-warn">no destination</span>{% endif %}
+      {{ open_row(proposal) }}
+    </span>
+    {{ body(proposal) }}
+  </li>
+{% endfor %}

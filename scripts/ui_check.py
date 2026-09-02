@@ -30,6 +30,7 @@ by the test suite either — this is run by hand, when a layout changed.
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import re
 import shutil
@@ -203,6 +204,31 @@ def chrome(binary: str | None = None) -> Iterator[Chrome]:
 # --- the page under the microscope --------------------------------------------
 
 
+def _inline_previews(html: str, client) -> str:  # noqa: ANN001
+    """Fetch the page's thumbnails and embed them as `data:` URIs.
+
+    Over `file://` a `/preview/items/…/thumb` resolves to nothing, so every
+    picture on the page was a broken-image icon and a grid of photographs
+    photographed as a grid of alt text. That is precisely the class of thing
+    this harness exists to catch — a layout that measures clean and looks
+    wrong — and it was invisible in the one presentation that is *made* of
+    pictures.
+
+    Bounded by what the page draws: at most a page's worth of thumbnails, each
+    already capped at 320px by the route that renders it. A URL that answers
+    404 is left alone, because "there is no picture here" is a state worth
+    seeing rather than one to paper over.
+    """
+    for src in sorted(set(re.findall(r'"(/preview/items/\d+/thumb[^"]*)"', html))):
+        response = client.get(src.replace("&amp;", "&"))
+        if response.status_code != 200:
+            continue
+        kind = response.headers.get("content-type", "image/jpeg").split(";")[0]
+        encoded = base64.b64encode(response.content).decode("ascii")
+        html = html.replace(f'"{src}"', f'"data:{kind};base64,{encoded}"')
+    return html
+
+
 def render(page, root: Path, *, expand: tuple[str, ...] = ()) -> Path:  # noqa: ANN001
     """Build a fixture library, render one page, inline its CSS.
 
@@ -237,6 +263,7 @@ def render(page, root: Path, *, expand: tuple[str, ...] = ()) -> Path:  # noqa: 
         html = re.sub(rf'<link[^>]+href="{re.escape(href)}"[^>]*>', f"<style>{css}</style>", html)
     # Scripts would 404 as a file, and layout is what is being looked at.
     html = re.sub(r'<script[^>]+src="/static/[^"]+"[^>]*></script>', "", html)
+    html = _inline_previews(html, client)
     for css_class in expand:
         html = html.replace(f'<details class="{css_class}"', f'<details open class="{css_class}"')
     OUT.mkdir(parents=True, exist_ok=True)
@@ -331,6 +358,11 @@ PAGES = {
     # overflow in it survived several passes of this harness. Filtering forces
     # `<details open>`, so the thing being measured is on screen.
     "review-filters": "/review?state=confident",
+    # A group under a filter, which is the only state in which its two counts
+    # differ: the heading says how many files the group holds *and* how many
+    # this view is about, and the buttons say which of the two they act on.
+    # Unfiltered they are the same number and the difference is invisible.
+    "review-group": "/review?min_confidence=0.9",
     # Same reasoning one level down: the evidence panel is the widest thing
     # Review can draw and it is closed by default, so it is invisible to a
     # measurement of the page as served.

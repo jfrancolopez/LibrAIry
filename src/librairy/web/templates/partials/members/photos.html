@@ -1,0 +1,43 @@
+{# Photographs, as photographs.
+
+   Deciding about a camera card is looking, not reading: the question "does
+   this one belong with the others" is answered by the picture in about a
+   second and by a filename never. So the member is the thumbnail, the odd one
+   out is visible without opening anything, and the file's name is underneath
+   it rather than instead of it. #}
+{% from "partials/members/cell.html" import pick, score, open_row, body, zoom %}
+{% for proposal in rows %}
+  <li class="member-cell photo-cell">
+    <label class="cell-pick">{{ pick(proposal) }}<span>Select</span></label>
+    {# The picture is its own zoom control: a 320px thumbnail says there is a
+       photograph, and whether it is *this* photograph often needs the large
+       render the server already knows how to make.
+
+       The image is lazy: the browser fetches the pictures it is about to show,
+       and the page never asks for more thumbnails than it draws. The note is
+       out here rather than inside the button because a button's contents are
+       read as its label — `tests/test_ui_consistency.py` calls a comment in
+       there a sentence, and it is right to. #}
+    {# A picture only where one can exist. A `.txt` in a group of
+       documents has no first page, and an empty box is a better
+       answer than a broken image icon where the face should be. #}
+    {% if proposal.can_preview %}
+    <button type="button" class="cell-face" {{ zoom(proposal, proposal.display_name or proposal.item_relpath) }}
+            title="View {{ proposal.display_name or proposal.item_relpath }} full screen">
+      <img src="/preview/items/{{ proposal.item_id }}/thumb"
+           alt="{{ proposal.display_name or proposal.item_relpath }}"
+           loading="lazy" decoding="async" width="320">
+    </button>
+    {% else %}
+      <span class="cell-face is-blank" aria-hidden="true">{{ proposal.item_relpath.rsplit(".", 1)[-1] | upper }}</span>
+    {% endif %}
+    <p class="cell-name mono" title="{{ proposal.item_relpath }}">{{ proposal.display_name or proposal.item_relpath }}</p>
+    <p class="cell-facts">
+      {{ score(proposal) }}
+      {% if not proposal.dest_relpath %}<span class="badge badge-warn">no destination</span>{% endif %}
+      {% for flag in proposal.flags %}<span class="badge badge-warn">{{ flag.label }}</span>{% endfor %}
+      {{ open_row(proposal) }}
+    </p>
+    {{ body(proposal) }}
+  </li>
+{% endfor %}

@@ -35,10 +35,19 @@ def _tags() -> list[str]:
     ).stdout.split()
 
 
-def test_this_release_is_1_3_1_and_the_schema_is_unchanged() -> None:
+def test_this_release_is_1_3_1_and_the_schema_moved_once_since() -> None:
+    """The released version, and the schema main is on.
+
+    A release number is not a schema change and a schema change is not a
+    release: 1.3.1 shipped on 47, which is what acceptance passed on. 48 adds
+    one index — the other end of a `similar_media_flags` pair, so Review can
+    find an arrival's twin by a seek instead of a scan — and it is unreleased.
+
+    The number is written down here so that changing it is a deliberate act
+    with a sentence attached, rather than something noticed at upgrade time.
+    """
     assert __version__ == "1.3.1"
-    # A release number is not a schema change. 47 is what acceptance passed on.
-    assert SCHEMA_VERSION == 47
+    assert SCHEMA_VERSION == 48
 
 
 def test_the_changelog_records_this_version_as_the_newest_release() -> None:

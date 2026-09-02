@@ -155,10 +155,25 @@ bounded counts. That is the shape — this generalizes it.
 - ~~An ordering that keeps a group together.~~ **Already true**, which the
   M1-01 correction established: `_order_by` sorts by `g.kind, g.label` before
   confidence.
-- An ordering that keeps a group together, since sorting by confidence is half
-  the splitting.
-- Group-level paging, with member paging inside a group.
-- One approve action per group, with per-member removal before it.
+- ~~Group-level paging, with member paging inside a group.~~ **Done
+  2026-09-02.** The page is 25 *decisions*; each shows five members from one
+  `ROW_NUMBER() OVER (PARTITION BY unit)`, and the rest arrives 25 at a time
+  from `GET /review/group/{unit}`. At a million: **40 statements for page 1**,
+  34 for page 50, and neither moves with the library or the queue.
+- ~~One approve action per group, with per-member removal before it.~~ **Done
+  2026-09-02**, and the approve half needed a correction the same day. A group
+  has two counts — how many files it holds, and how many the current filters
+  are about — and the button said "all 120" while `hx-vals` posted a view in
+  which 150 matched, so the server resolved the group honestly under the wrong
+  filters. Now `ReviewFilters.form` is posted whole, the heading says both
+  numbers, and the button names the one it will act on: *Approve 73 matching*,
+  never *all 120*. Per-member removal is M1-04 — splitting a member out of a
+  group is the outlier decision, and inventing half of it here would have been
+  a control that could not finish its sentence.
+- ~~An ordering that keeps a group together.~~ **Already true** (above). What
+  did need fixing is the order *inside* one: members were seated by confidence,
+  so an album read 7, 6, 5, 4, 2. They are seated by destination now, which
+  spells track order, episode order and shutter order without a rule per medium.
 - The existing flat and sorted views kept for the cases where a list is right.
 
 **Do not.** Materialize a groups-of-proposals table before M1-01 says a
@@ -199,12 +214,34 @@ wired per-row instead of per-grid.
 bounded thumbnail loading; zoom and remove-from-group in the grid; the row view
 kept for mixed groups.
 
+**Done 2026-09-02**, except remove-from-group, which is M1-04's decision — see
+the note under M1-02. Four faces over one foundation: `LAYOUTS` maps a group's
+category to `partials/members/{photos,music,video,rows}.html`, and the heading,
+the two counts, the whole-group buttons, the five-member preview and the paged
+expansion are shared by all of them. A cell is a *face*, not a smaller row: it
+carries the picture or the identity and the same `proposal_id` checkbox the
+ordinary row carries, and `GET /review/proposals/{id}/row` fetches the real row
+when somebody wants the destination, the evidence or the edit panel. There is
+one row implementation and none of this is a second.
+
+Two findings worth keeping. **Documents and books never form a group** — a
+group is an album, a season, a disc, a camera event or a project, and a book is
+none of them — so a document grid would have been a template no page could
+reach. The medium got its presentation on the row instead: the first page
+beside the title, author and type it already showed. And **the harness could
+not see any of this**: `scripts/ui_check.py` renders over `file://`, where
+`/preview/items/…/thumb` resolves to nothing, so a grid of photographs
+photographed as a grid of alt text. It inlines previews as `data:` URIs now.
+The dev fixture had no groups at all, and now has three.
+
 **Do not.** Force one generic row interface on every category. Load a grid
 unbounded — a 4,000-photo group is one bounded page like everything else.
 
 **Acceptance.** Each category's group renders in its own idiom; a 200-photo
 group scrolls one bounded page of thumbnails; the thumbnail cache stays inside
-its byte budget.
+its byte budget. A picture is offered only where one can be rendered — images,
+video, and the PDFs a first page can come from — so an `.epub` or a `.txt`
+never draws a broken image where its face should be.
 
 **Scale.** Groups of thousands.
 

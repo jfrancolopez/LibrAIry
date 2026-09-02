@@ -49,6 +49,25 @@
        read out of the file at analysis time. Deliberately not the extracted
        text: a list of rows is not the place to print a bank statement. #}
     {% if proposal.document %}
+    <div class="proposal-document">
+    {# The first page, where one can be rendered. A book and a bank statement
+       are both "PDF → Documents" in words and are told apart at a glance by
+       their cover — which is the whole of the document presentation, and it
+       belongs on the row because nothing groups documents: a group is an
+       album, a season, a disc, an event or a project, and a book is none of
+       them. Lazy, and its own zoom control, like every other picture here. #}
+    {% if proposal.can_preview %}
+      <button type="button" class="doc-page"
+              data-lightbox
+              data-lightbox-title="{{ proposal.document.title or proposal.item_relpath }}"
+              data-lightbox-image="/preview/items/{{ proposal.item_id }}/thumb?size=large"
+              data-lightbox-facts="{{ proposal.item_relpath }}{% if proposal.size_label %} · {{ proposal.size_label }}{% endif %}"
+              title="View the first page full screen">
+        <img src="/preview/items/{{ proposal.item_id }}/thumb"
+             alt="First page of {{ proposal.document.title or proposal.item_relpath }}"
+             loading="lazy" decoding="async" width="320">
+      </button>
+    {% endif %}
     <p class="proposal-identity">
       <span class="badge badge-info">{{ proposal.document.type }}</span>
       {% if proposal.document.title %}
@@ -68,6 +87,7 @@
         read from the pages">No text layer — this is a scan</span>
       {% endif %}
     </p>
+    </div>
     {% endif %}
 
     <div class="proposal-line">

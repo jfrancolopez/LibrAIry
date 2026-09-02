@@ -613,6 +613,10 @@ def build_app(root: Path):  # noqa: ANN201
     #  the "measured, then the library moved on" state Health reports.
     _a_delete_queue(conn, settings)
     _two_arrivals_wanting_one_place(conn, settings)
+    #  Last, because it scans the inbox and every scene above it that seeds a
+    #  proposal by hand expects to own the rows it made.
+    _a_photo_event_in_the_inbox(conn, settings)
+    _an_album_and_a_season_in_the_inbox(conn, settings)
 
     return create_app(settings, conn)
 
@@ -2273,3 +2277,195 @@ def dev_providers() -> None:
         return titles.get(relpath.rsplit("/", 1)[-1], {})
 
     normalize_names._tags_of = tags_of  # type: ignore[assignment]
+
+
+def _a_photo_event_in_the_inbox(conn, settings: Settings) -> None:  # noqa: ANN001
+    """Fourteen photographs that are one decision.
+
+    The fixture had no groups at all, which meant the whole of Review's group
+    furniture — the heading, its two counts, the whole-group buttons, `Show
+    more` — was invisible to `scripts/ui_check.py`. A harness that exists
+    because DOM assertions kept passing over a visibly wrong page cannot check
+    the page's largest control if no fixture ever draws it.
+
+    Grouped by `classify.grouping`, not by an `INSERT`: what makes fourteen
+    files one decision is the thing under test.
+
+    Eleven are confident and three are not, so the heading has something to
+    warn about and a confidence filter splits the group — which is the state in
+    which "how many files" and "how many this view is about" are two different
+    numbers.
+    """
+    from librairy.classify.grouping import GroupInput, group_proposals  # noqa: PLC0415
+    from librairy.lifecycle import transition_item  # noqa: PLC0415
+    from librairy.proposals import upsert_proposal  # noqa: PLC0415
+
+    event, year = "Backyard Party", 2024
+    folder = settings.inbox_dir / "Backyard Party"
+    folder.mkdir(parents=True, exist_ok=True)
+    names = [f"DSC_{4100 + n:04d}.JPG" for n in range(14)]
+    for name in names:
+        (folder / name).write_bytes(JPEG)
+    scan_root(conn, "inbox", settings.inbox_dir, settings)
+
+    inputs, rows = [], {}
+    for name in names:
+        relpath = f"Backyard Party/{name}"
+        row = conn.execute(
+            "SELECT id FROM items WHERE root='inbox' AND relpath=?", (relpath,)
+        ).fetchone()
+        if row is None:
+            continue
+        rows[relpath] = int(row["id"])
+        inputs.append(
+            GroupInput(
+                item_id=int(row["id"]),
+                relpath=relpath,
+                category="photos",
+                clean_name=name,
+                dest_relpath=f"Photos/{year}/{event}/{name.lower()}",
+                fields={"event": event, "year": year},
+            )
+        )
+    for grouped in group_proposals(conn, inputs):
+        name = grouped.relpath.split("/")[-1]
+        #  The last three are the ones nobody is sure about: same evening, no
+        #  usable date in the file, and a guess made from the folder alone.
+        unsure = name >= "DSC_4111.JPG"
+        upsert_proposal(
+            conn,
+            item_id=grouped.item_id,
+            category="photos",
+            clean_name=name,
+            dest_relpath=grouped.dest_relpath,
+            confidence=0.58 if unsure else 0.93,
+            evidence=[
+                EvidenceEntry("filesystem", "folder", f"inbox/{event}", 0.9),
+                EvidenceEntry(
+                    "heuristic",
+                    "event",
+                    f"{event} {year}" if not unsure else "folder name only, no date in the file",
+                    0.58 if unsure else 0.93,
+                ),
+            ],
+            group_id=grouped.group_id,
+        )
+        transition_item(conn, grouped.item_id, "proposed")
+    conn.commit()
+
+
+def _an_album_and_a_season_in_the_inbox(conn, settings: Settings) -> None:  # noqa: ANN001
+    """The other two group shapes, so the other two faces can be looked at.
+
+    Review draws a group as whatever it holds: photographs as a grid of
+    pictures, an album as a list of tracks, film and television as posters and
+    episode numbers. Only one of the three had a fixture, so two of the three
+    presentations could not be photographed by `scripts/ui_check.py` — the tool
+    that exists because DOM assertions kept passing over a page that looked
+    wrong.
+
+    Both are grouped by `classify.grouping` from their fields, like the real
+    thing: an album is an artist and an album name, a season is a show and a
+    number.
+    """
+    from librairy.classify.grouping import GroupInput, group_proposals  # noqa: PLC0415
+    from librairy.lifecycle import transition_item  # noqa: PLC0415
+    from librairy.proposals import upsert_proposal  # noqa: PLC0415
+
+    tracks = [
+        (1, "Speak to Me"),
+        (2, "Breathe"),
+        (3, "On the Run"),
+        (4, "Time"),
+        (5, "The Great Gig in the Sky"),
+        (6, "Money"),
+        (7, "Us and Them"),
+    ]
+    artist, album = "Pink Floyd", "The Dark Side of the Moon"
+    folder = settings.inbox_dir / "DSOTM"
+    folder.mkdir(parents=True, exist_ok=True)
+    for number, title in tracks:
+        (folder / f"{number:02d} - {title}.flac").write_bytes(b"FLaC" + bytes(200))
+
+    episodes = [(1, "Pilot"), (2, "Cat's in the Bag..."), (3, "...And the Bag's in the River")]
+    show, season = "Breaking Bad", 1
+    season_folder = settings.inbox_dir / "BB S01"
+    season_folder.mkdir(parents=True, exist_ok=True)
+    for number, title in episodes:
+        (season_folder / f"S{season:02d}E{number:02d} - {title}.mkv").write_bytes(b"\x00" * 300)
+    scan_root(conn, "inbox", settings.inbox_dir, settings)
+
+    def item(relpath: str) -> int | None:
+        row = conn.execute(
+            "SELECT id FROM items WHERE root='inbox' AND relpath=?", (relpath,)
+        ).fetchone()
+        return int(row["id"]) if row else None
+
+    wanted: list[tuple[GroupInput, float, list[EvidenceEntry]]] = []
+    for number, title in tracks:
+        name = f"{number:02d} - {title}.flac"
+        found = item(f"DSOTM/{name}")
+        if found is None:
+            continue
+        wanted.append(
+            (
+                GroupInput(
+                    item_id=found,
+                    relpath=f"DSOTM/{name}",
+                    category="music",
+                    clean_name=name,
+                    dest_relpath=f"Music/Rock/{artist}/{album}/{name}",
+                    fields={"artist": artist, "album": album},
+                ),
+                #  One track nobody is sure about, so the group has something
+                #  to warn about and a confidence filter splits it.
+                0.55 if title == "On the Run" else 0.94,
+                [
+                    EvidenceEntry("tags", "artist", artist, 0.94),
+                    EvidenceEntry("tags", "album", album, 0.94),
+                    EvidenceEntry("tags", "track", str(number), 0.94),
+                    EvidenceEntry("tags", "title", title, 0.94),
+                ],
+            )
+        )
+    for number, title in episodes:
+        name = f"S{season:02d}E{number:02d} - {title}.mkv"
+        found = item(f"BB S01/{name}")
+        if found is None:
+            continue
+        wanted.append(
+            (
+                GroupInput(
+                    item_id=found,
+                    relpath=f"BB S01/{name}",
+                    category="shows",
+                    clean_name=name,
+                    dest_relpath=f"Shows/{show}/Season {season:02d}/{name}",
+                    fields={"show": show, "season": season},
+                ),
+                0.91,
+                [
+                    EvidenceEntry("tvmaze", "show", show, 0.91),
+                    EvidenceEntry("tvmaze", "title", title, 0.91),
+                    EvidenceEntry("tvmaze", "season", str(season), 0.91),
+                    EvidenceEntry("tvmaze", "episode", str(number), 0.91),
+                ],
+            )
+        )
+    if not wanted:
+        return
+    by_item = {entry[0].item_id: entry for entry in wanted}
+    for grouped in group_proposals(conn, [entry[0] for entry in wanted]):
+        source, confidence, evidence = by_item[grouped.item_id]
+        upsert_proposal(
+            conn,
+            item_id=grouped.item_id,
+            category=source.category,
+            clean_name=source.clean_name,
+            dest_relpath=grouped.dest_relpath,
+            confidence=confidence,
+            evidence=evidence,
+            group_id=grouped.group_id,
+        )
+        transition_item(conn, grouped.item_id, "proposed")
+    conn.commit()

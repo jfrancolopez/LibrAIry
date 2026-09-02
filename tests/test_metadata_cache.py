@@ -99,6 +99,12 @@ def test_the_migration_keeps_every_ffprobe_row(tmp_path: Path) -> None:
         CREATE TABLE plans (id TEXT PRIMARY KEY, status TEXT NOT NULL,
           plan_hash TEXT, created_at TEXT NOT NULL, approved_at TEXT,
           finished_at TEXT);
+        -- Since 048 as well: that migration indexes the other end of a pair,
+        -- and a fixture without the table it indexes is a database nobody has.
+        CREATE TABLE similar_media_flags (id INTEGER PRIMARY KEY,
+          item_id INTEGER NOT NULL, similar_item_id INTEGER NOT NULL,
+          kind TEXT NOT NULL, score REAL, status TEXT NOT NULL DEFAULT 'review',
+          created_at TEXT NOT NULL);
         -- Same reasoning: `settings` has existed since migration 002, and
         -- migration 044 reads the music format preference out of it on its way
         -- into the central Format Policy.

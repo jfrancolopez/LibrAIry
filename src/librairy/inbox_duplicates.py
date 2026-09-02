@@ -124,19 +124,56 @@ def still_redundant(
     return None
 
 
-def describe(conn: sqlite3.Connection, item_id: int) -> dict[str, object] | None:
-    """What Review and Quarantine both say about this file.
+def describe_many(
+    conn: sqlite3.Connection, rows: list[sqlite3.Row]
+) -> dict[int, dict[str, object] | None]:
+    """`describe` for a whole page, in one statement instead of one per row.
 
-    One description, two pages, so "already in your library" cannot be phrased
-    two ways. Returns None for anything that is not a staged exact duplicate.
+    Two things made this a per-row cost. `is_duplicate_proposal` re-read the
+    proposal's own evidence, which the caller is already holding — there is at
+    most one live proposal per item, so the row in hand *is* the row that query
+    fetched. And `twins_of` asked for one fingerprint at a time.
+
+    Rows must carry `item_id`, `evidence` and the item's `fingerprint`. Only
+    the staged duplicates cost anything: on an ordinary page nothing here runs
+    a query at all.
     """
-    if not is_duplicate_proposal(conn, item_id):
-        return None
-    twins = twins_of(conn, item_id)
+    staged = [row for row in rows if EVIDENCE_PREFIX in (row["evidence"] or "")]
+    if not staged:
+        return {}
+    prints = sorted({str(row["fingerprint"]) for row in staged if row["fingerprint"]})
+    found: dict[str, list[Twin]] = {}
+    if prints:
+        placeholders = ",".join("?" * len(prints))
+        for twin in conn.execute(
+            f"""
+            SELECT id, relpath, size, fingerprint FROM items
+            WHERE root='library' AND missing_since IS NULL
+              AND fingerprint IN ({placeholders})
+            ORDER BY relpath
+            """,  # noqa: S608 - placeholders are counted, values are bound
+            prints,
+        ):
+            found.setdefault(str(twin["fingerprint"]), []).append(
+                Twin(int(twin["id"]), twin["relpath"], int(twin["size"] or 0))
+            )
     return {
-        "twins": [
-            {"item_id": twin.item_id, "relpath": twin.relpath} for twin in twins
-        ],
+        int(row["item_id"]): _described(
+            #  A file is never its own twin, which the per-item query said with
+            #  `id != ?` and this one has to say here.
+            [
+                twin
+                for twin in found.get(str(row["fingerprint"] or ""), [])
+                if twin.item_id != int(row["item_id"])
+            ]
+        )
+        for row in staged
+    }
+
+
+def _described(twins: list[Twin]) -> dict[str, object]:
+    return {
+        "twins": [{"item_id": twin.item_id, "relpath": twin.relpath} for twin in twins],
         "match": twins[0].relpath if twins else "",
         "extra": max(0, len(twins) - 1),
         #  The whole reason this is actionable without asking which copy to
@@ -148,3 +185,14 @@ def describe(conn: sqlite3.Connection, item_id: int) -> dict[str, object] | None
         ),
         "still_redundant": bool(twins),
     }
+
+
+def describe(conn: sqlite3.Connection, item_id: int) -> dict[str, object] | None:
+    """What Review and Quarantine both say about this file.
+
+    One description, two pages, so "already in your library" cannot be phrased
+    two ways. Returns None for anything that is not a staged exact duplicate.
+    """
+    if not is_duplicate_proposal(conn, item_id):
+        return None
+    return _described(twins_of(conn, item_id))

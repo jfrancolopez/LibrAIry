@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+### Review
+
+Review pages decisions rather than files. An album or a camera card is one
+entry in the list whether it holds three files or three thousand, with its
+members previewed five at a time and the rest fetched a page at a time when
+asked for. A group's heading now carries two counts and never blurs them: how
+many files the group holds, and how many the current filters are about — and a
+whole-group action names the second, resolves it on the server under the
+filters the page was drawn with, and confirms the exact number before it acts.
+
+Pager and expansion links now carry every filter. They carried the state, the
+category and the sort but not the confidence bounds, so the second page of a
+narrowed view was a page of something else and a group's members could go
+missing between one page of an expansion and the next.
+
+### Performance
+
+Building a page of Review rows no longer asks a question per row. Whether a
+proposal was staged by the duplicate finder is read from evidence the page is
+already holding, and the filed copy an arrival resembles is found for the whole
+page in one statement instead of two per row. **Schema 48** indexes the second
+end of a `similar_media_flags` pair, which had no index at all: a pair can be
+found from either file, and only one of the two columns could be sought.
+
 ### Documentation
 
 The planning documentation was rebuilt around what LibrAIry is becoming rather

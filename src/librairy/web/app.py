@@ -138,6 +138,7 @@ from librairy.web.review import (
     edit_proposal,
     filters_from_query,
     group_members,
+    proposal_row,
     queue_data,
     review_data,
 )
@@ -1020,12 +1021,11 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         return TEMPLATES.TemplateResponse(
             request,
             "partials/review_members.html",
-            {
-                **data,
-                "filters": filters,
-                "qs": f"state={filters.state}&category={filters.category or ''}"
-                f"&sort={filters.sort}",
-            },
+            #  `filters.query` and not a hand-built string: the confidence and
+            #  destination bounds were missing from the one written here, so
+            #  the second page of an expansion was computed under looser
+            #  filters than the first and members went missing between them.
+            {**data, "filters": filters, "qs": filters.query},
         )
 
     @app.post("/review/undo", response_class=HTMLResponse)
@@ -2284,6 +2284,29 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             request,
             "partials/review_list.html",
             {"toast": action_toast(action, changed), **review_data(conn, filters, settings)},
+        )
+
+    @app.get("/review/proposals/{proposal_id}/row", response_class=HTMLResponse)
+    def review_row(request: Request, proposal_id: int, sort: str | None = None) -> HTMLResponse:
+        """One proposal drawn as the list draws it.
+
+        What a media cell opens. A thumbnail grid answers "is this the right
+        picture"; the destination, the evidence, the edit panel and the four
+        actions are the ordinary row, and this fetches that row rather than
+        having four presentations each grow their own copy of it.
+        """
+        try:
+            proposal = proposal_row(conn, settings, proposal_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return TEMPLATES.TemplateResponse(
+            request,
+            "partials/review_row.html",
+            {
+                "proposal": proposal,
+                "filters": filters_from_query(sort=sort),
+                "categories": REVIEW_CATEGORIES,
+            },
         )
 
     @app.post("/review/proposals/{proposal_id}/edit", response_class=HTMLResponse)

@@ -4,8 +4,9 @@ import sqlite3
 from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
 from typing import Any
+from urllib.parse import urlencode
 
-from librairy.arrival_comparison import describe as describe_arrival
+from librairy.arrival_comparison import describe_many as describe_arrivals
 from librairy.audit import FOLDER_KINDS, KINDS, findings_by_ids
 from librairy.audit_duplicates import copies as duplicate_copies
 from librairy.audit_job import progress as audit_progress
@@ -28,13 +29,14 @@ from librairy.destination_choice import ChildFolders
 from librairy.document_works import is_work_finding
 from librairy.duplicates import items_with_reports, reports_for_item
 from librairy.flags import flags_for, unhidden_name
-from librairy.inbox_duplicates import describe as describe_duplicate
+from librairy.inbox_duplicates import describe_many as describe_duplicates
 from librairy.lifecycle import (
     resolved_missing_count,
     transition_item,
     vanished_count,
     vanished_entries,
 )
+from librairy.mediakind import kind_for
 from librairy.paths import PathValidationError, sanitize_component, validate_dest
 from librairy.planner import utc_now
 from librairy.proposals import decode_evidence, proposal_label
@@ -75,6 +77,7 @@ from librairy.web.evidence import (
 )
 from librairy.web.subjects import group as group_subjects
 from librairy.web.subjects import subject_key
+from librairy.web.thumbs import PAGE_RENDER_EXTENSIONS
 
 # The three effective states that mean "an approved plan already owns this".
 # All three belong under Waiting for Commit: an outdated approval is still an
@@ -149,6 +152,31 @@ class ReviewFilters:
             or self.max_confidence is not None
             or self.has_destination is not None
         )
+
+    @property
+    def form(self) -> dict[str, str]:
+        """Every filter this view is under, named as the routes read them.
+
+        One place, because a link or a button that carries *some* of the
+        filters is worse than one that carries none: it silently means a
+        different page than the one it was drawn on. Leaving the confidence
+        bounds out of this was how "Approve all 120" came to resolve a hundred
+        and fifty on the server — the count was honest about the view, and the
+        action was not under it.
+        """
+        carried = {"state": self.state, "sort": self.sort, "category": self.category or ""}
+        if self.min_confidence is not None:
+            carried["min_confidence"] = f"{self.min_confidence:g}"
+        if self.max_confidence is not None:
+            carried["max_confidence"] = f"{self.max_confidence:g}"
+        if self.has_destination is not None:
+            carried["has_destination"] = "yes" if self.has_destination else "no"
+        return carried
+
+    @property
+    def query(self) -> str:
+        """`form` as a query string, for the links that page and expand."""
+        return urlencode(self.form)
 
 
 def review_data(
@@ -238,7 +266,7 @@ def unit_proposal_ids(
             f"""
             SELECT p.id AS id FROM proposals p JOIN items i ON i.id = p.item_id
             WHERE {where} AND COALESCE('g' || p.group_id, 'p' || p.id) = ?
-            ORDER BY p.confidence DESC, p.id DESC
+            ORDER BY {_MEMBER_ORDER}
             """,  # noqa: S608 - where comes from _where; unit is bound
             [*params, unit],
         )
@@ -390,6 +418,12 @@ ACTION_TOASTS = {
 
 
 def action_toast(action: str, changed: int) -> str:
+    #  "0 files approved. Nothing has moved yet" reads like a success and is
+    #  the one case where the reader needs telling that nothing happened. It
+    #  is what a group action looks like when the filters moved under it
+    #  between the page being drawn and the button being pressed.
+    if changed == 0:
+        return "Nothing matched, so nothing changed."
     plural = changed != 1
     noun = f"{changed} file{'s' if plural else ''}"
     template = ACTION_TOASTS.get(action, "{n} updated.")
@@ -699,6 +733,127 @@ def _work_row(conn, settings, row: sqlite3.Row) -> dict[str, object] | None:  # 
     }
 
 
+#  Which face a group wears. One decision foundation and four presentations:
+#  what changes is how a member is *drawn*, never what a decision is, what a
+#  group action covers, or what Commit does with any of it. A mixed group has
+#  no single medium and so keeps the ordinary rows — a grid of thumbnails over
+#  three photographs and a spreadsheet would be a worse answer than a list.
+#  Documents and books are absent on purpose. Nothing groups them — a group is
+#  an album, a season, a disc, a camera event or a project, and a book belongs
+#  to none of those — so a document grid would be a template no page could
+#  reach. The medium still gets its presentation, on the row, which is where a
+#  document actually is: its first page, its title, its author and its type.
+#  See `review_row.html`.
+LAYOUTS = {
+    "photos": "photos",
+    "music": "music",
+    "movies": "video",
+    "shows": "video",
+    "music_videos": "video",
+}
+ROWS = "rows"
+
+
+def layout_for(category: object) -> str:
+    """The presentation for a group of this category, or the ordinary rows."""
+    return LAYOUTS.get(str(category or ""), ROWS)
+
+
+def _evidence_fields(row: sqlite3.Row, source: str = "") -> dict[str, str]:
+    """The row's own evidence as `field -> detail`, latest entry winning.
+
+    Read off what analysis already wrote and the page is already holding. No
+    lookup: drawing a row must not open a file or ask the catalogs again.
+    """
+    return {
+        entry.field: str(entry.detail)
+        for entry in (decode_evidence(row["evidence"]) if row["evidence"] else [])
+        if not source or entry.source == source
+    }
+
+
+def _can_preview(relpath: str) -> bool:
+    """Could a picture be rendered for this file? By name, with no I/O.
+
+    Pictures and videos, and the documents a first page can be rendered from —
+    which is PDFs and nothing else. An `.epub` and a `.txt` are both documents
+    to `mediakind` and neither has a page image, so the coarser question would
+    put a broken image on both.
+
+    Audio is deliberately absent: cover art may or may not be embedded, and
+    that is not knowable from a filename. The album's own face is drawn once
+    from its first track, where a 404 costs one empty box rather than twelve.
+    """
+    kind = kind_for(relpath)
+    if kind in {"image", "video"}:
+        return True
+    return kind == "document" and PurePosixPath(relpath).suffix.lower() in PAGE_RENDER_EXTENSIONS
+
+
+def _music_row(row: sqlite3.Row) -> dict[str, object] | None:
+    """Which recording this is, for a member of an album.
+
+    The heading already says the album. What a track needs beside it is its
+    number and its title — the two things that tell one file in a group of
+    twelve from another — and what the identity was read from, because a
+    number off the file's own tags and a number guessed from the filename are
+    not the same claim.
+    """
+    if row["category"] != "music":
+        return None
+    found = _evidence_fields(row)
+    tagged = _evidence_fields(row, "tags")
+    catalog = next(
+        (
+            entry.source
+            for entry in (decode_evidence(row["evidence"]) if row["evidence"] else [])
+            if entry.source in {"musicbrainz", "discogs"}
+        ),
+        "",
+    )
+    return {
+        "track": found.get("track", ""),
+        "title": found.get("title", ""),
+        "artist": found.get("artist", ""),
+        "album": found.get("album", ""),
+        "format": PurePosixPath(row["item_relpath"]).suffix.lstrip(".").upper(),
+        #  Where the identity came from, named rather than scored. A catalog
+        #  match and a filename guess produce the same two words on screen and
+        #  are not the same evidence.
+        "source": catalog or ("tags" if tagged else ""),
+    }
+
+
+def _video_row(row: sqlite3.Row) -> dict[str, object] | None:
+    """What this film or episode is, for a member of a season or a disc."""
+    if row["category"] not in ("movies", "shows", "music_videos"):
+        return None
+    found = _evidence_fields(row)
+    catalog = next(
+        (
+            entry.source
+            for entry in (decode_evidence(row["evidence"]) if row["evidence"] else [])
+            if entry.source in {"tmdb", "tvmaze"}
+        ),
+        "",
+    )
+    season, episode = found.get("season", ""), found.get("episode", "")
+    return {
+        "title": found.get("title", ""),
+        "year": found.get("year", ""),
+        "show": found.get("show", ""),
+        #  "S02E07" is how anybody reading a television folder thinks about it,
+        #  and it only means anything when both halves are there.
+        "episode": (
+            f"S{int(season):02d}E{int(episode):02d}"
+            if season.isdigit() and episode.isdigit()
+            else ""
+        ),
+        "version": found.get("version", ""),
+        "source": catalog,
+    }
+
+
 def _document_row(row: sqlite3.Row) -> dict[str, object] | None:
     """A document's identity for the Review row, or None.
 
@@ -761,6 +916,10 @@ def _proposal_rows(
         f"""
         SELECT p.*, i.relpath AS item_relpath, i.state AS item_state,
                i.size AS item_size, i.first_seen_at AS item_first_seen_at,
+               -- Read by the two batched lookups below rather than fetched
+               -- again per row. Both used to open with a query for the item
+               -- the caller was already holding.
+               i.fingerprint AS fingerprint, i.root AS root,
                g.kind AS group_kind, g.label AS group_label
         FROM proposals p
         JOIN items i ON i.id = p.item_id
@@ -781,6 +940,12 @@ def _proposal_rows(
     #  Batched for the same reason: the scope table and the protected roots are
     #  read once, not once per row.
     arriving = arriving_policies(conn, rows)
+    #  The last two per-row lookups. Three queries on every row, whether or not
+    #  the row had anything to say — which is nothing at fifty rows and is the
+    #  page at a million. Both are now one statement for the page, and both
+    #  cost nothing at all when no row on it is a duplicate or an arrival.
+    duplicates = describe_duplicates(conn, rows)
+    similar = describe_arrivals(conn, settings, rows) if settings is not None else {}
     return [
         {
             **dict(row),
@@ -797,6 +962,11 @@ def _proposal_rows(
             #  printed here from the stored evidence. Never a lookup: this page
             #  does not open a PDF to draw a row.
             "document": _document_row(row),
+            #  The same reading, for the other two media that have an identity
+            #  worth printing. All three come off evidence the row is already
+            #  carrying — a grid of album art asks the database nothing.
+            "music": _music_row(row),
+            "video": _video_row(row),
             "evidence_views": (views := humanize_evidence(row["evidence"])),
             # The score broken into where it came from. A bar of one length
             # says how sure; the same bar in pieces says why, which is what
@@ -807,6 +977,11 @@ def _proposal_rows(
             # Advisories, not classification: a wallet or a hidden file should
             # not disappear into a bulk approve unnoticed.
             "flags": flags_for(row["item_relpath"]),
+            #  Whether a picture can be drawn for this file at all, from its
+            #  name and nothing else — a media cell must not offer a thumbnail
+            #  for a `.txt` and get a broken image where the face should be.
+            #  Says a render is *possible*, not that it will succeed.
+            "can_preview": _can_preview(row["item_relpath"]),
             "unhidden_name": unhidden_name(row["item_relpath"]),
             # The comparison itself is loaded on demand — it carries two
             # previews, and a page of fifty rows must not fetch a hundred.
@@ -815,16 +990,12 @@ def _proposal_rows(
             # than buried in the comparison panel: "already in your library"
             # is useless without saying where, and where is the only thing
             # that decides whether this arrival is worth keeping.
-            "duplicate_of": describe_duplicate(conn, int(row["item_id"])),
+            "duplicate_of": duplicates.get(int(row["item_id"])),
             # Not the same bytes, and the same recording. A different question
             # with three different answers — see
             # `librairy/arrival_comparison.py` for why the cross-root version
             # of "which of these do you want" is not the library-to-library one.
-            "similar_to": (
-                describe_arrival(conn, settings, int(row["item_id"]))
-                if settings is not None
-                else None
-            ),
+            "similar_to": similar.get(int(row["item_id"])),
             # Re-analyse puts the item back to 'discovered' and leaves the old
             # guess on screen until the worker replaces it in place. Without
             # saying so, pressing it looks like it did nothing.
@@ -1030,6 +1201,22 @@ MEMBER_PREVIEW = 5
 MEMBER_PAGE = 25
 
 
+#  The order members are drawn and seated in, and the same one everywhere: the
+#  preview, the expansion and a whole-group action all number the same files
+#  the same way, or a group has a hole in the middle of it.
+#
+#  Natural order, not confidence order. An album listed 7, 6, 5, 4, 2 is wrong
+#  to anybody who has ever seen an album, and so is a season out of episode
+#  order or a camera card out of shutter order — and the destination path spells
+#  all three, because it is where the file is *going* under the name it will
+#  have. Confidence belongs to the heading, which says how many members are
+#  doubtful; it was never a way to sort the inside of one thing.
+#
+#  `i.relpath` catches the members that have no destination yet, which sort
+#  first — they are the ones that need reading.
+_MEMBER_ORDER = "COALESCE(p.dest_relpath, i.relpath), p.id"
+
+
 def _unit_select(filters: ReviewFilters) -> tuple[str, list[object]]:
     """Every decision waiting, one row each, with what the heading needs.
 
@@ -1120,7 +1307,7 @@ def member_ids(
           SELECT COALESCE('g' || p.group_id, 'p' || p.id) AS unit, p.id AS id,
                  ROW_NUMBER() OVER (
                    PARTITION BY COALESCE('g' || p.group_id, 'p' || p.id)
-                   ORDER BY p.confidence DESC, p.id DESC
+                   ORDER BY {_MEMBER_ORDER}
                  ) AS seat
           FROM proposals p
           JOIN items i ON i.id = p.item_id
@@ -1169,7 +1356,7 @@ def group_members(
           SELECT p.id AS id, COALESCE('g' || p.group_id, 'p' || p.id) AS unit,
                  ROW_NUMBER() OVER (
                    PARTITION BY COALESCE('g' || p.group_id, 'p' || p.id)
-                   ORDER BY p.confidence DESC, p.id DESC
+                   ORDER BY {_MEMBER_ORDER}
                  ) AS seat
           FROM proposals p
           JOIN items i ON i.id = p.item_id
@@ -1182,35 +1369,101 @@ def group_members(
     ).fetchall()
     ids = [int(row["id"]) for row in rows]
     if not ids:
-        return {"rows": [], "unit": unit, "more": 0, "next_page": 0}
+        return {"rows": [], "unit": unit, "layout": ROWS, "matching": 0, "more": 0,
+                "next_page": 0}
     found = {
         int(row["id"]): row
         for row in _proposal_rows(conn, filters, proposal_ids=ids, settings=settings)
     }
     members = [found[pid] for pid in ids if pid in found]
-    total = _unit_total(conn, filters, unit)
+    #  The matching count, under the page's filters — the same number the
+    #  heading and the group buttons are about. Expansion walks the set the
+    #  action would act on and nothing else.
+    matching, layout = _unit_facts(conn, filters, unit)
     seen = lower + len(members)
     return {
         "rows": members,
         "unit": unit,
-        "total": total,
+        "layout": layout,
+        "matching": matching,
         "shown": seen,
-        "more": max(0, total - seen),
-        "next_page": page + 1 if total > seen else 0,
+        "more": max(0, matching - seen),
+        "next_page": page + 1 if matching > seen else 0,
     }
 
 
-def _unit_total(conn: sqlite3.Connection, filters: ReviewFilters, unit: str) -> int:
-    where, params = _where(filters)
-    return int(
-        conn.execute(
-            f"""
-            SELECT COUNT(*) FROM proposals p JOIN items i ON i.id = p.item_id
-            WHERE {where} AND COALESCE('g' || p.group_id, 'p' || p.id) = ?
-            """,  # noqa: S608 - where comes from _where
-            [*params, unit],
-        ).fetchone()[0]
+def _unnarrowed(filters: ReviewFilters) -> ReviewFilters:
+    """The same view with the narrowing filters dropped.
+
+    State stays: the "rejected" view is a view of rejected proposals, and a
+    group's size *there* is how many of its files were rejected. Category and
+    the confidence and destination bounds go, because those are what the reader
+    narrowed with and what the two counts are meant to hold apart.
+    """
+    return replace(
+        filters,
+        category=None,
+        min_confidence=None,
+        max_confidence=None,
+        has_destination=None,
     )
+
+
+def unit_totals(
+    conn: sqlite3.Connection, filters: ReviewFilters, units: list[dict[str, Any]]
+) -> dict[str, int]:
+    """How big each decision on this page is, ignoring the narrowing filters.
+
+    A group has two counts and they must never be shown as one. `members` from
+    `_unit_select` is how many match the current view — the number an action
+    will touch. This is how many the group holds, which is the number the
+    heading means by "150 files". When they differ the page says both, and the
+    action names the one it is about.
+
+    One statement for the page, and only when the view is narrowed at all: the
+    default Review page asks nothing extra, because there the two are the same
+    number by construction.
+    """
+    keys = [str(unit["unit"]) for unit in units]
+    if not keys:
+        return {}
+    where, params = _where(_unnarrowed(filters))
+    placeholders = ",".join("?" * len(keys))
+    return {
+        str(row["unit"]): int(row["total"])
+        for row in conn.execute(
+            f"""
+            SELECT COALESCE('g' || p.group_id, 'p' || p.id) AS unit, COUNT(*) AS total
+            FROM proposals p
+            JOIN items i ON i.id = p.item_id
+            WHERE {where} AND COALESCE('g' || p.group_id, 'p' || p.id) IN ({placeholders})
+            GROUP BY unit
+            """,  # noqa: S608 - where comes from _where; keys are bound
+            [*params, *keys],
+        )
+    }
+
+
+def _unit_facts(conn: sqlite3.Connection, filters: ReviewFilters, unit: str) -> tuple[int, str]:
+    """How many members this decision has under the filters, and its layout.
+
+    Both in one statement, and the layout from the *whole* unit rather than
+    from the members on the page: a group whose first page happens to be all
+    photographs is still a mixed group, and it must not change shape halfway
+    down as somebody expands it.
+    """
+    where, params = _where(filters)
+    row = conn.execute(
+        f"""
+        SELECT COUNT(*) AS total, COUNT(DISTINCT p.category) AS categories,
+               MIN(p.category) AS category
+        FROM proposals p JOIN items i ON i.id = p.item_id
+        WHERE {where} AND COALESCE('g' || p.group_id, 'p' || p.id) = ?
+        """,  # noqa: S608 - where comes from _where
+        [*params, unit],
+    ).fetchone()
+    categories = int(row["categories"] or 0)
+    return int(row["total"] or 0), ROWS if categories > 1 else layout_for(row["category"])
 
 
 def grouped_page(
@@ -1227,6 +1480,7 @@ def grouped_page(
     if not units:
         return [], total
     by_unit = member_ids(conn, filters, units)
+    sizes = unit_totals(conn, filters, units) if _unnarrowed(filters) != filters else {}
     wanted = [pid for ids in by_unit.values() for pid in ids]
     rows = {
         int(row["id"]): row
@@ -1245,11 +1499,18 @@ def grouped_page(
         if int(unit["members"]) <= 1:
             loose.extend(members)
             continue
+        #  Two numbers, never blurred into one. `matching` is what an action
+        #  on this decision will touch, under the filters the page is showing;
+        #  `total` is how many files the group holds. They are equal on the
+        #  default page and the heading says one number; under a filter they
+        #  are not, and the heading says both while the buttons name `matching`.
+        matching = int(unit["members"])
         section = {
             "kind": str(unit["kind"]),
             "label": str(unit["label"]),
             "rows": members,
-            "total": int(unit["members"]),
+            "matching": matching,
+            "total": int(sizes.get(str(unit["unit"]), matching)),
             "unit": str(unit["unit"]),
             "group_id": unit["group_id"],
             "best": float(unit["best"] or 0.0),
@@ -1258,13 +1519,29 @@ def grouped_page(
             "doubtful": int(unit["doubtful"] or 0),
             "undecided": int(unit["undecided"] or 0),
             "category": "" if int(unit["categories"] or 0) > 1 else str(unit["category"] or ""),
-            "more": max(0, int(unit["members"]) - len(members)),
+            #  A group of one medium is drawn as that medium. A mixed one is
+            #  not, and says so by staying a list.
+            "layout": (
+                ROWS if int(unit["categories"] or 0) > 1 else layout_for(unit["category"])
+            ),
+            #  What is left to *show*, which follows the matching set — the
+            #  members a filter excluded are not waiting behind "Show more".
+            "more": max(0, matching - len(members)),
         }
         _shorten_names(section)
         sections.append(section)
     if loose:
         sections.append(
-            {"kind": "ungrouped", "label": "Ungrouped", "rows": loose, "total": len(loose)}
+            {
+                "kind": "ungrouped",
+                "label": "Ungrouped",
+                "rows": loose,
+                "total": len(loose),
+                "matching": len(loose),
+                #  Loose files are one decision each and share nothing but the
+                #  fact that they are loose. There is no medium to specialise.
+                "layout": ROWS,
+            }
         )
     return sections, total
 
@@ -1274,91 +1551,6 @@ def _flat_group(rows: list[dict[str, Any]]) -> list[dict[str, object]]:
     if not rows:
         return []
     return [{"kind": "sorted", "label": "", "rows": rows}]
-
-
-def group_totals(
-    conn: sqlite3.Connection, filters: ReviewFilters, rows: list[dict[str, Any]]
-) -> dict[int, int]:
-    """How many files each group on this page actually holds.
-
-    One query for the page, and it answers the question the heading could not:
-    a group larger than a page shows the members that landed on it, and until
-    this there was nothing to say how many did not. "12 shown" of what?
-
-    Counted under the same filters as the page, because a heading that counted
-    the whole group while the list below it was narrowed would be a different
-    lie in the same place.
-    """
-    ids = sorted({int(row["group_id"]) for row in rows if row["group_id"] is not None})
-    if not ids:
-        return {}
-    where, params = _where(filters)
-    placeholders = ",".join("?" * len(ids))
-    return {
-        int(row["group_id"]): int(row["total"])
-        for row in conn.execute(
-            f"""
-            SELECT p.group_id AS group_id, COUNT(*) AS total
-            FROM proposals p
-            JOIN items i ON i.id = p.item_id
-            WHERE {where} AND p.group_id IN ({placeholders})
-            GROUP BY p.group_id
-            """,  # noqa: S608 - where comes from _where, placeholders are counted
-            (*params, *ids),
-        )
-    }
-
-
-def _group_rows(
-    rows: list[dict[str, Any]], totals: dict[int, int] | None = None
-) -> list[dict[str, object]]:
-    groups: list[dict[str, object]] = []
-    by_key: dict[tuple[str, str], dict[str, object]] = {}
-    for row in rows:
-        key = (row["group_kind"] or "ungrouped", row["group_label"] or "Ungrouped")
-        group = by_key.get(key)
-        if group is None:
-            group = {"kind": key[0], "label": key[1], "rows": [], "total": 0}
-            by_key[key] = group
-            groups.append(group)
-        group_rows = group["rows"]
-        assert isinstance(group_rows, list)
-        group_rows.append(row)
-        if totals and row["group_id"] is not None:
-            group["total"] = totals.get(int(row["group_id"]), 0)
-    return _fold_singletons(groups)
-
-
-def _fold_singletons(groups: list[dict[str, object]]) -> list[dict[str, object]]:
-    """A group of one is not a group.
-
-    The point of a group is deciding a whole album at once; a heading, a
-    select-all checkbox and a section margin above a single file is three
-    pieces of furniture for a decision you were going to make anyway. It also
-    changes as files arrive, so it belongs here rather than in the database:
-    the second track of an album turns its group real without re-analysing the
-    first. Loose files gather into one section at the end.
-    """
-    #  A group whose *whole* membership is one file is not a group. One member
-    #  on this page is a different thing entirely — the rest are on the next
-    #  page — and folding those into the loose pile is what made a 150-photo
-    #  event look like 150 unrelated files.
-    real = [
-        group
-        for group in groups
-        if len(group["rows"]) > 1 or int(group.get("total") or 0) > 1  # type: ignore[arg-type]
-    ]
-    loose = [
-        row
-        for group in groups
-        if len(group["rows"]) == 1 and int(group.get("total") or 0) <= 1  # type: ignore[arg-type]
-        for row in group["rows"]
-    ]
-    for group in real:
-        _shorten_names(group)
-    if loose:
-        real.append({"kind": "ungrouped", "label": "Ungrouped", "rows": loose, "total": len(loose)})
-    return real
 
 
 def _shorten_names(group: dict[str, object]) -> None:

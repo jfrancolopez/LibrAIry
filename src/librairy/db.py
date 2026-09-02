@@ -9,7 +9,7 @@ from pathlib import Path
 from librairy.config import Settings
 
 LOGGER = logging.getLogger(__name__)
-SCHEMA_VERSION = 47
+SCHEMA_VERSION = 48
 
 
 class DatabaseVersionError(RuntimeError):
@@ -1397,6 +1397,23 @@ ALTER TABLE plan_withdrawals ADD COLUMN conflicted_with TEXT;
 CREATE INDEX idx_plan_withdrawals_at ON plan_withdrawals(withdrawn_at);
 """
 
+MIGRATION_048 = """
+-- A pair can be found from either end, and only one end was indexed.
+--
+-- `similar_media_flags` records one row per pair, and which of the two files
+-- is `item_id` is an accident of the order czkawka reported them. Asking "what
+-- is this file paired with" therefore has to look in both columns, and the
+-- half that looked in `similar_item_id` scanned the table — once per row of
+-- Review, which is not visible in a page of fifty and is the whole page at a
+-- million.
+--
+-- The UNIQUE constraint already indexes `item_id` as its leading column. This
+-- is the other end of the same question.
+CREATE INDEX IF NOT EXISTS idx_similar_media_flags_similar_item_id
+  ON similar_media_flags(similar_item_id);
+"""
+
+
 MIGRATIONS = {
     1: MIGRATION_001,
     2: MIGRATION_002,
@@ -1445,6 +1462,7 @@ MIGRATIONS = {
     45: MIGRATION_045,
     46: MIGRATION_046,
     47: MIGRATION_047,
+    48: MIGRATION_048,
 }
 
 

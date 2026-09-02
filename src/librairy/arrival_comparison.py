@@ -172,21 +172,111 @@ def _destination(twin_relpath: str, arrival_relpath: str) -> str:
     return str(twin.with_name(twin.stem + suffix))
 
 
-def describe(
-    conn: sqlite3.Connection, settings: Settings, item_id: int
-) -> dict[str, object] | None:
-    """What the Review row says about this arrival, without measuring anything.
+def arrivals_for(
+    conn: sqlite3.Connection, rows: list[sqlite3.Row]
+) -> dict[int, Arrival]:
+    """`similar_arrival` for a whole page, in one statement.
 
-    The technical table is fetched when somebody opens it, from the same
-    endpoint the library-to-library comparison uses. This is the sentence above
-    it and the three buttons under it.
+    Two queries per row, on every row, whether or not it has a twin — invisible
+    at fifty rows and the shape of the page at a million. The first read the
+    item, which the caller is already holding; this takes it from the row.
+
+    The second is the interesting half. A pair is one row and either file can
+    be `item_id`, so finding one from either end means asking about two
+    columns — and `WHERE f.item_id IN (…) OR f.similar_item_id IN (…)` defeats
+    both indexes and scans, which is the exact shape that broke three other
+    pages at scale. Two indexed halves and a `UNION ALL` instead. The index on
+    the second column is migration 048; before it there was only one.
+
+    Rows must carry `item_id`, `item_relpath`, `item_size`, `fingerprint` and
+    `root`.
     """
+    from librairy.similar_media import SIMILAR_KINDS, active_clause
+
+    mine = {
+        int(row["item_id"]): row
+        for row in rows
+        #  Arrivals only, exactly as the single-item version guards. A filed
+        #  file is the library-to-library question, which is a different page.
+        if str(row["root"]) == "inbox"
+    }
+    if not mine:
+        return {}
+    ids = sorted(mine)
+    holes = ",".join("?" * len(ids))
+    kinds = ",".join("?" * len(SIMILAR_KINDS))
+    found = conn.execute(
+        f"""
+        WITH pairs AS (
+          SELECT f.item_id AS mine, f.similar_item_id AS other,
+                 f.status AS status, f.dismissed_fingerprints AS dismissed_fingerprints
+          FROM similar_media_flags f
+          WHERE f.item_id IN ({holes}) AND f.kind IN ({kinds})
+          UNION ALL
+          SELECT f.similar_item_id AS mine, f.item_id AS other,
+                 f.status AS status, f.dismissed_fingerprints AS dismissed_fingerprints
+          FROM similar_media_flags f
+          WHERE f.similar_item_id IN ({holes}) AND f.kind IN ({kinds})
+        )
+        SELECT mine, id, relpath, size, fingerprint FROM (
+          SELECT p.mine AS mine, b.id AS id, b.relpath AS relpath, b.size AS size,
+                 b.fingerprint AS fingerprint,
+                 ROW_NUMBER() OVER (PARTITION BY p.mine ORDER BY b.relpath) AS seat
+          FROM pairs p
+          JOIN items i ON i.id = p.mine
+          JOIN items b ON b.id = p.other
+          WHERE {active_clause("i", "b", flag="p")}
+            AND b.root='library' AND b.missing_since IS NULL
+        )
+        WHERE seat = 1
+        """,  # noqa: S608 - every placeholder is counted; the clause is a constant
+        (*ids, *SIMILAR_KINDS, *ids, *SIMILAR_KINDS),
+    ).fetchall()
+    arrivals: dict[int, Arrival] = {}
+    for twin_row in found:
+        row = mine[int(twin_row["mine"])]
+        #  Byte-identical is the exact-duplicate workflow's question, not this
+        #  one — and it is asked of the *nearest* pair only, as the per-item
+        #  version does, rather than looking past it for a different answer.
+        if row["fingerprint"] and row["fingerprint"] == twin_row["fingerprint"]:
+            continue
+        twin = Twin(
+            item_id=int(twin_row["id"]),
+            relpath=str(twin_row["relpath"]),
+            size=int(twin_row["size"] or 0),
+            fingerprint=str(twin_row["fingerprint"] or ""),
+        )
+        arrivals[int(row["item_id"])] = Arrival(
+            item_id=int(row["item_id"]),
+            relpath=str(row["item_relpath"]),
+            size=int(row["item_size"] or 0),
+            twin=twin,
+            dest_relpath=_destination(twin.relpath, str(row["item_relpath"])),
+        )
+    return arrivals
+
+
+def describe_many(
+    conn: sqlite3.Connection, settings: Settings, rows: list[sqlite3.Row]
+) -> dict[int, dict[str, object]]:
+    """`describe` for a whole page.
+
+    The lookup is one statement for the page; the wording of each comparison
+    still costs a few reads, because a comparison carries the owner's format
+    preference and the two formats being compared. Those run once per *arrival*
+    rather than once per row, and an arrival is the rare case — a page with no
+    twins on it asks nothing at all.
+    """
+    return {
+        item_id: _described(conn, arrival)
+        for item_id, arrival in arrivals_for(conn, rows).items()
+    }
+
+
+def _described(conn: sqlite3.Connection, arrival: Arrival) -> dict[str, object]:
     from librairy.format_preference import label_for, prefer_among, sentence
     from librairy.humanize import human_bytes
 
-    arrival = similar_arrival(conn, settings, item_id)
-    if arrival is None:
-        return None
     #  The workflow has already decided these two are representations of one
     #  thing — that is what the row is — so the only question left is which
     #  representation, which is exactly what the preference is about. It
@@ -215,6 +305,19 @@ def describe(
         ),
         "preference": sentence(conn) if wanted else "",
     }
+
+
+def describe(
+    conn: sqlite3.Connection, settings: Settings, item_id: int
+) -> dict[str, object] | None:
+    """What the Review row says about this arrival, without measuring anything.
+
+    The technical table is fetched when somebody opens it, from the same
+    endpoint the library-to-library comparison uses. This is the sentence above
+    it and the three buttons under it.
+    """
+    arrival = similar_arrival(conn, settings, item_id)
+    return None if arrival is None else _described(conn, arrival)
 
 
 # --- the decision -------------------------------------------------------------------

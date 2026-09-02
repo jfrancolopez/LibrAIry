@@ -916,3 +916,329 @@ def test_editing_still_validates_and_saves_from_its_new_position(tmp_path: Path)
         ).fetchone()["dest_relpath"]
         == "Photos/2024/Trip/beach.jpg"
     ), "and leaves the stored destination alone"
+
+
+# --- what a group action is about ---------------------------------------------
+
+
+def mixed_album(conn) -> int:
+    """Twelve tracks in one group: seven certain, five not."""
+    album = insert_group(conn, "album", "Mixed Album")
+    for n in range(12):
+        seed_proposal(
+            conn,
+            f"mixed/{n:02d}.flac",
+            "music",
+            f"Music/Mixed/{n:02d}.flac",
+            0.95 if n < 7 else 0.40,
+            album,
+        )
+    return album
+
+
+def test_a_narrowed_group_says_both_counts_and_acts_on_the_smaller(tmp_path: Path) -> None:
+    """A group has two counts and the page must never blur them.
+
+    Twelve files in the group, seven above the confidence bound. The heading
+    says how big the group is *and* how much of it this view is about; the
+    button names the number it will actually touch, and says "matching" rather
+    than "all" because it is not all of them.
+    """
+    client, conn = client_for(tmp_path)
+    mixed_album(conn)
+
+    whole = client.get("/review/list").text
+    narrowed = client.get("/review/list?min_confidence=0.9").text
+
+    #  Unnarrowed, one number is the truth and the page says it once.
+    assert "12 files" in whole
+    assert "Approve all 12" in whole
+    assert "match this view" not in whole
+
+    #  Narrowed, both — and the action is about the seven.
+    assert "12 files" in narrowed
+    assert "7 match this view" in narrowed
+    assert "Approve 7 matching" in narrowed
+    assert "Approve all 12" not in narrowed
+
+
+def test_a_group_action_posts_every_filter_it_was_drawn_under(tmp_path: Path) -> None:
+    """The button's count and the server's resolution must be the same view.
+
+    `hx-vals` carried state, category and sort but not the confidence bounds,
+    so a button reading "7" posted a view in which twelve matched — the server
+    resolved the unit honestly, under the wrong filters, and approved five
+    files nothing on the page mentioned.
+    """
+    client, conn = client_for(tmp_path)
+    mixed_album(conn)
+
+    narrowed = client.get("/review/list?min_confidence=0.9").text
+    assert "min_confidence" in narrowed
+
+    approve = next(
+        line for line in narrowed.splitlines() if "hx-vals" in line and "approve" in line
+    )
+    assert "0.9" in approve, approve
+
+
+def test_acting_on_a_narrowed_group_leaves_the_rest_alone(tmp_path: Path) -> None:
+    """Seven approved, five untouched, and the toast says seven."""
+    client, conn = client_for(tmp_path)
+    album = mixed_album(conn)
+
+    response = client.post(
+        "/review/action",
+        data={"action": "approve", "unit": f"g{album}", "min_confidence": "0.9"},
+        headers={"x-csrf-token": client.cookies["csrf_token"]},
+    )
+
+    assert response.status_code == 200
+    approved = conn.execute(
+        "SELECT COUNT(*) FROM proposals WHERE group_id=? AND status='approved'", (album,)
+    ).fetchone()[0]
+    still_proposed = conn.execute(
+        "SELECT COUNT(*) FROM proposals WHERE group_id=? AND status='proposed'", (album,)
+    ).fetchone()[0]
+    assert (approved, still_proposed) == (7, 5)
+    assert "7 files approved" in response.text
+
+
+def test_a_group_action_that_matches_nothing_says_so(tmp_path: Path) -> None:
+    """The filters moved under the button between drawing and pressing.
+
+    Nothing is touched, and the reply must not read like a success: "0 files
+    approved. Nothing has moved yet — commit to file them" is a sentence about
+    work that did not happen.
+    """
+    client, conn = client_for(tmp_path)
+    album = mixed_album(conn)
+
+    response = client.post(
+        "/review/action",
+        data={"action": "approve", "unit": f"g{album}", "min_confidence": "0.99"},
+        headers={"x-csrf-token": client.cookies["csrf_token"]},
+    )
+
+    assert response.status_code == 200
+    assert "Nothing matched, so nothing changed." in response.text
+    assert "approved" not in response.text.split("badge-ok")[1][:200]
+    untouched = conn.execute(
+        "SELECT COUNT(*) FROM proposals WHERE group_id=? AND status='proposed'", (album,)
+    ).fetchone()[0]
+    assert untouched == 12
+
+
+def test_paging_and_expanding_carry_the_whole_filter(tmp_path: Path) -> None:
+    """A link that carries some of the filters means a different page.
+
+    The pager and the "Show more" button both built their query string by hand
+    and both left out the confidence bounds, so the second page of a narrowed
+    view was a page of something else — and members of a group could vanish
+    between one page of an expansion and the next.
+    """
+    client, conn = client_for(tmp_path)
+    mixed_album(conn)
+    for n in range(60):
+        seed_proposal(conn, f"loose/{n:02d}.txt", "documents", f"Docs/{n:02d}.txt", 0.95, None)
+
+    narrowed = client.get("/review/list?min_confidence=0.9&has_destination=yes").text
+    checked = 0
+    for link in [line for line in narrowed.splitlines() if "hx-get=" in line]:
+        if "/review/list?" in link or "/review/group/" in link:
+            assert "min_confidence=0.9" in link, link
+            assert "has_destination=yes" in link, link
+            checked += 1
+    #  A pager and an expansion, or the assertions above were about nothing.
+    assert checked >= 2, narrowed
+
+
+# --- one foundation, four faces -----------------------------------------------
+
+
+def seed_member(conn, relpath, category, dest, confidence, group, evidence) -> int:  # noqa: ANN001
+    """A proposal with identity evidence of its own, for the media faces."""
+    item = insert_item(conn, relpath)
+    proposal = upsert_proposal(
+        conn,
+        item_id=item,
+        category=category,
+        clean_name=Path(relpath).name,
+        dest_relpath=dest,
+        confidence=confidence,
+        group_id=group,
+        evidence=evidence,
+    )
+    conn.execute("UPDATE items SET state='proposed' WHERE id=?", (item,))
+    return proposal
+
+
+def photo_event(conn, count: int = 8) -> int:
+    group = insert_group(conn, "photo_event", "Backyard")
+    for n in range(count):
+        seed_proposal(
+            conn,
+            f"party/DSC_{4100 + n:04d}.JPG",
+            "photos",
+            f"Photos/2024/Backyard/dsc_{4100 + n:04d}.jpg",
+            0.93,
+            group,
+        )
+    return group
+
+
+def album(conn) -> int:
+    group = insert_group(conn, "album", "Pink Floyd - The Dark Side of the Moon")
+    tracks = [(1, "Speak to Me"), (2, "Breathe"), (3, "On the Run"), (4, "Time")]
+    for number, title in tracks:
+        seed_member(
+            conn,
+            f"dsotm/{number:02d} - {title}.flac",
+            "music",
+            f"Music/Rock/Pink Floyd/Dark Side/{number:02d} - {title}.flac",
+            0.94,
+            group,
+            [
+                EvidenceEntry("tags", "track", str(number), 0.94),
+                EvidenceEntry("tags", "title", title, 0.94),
+                EvidenceEntry("tags", "album", "The Dark Side of the Moon", 0.94),
+            ],
+        )
+    return group
+
+
+def test_a_photo_group_is_drawn_as_pictures(tmp_path: Path) -> None:
+    """Deciding about a camera card is looking, not reading.
+
+    The question "does this one belong with the others" is answered by the
+    picture in about a second and by a filename never.
+    """
+    client, conn = client_for(tmp_path)
+    photo_event(conn)
+
+    page = client.get("/review/list").text
+
+    assert 'class="member-list is-photos"' in page
+    assert "/preview/items/" in page
+    #  And it is still one decision with the same controls as any other.
+    assert "Approve all 8" in page
+    assert 'name="proposal_id"' in page
+
+
+def test_an_album_is_a_list_of_tracks_in_track_order(tmp_path: Path) -> None:
+    """Twelve squares of one cover would be twelve copies of one fact.
+
+    And an album listed 4, 3, 2, 1 is wrong to anybody who has ever seen an
+    album — members are ordered by where they are going, which spells track
+    order for music, episode order for television and shutter order for a
+    camera card.
+    """
+    client, conn = client_for(tmp_path)
+    album(conn)
+
+    page = client.get("/review/list").text
+
+    assert 'class="member-list is-music"' in page
+    assert "Speak to Me" in page
+    assert page.index("Speak to Me") < page.index("Breathe") < page.index("On the Run")
+    #  Where the identity came from, named rather than scored.
+    assert "from tags" in page
+
+
+def test_a_season_shows_the_episode_not_the_release_name(tmp_path: Path) -> None:
+    client, conn = client_for(tmp_path)
+    group = insert_group(conn, "season", "Breaking Bad Season 01")
+    for number, title in ((1, "Pilot"), (2, "Cat's in the Bag...")):
+        seed_member(
+            conn,
+            f"bb/S01E{number:02d}.BluRay.x264-GROUP.mkv",
+            "shows",
+            f"Shows/Breaking Bad/Season 01/S01E{number:02d} - {title}.mkv",
+            0.91,
+            group,
+            [
+                EvidenceEntry("tvmaze", "title", title, 0.91),
+                EvidenceEntry("tvmaze", "season", "1", 0.91),
+                EvidenceEntry("tvmaze", "episode", str(number), 0.91),
+            ],
+        )
+
+    page = client.get("/review/list").text
+
+    assert 'class="member-list is-video"' in page
+    assert "S01E01" in page
+    assert "Pilot" in page
+    assert "from tvmaze" in page
+
+
+def test_a_mixed_group_stays_a_list(tmp_path: Path) -> None:
+    """No single medium, so no medium's face. A grid of thumbnails over three
+    photographs and a spreadsheet is a worse answer than a list."""
+    client, conn = client_for(tmp_path)
+    group = insert_group(conn, "project", "Kitchen rebuild")
+    seed_proposal(conn, "kit/plan.pdf", "documents", "Projects/Kitchen/plan.pdf", 0.9, group)
+    seed_proposal(conn, "kit/before.jpg", "photos", "Projects/Kitchen/before.jpg", 0.9, group)
+
+    page = client.get("/review/list").text
+
+    assert 'class="member-list is-rows"' in page
+    assert "is-photos" not in page
+
+
+def test_expanding_a_group_keeps_its_face(tmp_path: Path) -> None:
+    """A group must not change shape halfway down as somebody expands it."""
+    client, conn = client_for(tmp_path)
+    group = photo_event(conn, count=8)
+
+    more = client.get(f"/review/group/g{group}?page=2&state=proposed&sort=confidence").text
+
+    assert "photo-cell" in more
+    assert "/preview/items/" in more
+    #  And the control that fetched it is renewed rather than duplicated.
+    assert more.count("Show more") <= 1
+
+
+def test_a_document_row_shows_its_first_page(tmp_path: Path) -> None:
+    """Nothing groups documents, so the document's face is its row.
+
+    `PDF → Documents` was the whole row for a 643-page manual, and a novel and
+    a bank statement are told apart by their cover at a glance.
+    """
+    client, conn = client_for(tmp_path)
+    seed_member(
+        conn,
+        "papers/manual.pdf",
+        "documents",
+        "Documents/Manuals/2024 CR-V Owner's Manual.pdf",
+        0.9,
+        None,
+        [
+            EvidenceEntry("document", "type", "Manual", 0.9),
+            EvidenceEntry("document", "pdf title metadata", "2024 CR-V Owner's Manual", 0.9),
+        ],
+    )
+
+    page = client.get("/review/list").text
+
+    assert 'class="doc-page"' in page
+    #  The apostrophe is escaped in the markup, so match either side of it.
+    assert "2024 CR-V Owner" in page
+    assert "Manual" in page
+
+
+def test_a_cell_opens_the_ordinary_row(tmp_path: Path) -> None:
+    """One row implementation, not four.
+
+    A face answers "is this the right one"; the destination, the evidence, the
+    edit panel and the four actions are the row, fetched when wanted.
+    """
+    client, conn = client_for(tmp_path)
+    photo_event(conn, count=6)
+    proposal = conn.execute("SELECT id FROM proposals LIMIT 1").fetchone()[0]
+
+    row = client.get(f"/review/proposals/{proposal}/row")
+
+    assert row.status_code == 200
+    assert f'id="proposal-{proposal}"' in row.text
+    assert "Approve" in row.text
+    assert client.get("/review/proposals/999999/row").status_code == 404

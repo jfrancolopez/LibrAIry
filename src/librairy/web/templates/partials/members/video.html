@@ -1,0 +1,50 @@
+{# Film and television: a frame, and which film or episode it is.
+
+   A poster answers "is this the right cut" faster than a filename, and the
+   identity beside it is the thing the decision is actually about — S02E07 is
+   what somebody looking at a season folder is checking, not the release
+   group's filename. #}
+{% from "partials/members/cell.html" import pick, score, open_row, body, zoom %}
+{% for proposal in rows %}
+  <li class="member-cell video-cell">
+    <label class="cell-pick">{{ pick(proposal) }}<span>Select</span></label>
+    {# A picture only where one can exist. A `.txt` in a group of
+       documents has no first page, and an empty box is a better
+       answer than a broken image icon where the face should be. #}
+    {% if proposal.can_preview %}
+    <button type="button" class="cell-face" {{ zoom(proposal, proposal.video.title if proposal.video and proposal.video.title else (proposal.display_name or proposal.item_relpath)) }}
+            title="View the poster frame full screen">
+      <img src="/preview/items/{{ proposal.item_id }}/thumb"
+           alt="A frame from {{ proposal.display_name or proposal.item_relpath }}"
+           loading="lazy" decoding="async" width="320">
+    </button>
+    {% else %}
+      <span class="cell-face is-blank" aria-hidden="true">{{ proposal.item_relpath.rsplit(".", 1)[-1] | upper }}</span>
+    {% endif %}
+    {% if proposal.video %}
+      <p class="cell-identity">
+        {% if proposal.video.episode %}<span class="badge mono">{{ proposal.video.episode }}</span>{% endif %}
+        {% if proposal.video.title %}<strong>{{ proposal.video.title }}</strong>{% endif %}
+        {% if proposal.video.year %}<span class="muted">{{ proposal.video.year }}</span>{% endif %}
+      </p>
+      <p class="cell-facts muted">
+        {% if proposal.video.show %}{{ proposal.video.show }}{% endif %}
+        {% if proposal.video.version %}<span class="badge">{{ proposal.video.version }}</span>{% endif %}
+        {% if proposal.video.source %}<span class="muted">from {{ proposal.video.source }}</span>{% endif %}
+      </p>
+    {% endif %}
+    {# The filename, only when nothing better is known. Where a catalog named
+       the episode, printing `S01E03 - ...And the Bag's in the River.mkv`
+       underneath the same words is the row saying itself twice in a cell 180px
+       wide. The full path stays in the title attribute either way. #}
+    {% if not (proposal.video and (proposal.video.title or proposal.video.episode)) %}
+      <p class="cell-name mono" title="{{ proposal.item_relpath }}">{{ proposal.display_name or proposal.item_relpath }}</p>
+    {% endif %}
+    <p class="cell-facts">
+      {{ score(proposal) }}
+      {% if not proposal.dest_relpath %}<span class="badge badge-warn">no destination</span>{% endif %}
+      {{ open_row(proposal) }}
+    </p>
+    {{ body(proposal) }}
+  </li>
+{% endfor %}

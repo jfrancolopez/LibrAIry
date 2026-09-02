@@ -1,0 +1,47 @@
+{# What every media cell shares, so four presentations cannot drift into four
+   Review implementations.
+
+   A cell is a *face*, not a smaller row. It shows the picture or the identity,
+   carries the same selection checkbox the ordinary row carries — same name,
+   same form, so the existing bulk actions and the group's select-all reach it
+   without knowing it is a cell — and offers the full row on demand for
+   anything more. There is one row implementation and this is not a second. #}
+
+{% macro pick(proposal) %}
+  {# Identical to the row's own checkbox. `form="review-actions"` is what lets
+     a selection made in a grid be acted on by the toolbar outside it. #}
+  <input form="review-actions" id="cell-{{ proposal.id }}" name="proposal_id"
+         type="checkbox" value="{{ proposal.id }}"
+         aria-label="select {{ proposal.item_relpath }}">
+{% endmacro %}
+
+{% macro score(proposal) %}
+  {# The same number the row shows, in the space a cell has. Colour is the
+     score and the number is beside it, so this never depends on seeing colour. #}
+  <span class="cell-score conf-{{ 'high' if proposal.confidence >= 0.85 and proposal.dest_relpath else ('low' if proposal.confidence < 0.6 or not proposal.dest_relpath else 'mid') }}"
+        title="{{ proposal.confidence_caption }}">{{ (proposal.confidence * 100)|round|int }}%</span>
+{% endmacro %}
+
+{% macro open_row(proposal) %}
+  {# The ordinary row, fetched when somebody wants it. A face answers "is this
+     the right one"; everything else — the destination, Why, the edit panel,
+     the four actions — is the row, and it is one click away rather than
+     reimplemented four times. #}
+  <button type="button" class="btn-ghost cell-open"
+          hx-get="/review/proposals/{{ proposal.id }}/row"
+          hx-target="#cell-body-{{ proposal.id }}" hx-swap="innerHTML"
+          aria-controls="cell-body-{{ proposal.id }}">Open</button>
+{% endmacro %}
+
+{% macro body(proposal) %}
+  <div class="cell-body" id="cell-body-{{ proposal.id }}"></div>
+{% endmacro %}
+
+{% macro zoom(proposal, label) %}
+  {# The shared viewer, not a second one. Everything it needs travels on the
+     element, as URLs the server generated — never a filesystem path. #}
+  data-lightbox
+  data-lightbox-title="{{ label }}"
+  data-lightbox-image="/preview/items/{{ proposal.item_id }}/thumb?size=large"
+  data-lightbox-facts="{{ proposal.item_relpath }}{% if proposal.size_label %} · {{ proposal.size_label }}{% endif %}"
+{% endmacro %}
