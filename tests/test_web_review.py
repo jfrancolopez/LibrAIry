@@ -1374,27 +1374,45 @@ def test_the_number_to_look_at_is_a_control_that_shows_them(tmp_path: Path) -> N
 # --- how much attention a decision is worth -----------------------------------
 
 
-def settled_and_guessed(conn) -> tuple[int, int]:  # noqa: ANN001
+def settled_and_guessed(conn, tag: str = "") -> tuple[int, int]:  # noqa: ANN001
     """One file identified by its own ISBN, one guessed at with a high score."""
     settled = seed_member(
         conn,
-        "books/dune.epub",
+        f"books/dune{tag}.epub",
         "books",
-        "Books/Frank Herbert/Dune/Dune.epub",
+        f"Books/Frank Herbert/Dune/Dune{tag}.epub",
         0.70,
         None,
         [EvidenceEntry("document", "isbn", "9780441013593", 0.95)],
     )
     guessed = seed_member(
         conn,
-        "docs/notes.pdf",
+        f"docs/notes{tag}.pdf",
         "documents",
-        "Documents/2024/notes.pdf",
+        f"Documents/2024/notes{tag}.pdf",
         0.92,
         None,
         [EvidenceEntry("heuristic", "category", "a year in the filename", 0.92)],
     )
     return settled, guessed
+
+
+def upgraded_onto(conn) -> None:  # noqa: ANN001
+    """Stamp the boundary as of now, which is what an upgrade does.
+
+    Both halves, because that is what `stamp_activation` writes and what the
+    exactness depends on.
+    """
+    from librairy.planner import utc_now
+    from librairy.settled_queue import ACTIVATED_AFTER_ID, ACTIVATED_AT
+
+    highest = conn.execute("SELECT COALESCE(MAX(id), 0) FROM proposals").fetchone()[0]
+    conn.executemany(
+        "INSERT INTO settings(key, value) VALUES (?, ?)"
+        " ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        [(ACTIVATED_AT, utc_now()), (ACTIVATED_AFTER_ID, str(int(highest)))],
+    )
+    conn.commit()
 
 
 def test_the_settled_batch_names_its_count_and_says_what_settled_each(tmp_path: Path) -> None:
@@ -1470,17 +1488,8 @@ def test_the_tier_is_a_filter_of_its_own(tmp_path: Path) -> None:
     assert "notes.pdf" not in only
 
 
-def test_nothing_is_approved_on_its_own_unless_that_is_switched_on(tmp_path: Path) -> None:
-    """M1-05's third acceptance criterion, and the safer default.
-
-    Approving on somebody's behalf, silently, on the first cycle after an
-    upgrade is not a thing to switch on for them.
-    """
-    from librairy.settled_queue import SETTING, approve_settled
-
-    client, conn = client_for(tmp_path)
-    settled, _ = settled_and_guessed(conn)
-    settings = Settings(
+def settings_for(tmp_path: Path) -> Settings:
+    return Settings(
         APPDATA_DIR=tmp_path / "appdata",
         INBOX_DIR=tmp_path / "inbox",
         LIBRARY_DIR=tmp_path / "library",
@@ -1488,17 +1497,107 @@ def test_nothing_is_approved_on_its_own_unless_that_is_switched_on(tmp_path: Pat
         _env_file=None,
     )
 
-    assert approve_settled(conn, settings) == 0
-    assert proposal_status(conn, settled) == "proposed"
 
-    conn.execute("INSERT INTO settings(key, value) VALUES (?, 'true')", (SETTING,))
-    conn.commit()
+def test_a_settled_decision_waits_in_front_of_commit_by_default(tmp_path: Path) -> None:
+    """The product decision: deterministic answers need no asking.
 
-    assert approve_settled(conn, settings) == 1
+    What it still needs is Commit, which is untouched — the file has not moved
+    and one press of Undo puts it back.
+    """
+    from librairy.settled_queue import SETTING, approve_settled
+
+    client, conn = client_for(tmp_path)
+    settled, guessed = settled_and_guessed(conn)
+
+    assert approve_settled(conn, settings_for(tmp_path)) == 1
     assert proposal_status(conn, settled) == "approved"
+    #  And nothing weaker came with it.
+    assert proposal_status(conn, guessed) == "proposed"
     #  Still in the inbox, still waiting for Commit, and takeable back.
     assert conn.execute("SELECT COUNT(*) FROM plans").fetchone()[0] == 0
     assert client.get("/review").status_code == 200
+
+    conn.execute("INSERT INTO settings(key, value) VALUES (?, 'false')", (SETTING,))
+    conn.commit()
+    _, later = settled_and_guessed(conn, tag="-2")
+    assert approve_settled(conn, settings_for(tmp_path)) == 0
+    assert proposal_status(conn, later) == "proposed"
+
+
+def test_upgrading_never_answers_the_queue_somebody_was_working_through(
+    tmp_path: Path,
+) -> None:
+    """The correction that matters more than the default.
+
+    Deciding for somebody is the product decision. Deciding for them
+    *retroactively* is a different one, and it is the one an upgrade would make
+    by accident: four hundred files somebody has been working through for a
+    fortnight, answered while they read the release notes.
+    """
+    from librairy.settled_queue import approve_settled
+
+    _, conn = client_for(tmp_path)
+    backlog, _ = settled_and_guessed(conn)
+    upgraded_onto(conn)
+
+    assert approve_settled(conn, settings_for(tmp_path)) == 0
+    assert proposal_status(conn, backlog) == "proposed"
+
+    #  And it stays that way. Nothing sweeps it later either.
+    assert approve_settled(conn, settings_for(tmp_path)) == 0
+    assert proposal_status(conn, backlog) == "proposed"
+
+
+def test_re_analysing_an_old_file_is_a_new_decision_about_it(tmp_path: Path) -> None:
+    """The other half of the boundary, and why it reads `updated_at`.
+
+    A file nobody has touched keeps its place in the queue for ever. One that
+    has just been analysed again has a new decision about it, and that is
+    exactly when the new rule should apply.
+    """
+    from librairy.proposals import upsert_proposal
+    from librairy.settled_queue import ACTIVATED_AT, approve_settled
+
+    _, conn = client_for(tmp_path)
+    backlog, _ = settled_and_guessed(conn)
+    item = conn.execute("SELECT item_id FROM proposals WHERE id=?", (backlog,)).fetchone()
+    upgraded_onto(conn)
+    assert approve_settled(conn, settings_for(tmp_path)) == 0
+
+    #  Wound back a second, because `utc_now` has no sub-second part and the
+    #  re-analysis below lands in the same one.
+    conn.execute(
+        "UPDATE settings SET value=? WHERE key=?",
+        ("2000-01-01T00:00:00+00:00", ACTIVATED_AT),
+    )
+    conn.commit()
+
+    upsert_proposal(
+        conn,
+        item_id=int(item["item_id"]),
+        category="books",
+        clean_name="Dune.epub",
+        dest_relpath="Books/Frank Herbert/Dune/Dune.epub",
+        confidence=0.70,
+        evidence=[EvidenceEntry("document", "isbn", "9780441013593", 0.95)],
+    )
+
+    assert approve_settled(conn, settings_for(tmp_path)) == 1
+    assert proposal_status(conn, backlog) == "approved"
+
+
+def test_a_fresh_database_is_stamped_before_it_has_a_queue(tmp_path: Path) -> None:
+    """Otherwise the boundary would exclude the install's own first proposals."""
+    from librairy.settled_queue import ACTIVATED_AT
+
+    _, conn = client_for(tmp_path)
+    stamped = conn.execute(
+        "SELECT value FROM settings WHERE key=?", (ACTIVATED_AT,)
+    ).fetchone()
+
+    assert stamped is not None and stamped["value"]
+    first = conn.execute("SELECT MIN(created_at) AS at FROM proposals").fetchone()["at"]
+    assert first is None or str(stamped["value"]) <= str(first)
 
 
 def test_an_automatic_approval_teaches_the_learner_nothing(tmp_path: Path) -> None:
@@ -1508,22 +1607,13 @@ def test_an_automatic_approval_teaches_the_learner_nothing(tmp_path: Path) -> No
     on its own" among the things that are never lessons, and an automatic
     approval is exactly that.
     """
-    from librairy.settled_queue import SETTING, approve_settled
+    from librairy.settled_queue import approve_settled
 
     _, conn = client_for(tmp_path)
     settled_and_guessed(conn)
-    settings = Settings(
-        APPDATA_DIR=tmp_path / "appdata",
-        INBOX_DIR=tmp_path / "inbox",
-        LIBRARY_DIR=tmp_path / "library",
-        QUARANTINE_DIR=tmp_path / "quarantine",
-        _env_file=None,
-    )
-    conn.execute("INSERT INTO settings(key, value) VALUES (?, 'true')", (SETTING,))
-    conn.commit()
 
     before = conn.execute("SELECT COUNT(*) FROM decision_events").fetchone()[0]
-    assert approve_settled(conn, settings) == 1
+    assert approve_settled(conn, settings_for(tmp_path)) == 1
     after = conn.execute("SELECT COUNT(*) FROM decision_events").fetchone()[0]
 
     assert after == before

@@ -19,6 +19,7 @@ from librairy.backup import backup_status
 from librairy.config import Settings
 from librairy.db import database_path
 from librairy.live import LIVE
+from librairy.search_health import IndexCounts
 from librairy.web.dashboard import _disk_stats, _worker_state
 
 PROBE_TTL_SECONDS = 60
@@ -104,6 +105,14 @@ def health_data(conn: sqlite3.Connection, settings: Settings) -> dict[str, objec
     "System Fault" on whatever you were reading. It happens when a provider is
     tested instead, which is when the set of providers can actually change.
     """
+    from librairy.search_health import counted
+
+    #  Counted once for the whole page. Three modules ask what the search index
+    #  holds — this panel, `attention`, and `restore_check` — and none of them
+    #  could see the others, so a render asked the expensive FTS join twice and
+    #  counted the items twice. Measured at a million: 1,373 ms of one render
+    #  spent answering the same three questions repeatedly.
+    counts = counted(conn)
     providers = live_provider_status(conn, settings)
     tools = tool_statuses(settings)
     db = db_status(settings, conn)
@@ -128,12 +137,12 @@ def health_data(conn: sqlite3.Connection, settings: Settings) -> dict[str, objec
             worker=worker,
             backup=backup,
         ),
-        "search_index": search_index_panel(conn),
+        "search_index": search_index_panel(conn, counts),
         "backup_queue": backup_queue_panel(conn),
         #  What needs a person, read from what is already recorded. See
         #  `librairy/attention.py` for why this is derived rather than stored
         #  and why it never repairs anything it finds.
-        "attention": attention_report(conn, settings),
+        "attention": attention_report(conn, settings, counts),
         "attention_levels": LEVELS,
         "attention_labels": LEVEL_LABEL,
         "attention_notes": LEVEL_NOTE,
@@ -170,7 +179,9 @@ def backup_queue_panel(conn: sqlite3.Connection) -> dict[str, object]:
     }
 
 
-def search_index_panel(conn: sqlite3.Connection) -> dict[str, object]:
+def search_index_panel(
+    conn: sqlite3.Connection, counts: IndexCounts | None = None
+) -> dict[str, object]:
     """What the index holds, read only.
 
     `recorded_health` rather than `check_search_index`: FTS5 expresses
@@ -182,7 +193,7 @@ def search_index_panel(conn: sqlite3.Connection) -> dict[str, object]:
 
     health = recorded_health(conn)
     return {
-        **index_counts(conn),
+        **index_counts(conn, counts),
         "integrity_ok": health.ok,
         "warning": health.warning,
         "remedy": "" if health.ok else REMEDY,

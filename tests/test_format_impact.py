@@ -87,13 +87,18 @@ def test_the_analysis_moves_no_files_and_creates_no_work(tmp_path: Path) -> None
 def test_the_analysis_writes_only_its_own_result(tmp_path: Path) -> None:
     conn, settings = a_library(tmp_path)
 
+    #  What the *analysis* wrote, which is what this is about — not what the
+    #  settings table happens to hold. The program keeps its own state there
+    #  too, and a fresh database already carries some of it: comparing totals
+    #  made this fail the day automatic approval started stamping its
+    #  generation boundary at migration time.
+    def keys() -> set[str]:
+        return {row["key"] for row in conn.execute("SELECT key FROM settings")}
+
+    before = keys()
     analyse(conn, settings)
 
-    keys = [
-        row["key"]
-        for row in conn.execute("SELECT key FROM settings ORDER BY key")
-    ]
-    assert keys == ["format_policy.impact"]
+    assert keys() - before == {"format_policy.impact"}
 
 
 def test_the_result_survives_and_is_read_back(tmp_path: Path) -> None:

@@ -273,24 +273,77 @@ def _content_search_items(
     ]
 
 
-def _result_details(conn: sqlite3.Connection, row: dict[str, object]) -> dict[str, object]:
+def _page_details(
+    conn: sqlite3.Connection, rows: list[dict[str, object]]
+) -> dict[str, dict[str, object]]:
+    """Everything the page's results need from other tables, in three queries.
+
+    It used to be three *per result*: the item, its proposal, and how many
+    times that destination has been filed before. Fifty results made a hundred
+    and fifty statements, which is invisible until the tables are large and is
+    the shape this milestone exists to remove. None of it grows with the
+    library now — only with the page, which is fifty.
+    """
+    ids = sorted({int(row["item_id"]) for row in rows})
+    if not ids:
+        return {}
+    holes = ",".join("?" * len(ids))
+    items = {
+        int(found["id"]): found
+        for found in conn.execute(
+            f"SELECT id, size, state FROM items WHERE id IN ({holes})",  # noqa: S608
+            ids,
+        )
+    }
+    #  The newest live proposal per item, picked in SQL rather than by asking
+    #  once per row with `ORDER BY id DESC LIMIT 1`.
+    proposals = {
+        int(found["item_id"]): found
+        for found in conn.execute(
+            f"""
+            SELECT item_id, confidence, dest_root, dest_relpath, status FROM (
+              SELECT item_id, confidence, dest_root, dest_relpath, status,
+                     ROW_NUMBER() OVER (PARTITION BY item_id ORDER BY id DESC) AS seat
+              FROM proposals
+              WHERE item_id IN ({holes}) AND status != 'superseded'
+            ) WHERE seat = 1
+            """,  # noqa: S608 - placeholders are counted, values are bound
+            ids,
+        )
+    }
+    #  Keyed by the pair, because a relpath means a different file under a
+    #  different root. Indexed by migration 050; before it this was fifty
+    #  scans of the journal per page.
+    paths = sorted({str(row["relpath"]) for row in rows})
+    path_holes = ",".join("?" * len(paths))
+    filed: dict[tuple[str, str], int] = {
+        (str(found["dest_root"]), str(found["dest_relpath"])): int(found["times"])
+        for found in conn.execute(
+            f"""
+            SELECT dest_root, dest_relpath, COUNT(*) AS times FROM history
+            WHERE dest_relpath IN ({path_holes})
+            GROUP BY dest_root, dest_relpath
+            """,  # noqa: S608 - placeholders are counted, values are bound
+            paths,
+        )
+    }
+    return {
+        "items": items,
+        "proposals": proposals,
+        "filed": filed,
+    }
+
+
+def _result_details(
+    row: dict[str, object], details: dict[str, dict[str, object]]
+) -> dict[str, object]:
     """The facts that decide "is this the file I meant?" without opening it.
 
-    A result used to be a name, a path and a category. Everything here is one
-    row from tables the search already joined against, so enriching costs a
-    lookup per result rather than a second pass over the index.
+    A result used to be a name, a path and a category. Everything here comes
+    from the page's own three lookups — see `_page_details`.
     """
-    item = conn.execute(
-        "SELECT size, state FROM items WHERE id=?", (row["item_id"],)
-    ).fetchone()
-    proposal = conn.execute(
-        """
-        SELECT confidence, dest_root, dest_relpath, status
-        FROM proposals WHERE item_id=? AND status != 'superseded'
-        ORDER BY id DESC LIMIT 1
-        """,
-        (row["item_id"],),
-    ).fetchone()
+    item = details.get("items", {}).get(int(row["item_id"]))
+    proposal = details.get("proposals", {}).get(int(row["item_id"]))
     name = PurePosixPath(str(row["relpath"])).name
     suffix = PurePosixPath(name).suffix.lower()
     return {
@@ -337,14 +390,14 @@ def search_data(
     #  somebody is missing — and asking per row would make the page slower the
     #  more the library knows.
     related = relationship_context(conn, [int(row["item_id"]) for row in rows])
+    #  Three queries for the page, not three per result. See `_page_details`.
+    details = _page_details(conn, rows)
+    filed = details.get("filed", {})
     for row in rows:
         row["related_context"] = related.get(int(row["item_id"]), "")
         row["host_path"] = host_path(settings, row["root"], row["relpath"])
-        row["history_count"] = conn.execute(
-            "SELECT COUNT(*) FROM history WHERE dest_root=? AND dest_relpath=?",
-            (row["root"], row["relpath"]),
-        ).fetchone()[0]
-        row.update(_result_details(conn, row))
+        row["history_count"] = filed.get((str(row["root"]), str(row["relpath"])), 0)
+        row.update(_result_details(row, details))
     from librairy.search_health import recorded_health
 
     # Shown here because this is where incomplete results appear. Read, never

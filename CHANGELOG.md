@@ -42,9 +42,15 @@ every one of them can say what identified it. A learned habit can never be in
 there — it is a statement about files that resembled this one — and neither can
 an AI cue or a filename guess.
 
-`review.settled.auto_approve`, off by default, lets those wait in front of
-Commit instead of in Review. Nothing moves either way: Commit still shows the
-exact list, and Undo still takes the whole batch back.
+Deterministic answers no longer need asking at all: a settled decision waits in
+front of Commit instead of in Review. Nothing moves — Commit still shows the
+exact list before it touches a file, and Undo still takes the whole batch back —
+and `review.settled.auto_approve` turns it off.
+
+**Upgrading does not answer the queue you were already working through.** The
+boundary is stamped when your database first reaches this version, and only
+files proposed or re-analysed after that are answered automatically. A queue
+you have been going through for a fortnight is still yours.
 
 ### Performance
 

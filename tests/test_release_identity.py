@@ -35,23 +35,25 @@ def _tags() -> list[str]:
     ).stdout.split()
 
 
-def test_this_release_is_1_3_1_and_the_schema_moved_twice_since() -> None:
+def test_this_release_is_1_3_1_and_the_schema_moved_three_times_since() -> None:
     """The released version, and the schema main is on.
 
     A release number is not a schema change and a schema change is not a
-    release: 1.3.1 shipped on 47, which is what acceptance passed on. Two
+    release: 1.3.1 shipped on 47, which is what acceptance passed on. Three
     unreleased migrations since, and each one is a sentence:
 
     * **48** indexes the other end of a `similar_media_flags` pair, so Review
       can find an arrival's twin by a seek instead of a scan.
     * **49** stores each proposal's attention tier, so "24 settled by identity"
       is a count on an index rather than a scan of every evidence blob.
+    * **50** indexes `history` by destination, which fifty search results asked
+      about one at a time over an unindexed pair.
 
     The number is written down here so that changing it is a deliberate act
     with a sentence attached, rather than something noticed at upgrade time.
     """
     assert __version__ == "1.3.1"
-    assert SCHEMA_VERSION == 49
+    assert SCHEMA_VERSION == 50
 
 
 def test_the_changelog_records_this_version_as_the_newest_release() -> None:

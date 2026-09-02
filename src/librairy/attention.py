@@ -148,12 +148,17 @@ class Report:
         return self.needing == 0
 
 
-def report(conn: sqlite3.Connection, settings=None) -> Report:  # noqa: ANN001
+def report(conn: sqlite3.Connection, settings=None, counts=None) -> Report:  # noqa: ANN001
     """Everything currently worth saying, in one pass of aggregate queries.
 
     Each probe is independent and each is allowed to find nothing — a quiet
     installation produces a report with information in it and no concerns,
     which is the state this page exists to make legible.
+
+    `counts` is what the search index holds, when the caller has already
+    counted it. Health draws this report *and* the index panel, and counting
+    an FTS5 table means reading it: every probe takes the argument so the loop
+    stays one line, and only `_search` has any use for it.
     """
     probes = (
         _stale_approvals,
@@ -170,7 +175,7 @@ def report(conn: sqlite3.Connection, settings=None) -> Report:  # noqa: ANN001
     )
     found: list[Concern] = []
     for probe in probes:
-        found.extend(probe(conn, settings))
+        found.extend(probe(conn, settings, counts))
     order = {level: rank for rank, level in enumerate(LEVELS)}
     found.sort(key=lambda concern: order.get(concern.level, len(LEVELS)))
     return Report(concerns=tuple(found))
@@ -249,7 +254,7 @@ _WORST_PER_PLAN = f"""
 """
 
 
-def _stale_approvals(conn: sqlite3.Connection, settings=None) -> list[Concern]:  # noqa: ANN001, ARG001
+def _stale_approvals(conn: sqlite3.Connection, settings=None, counts=None) -> list[Concern]:  # noqa: ANN001, ARG001
     """Waiting decisions that can no longer do what they say.
 
     One aggregate query for the counts and one bounded query for the examples.
@@ -294,7 +299,7 @@ def _stale_approvals(conn: sqlite3.Connection, settings=None) -> list[Concern]: 
 # --- conflicts between waiting decisions --------------------------------------
 
 
-def _conflicting_plans(conn: sqlite3.Connection, settings=None) -> list[Concern]:  # noqa: ANN001, ARG001
+def _conflicting_plans(conn: sqlite3.Connection, settings=None, counts=None) -> list[Concern]:  # noqa: ANN001, ARG001
     """Waiting decisions that cannot both remain valid.
 
     Reported, never resolved. Which of two decisions to keep is exactly the
@@ -329,7 +334,7 @@ def _conflicting_plans(conn: sqlite3.Connection, settings=None) -> list[Concern]
 # --- files that turned up somewhere else --------------------------------------
 
 
-def _moved_files(conn: sqlite3.Connection, settings=None) -> list[Concern]:  # noqa: ANN001, ARG001
+def _moved_files(conn: sqlite3.Connection, settings=None, counts=None) -> list[Concern]:  # noqa: ANN001, ARG001
     """Indexed files whose bytes are on disk at a path LibrAIry does not expect.
 
     One count and a link. Health is frozen at the shape it reached: it says
@@ -365,7 +370,7 @@ def _moved_files(conn: sqlite3.Connection, settings=None) -> list[Concern]:  # n
 # --- the delete queue ---------------------------------------------------------
 
 
-def _delete_queue(conn: sqlite3.Connection, settings=None) -> list[Concern]:  # noqa: ANN001, ARG001
+def _delete_queue(conn: sqlite3.Connection, settings=None, counts=None) -> list[Concern]:  # noqa: ANN001, ARG001
     """What is waiting, and anything about it that is no longer true.
 
     Two concerns from one query, at two different levels, because they are two
@@ -432,7 +437,7 @@ def _delete_queue(conn: sqlite3.Connection, settings=None) -> list[Concern]:  # 
 # --- the staged audit ---------------------------------------------------------
 
 
-def _audit(conn: sqlite3.Connection, settings=None) -> list[Concern]:  # noqa: ANN001, ARG001
+def _audit(conn: sqlite3.Connection, settings=None, counts=None) -> list[Concern]:  # noqa: ANN001, ARG001
     """Where the library audit got to — the live one, and the last one to end.
 
     Two questions, deliberately, because a run starting now does not undo the
@@ -543,7 +548,7 @@ def _audit(conn: sqlite3.Connection, settings=None) -> list[Concern]:  # noqa: A
 # --- the search index ---------------------------------------------------------
 
 
-def _search(conn: sqlite3.Connection, settings=None) -> list[Concern]:  # noqa: ANN001, ARG001
+def _search(conn: sqlite3.Connection, settings=None, counts=None) -> list[Concern]:  # noqa: ANN001, ARG001
     """Only the two things the index can prove about itself cheaply.
 
     A present file with no index row is a real gap and one `NOT EXISTS` finds
@@ -567,7 +572,7 @@ def _search(conn: sqlite3.Connection, settings=None) -> list[Concern]:  # noqa: 
                        "Search index panel below rebuilds it.",
             )
         )
-    found = unindexed(conn)
+    found = unindexed(conn, counts)
     if found:
         concerns.append(
             Concern(
@@ -596,7 +601,7 @@ def _image_suffixes() -> list[str]:
     return sorted(RAW_EXTS | RENDER_EXTS | MOTION_EXTS)
 
 
-def _photos(conn: sqlite3.Connection, settings=None) -> list[Concern]:  # noqa: ANN001, ARG001
+def _photos(conn: sqlite3.Connection, settings=None, counts=None) -> list[Concern]:  # noqa: ANN001, ARG001
     """Arriving pictures whose companions cannot be established yet.
 
     **Deliberately not "every image with no cache row".** A library of sixty
@@ -653,7 +658,7 @@ def _photos(conn: sqlite3.Connection, settings=None) -> list[Concern]:  # noqa: 
 # --- the format policy snapshot -----------------------------------------------
 
 
-def _format_impact(conn: sqlite3.Connection, settings=None) -> list[Concern]:  # noqa: ANN001, ARG001
+def _format_impact(conn: sqlite3.Connection, settings=None, counts=None) -> list[Concern]:  # noqa: ANN001, ARG001
     """Whether the measured policy impact still describes the library.
 
     Reported, never refreshed. Measuring walks every indexed library row, and a
@@ -699,7 +704,7 @@ def _format_impact(conn: sqlite3.Connection, settings=None) -> list[Concern]:  #
 # --- decisions a later decision has built on ----------------------------------
 
 
-def _blocked_undo(conn: sqlite3.Connection, settings=None) -> list[Concern]:  # noqa: ANN001, ARG001
+def _blocked_undo(conn: sqlite3.Connection, settings=None, counts=None) -> list[Concern]:  # noqa: ANN001, ARG001
     """Executed decisions that cannot currently be reversed.
 
     **Information, not a warning.** This is the safeguard working: a later
@@ -740,7 +745,7 @@ def _blocked_undo(conn: sqlite3.Connection, settings=None) -> list[Concern]:  # 
 # --- what the owner has configured --------------------------------------------
 
 
-def _policy(conn: sqlite3.Connection, settings=None) -> list[Concern]:  # noqa: ANN001, ARG001
+def _policy(conn: sqlite3.Connection, settings=None, counts=None) -> list[Concern]:  # noqa: ANN001, ARG001
     """Protected scopes, counted. Never a problem — somebody asked for these."""
     found = int(
         conn.execute(
@@ -766,7 +771,7 @@ def _policy(conn: sqlite3.Connection, settings=None) -> list[Concern]:  # noqa: 
     ]
 
 
-def _learned(conn: sqlite3.Connection, settings=None) -> list[Concern]:  # noqa: ANN001, ARG001
+def _learned(conn: sqlite3.Connection, settings=None, counts=None) -> list[Concern]:  # noqa: ANN001, ARG001
     """How many patterns have enough behind them to be offered as suggestions.
 
     A count, and nothing else. These are suggestions a person confirms one at a

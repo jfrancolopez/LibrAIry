@@ -224,12 +224,23 @@ ordinary row carries, and `GET /review/proposals/{id}/row` fetches the real row
 when somebody wants the destination, the evidence or the edit panel. There is
 one row implementation and none of this is a second.
 
-Two findings worth keeping. **Documents and books never form a group** — a
-group is an album, a season, a disc, a camera event or a project, and a book is
-none of them — so a document grid would have been a template no page could
-reach. The medium got its presentation on the row instead: the first page
-beside the title, author and type it already showed. And **the harness could
-not see any of this**: `scripts/ui_check.py` renders over `file://`, where
+**PARTIAL, and the open half is named below.** Photographs, music and video
+are complete. **Documents and books never form a group** — a group is an album,
+a season, a disc, a camera event or a project, and a book is none of them — so
+a document *grid* would have been a template no page could reach, and it is not
+built. The medium got its row presentation instead: the first page beside the
+title, author and type it already showed. That is a real improvement and it is
+not what this item asked for, so:
+
+    document row presentation                COMPLETE
+    document/book grouping + group grid      OPEN — see M2-06
+
+The grid is cheap once a group exists. What does not exist is a *defensible
+reason* for two documents to be one decision, and inventing one to satisfy a
+checkbox would produce exactly the wrongly-grouped headings M1-04 says are
+worse than none. Carried forward rather than closed.
+
+And **the harness could not see any of this**: `scripts/ui_check.py` renders over `file://`, where
 `/preview/items/…/thumb` resolves to nothing, so a grid of photographs
 photographed as a grid of alt text. It inlines previews as `data:` URIs now.
 The dev fixture had no groups at all, and now has three.
@@ -242,6 +253,9 @@ group scrolls one bounded page of thumbnails; the thumbnail cache stays inside
 its byte budget. A picture is offered only where one can be rendered — images,
 video, and the PDFs a first page can come from — so an `.epub` or a `.txt`
 never draws a broken image where its face should be.
+
+**Met for photographs, music and video. Not met for documents and books**,
+because no group of them can be built to render. See M2-06.
 
 **Scale.** Groups of thousands.
 
@@ -356,15 +370,32 @@ picture is — none of those is knowable when a proposal is written, and each on
 makes a settled filing a question again. Both the button and the automatic
 approval ask.
 
-**The deterministic tier ships in two halves, and the automatic one is off by
-default.** The button — *Approve 24 settled* — delivers the outcome this item
-is for, hundreds of decisions becoming a handful of confirmations, with a
-person in the loop and every row able to say what identified it. Approving on
-somebody's behalf, silently, on the first worker cycle after an upgrade is a
-different proposition, so `review.settled.auto_approve` is opt-in.
-`librairy/settled_queue.py` runs it on an idle cycle, takes an Undo snapshot
+**The deterministic tier ships in two halves, both on.** The button — *Approve
+24 settled* — is the manual one, and every row under it can say what identified
+it. `review.settled.auto_approve` is the automatic one and is **on by default**:
+a deterministic answer needs no asking, which is the product decision this item
+was written for.
+
+What it must never do is reach *backwards*. Deciding for somebody is the
+product decision; deciding for them retroactively is a different one, and it is
+the one an upgrade would make by accident — a queue of four hundred files
+somebody has been working through for a fortnight, answered while they read the
+release notes. So the boundary is durable and stamped at migration time, and it
+is two numbers because one cannot be exact: `review.settled.activated_at` and
+`review.settled.activated_after_id`. A proposal is eligible if it is newer than
+the boundary **or has been re-analysed since it** — the id because `utc_now()`
+has no sub-second part and a fresh install writes its first proposals in the
+same second it is created, the timestamp because an id cannot see a reprocessed
+file, and re-analysing an old file is a new decision about it.
+
+`librairy/settled_queue.py` runs on an idle cycle, takes an Undo snapshot
 first, and deliberately does **not** call `remember_approvals`: a program that
 learns from its own automatic decisions is citing itself as evidence.
+
+Sweeping the pre-existing backlog on request — *Apply deterministic rules to
+existing backlog* — is deliberately not built. It is one call with the boundary
+lifted, and it is a decision about four hundred files that nobody has asked for
+yet.
 
 **Do not.** Let a learned pattern reach the deterministic tier — it is
 authority level 4, permanently. Build this as a second automation system beside
@@ -376,10 +407,10 @@ today's behaviour exactly. All three in `tests/test_confidence_tiers.py` and
 `tests/test_web_review.py` — the second one derived from the evidence rather
 than stored beside it, because two records of why can disagree and one cannot.
 
-**Flagged for review:** the default. This ships with the batch button on and
-automatic approval off, which is a judgement about surprise rather than
-something M1-05 stated. Turning `review.settled.auto_approve` on by default is
-a one-line change if that is the wrong call.
+The fourth thing tested is the one that is not in the acceptance criteria and
+matters more than the default: **upgrading with a backlog must not silently
+answer it**, pinned by `test_upgrading_never_answers_the_queue_somebody_was_
+working_through`.
 
 **Scale.** Tens of thousands of pending decisions.
 
@@ -641,6 +672,65 @@ its files across categories with nothing moved; the two meanings of "project"
 have two names.
 
 **Scale.** Thousands of tags, hundreds of thousands of tagged files.
+
+---
+
+## M2-06 · Documents that belong together
+
+**P2 · M · Medium risk**
+
+**Carried forward from M1-03**, which built the group presentation for every
+medium that has groups and found that documents and books have none. A group is
+an album, a season, a disc, a camera event or a project; a book is none of
+those, so the document grid M1-03 asked for is a page nothing can reach.
+
+**Problem.** Twenty scanned chapters of one manual, a three-volume set, a
+year's bank statements and eleven unrelated PDFs are twenty-something separate
+decisions with nothing to say they are related. The other media got "one
+coherent thing is one decision" in M1-02; documents did not.
+
+**Desired outcome.** Documents form a group **only when there is a defensible
+reason** for two of them to be one decision, and then they are reviewed as one:
+a cover or first-page grid, the identity and the evidence behind it, and a
+single answer.
+
+**Existing foundation.** Everything except the grouping rule. `classify/
+grouping.py` takes a `GroupInput` and needs only a descriptor; the group
+paging, the two counts, the whole-group actions, the bounded expansion and the
+outlier split (M1-02, M1-04) are already medium-agnostic; the row already reads
+a document's identity out of stored evidence; `partials/members/` already holds
+three faces and a fourth is a template, not an architecture.
+`document_works.py` already models *one work in several formats*, which is a
+related question and not this one.
+
+**Work.** A grouping rule with a stated reason per kind. Candidates, strongest
+first:
+
+- **a series or set** — a catalog identity that names one work in parts, or
+  volume numbering under a shared title
+- **a shared printed identity** — the same ISBN, the same DOI, the same
+  organization and document type
+- **an explicit hashtag or Project** (M2-05), which is the owner saying it
+- **one arrival** — a folder dropped in together, which
+  `inbox_collections.py` already models and deliberately treats as *a
+  collection and nothing else*; promoting one to a decision-group is a real
+  design question, not a default
+
+Then the grid, which is small: `partials/members/documents.html` and one entry
+in `LAYOUTS`.
+
+**Do not.** Group documents by category, by folder, or by anything else that
+would put eleven unrelated PDFs under one heading with one Approve button.
+M1-04 states the rule this has to respect — a wrongly grouped set is worse than
+an ungrouped one, because a heading is trusted — and a document group is the
+easiest place in the program to get that wrong. Do not build the grid before
+the rule: a face with nothing behind it was the reason this item exists.
+
+**Acceptance.** Every document group can say what makes it one decision;
+turning the rule off leaves today's rows exactly as they are; the grid renders
+bounded like every other group.
+
+**Scale.** Hundreds of thousands of documents.
 
 ---
 

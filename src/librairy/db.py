@@ -9,7 +9,7 @@ from pathlib import Path
 from librairy.config import Settings
 
 LOGGER = logging.getLogger(__name__)
-SCHEMA_VERSION = 49
+SCHEMA_VERSION = 50
 
 
 class DatabaseVersionError(RuntimeError):
@@ -1447,6 +1447,18 @@ CREATE INDEX IF NOT EXISTS idx_proposals_tier ON proposals(tier, status);
 """
 
 
+MIGRATION_050 = """
+-- Where a file was filed to, asked by destination.
+--
+-- Search prints "filed here N times before" against every result, and History
+-- answers the same question about a path. Both looked it up by
+-- (dest_root, dest_relpath) and neither column was indexed, so each question
+-- was a scan of the whole journal — fifty of them per page of results.
+CREATE INDEX IF NOT EXISTS idx_history_destination
+  ON history(dest_relpath, dest_root);
+"""
+
+
 MIGRATIONS = {
     1: MIGRATION_001,
     2: MIGRATION_002,
@@ -1497,6 +1509,7 @@ MIGRATIONS = {
     47: MIGRATION_047,
     48: MIGRATION_048,
     49: MIGRATION_049,
+    50: MIGRATION_050,
 }
 
 
@@ -1744,3 +1757,12 @@ def migrate(conn: sqlite3.Connection) -> None:
         from librairy.search import rebuild_search_index
 
         rebuild_search_index(conn)
+    #  The moment automatic approval became possible on this database, so that
+    #  turning it on does not reach backwards. Written here rather than at
+    #  first use because a fresh install must be stamped *before* it has any
+    #  proposals, and an upgrade must be stamped before the worker next runs.
+    #  See `librairy/settled_queue.py`.
+    if starting_version < 49 <= SCHEMA_VERSION:
+        from librairy.settled_queue import stamp_activation
+
+        stamp_activation(conn)

@@ -64,6 +64,7 @@ def test_fresh_db_migrates_to_current_schema(tmp_path: Path) -> None:
         "idx_similar_media_flags_item_id",
         "idx_similar_media_flags_similar_item_id",
         "idx_proposals_tier",
+        "idx_history_destination",
         "idx_quarantine_entries_item_id",
         "idx_quarantine_entries_restored_at",
         "idx_duplicate_reports_other",
@@ -292,4 +293,12 @@ def test_two_connections_can_write_without_database_locked(tmp_path: Path) -> No
 
     assert errors == []
     conn = connect(settings)
-    assert conn.execute("SELECT COUNT(*) FROM settings").fetchone()[0] == 40
+    #  The forty this test wrote, counted by name rather than by counting the
+    #  whole table: `settings` is where the program keeps its own state too, so
+    #  a total is a number that changes whenever anything else records
+    #  something — which is what it did when automatic approval started
+    #  stamping its generation boundary there.
+    written = conn.execute(
+        "SELECT COUNT(*) FROM settings WHERE key LIKE 'key-%'"
+    ).fetchone()[0]
+    assert written == 40

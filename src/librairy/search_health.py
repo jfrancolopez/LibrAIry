@@ -100,7 +100,57 @@ def recorded_health(conn: sqlite3.Connection) -> IndexHealth:
     return IndexHealth(False, "recorded by the last integrity check")
 
 
-def index_counts(conn: sqlite3.Connection) -> dict[str, int]:
+#  Every count on this page is one of three primitives, and two of the three
+#  are the expensive kind: an FTS5 table has no row count to look up, so
+#  counting it reads it. Measured at a million — 224 ms for the index, 321 ms
+#  for the join, 73 ms for the items — which is why they are asked once and
+#  arithmetic does the rest.
+#
+#  `current` is derived rather than counted. Every index row belongs to an item
+#  that is either present or missing, so `total - missing` is the same number
+#  as the join that asks for it directly, and the join costs 325 ms. Deriving
+#  it is not an approximation; it is the same fact, read once.
+@dataclass(frozen=True)
+class IndexCounts:
+    """What the index holds, counted once."""
+
+    total: int
+    missing_retained: int
+    live_items: int
+
+    @property
+    def current(self) -> int:
+        """Index rows belonging to a file that is currently on disk."""
+        return max(0, self.total - self.missing_retained)
+
+    @property
+    def unindexed(self) -> int:
+        """A present file with no index row — the only one that means damage."""
+        return max(0, self.live_items - self.current)
+
+
+def counted(conn: sqlite3.Connection) -> IndexCounts:
+    """The three primitives, in three statements.
+
+    Callers that need more than one number ask for this once and read the rest
+    off it. Health used to reach the expensive join twice and the item count
+    twice on one render, through three modules that could not see each other.
+    """
+    total = int(conn.execute("SELECT COUNT(*) FROM search_fts").fetchone()[0])
+    missing = int(
+        conn.execute(
+            """
+            SELECT COUNT(*) FROM search_fts s JOIN items i ON i.id = s.item_id
+            WHERE i.missing_since IS NOT NULL
+            """
+        ).fetchone()[0]
+    )
+    return IndexCounts(total=total, missing_retained=missing, live_items=live_items(conn))
+
+
+def index_counts(
+    conn: sqlite3.Connection, counts: IndexCounts | None = None
+) -> dict[str, int]:
     """What the index holds, split so the numbers add up on sight.
 
     This used to return `indexed` beside `items`, where `indexed` counted every
@@ -117,26 +167,14 @@ def index_counts(conn: sqlite3.Connection) -> dict[str, int]:
     So the split is explicit now, and `unindexed` is the only one of these that
     is ever a problem worth reporting.
     """
-    total = int(conn.execute("SELECT COUNT(*) FROM search_fts").fetchone()[0])
-    current = indexed_live(conn)
-    missing = int(
-        conn.execute(
-            """
-            SELECT COUNT(*) FROM search_fts s JOIN items i ON i.id = s.item_id
-            WHERE i.missing_since IS NOT NULL
-            """
-        ).fetchone()[0]
-    )
+    found = counts or counted(conn)
     return {
-        "current": current,
-        "missing_retained": missing,
-        "total": total,
+        "current": found.current,
+        "missing_retained": found.missing_retained,
+        "total": found.total,
         # A present file with no index row. Unlike the others, this one means
         # something is actually wrong.
-        #
-        # Derived from `current`, which is already in hand, rather than calling
-        # `unindexed` and paying for the same join a second time.
-        "unindexed": max(0, live_items(conn) - current),
+        "unindexed": found.unindexed,
     }
 
 
@@ -159,7 +197,7 @@ def indexed_live(conn: sqlite3.Connection) -> int:
     )
 
 
-def unindexed(conn: sqlite3.Connection) -> int:
+def unindexed(conn: sqlite3.Connection, counts: IndexCounts | None = None) -> int:
     """Files on disk with no index entry — the only count here that is a problem.
 
     Its own function because Health asks for exactly this and nothing else. It
@@ -190,4 +228,4 @@ def unindexed(conn: sqlite3.Connection) -> int:
     reporting "0 unindexed" is the honest answer to a question about *missing*
     rows.
     """
-    return max(0, live_items(conn) - indexed_live(conn))
+    return (counts or counted(conn)).unindexed

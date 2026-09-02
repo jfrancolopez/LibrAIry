@@ -804,3 +804,45 @@ def test_building_rows_costs_the_same_for_five_as_for_fifty(tmp_path) -> None:  
         f"ten times the rows cost {large} statements against {small} — "
         "something in the row builder is still per-row"
     )
+
+
+def test_a_page_of_search_results_costs_a_fixed_number_of_statements(tmp_path) -> None:  # noqa: ANN001
+    """Three questions per result is a hundred and fifty per page.
+
+    The item, its proposal, and how many times that destination has been filed
+    before — none of them grows with the library, and all three were asked one
+    result at a time.
+    """
+    from librairy.search import SearchFilters, search_data
+
+    conn, settings = build(
+        tmp_path, library=400, inbox=200, findings=20, quarantine=20, history=200
+    )
+    counting = Counting(conn)
+    data = search_data(counting, settings, "", SearchFilters())
+
+    assert data["results"], "expected results to enrich"
+    #  Bounded by the shape of the page, not by how many rows landed on it.
+    assert len(counting.queries) < 15, counting.queries
+
+
+def test_health_counts_the_search_index_once(tmp_path) -> None:  # noqa: ANN001
+    """Counting an FTS5 table means reading it.
+
+    Three modules ask what the index holds — the panel, the attention report
+    and the restore check — and none could see the others, so one render asked
+    the expensive join twice and counted the items twice.
+    """
+    from librairy.web.health import health_data
+
+    conn, settings = build(
+        tmp_path, library=400, inbox=200, findings=20, quarantine=20, history=20
+    )
+    counting = Counting(conn)
+    health_data(counting, settings)
+
+    joins = [q for q in counting.queries if "search_fts s JOIN items" in q]
+    assert len(joins) == 1, joins
+    live = "SELECT COUNT(*) FROM items WHERE missing_since IS NULL"
+    lives = [query for query in counting.queries if query.startswith(live)]
+    assert len(lives) == 1, lives
