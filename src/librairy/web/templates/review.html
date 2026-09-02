@@ -16,6 +16,27 @@
          count you could not see either, which makes it a bulk decision taken
          on trust. Both are in the label now, and the button is not there at
          all when it would do nothing. #}
+      {# Not a confidence threshold. These are the files whose identity was
+         read off themselves or printed in them — an ISBN, a DOI, a catalog
+         match on this recording — which is a different kind of claim from a
+         high score, and the only kind strong enough to answer for somebody.
+         A learned habit can never be in here: it is a statement about files
+         that resembled this one. See `librairy/confidence_tiers.py`.
+
+         One informed press instead of a hundred identical ones — and it is
+         still a press, and Commit still comes after it. #}
+      {% if settled_ready %}
+        <button class="btn-primary"
+          hx-post="/review/action"
+          hx-vals='{{ dict(filters.form, action="approve", settled="true") | tojson }}'
+          hx-target="#review-list" hx-swap="outerHTML"
+          title="Files identified from themselves — an ISBN, a DOI, a catalog match. Nothing moves until you commit."
+          hx-confirm="Approve {{ settled_ready }} file{{ '' if settled_ready == 1 else 's' }} identified from the files themselves? Each one can say what identified it. Nothing moves until you commit."
+          hx-headers='{"x-csrf-token":"{{ request.state.session.csrf_token }}"}'>
+          Approve {{ settled_ready }} settled
+        </button>
+        <a class="btn" href="/review?tier={{ settled_tier }}">See what settled them</a>
+      {% endif %}
       {% if confident_ready %}
         <button class="btn-primary"
           hx-post="/review/action"

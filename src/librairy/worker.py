@@ -238,6 +238,11 @@ class Worker:
                     #  Health reports what this last found. Same arrangement as
                     #  the FTS integrity check, for the same reason.
                     self._database_check(settings)
+                    #  Off unless the owner turned it on, and on an idle cycle
+                    #  either way: a decision nobody is being asked about is
+                    #  not urgent. Nothing moves — it changes where a settled
+                    #  decision waits, and Commit still has to be pressed.
+                    self._settled_approvals(settings)
                     _set_worker_state(self.conn, "current_phase", "optimization")
                     self._optimization_slice(settings)
             else:
@@ -251,6 +256,19 @@ class Worker:
             if audit_stage:
                 _set_worker_state(self.conn, "last_audit_stage", audit_stage)
             return summary
+
+    def _settled_approvals(self, settings: Settings) -> None:
+        """Move the settled decisions to Ready for Commit, if that is switched on.
+
+        Wrapped like every other maintenance step: this is a convenience, and a
+        convenience that breaks the worker would cost far more than it saves.
+        """
+        from librairy.settled_queue import approve_settled
+
+        try:
+            approve_settled(self.conn, settings)
+        except Exception:
+            LOGGER.exception("settled approvals failed")
 
     def _database_check(self, settings: Settings) -> None:
         """Record what a full verification finds. Never blocks the inbox.

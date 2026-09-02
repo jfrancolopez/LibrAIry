@@ -9,7 +9,7 @@ from pathlib import Path
 from librairy.config import Settings
 
 LOGGER = logging.getLogger(__name__)
-SCHEMA_VERSION = 48
+SCHEMA_VERSION = 49
 
 
 class DatabaseVersionError(RuntimeError):
@@ -1414,6 +1414,39 @@ CREATE INDEX IF NOT EXISTS idx_similar_media_flags_similar_item_id
 """
 
 
+MIGRATION_049 = """
+-- How much attention a proposal is worth, decided from its own evidence.
+--
+-- Stored rather than derived, for the same reason `confidence` is: Review has
+-- to *count* these — "24 settled by identity" is a number above a list, not a
+-- number found by reading twenty-four rows — and the evidence it is derived
+-- from is a JSON blob no index can answer a question about. Testing it in SQL
+-- would mean scanning every pending proposal on every page render, which is
+-- the shape M1-01 spent a day removing from this page.
+--
+-- Written by `upsert_proposal` from the evidence it already validates, so it
+-- is recomputed exactly when the evidence changes and can never describe an
+-- older analysis. The rule lives in `librairy/confidence_tiers.py`.
+--
+-- NULL means "written before this column existed". Backfilled below for the
+-- two tiers that can be decided in SQL; the settled tier cannot, because it is
+-- a question about evidence, so those rows re-tier on their next analysis and
+-- read as `suggested` until then. Erring downward on an upgrade is the only
+-- safe direction: a row that should be settled and reads as suggested costs
+-- one look, and the reverse would put a file in front of Commit on the
+-- strength of a migration.
+ALTER TABLE proposals ADD COLUMN tier TEXT;
+
+UPDATE proposals SET tier = CASE
+  WHEN dest_relpath IS NULL OR dest_relpath = '' THEN 'uncertain'
+  WHEN confidence >= 0.85 THEN 'suggested'
+  ELSE 'uncertain' END
+WHERE tier IS NULL;
+
+CREATE INDEX IF NOT EXISTS idx_proposals_tier ON proposals(tier, status);
+"""
+
+
 MIGRATIONS = {
     1: MIGRATION_001,
     2: MIGRATION_002,
@@ -1463,6 +1496,7 @@ MIGRATIONS = {
     46: MIGRATION_046,
     47: MIGRATION_047,
     48: MIGRATION_048,
+    49: MIGRATION_049,
 }
 
 

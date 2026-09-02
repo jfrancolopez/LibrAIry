@@ -333,13 +333,53 @@ exist in Review; `decisions.suggest` already preselects and explains.
 existing Commit queue; an audit trail for why any item reached it; a setting to
 disable the deterministic tier entirely.
 
+**Done 2026-09-02.** The rule is in `librairy/confidence_tiers.py` and it is
+about **evidence, not the score**: `0.92` off a filename heuristic and `0.92`
+off an AcoustID match are the same number and are not the same claim. What
+settles a decision is an identity — a catalog match on this recording, an ISBN
+or a DOI printed in the file — read from the same `STRONG_SOURCES` /
+`STRONG_FIELDS` that already keep a learned habit quiet, so the tier and the
+authority order cannot drift into two opinions. A learned pattern, an AI cue
+and a filename guess can reach `suggested` and never `settled`.
+
+Stored on the proposal (**migration 049**) rather than derived per render, for
+the same reason `confidence` is: "24 settled by identity" is a number above a
+list, not a number found by reading twenty-four rows, and the evidence it comes
+from is a JSON blob no index can answer a question about. Written by
+`upsert_proposal` from the evidence it already validates, so it is recomputed
+exactly when the evidence changes.
+
+The column is a fact about the evidence; `settled_now` is a fact about the
+moment. An arrival that turns out to be a second copy of something filed, a
+cross-root comparison nobody has answered, a model that disagrees about what a
+picture is — none of those is knowable when a proposal is written, and each one
+makes a settled filing a question again. Both the button and the automatic
+approval ask.
+
+**The deterministic tier ships in two halves, and the automatic one is off by
+default.** The button — *Approve 24 settled* — delivers the outcome this item
+is for, hundreds of decisions becoming a handful of confirmations, with a
+person in the loop and every row able to say what identified it. Approving on
+somebody's behalf, silently, on the first worker cycle after an upgrade is a
+different proposition, so `review.settled.auto_approve` is opt-in.
+`librairy/settled_queue.py` runs it on an idle cycle, takes an Undo snapshot
+first, and deliberately does **not** call `remember_approvals`: a program that
+learns from its own automatic decisions is citing itself as evidence.
+
 **Do not.** Let a learned pattern reach the deterministic tier — it is
 authority level 4, permanently. Build this as a second automation system beside
 Decision Memory; they are one model with one explanation (see M2-04).
 
 **Acceptance.** Each tier's rule is written down and tested; every
 deterministic item can answer "why am I here"; disabling the tier restores
-today's behaviour exactly.
+today's behaviour exactly. All three in `tests/test_confidence_tiers.py` and
+`tests/test_web_review.py` — the second one derived from the evidence rather
+than stored beside it, because two records of why can disagree and one cannot.
+
+**Flagged for review:** the default. This ships with the batch button on and
+automatic approval off, which is a judgement about surprise rather than
+something M1-05 stated. Turning `review.settled.auto_approve` on by default is
+a one-line change if that is the wrong call.
 
 **Scale.** Tens of thousands of pending decisions.
 

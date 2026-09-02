@@ -945,6 +945,7 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         min_confidence: OptionalFloat = None,
         max_confidence: OptionalFloat = None,
         has_destination: str | None = None,
+        tier: str | None = None,
         page: PageNumber = 1,
         sort: str | None = None,
     ) -> HTMLResponse:
@@ -954,6 +955,7 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             min_confidence=min_confidence,
             max_confidence=max_confidence,
             has_destination=has_destination,
+            tier=tier,
             page=page,
             sort=sort,
         )
@@ -971,6 +973,7 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         min_confidence: OptionalFloat = None,
         max_confidence: OptionalFloat = None,
         has_destination: str | None = None,
+        tier: str | None = None,
         page: PageNumber = 1,
         sort: str | None = None,
     ) -> HTMLResponse:
@@ -980,6 +983,7 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             min_confidence=min_confidence,
             max_confidence=max_confidence,
             has_destination=has_destination,
+            tier=tier,
             page=page,
             sort=sort,
         )
@@ -998,6 +1002,7 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         min_confidence: OptionalFloat = None,
         max_confidence: OptionalFloat = None,
         has_destination: str | None = None,
+        tier: str | None = None,
         page: PageNumber = 1,
         sort: str | None = None,
         only: str = "",
@@ -1015,6 +1020,7 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             min_confidence=min_confidence,
             max_confidence=max_confidence,
             has_destination=has_destination,
+            tier=tier,
             page=1,
             sort=sort,
         )
@@ -2266,6 +2272,8 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         min_confidence: Annotated[OptionalFloat, Form()] = None,
         max_confidence: Annotated[OptionalFloat, Form()] = None,
         has_destination: Annotated[str | None, Form()] = None,
+        tier: Annotated[str | None, Form()] = None,
+        settled: Annotated[bool, Form()] = False,
         page: Annotated[PageNumber, Form()] = 1,
         sort: Annotated[str | None, Form()] = None,
     ) -> HTMLResponse:
@@ -2275,6 +2283,7 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             min_confidence=min_confidence,
             max_confidence=max_confidence,
             has_destination=has_destination,
+            tier=tier,
             page=page,
             sort=sort,
         )
@@ -2285,6 +2294,7 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             proposal_ids=proposal_id or [],
             all_matching=all_matching,
             unit=unit,
+            settled=settled,
         )
         return TEMPLATES.TemplateResponse(
             request,

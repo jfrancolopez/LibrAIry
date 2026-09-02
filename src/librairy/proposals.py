@@ -5,6 +5,7 @@ import sqlite3
 from dataclasses import asdict
 
 from librairy.catalogs import CATALOGS
+from librairy.confidence_tiers import tier_for
 from librairy.models import Category, EvidenceEntry, Proposal
 from librairy.planner import utc_now
 from librairy.search import sync_search_item
@@ -75,6 +76,10 @@ def upsert_proposal(
     validate_action(action, dest_root)
     now = utc_now()
     encoded = encode_evidence(evidence)
+    #  Decided here because here is where the evidence is written: a tier that
+    #  was computed at some other moment would describe an older analysis. See
+    #  `librairy/confidence_tiers.py` for what each one means.
+    tier = tier_for(evidence, confidence, dest_relpath)
     existing = conn.execute(
         "SELECT id FROM proposals WHERE item_id=? AND status != 'superseded'",
         (item_id,),
@@ -84,8 +89,8 @@ def upsert_proposal(
             """
             INSERT INTO proposals(
               item_id, category, clean_name, dest_relpath, confidence, action, dest_root, group_id,
-              status, evidence, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'proposed', ?, ?, ?)
+              status, evidence, tier, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'proposed', ?, ?, ?, ?)
             """,
             (
                 item_id,
@@ -97,6 +102,7 @@ def upsert_proposal(
                 dest_root,
                 group_id,
                 encoded,
+                tier,
                 now,
                 now,
             ),
@@ -108,7 +114,8 @@ def upsert_proposal(
     conn.execute(
         """
         UPDATE proposals SET category=?, clean_name=?, dest_relpath=?, confidence=?,
-          action=?, dest_root=?, group_id=?, status='proposed', evidence=?, updated_at=?
+          action=?, dest_root=?, group_id=?, status='proposed', evidence=?, tier=?,
+          updated_at=?
         WHERE id=?
         """,
         (
@@ -120,6 +127,7 @@ def upsert_proposal(
             dest_root,
             group_id,
             encoded,
+            tier,
             now,
             existing["id"],
         ),

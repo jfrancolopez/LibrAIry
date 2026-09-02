@@ -63,6 +63,7 @@ def test_fresh_db_migrates_to_current_schema(tmp_path: Path) -> None:
         "idx_similar_media_flags_status",
         "idx_similar_media_flags_item_id",
         "idx_similar_media_flags_similar_item_id",
+        "idx_proposals_tier",
         "idx_quarantine_entries_item_id",
         "idx_quarantine_entries_restored_at",
         "idx_duplicate_reports_other",

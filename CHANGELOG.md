@@ -31,6 +31,21 @@ category and the sort but not the confidence bounds, so the second page of a
 narrowed view was a page of something else and a group's members could go
 missing between one page of an expansion and the next.
 
+Not every decision is worth the same attention. A file whose ISBN was read off
+its own title page and a file whose destination was guessed from a year in its
+filename used to arrive as the same row with the same buttons. Review now sorts
+them into three tiers by **what the evidence is**, not by how high the score
+is: a `0.92` from a filename and a `0.92` from a catalog match on this exact
+recording are the same number and are not the same claim. *Approve 24 settled*
+takes the ones identified from the files themselves, in one informed press, and
+every one of them can say what identified it. A learned habit can never be in
+there — it is a statement about files that resembled this one — and neither can
+an AI cue or a filename guess.
+
+`review.settled.auto_approve`, off by default, lets those wait in front of
+Commit instead of in Review. Nothing moves either way: Commit still shows the
+exact list, and Undo still takes the whole batch back.
+
 ### Performance
 
 Building a page of Review rows no longer asks a question per row. Whether a

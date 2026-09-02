@@ -24,6 +24,12 @@
            identical on the forty rows that have neither. #}
         {% if proposal.vision %}<span class="badge badge-info" title="A local model looked at this picture — open Why to read what it saw">described</span>{% endif %}
         {% if proposal.has_duplicate %}<span class="badge badge-info">duplicate</span>{% endif %}
+        {# Answered by the file itself. The badge carries the sentence, because
+           a row that says "settled" and cannot say what settled it is asking
+           for trust rather than giving a reason. #}
+        {% if proposal.why_settled %}
+          <span class="badge badge-ok" title="{{ proposal.why_settled }}">{{ proposal.tier_label }}</span>
+        {% endif %}
         {# Always last in the row, so the scores line up into a column you can
            read straight down instead of stopping at each one.
            Colour is the score: green is safe to wave through, red wants a

@@ -12,6 +12,14 @@ from librairy.audit import FOLDER_KINDS, KINDS, findings_by_ids
 from librairy.audit_duplicates import copies as duplicate_copies
 from librairy.audit_job import progress as audit_progress
 from librairy.classify.images import vision_disagrees, vision_for_items
+from librairy.confidence_tiers import (
+    SETTLED,
+    TIER_LABEL,
+    TIER_NOTE,
+    TIERS,
+    settled_now,
+    why_settled,
+)
 from librairy.config import Settings
 from librairy.correction_state import active_plan, active_plans_for
 from librairy.corrections import (
@@ -135,6 +143,7 @@ class ReviewFilters:
     min_confidence: float | None = None
     max_confidence: float | None = None
     has_destination: bool | None = None
+    tier: str | None = None
     page: int = 1
     sort: str = DEFAULT_SORT
 
@@ -152,6 +161,7 @@ class ReviewFilters:
             or self.min_confidence is not None
             or self.max_confidence is not None
             or self.has_destination is not None
+            or self.tier is not None
         )
 
     @property
@@ -172,6 +182,8 @@ class ReviewFilters:
             carried["max_confidence"] = f"{self.max_confidence:g}"
         if self.has_destination is not None:
             carried["has_destination"] = "yes" if self.has_destination else "no"
+        if self.tier is not None:
+            carried["tier"] = self.tier
         return carried
 
     @property
@@ -228,6 +240,14 @@ def review_data(
         # honest way to use it was not to.
         "confident": CONFIDENT,
         "confident_ready": _confident_count(conn, filters),
+        #  The decisions that are not decisions: a file whose identity was read
+        #  off itself or printed in it. One informed press instead of a hundred
+        #  identical ones — and still a press, and still Commit after it.
+        "settled_ready": _settled_count(conn, filters),
+        "tiers": TIERS,
+        "tier_labels": TIER_LABEL,
+        "tier_notes": TIER_NOTE,
+        "settled_tier": SETTLED,
         # A separate list for a separate question. See audit_view.
         **audit_groups,
         #  What arrived together, as counts only. The members live on the
@@ -248,6 +268,24 @@ def _confident_count(conn: sqlite3.Connection, filters: ReviewFilters) -> int:
         return 0
     floor = max(CONFIDENT, filters.min_confidence or 0.0)
     return _proposal_count(conn, replace(filters, min_confidence=floor))
+
+
+def _settled_count(conn: sqlite3.Connection, filters: ReviewFilters) -> int:
+    """How many waiting decisions are not in doubt.
+
+    One `COUNT(*)` on an indexed column, which is why the tier is stored: this
+    is a number above a list, not a number found by reading the list.
+
+    It counts what the *evidence* settled. A handful of those may still have
+    something else the matter with them — an arrival that is a second copy, a
+    comparison nobody has answered — and `settled_now` is what filters those
+    out at the moment of acting. The count erring high by one or two is the
+    right direction: the button says what it will act on when it is pressed,
+    and it acts on fewer things than the heading advertised, never more.
+    """
+    if filters.state != "proposed":
+        return 0
+    return _proposal_count(conn, replace(filters, tier=SETTLED))
 
 
 def unit_proposal_ids(
@@ -276,6 +314,35 @@ def unit_proposal_ids(
     ]
 
 
+def settled_ids(conn: sqlite3.Connection, filters: ReviewFilters) -> list[int]:
+    """Every waiting decision whose answer is not in doubt, right now.
+
+    The tier column narrows it to the rows whose *evidence* settled the
+    question — one indexed read rather than a scan of every evidence blob — and
+    then each one is checked against the things that are not knowable when a
+    proposal is written: it is a second copy of a file you have, it is another
+    version of one you have, a model disagrees about what it is, a habit
+    disagrees about where it goes. Any of those and it is a question again.
+
+    Bounded by the settled set rather than by the library, and enriched only
+    for the rows it is about to answer for.
+    """
+    rows = _proposal_rows(
+        conn,
+        replace(filters, tier=SETTLED, page=1),
+        limit=SETTLED_BATCH,
+        offset=0,
+    )
+    return [int(row["id"]) for row in rows if settled_now(row)]
+
+
+#  A ceiling on one press. Ten thousand approvals in a single statement is not
+#  a decision anybody made, and Undo has to be able to photograph what it would
+#  put back. Whatever is left is still there on the next press, and the count
+#  beside the button says so.
+SETTLED_BATCH = 500
+
+
 def apply_review_action(
     conn: sqlite3.Connection,
     action: str,
@@ -284,11 +351,14 @@ def apply_review_action(
     proposal_ids: list[int] | None = None,
     all_matching: bool = False,
     unit: str = "",
+    settled: bool = False,
 ) -> int:
     #  One place decides what the action is about, so a group action cannot
     #  mean one thing for Approve and another for Quarantine.
     if all_matching:
         chosen = _matching_ids(conn, filters)
+    elif settled:
+        chosen = settled_ids(conn, filters)
     elif unit:
         chosen = unit_proposal_ids(conn, filters, unit)
     else:
@@ -680,6 +750,7 @@ def filters_from_query(
     min_confidence: float | None = None,
     max_confidence: float | None = None,
     has_destination: str | None = None,
+    tier: str | None = None,
     page: int = 1,
     sort: str | None = None,
 ) -> ReviewFilters:
@@ -694,6 +765,8 @@ def filters_from_query(
         min_confidence=min_confidence,
         max_confidence=max_confidence,
         has_destination=destination_filter,
+        #  An unknown tier is a typo or a stale bookmark, like an unknown sort.
+        tier=tier if tier in TIERS else None,
         page=max(1, page),
         # An unknown sort is a typo or a stale bookmark, not a reason to fail.
         sort=sort if sort in SORTS else DEFAULT_SORT,
@@ -985,6 +1058,13 @@ def _proposal_rows(
             #  for a `.txt` and get a broken image where the face should be.
             #  Says a render is *possible*, not that it will succeed.
             "can_preview": _can_preview(row["item_relpath"]),
+            #  Which of the three kinds of attention this row is worth, and —
+            #  for the ones that need none — the sentence that answers "why am
+            #  I here". Both read off what is already on the row: the tier from
+            #  its column, the reason from the evidence it was decided from.
+            "tier": row["tier"] or "",
+            "tier_label": TIER_LABEL.get(str(row["tier"] or ""), ""),
+            "why_settled": why_settled(dict(row)),
             "unhidden_name": unhidden_name(row["item_relpath"]),
             # The comparison itself is loaded on demand — it carries two
             # previews, and a page of fifty rows must not fetch a hundred.
@@ -1542,6 +1622,7 @@ def _unnarrowed(filters: ReviewFilters) -> ReviewFilters:
         min_confidence=None,
         max_confidence=None,
         has_destination=None,
+        tier=None,
     )
 
 
@@ -1765,6 +1846,12 @@ def _where(filters: ReviewFilters) -> tuple[str, list[object]]:
         clauses.append("p.dest_relpath IS NOT NULL")
     elif filters.has_destination is False:
         clauses.append("p.dest_relpath IS NULL")
+    if filters.tier:
+        #  An indexed column, which is the whole reason the tier is stored
+        #  rather than read out of the evidence blob on every row. See
+        #  migration 049.
+        clauses.append("p.tier = ?")
+        params.append(filters.tier)
     return " AND ".join(clauses), params
 
 

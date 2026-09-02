@@ -1369,3 +1369,161 @@ def test_the_number_to_look_at_is_a_control_that_shows_them(tmp_path: Path) -> N
     assert "DSC_4110.JPG" in looked
     assert "DSC_4100.JPG" not in looked
     assert "Show all 12" in looked
+
+
+# --- how much attention a decision is worth -----------------------------------
+
+
+def settled_and_guessed(conn) -> tuple[int, int]:  # noqa: ANN001
+    """One file identified by its own ISBN, one guessed at with a high score."""
+    settled = seed_member(
+        conn,
+        "books/dune.epub",
+        "books",
+        "Books/Frank Herbert/Dune/Dune.epub",
+        0.70,
+        None,
+        [EvidenceEntry("document", "isbn", "9780441013593", 0.95)],
+    )
+    guessed = seed_member(
+        conn,
+        "docs/notes.pdf",
+        "documents",
+        "Documents/2024/notes.pdf",
+        0.92,
+        None,
+        [EvidenceEntry("heuristic", "category", "a year in the filename", 0.92)],
+    )
+    return settled, guessed
+
+
+def test_the_settled_batch_names_its_count_and_says_what_settled_each(tmp_path: Path) -> None:
+    """A high score and an identity are not the same claim.
+
+    The confident button takes the green bars; this one takes the files that
+    were identified from themselves, which is a different set and a different
+    sentence.
+    """
+    client, conn = client_for(tmp_path)
+    settled_and_guessed(conn)
+
+    page = client.get("/review").text
+
+    assert "Approve 1 settled" in page
+    #  And the row can answer "why am I here" without being opened.
+    assert "9780441013593" in client.get("/review/list").text
+
+
+def test_approving_the_settled_leaves_the_guesses_alone(tmp_path: Path) -> None:
+    client, conn = client_for(tmp_path)
+    settled, guessed = settled_and_guessed(conn)
+
+    response = client.post(
+        "/review/action",
+        data={"action": "approve", "settled": "true"},
+        headers={"x-csrf-token": client.cookies["csrf_token"]},
+    )
+
+    assert response.status_code == 200
+    assert proposal_status(conn, settled) == "approved"
+    assert proposal_status(conn, guessed) == "proposed"
+
+
+def test_something_else_in_question_keeps_a_settled_file_out_of_the_batch(
+    tmp_path: Path,
+) -> None:
+    """A second copy of a file you already have is not a filing decision."""
+    from librairy.inbox_duplicates import EVIDENCE_PREFIX
+
+    client, conn = client_for(tmp_path)
+    settled, _ = settled_and_guessed(conn)
+    also = seed_member(
+        conn,
+        "books/dune-again.epub",
+        "books",
+        "Books/Frank Herbert/Dune/Dune.epub",
+        0.70,
+        None,
+        [
+            EvidenceEntry("document", "isbn", "9780441013593", 0.95),
+            EvidenceEntry("fingerprint", "blake2b", f"{EVIDENCE_PREFIX} Books/Dune.epub", 0.99),
+        ],
+    )
+
+    client.post(
+        "/review/action",
+        data={"action": "approve", "settled": "true"},
+        headers={"x-csrf-token": client.cookies["csrf_token"]},
+    )
+
+    assert proposal_status(conn, settled) == "approved"
+    assert proposal_status(conn, also) == "proposed"
+
+
+def test_the_tier_is_a_filter_of_its_own(tmp_path: Path) -> None:
+    client, conn = client_for(tmp_path)
+    settled_and_guessed(conn)
+
+    only = client.get("/review/list?tier=settled").text
+
+    assert "dune.epub" in only
+    assert "notes.pdf" not in only
+
+
+def test_nothing_is_approved_on_its_own_unless_that_is_switched_on(tmp_path: Path) -> None:
+    """M1-05's third acceptance criterion, and the safer default.
+
+    Approving on somebody's behalf, silently, on the first cycle after an
+    upgrade is not a thing to switch on for them.
+    """
+    from librairy.settled_queue import SETTING, approve_settled
+
+    client, conn = client_for(tmp_path)
+    settled, _ = settled_and_guessed(conn)
+    settings = Settings(
+        APPDATA_DIR=tmp_path / "appdata",
+        INBOX_DIR=tmp_path / "inbox",
+        LIBRARY_DIR=tmp_path / "library",
+        QUARANTINE_DIR=tmp_path / "quarantine",
+        _env_file=None,
+    )
+
+    assert approve_settled(conn, settings) == 0
+    assert proposal_status(conn, settled) == "proposed"
+
+    conn.execute("INSERT INTO settings(key, value) VALUES (?, 'true')", (SETTING,))
+    conn.commit()
+
+    assert approve_settled(conn, settings) == 1
+    assert proposal_status(conn, settled) == "approved"
+    #  Still in the inbox, still waiting for Commit, and takeable back.
+    assert conn.execute("SELECT COUNT(*) FROM plans").fetchone()[0] == 0
+    assert client.get("/review").status_code == 200
+
+
+def test_an_automatic_approval_teaches_the_learner_nothing(tmp_path: Path) -> None:
+    """A program that learns from its own decisions is citing itself.
+
+    `docs/architecture/decision-memory.md` lists "what the classifier produced
+    on its own" among the things that are never lessons, and an automatic
+    approval is exactly that.
+    """
+    from librairy.settled_queue import SETTING, approve_settled
+
+    _, conn = client_for(tmp_path)
+    settled_and_guessed(conn)
+    settings = Settings(
+        APPDATA_DIR=tmp_path / "appdata",
+        INBOX_DIR=tmp_path / "inbox",
+        LIBRARY_DIR=tmp_path / "library",
+        QUARANTINE_DIR=tmp_path / "quarantine",
+        _env_file=None,
+    )
+    conn.execute("INSERT INTO settings(key, value) VALUES (?, 'true')", (SETTING,))
+    conn.commit()
+
+    before = conn.execute("SELECT COUNT(*) FROM decision_events").fetchone()[0]
+    assert approve_settled(conn, settings) == 1
+    after = conn.execute("SELECT COUNT(*) FROM decision_events").fetchone()[0]
+
+    assert after == before
