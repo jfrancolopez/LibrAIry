@@ -587,10 +587,18 @@ def decision_scale(conn: sqlite3.Connection) -> dict[str, int]:
             pages_touched[group_id] = pages_touched.get(group_id, 0) + 1
         return _page_decisions(chunk)
 
+    #  The order Review actually uses, not the raw sort clause. `_order_by`
+    #  puts the group first when grouping is on — `COALESCE(g.kind,
+    #  'ungrouped'), COALESCE(g.label, 'Ungrouped')`, then confidence inside
+    #  it — so members of one group are already adjacent. Replaying
+    #  `confidence DESC` instead said every group was split, which was a fact
+    #  about this function and not about the program.
     for row in conn.execute(
         "SELECT p.group_id FROM proposals p JOIN items i ON i.id = p.item_id"
+        " LEFT JOIN groups g ON g.id = p.group_id"
         " WHERE p.status='proposed' AND i.missing_since IS NULL"
-        " ORDER BY p.confidence DESC, p.id DESC"
+        " ORDER BY COALESCE(g.kind, 'ungrouped'), COALESCE(g.label, 'Ungrouped'),"
+        " p.confidence DESC, p.id DESC"
     ):
         chunk.append(row[0])
         if len(chunk) == PAGE:

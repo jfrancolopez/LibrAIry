@@ -206,31 +206,39 @@ every five seconds, so 620 ms at a million is worth a look eventually.
 The question M1-01 exists to answer: *how many decisions does a library of this
 size ask a person for?*
 
-| library | pending proposals | one per file | one per group (ideal) | **as Review presents them today** |
-|---|---|---|---|---|
-| 100k | 4,500 | 4,500 | 891 | **1,704** |
-| 300k | 13,500 | 13,500 | 2,667 | **5,072** |
-| 1M | 45,000 | 45,000 | 8,889 | **16,930** |
+| library | pending proposals | one per file | one per group (ideal) | as Review presents them today | groups split |
+|---|---|---|---|---|---|
+| 100k | 4,500 | 4,500 | 891 | 943 | 36 of 127 |
+| 1M | 45,000 | 45,000 | 8,889 | 9,405 | 352 of 1,239 |
 
-Grouping already earns its keep: 45,000 files reach a person as 16,930
-decisions rather than 45,000. But the coherent answer is 8,889, and the gap —
-**8,041 decisions that exist only because of where the page breaks** — is
-entirely the architecture M1-02 exists to change.
+**Grouping already does almost all of the work.** A million files reach a person
+as 9,405 decisions rather than 45,000, and the coherent answer is 8,889 — so the
+page boundary costs **516 decisions, about 6%**, not the bulk of them.
 
-**Every group is split.** Not most: 1,239 of 1,239 at a million, 373 of 373 at
-300,000, 127 of 127 at 100,000. Two mechanisms, and they compound:
+> **Correction, 2026-09-02.** The first version of this section reported 16,930
+> decisions and claimed *every* group was split, blaming the confidence sort for
+> scattering group members across the ordering. That was wrong, and it was wrong
+> about this harness rather than about LibrAIry: `decision_scale` replayed
+> `ORDER BY confidence DESC`, which is the raw sort clause, while
+> `review._order_by` already puts the group first whenever grouping is on —
+> `COALESCE(g.kind, 'ungrouped'), COALESCE(g.label, 'Ungrouped')`, and then
+> confidence *inside* the group. Members of a group are adjacent already. The
+> table above is the corrected replay. The 300k row is not re-run and is
+> omitted rather than left wrong.
 
-- Grouping happens **after** `LIMIT 50`. `_proposal_rows` pages first and
-  `_group_rows` groups whatever landed, so any group larger than a page is
-  split by construction.
-- The default sort is `confidence DESC`. Members of one camera card do not
-  share a confidence, so sorting scatters them across the entire ordering
-  before the page boundary ever applies. A 150-photo event arrives as pieces on
-  dozens of pages, and `_fold_singletons` — which can only see one page —
-  correctly decides most of those pieces are not groups at all.
+A group is split only when it is genuinely larger than a page or straddles one —
+36 of 127 at 100k. A twelve-track album is one decision. A 150-photo camera card
+is three or four.
 
-The second mechanism matters for M1-02: paging groups instead of rows is
-necessary and not sufficient. The group has to be the thing that is ordered.
+**What this changes.** M1-02's case does not rest on decision *count*: paging by
+group saves something like 6%. It rests on the experience — a thumbnail grid
+instead of 150 rows, outliers surfaced rather than hunted, one action instead of
+a select-all — which is what the roadmap asks for and what 900 pages of rows
+cannot give.
+
+The lever that moves the *count* is **M1-05**: confidence tiers, and
+deterministic decisions arriving in Ready for Commit. 9,405 decisions is still
+9,405, and no amount of grouping makes it 500.
 
 ## What this does not measure
 

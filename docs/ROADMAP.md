@@ -51,12 +51,17 @@ sized against.
 [performance.md](performance.md), raw data in [measurements/](measurements/),
 harness in `scripts/scale_bench.py`.
 
-> **What it found.** Review and Health do not work at 100,000 files, let alone
+> **What it found.** Review and Health did not work at 100,000 files, let alone
 > a million. Commit, Quarantine and Dashboard hold. Search and Browse degrade
-> linearly with clear, small causes. And the human-decision number: a million
-> files reach a person as **16,930 decisions** where the coherent answer is
-> **8,889** — with *every* group split across pages, for two compounding
-> reasons rather than one. See M1-02, whose problem statement this changed.
+> linearly with clear, small causes. Review is now fixed (see M1-02); Health is
+> M1-06.
+>
+> And the human-decision number, **corrected 2026-09-02**: a million files reach
+> a person as **9,405 decisions** where the coherent answer is **8,889**. The
+> first figure published here — 16,930, every group split — was a bug in the
+> measurement, not a fact about the program: it replayed the raw confidence sort
+> while Review already orders by group. Grouping is doing its job; the page
+> boundary costs about 6%.
 
 **Problem.** The only end-to-end evidence is a 50,000-file run from
 2026-07-22, recorded in [performance.md](performance.md). It predates
@@ -102,25 +107,27 @@ each population; `test_scale.py` extended so the bounded-page rule is held on
 
 **P0 · L · Medium risk**
 
-**Problem.** Measured by M1-01, and worse than it looked when this item was
-written.
+**Problem.** Measured by M1-01, and the honest version is narrower than this
+item first claimed.
 
-*Two* mechanisms split groups, and they compound. Review pages first and groups
-second — `_proposal_rows` applies `LIMIT 50 OFFSET n` and `_group_rows` groups
-whatever landed — so any group larger than a page is split by construction. And
-the default sort is `confidence DESC`, which scatters the members of one camera
-card across the entire ordering *before* the page boundary ever applies. The
-result at every population measured: **100% of groups split** — 1,239 of 1,239
-at a million. `_fold_singletons` then correctly concludes that most of those
-fragments are not groups, because on their page they are not.
+Review pages first and groups second: `_proposal_rows` applies `LIMIT 50 OFFSET
+n` and `_group_rows` groups whatever landed, so a group larger than a page is
+split by construction and `_fold_singletons` — seeing one page — concludes the
+fragments are not groups. That is real: 352 of 1,239 groups at a million.
 
-Paging groups instead of rows is therefore necessary and **not sufficient**.
-The group has to become the thing that is ordered.
+But it is **not** most of the cost. Ordering already puts a group together
+(`_order_by` sorts by `g.kind, g.label` before confidence), so the page boundary
+costs about 6% of decisions — 9,405 against an ideal 8,889 — and not the 16,930
+this item was written against. That earlier number was a measurement bug.
 
-Separately, and blocking any Review work at all: `audit_view` materializes the
-entire findings table on every render, one query per finding, with no `LIMIT`
-— 50,000 statements before a single proposal is looked at. One Review page
-never finished inside sixty seconds at 100k, 300k or 1M.
+**So the case for this item is the experience, not the arithmetic.** 150
+photographs as a thumbnail grid with the three odd ones flagged, answered once,
+is worth building. It is not worth building because it saves 516 decisions. The
+lever on the count is M1-05.
+
+The precondition — `audit_view` materializing the entire findings table on every
+render, 50,000 statements before a proposal was looked at, a page that never
+finished at any population — is **done**.
 
 **Desired outcome.** Review pages *groups*. A group knows its own size, its own
 confidence and its own membership, whether it holds three files or three
@@ -153,10 +160,9 @@ Collections page; absorb it.
 **Acceptance.** A 3,000-file group renders in one bounded page with an exact
 count; approving it produces one decision; paging its members neither repeats
 nor drops a row; the query count does not grow with group size, with the
-findings table, or with the library. The two `xfail(strict=True)` Review tests
-in `tests/test_scale_surfaces.py` pass and their markers are removed. Re-running
-`scripts/scale_bench.py --library 1000000` shows Review completing, and the
-decision count moving from 16,930 toward 8,889.
+findings table, or with the library. The remaining `xfail(strict=True)` on
+unbounded library scans passes and its marker is removed. The decision count
+moves from 9,405 toward 8,889 — a small number, and not the reason to do this.
 
 **Scale.** Thousands of groups, hundreds of thousands of members.
 
