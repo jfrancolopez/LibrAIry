@@ -355,3 +355,76 @@ def test_the_bounded_surfaces_stay_bounded_at_fifty_thousand(tmp_path) -> None: 
     data = quarantine_data(counting, settings)
     assert len(data["entries"]) <= 50
     assert len(counting.queries) - before < 60
+
+
+def test_a_group_larger_than_a_page_says_how_large_it_is(tmp_path) -> None:  # noqa: ANN001
+    """The heading counts the group; the list shows a page of it.
+
+    Until this, a group bigger than a page rendered the members that happened
+    to land there under a heading saying "12 shown" — of what, it did not say.
+    A 150-photograph event read as twelve photographs, which is the difference
+    between one decision and a wrong impression of the queue.
+    """
+    from librairy.web.review import PAGE_SIZE, ReviewFilters, review_data
+
+    conn, settings = build(
+        tmp_path, library=200, inbox=400, findings=20, quarantine=20, history=20
+    )
+    #  Groups are ordered by kind, so the albums of twelve come before the
+    #  photo events of a hundred and fifty. Walk until one is bigger than the
+    #  page can hold, which is the case this exists to check.
+    split = None
+    for page in range(1, 12):
+        data = review_data(conn, ReviewFilters(page=page), settings)
+        #  The page is still a page, on every one of them.
+        assert sum(len(group["rows"]) for group in data["groups"]) <= PAGE_SIZE
+        for group in data["groups"]:
+            if group["kind"] in ("ungrouped", "sorted"):
+                continue
+            if int(group["total"]) > len(group["rows"]):
+                split = group
+                break
+        if split:
+            break
+    assert split is not None, "expected a group the page could not hold in full"
+    assert int(split["total"]) > PAGE_SIZE or int(split["total"]) > len(split["rows"])
+
+
+def test_one_member_on_this_page_is_not_a_loose_file(tmp_path) -> None:  # noqa: ANN001
+    """A group of one is not a group; one member *on this page* is different.
+
+    `_fold_singletons` could only see a page, so the tail of a large group
+    landing alone was folded into the loose pile and lost its heading. The
+    group's real size decides now.
+    """
+    from librairy.web.review import ReviewFilters, review_data
+
+    conn, settings = build(
+        tmp_path, library=200, inbox=400, findings=20, quarantine=20, history=20
+    )
+    for page in (1, 2, 3):
+        data = review_data(conn, ReviewFilters(page=page), settings)
+        for group in data["groups"]:
+            if group["kind"] in ("ungrouped", "sorted"):
+                continue
+            assert int(group["total"]) > 1, (
+                f"page {page} kept a heading for a group of {group['total']}"
+            )
+
+
+def test_group_totals_respect_the_page_filters(tmp_path) -> None:  # noqa: ANN001
+    """A heading counting the whole group above a narrowed list is a new lie."""
+    from librairy.web.review import ReviewFilters, group_totals, review_data
+
+    conn, settings = build(
+        tmp_path, library=200, inbox=400, findings=20, quarantine=20, history=20
+    )
+    wide = ReviewFilters()
+    narrow = ReviewFilters(min_confidence=0.9)
+    rows = review_data(conn, wide, settings)["groups"]
+    members = [
+        row for group in rows for row in group["rows"] if row.get("group_id") is not None
+    ]
+    if not members:
+        pytest.skip("no grouped rows in the fixture")
+    assert group_totals(conn, narrow, members) != group_totals(conn, wide, members)

@@ -156,10 +156,13 @@ def review_data(
 ) -> dict[str, object]:
     rows = _proposal_rows(conn, filters, settings=settings)
     total = _proposal_count(conn, filters)
+    #  One query, and only when grouping is on: a flat list has no headings to
+    #  make true.
+    totals = group_totals(conn, filters, rows) if filters.grouped else {}
     audit_groups = audit_view(conn, settings)
     return {
         "filters": filters,
-        "groups": _group_rows(rows) if filters.grouped else _flat_group(rows),
+        "groups": _group_rows(rows, totals) if filters.grouped else _flat_group(rows),
         "sorts": SORTS,
         "states": STATES,
         "filtered": filters.narrowed,
@@ -967,19 +970,56 @@ def _flat_group(rows: list[dict[str, Any]]) -> list[dict[str, object]]:
     return [{"kind": "sorted", "label": "", "rows": rows}]
 
 
-def _group_rows(rows: list[dict[str, Any]]) -> list[dict[str, object]]:
+def group_totals(
+    conn: sqlite3.Connection, filters: ReviewFilters, rows: list[dict[str, Any]]
+) -> dict[int, int]:
+    """How many files each group on this page actually holds.
+
+    One query for the page, and it answers the question the heading could not:
+    a group larger than a page shows the members that landed on it, and until
+    this there was nothing to say how many did not. "12 shown" of what?
+
+    Counted under the same filters as the page, because a heading that counted
+    the whole group while the list below it was narrowed would be a different
+    lie in the same place.
+    """
+    ids = sorted({int(row["group_id"]) for row in rows if row["group_id"] is not None})
+    if not ids:
+        return {}
+    where, params = _where(filters)
+    placeholders = ",".join("?" * len(ids))
+    return {
+        int(row["group_id"]): int(row["total"])
+        for row in conn.execute(
+            f"""
+            SELECT p.group_id AS group_id, COUNT(*) AS total
+            FROM proposals p
+            JOIN items i ON i.id = p.item_id
+            WHERE {where} AND p.group_id IN ({placeholders})
+            GROUP BY p.group_id
+            """,  # noqa: S608 - where comes from _where, placeholders are counted
+            (*params, *ids),
+        )
+    }
+
+
+def _group_rows(
+    rows: list[dict[str, Any]], totals: dict[int, int] | None = None
+) -> list[dict[str, object]]:
     groups: list[dict[str, object]] = []
     by_key: dict[tuple[str, str], dict[str, object]] = {}
     for row in rows:
         key = (row["group_kind"] or "ungrouped", row["group_label"] or "Ungrouped")
         group = by_key.get(key)
         if group is None:
-            group = {"kind": key[0], "label": key[1], "rows": []}
+            group = {"kind": key[0], "label": key[1], "rows": [], "total": 0}
             by_key[key] = group
             groups.append(group)
         group_rows = group["rows"]
         assert isinstance(group_rows, list)
         group_rows.append(row)
+        if totals and row["group_id"] is not None:
+            group["total"] = totals.get(int(row["group_id"]), 0)
     return _fold_singletons(groups)
 
 
@@ -993,12 +1033,25 @@ def _fold_singletons(groups: list[dict[str, object]]) -> list[dict[str, object]]
     the second track of an album turns its group real without re-analysing the
     first. Loose files gather into one section at the end.
     """
-    real = [group for group in groups if len(group["rows"]) > 1]  # type: ignore[arg-type]
-    loose = [row for group in groups if len(group["rows"]) == 1 for row in group["rows"]]  # type: ignore[arg-type]
+    #  A group whose *whole* membership is one file is not a group. One member
+    #  on this page is a different thing entirely — the rest are on the next
+    #  page — and folding those into the loose pile is what made a 150-photo
+    #  event look like 150 unrelated files.
+    real = [
+        group
+        for group in groups
+        if len(group["rows"]) > 1 or int(group.get("total") or 0) > 1  # type: ignore[arg-type]
+    ]
+    loose = [
+        row
+        for group in groups
+        if len(group["rows"]) == 1 and int(group.get("total") or 0) <= 1  # type: ignore[arg-type]
+        for row in group["rows"]
+    ]
     for group in real:
         _shorten_names(group)
     if loose:
-        real.append({"kind": "ungrouped", "label": "Ungrouped", "rows": loose})
+        real.append({"kind": "ungrouped", "label": "Ungrouped", "rows": loose, "total": len(loose)})
     return real
 
 

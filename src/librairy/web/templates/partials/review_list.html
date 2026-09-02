@@ -45,7 +45,15 @@
         <details class="review-group" open>
           <summary>
             <span class="group-name">{{ group.label }}</span>
-            <span class="muted">{{ group.rows|length }} shown</span>
+            {# "12 shown" of what? A group larger than a page shows the members
+               that landed on it, and the heading has to say so — otherwise a
+               150-photo event reads as twelve photographs. The total is
+               counted in SQL under the same filters as the list. #}
+            {% if group.total and group.total > group.rows|length %}
+              <span class="muted">{{ group.rows|length }} of {{ group.total }} shown</span>
+            {% else %}
+              <span class="muted">{{ group.rows|length }} shown</span>
+            {% endif %}
           </summary>
           <label class="group-pick">
             <input type="checkbox" class="select-all" aria-label="Select every file in {{ group.label }}">
