@@ -11,7 +11,7 @@ from librairy.audit_duplicates import copies as duplicate_copies
 from librairy.audit_job import progress as audit_progress
 from librairy.classify.images import vision_disagrees, vision_for_items
 from librairy.config import Settings
-from librairy.correction_state import active_plan
+from librairy.correction_state import active_plan, active_plans_for
 from librairy.corrections import (
     CURRENT,
     MISSING,
@@ -1209,10 +1209,12 @@ def audit_view(conn: sqlite3.Connection, settings: Settings | None = None) -> di
     Reads only: rendering this page must not write, which is what keeps a page
     load from competing with the worker for SQLite's one writer lock.
     """
-    views = [
-        _audit_row(conn, settings, row)
-        for row in findings_with_status(conn, ("open", "accepted", "kept"))
-    ]
+    rows = findings_with_status(conn, ("open", "accepted", "kept"))
+    #  One query for every row's plan, instead of one query per row. The plan
+    #  is what decides which of the three lists below a finding belongs in, so
+    #  it cannot simply be dropped — but it never needed asking one at a time.
+    plans = active_plans_for(conn, [int(row["id"]) for row in rows])
+    views = [_audit_row(conn, settings, row, plans) for row in rows]
     # Which list a row belongs in is decided by its *effective* state, never by
     # the status column it was fetched under. Those two disagree on the live
     # database — a finding reading `open` that an approved plan already claims —
@@ -1946,12 +1948,19 @@ def _destination_row(view, row: sqlite3.Row) -> dict[str, object]:  # noqa: ANN0
 
 
 def _audit_row(
-    conn: sqlite3.Connection, settings: Settings | None, row: sqlite3.Row
+    conn: sqlite3.Connection,
+    settings: Settings | None,
+    row: sqlite3.Row,
+    plans: dict[int, list] | None = None,
 ) -> dict[str, object]:
     # The plan, not the status column. A finding can be `open` and still own an
     # approved plan — that is the inconsistency this pass exists to stop
     # rendering as an invitation to approve it a second time.
-    plan = active_plan(conn, row["id"], settings)
+    #
+    # `plans` is the whole page's answer, fetched once by the caller. Without
+    # it this line was one query per finding in the database, on every render
+    # of Review — see docs/performance.md.
+    plan = active_plan(conn, row["id"], settings, prefetched=plans)
     accepted = plan is not None
     state = CURRENT if settings is None else finding_state(settings, row)
     executable = settings is not None and is_executable(row, state)

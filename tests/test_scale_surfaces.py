@@ -118,10 +118,11 @@ def test_review_counts_come_from_sql_not_from_the_page(small) -> None:  # noqa: 
 @pytest.mark.xfail(
     strict=True,
     reason=(
-        "M1-01 measured this: Review runs correction_state.active_plans once per "
-        "open audit finding, so the statement count grows with the findings table "
-        "and not with the page. 3,969 queries for one 50-row page at 100k. "
-        "See docs/performance.md and ROADMAP.md M1-02."
+        "The plan lookup behind this was batched (one query for the page, not one "
+        "per finding), which removed ~3,000 of the ~3,300 statements. What still "
+        "grows with the findings table is destination_choice._artist_folder_under, "
+        "called per finding by the audit rows audit_view renders without a LIMIT. "
+        "Bounding audit_view is M1-02. See docs/performance.md."
     ),
 )
 def test_review_queries_do_not_grow_with_the_findings_table(tmp_path) -> None:  # noqa: ANN001

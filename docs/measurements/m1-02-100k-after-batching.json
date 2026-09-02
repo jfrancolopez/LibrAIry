@@ -1,0 +1,127 @@
+{
+  "decisions": {
+    "as_presented_today": 1704,
+    "groups_split_across_pages": 127,
+    "groups_total": 127,
+    "ideal_grouped_decisions": 891,
+    "pages": 90,
+    "pending_proposals": 4500,
+    "per_file_decisions": 4500
+  },
+  "peak_rss_mb": 69,
+  "population": {
+    "build_seconds": 18.05,
+    "db_bytes": 59150336,
+    "findings": 5000,
+    "groups": 139,
+    "history": 10000,
+    "inbox": 5000,
+    "library": 100000,
+    "proposals": 5000,
+    "quarantine": 1000
+  },
+  "surfaces": [
+    {
+      "hottest": "x774: SELECT relpath FROM items WHERE root='library' AND missing_since IS NULL AND relpath LIKE ? ORDER BY",
+      "ms": 60004.7,
+      "queries": 940,
+      "status": "EXCEEDED 60s budget",
+      "surface": "Review page 1"
+    },
+    {
+      "hottest": "x624: SELECT relpath FROM items WHERE root='library' AND missing_since IS NULL AND relpath LIKE ? ORDER BY",
+      "ms": 60026.4,
+      "queries": 790,
+      "status": "EXCEEDED 60s budget",
+      "surface": "Review page 50"
+    },
+    {
+      "hottest": "x417: SELECT relpath FROM items WHERE root='library' AND missing_since IS NULL AND relpath LIKE ? ORDER BY",
+      "ms": 60010.8,
+      "queries": 583,
+      "status": "EXCEEDED 60s budget",
+      "surface": "Review sorted (ungrouped)"
+    },
+    {
+      "hottest": "",
+      "ms": 108.5,
+      "queries": 22,
+      "status": "ok",
+      "surface": "Dashboard"
+    },
+    {
+      "hottest": "x3: SELECT value FROM settings WHERE key=?",
+      "ms": 60001.2,
+      "queries": 10,
+      "status": "EXCEEDED 60s budget",
+      "surface": "Health"
+    },
+    {
+      "hottest": "",
+      "ms": 60000.7,
+      "queries": 8,
+      "status": "EXCEEDED 60s budget",
+      "surface": "Health (attention)"
+    },
+    {
+      "hottest": "",
+      "ms": 1.0,
+      "queries": 2,
+      "status": "ok",
+      "surface": "Commit summary"
+    },
+    {
+      "hottest": "",
+      "ms": 4.1,
+      "queries": 2,
+      "status": "ok",
+      "surface": "Commit page 1 (new files)"
+    },
+    {
+      "hottest": "",
+      "ms": 0.1,
+      "queries": 1,
+      "status": "ok",
+      "surface": "Commit page 20 (new files)"
+    },
+    {
+      "hottest": "x17: SELECT * FROM items WHERE id=?",
+      "ms": 14.8,
+      "queries": 24,
+      "status": "ok",
+      "surface": "Quarantine page 1"
+    },
+    {
+      "hottest": "",
+      "ms": 1.9,
+      "queries": 6,
+      "status": "ok",
+      "surface": "Quarantine page 50"
+    },
+    {
+      "hottest": "x50: SELECT COUNT(*) FROM history WHERE dest_root=? AND dest_relpath=?",
+      "ms": 243.5,
+      "queries": 153,
+      "status": "ok",
+      "surface": "Search 'Album'"
+    },
+    {
+      "hottest": "x50: SELECT COUNT(*) FROM history WHERE dest_root=? AND dest_relpath=?",
+      "ms": 66.4,
+      "queries": 153,
+      "status": "ok",
+      "surface": "Search unfiltered"
+    },
+    {
+      "hottest": "",
+      "ms": 96.0,
+      "queries": 1,
+      "status": "ok",
+      "surface": "Browse home"
+    }
+  ],
+  "throughput": {
+    "count_library_ms": 5.85,
+    "search_index_items_per_second": 3840.0
+  }
+}

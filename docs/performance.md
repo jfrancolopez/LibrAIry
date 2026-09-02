@@ -35,6 +35,11 @@ Two numbers per surface, and the second one matters more. A slow query is a bad
 afternoon; a query *per row* is an architecture that stops working, and it looks
 healthy until the table is large. Only the count separates them.
 
+The 100k column carries a second figure where the batching below changed it:
+`3,969 → 940` is before and after `active_plans_for`, same harness, same
+population. 300k and 1M were measured before that change and are not re-run
+here; the shape does not differ.
+
 A surface that will not finish is interrupted at sixty seconds through SQLite's
 progress handler. **A query count recorded under `EXCEEDED` is truncated, not
 total** — Review shows *fewer* statements at a million than at 300,000 because
@@ -68,7 +73,7 @@ Milliseconds and (statements) behind one page.
 
 | Surface | 100k | 300k | 1M |
 |---|---|---|---|
-| **Review page 1** | **>60,000 (3,969)** | **>60,000 (3,133)** | **>60,000 (1,613)** |
+| **Review page 1** | **>60,000 (3,969 → 940)** | **>60,000 (3,133)** | **>60,000 (1,613)** |
 | **Review page 50** | **>60,000 (3,906)** | **>60,000 (3,212)** | **>60,000 (1,663)** |
 | **Review, ungrouped sort** | **>60,000 (3,985)** | **>60,000 (3,212)** | **>60,000 (1,598)** |
 | **Health** | **>60,000 (10)** | **>60,000 (10)** | **>60,000 (10)** |
@@ -89,6 +94,15 @@ library is three to five minutes.
 ## The bottlenecks, in the order they matter
 
 ### 1. Review renders the entire findings table, every time
+
+> **Partly addressed, 2026-09-01.** The per-finding plan lookup is now batched:
+> `correction_state.active_plans_for` answers for a whole page in one statement
+> instead of one per finding, and `audit_view` prefetches it. At 100k that took
+> Review from **3,969 statements to 940**, and `active_plans` left the hot list
+> entirely. **Review still does not finish**, because the row-building work
+> below it is still done for every finding — the bottleneck moved to (5), which
+> is now the top cost. The unbounded `audit_view` itself is M1-02.
+
 
 `web/review.py:1213` — `audit_view` builds a row for **every** finding with
 status `open`, `accepted` or `kept`. No `LIMIT`, no paging. Each of those rows
@@ -155,10 +169,15 @@ so it is not urgent — but it will not survive another order of magnitude.
 
 ### 5. Review scans the whole library, once per candidate row
 
-`destination_choice.py:155` `_artist_folder_under` runs `SELECT relpath FROM
-items WHERE root='library'` — the entire library, unfiltered — once per
-candidate row on the page. Dwarfed by finding (1) today, and it would become
-the next wall the moment (1) is fixed.
+`destination_choice.py:155` `_artist_folder_under` walks every library row under
+a section prefix in Python, comparing normalised folder keys, once per candidate
+finding. `LIKE 'Music/%'` on a music library is most of the library.
+
+It was dwarfed by (1) and is now the top cost of a Review page: 774 calls in the
+sixty seconds a page gets at 100k. Fixing it is not a one-line change — looking
+a folder up by *normalised* name is not something the current schema can index —
+so it is M1-02 work, and the reason bounding `audit_view` comes first: 774 calls
+that should be at most fifty.
 
 ### 6. Dashboard is fine and worth watching
 
@@ -209,8 +228,18 @@ Stated so the numbers are not read as more than they are.
   page competing with a live worker is a different measurement.
 - **The worker end to end.** Scan, hash, classify and commit throughput at
   these populations is not covered; only search indexing is.
-- **This machine.** A 2026 Mac, not the NAS. Ratios travel; absolute
-  milliseconds do not.
+- **This machine, and it was busy.** A 2026 Mac, not the NAS — and during
+  these runs it carried a load average near 11 from unrelated software
+  (OneDrive at 90% of a core, a VM at 70%). Every millisecond below is
+  therefore an upper bound on a contended machine, and should be re-taken on a
+  quiet one before being quoted as a target.
+
+  **The findings do not depend on it.** Statement counts are deterministic and
+  unaffected by load; so is the query plan that proves the correlated scan, and
+  so is every number in the decision-scale table, which is counting rather than
+  timing. What load affects is how bad the two broken surfaces look, not that
+  they are broken: Health is quadratic by construction, and Review's cost is
+  one query per finding whatever the machine is doing.
 
 ## Regression tests
 

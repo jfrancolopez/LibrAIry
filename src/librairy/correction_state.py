@@ -27,6 +27,7 @@ right answer is ambiguous.
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from librairy.config import Settings
@@ -39,6 +40,9 @@ from librairy.paths import validate_relpath
 # anything. This tuple is the definition the database index enforces too
 # (`idx_plans_one_active_per_finding`); change one and the other must follow.
 ACTIVE_PLAN_STATUSES = ("approved", "executing")
+#  SQLite takes far more bound variables than this; the chunk is small so that
+#  one oversized finding set cannot build a statement nobody can read in a log.
+_CHUNK = 500
 
 # What the source did after approval. Empty string means "nothing".
 DRIFT_CHANGED = "changed"
@@ -84,53 +88,88 @@ class ActivePlan:
 def active_plans(conn: sqlite3.Connection, finding_id: int) -> list[ActivePlan]:
     """Every active plan claiming this finding, by either link.
 
+    One finding, and written in terms of the batch below so there is a single
+    definition of what "claims this finding" means. Two spellings of that join
+    would be two chances to disagree about it.
+    """
+    return active_plans_for(conn, [finding_id]).get(finding_id, [])
+
+
+def active_plans_for(
+    conn: sqlite3.Connection, finding_ids: Sequence[int]
+) -> dict[int, list[ActivePlan]]:
+    """The same question asked about many findings at once.
+
     Both directions are queried deliberately. `plans.audit_finding_id` and
     `audit_findings.plan_id` are two foreign keys describing one relationship,
     and an inconsistency is free to live in exactly one of them — reading only
     the one the caller happens to hold is how a duplicate stays invisible.
 
-    Returns a list, not one row, because "there should only ever be one" is a
-    claim this function exists to check rather than assume.
+    Values are lists, not single rows, because "there should only ever be one"
+    is a claim this function exists to check rather than assume.
+
+    Batched because Review asked it per finding. `audit_view` renders every
+    open finding, so drawing one page cost one query per row of
+    `audit_findings` — fifty thousand statements to render fifty proposals, and
+    a page that never finished at any population M1-01 measured. The chunking
+    is for SQLite's variable limit, not for memory: a finding set large enough
+    to need several round trips is itself the thing M1-02 bounds.
     """
-    placeholders = ",".join("?" * len(ACTIVE_PLAN_STATUSES))
-    rows = conn.execute(
-        f"""
-        SELECT p.id, p.status, p.approved_at,
-               (SELECT COUNT(*) FROM plan_ops WHERE plan_id=p.id) AS op_count,
-               (SELECT COUNT(*) FROM plan_ops
-                 WHERE plan_id=p.id AND executed_at IS NOT NULL) AS executed_count
-        FROM plans p
-        WHERE p.status IN ({placeholders})
-          AND (p.audit_finding_id = ?
-               OR p.id = (SELECT plan_id FROM audit_findings WHERE id = ?))
-        ORDER BY p.created_at, p.id
-        """,  # noqa: S608 — placeholders are the module constant, never input
-        (*ACTIVE_PLAN_STATUSES, finding_id, finding_id),
-    ).fetchall()
-    return [
-        ActivePlan(
-            plan_id=row["id"],
-            status=row["status"],
-            approved_at=row["approved_at"],
-            op_count=int(row["op_count"]),
-            executed_count=int(row["executed_count"]),
-        )
-        for row in rows
-    ]
+    if not finding_ids:
+        return {}
+    statuses = ",".join("?" * len(ACTIVE_PLAN_STATUSES))
+    found: dict[int, list[ActivePlan]] = {}
+    unique = list(dict.fromkeys(int(value) for value in finding_ids))
+    for start in range(0, len(unique), _CHUNK):
+        chunk = unique[start : start + _CHUNK]
+        placeholders = ",".join("?" * len(chunk))
+        rows = conn.execute(
+            f"""
+            SELECT f.id AS finding_id, p.id, p.status, p.approved_at,
+                   (SELECT COUNT(*) FROM plan_ops WHERE plan_id=p.id) AS op_count,
+                   (SELECT COUNT(*) FROM plan_ops
+                     WHERE plan_id=p.id AND executed_at IS NOT NULL) AS executed_count
+            FROM audit_findings f
+            JOIN plans p
+              ON (p.audit_finding_id = f.id OR p.id = f.plan_id)
+            WHERE f.id IN ({placeholders})
+              AND p.status IN ({statuses})
+            ORDER BY f.id, p.created_at, p.id
+            """,  # noqa: S608 — placeholders are counted, never interpolated input
+            (*chunk, *ACTIVE_PLAN_STATUSES),
+        ).fetchall()
+        for row in rows:
+            found.setdefault(int(row["finding_id"]), []).append(
+                ActivePlan(
+                    plan_id=row["id"],
+                    status=row["status"],
+                    approved_at=row["approved_at"],
+                    op_count=int(row["op_count"]),
+                    executed_count=int(row["executed_count"]),
+                )
+            )
+    return found
 
 
 def active_plan(
     conn: sqlite3.Connection,
     finding_id: int,
     settings: Settings | None = None,
+    *,
+    prefetched: dict[int, list[ActivePlan]] | None = None,
 ) -> ActivePlan | None:
     """The active plan for this finding, with its drift measured.
 
     The first when there is somehow more than one — never a silent pick of a
     "best" one. Ambiguity is reported by the integrity checker; here the only
     job is to make sure the row does not offer a third approval on top of two.
+
+    `prefetched` is the answer `active_plans_for` already has for a whole page
+    of findings. Passing it turns a query per row into a lookup; leaving it out
+    behaves exactly as before, which is what keeps the single-row callers
+    honest.
     """
-    plans = active_plans(conn, finding_id)
+    plans = active_plans(conn, finding_id) if prefetched is None else prefetched.get(finding_id, [])
     if not plans:
         return None
     plan = plans[0]
