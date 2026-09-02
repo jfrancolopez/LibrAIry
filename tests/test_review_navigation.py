@@ -182,7 +182,13 @@ def test_a_named_group_can_be_folded_away(tmp_path: Path) -> None:
     body = client.get("/review").text
 
     assert '<details class="review-group" open>' in body
-    assert "Select group" in body
+    #  "Select group" became "Select the N shown" when Review started previewing
+    #  a group instead of drawing all of it: a checkbox can only ever reach the
+    #  rows in the document, and saying "group" while reaching five of a hundred
+    #  and fifty was the misleading half. The whole-group act is the button
+    #  beside it, which names its own count.
+    assert "Select the" in body
+    assert "Approve all" in body
 
 
 def test_groups_start_open_because_that_is_how_an_album_gets_decided(

@@ -221,6 +221,30 @@ def _confident_count(conn: sqlite3.Connection, filters: ReviewFilters) -> int:
     return _proposal_count(conn, replace(filters, min_confidence=floor))
 
 
+def unit_proposal_ids(
+    conn: sqlite3.Connection, filters: ReviewFilters, unit: str
+) -> list[int]:
+    """Every proposal in one decision, under the filters the page is showing.
+
+    A group action means the group, not the five members that happened to be
+    drawn. Selecting the visible rows and acting on those would approve five of
+    a hundred and fifty while saying it approved the group, which is the exact
+    shape of mistake Review exists to prevent.
+    """
+    where, params = _where(filters)
+    return [
+        int(row["id"])
+        for row in conn.execute(
+            f"""
+            SELECT p.id AS id FROM proposals p JOIN items i ON i.id = p.item_id
+            WHERE {where} AND COALESCE('g' || p.group_id, 'p' || p.id) = ?
+            ORDER BY p.confidence DESC, p.id DESC
+            """,  # noqa: S608 - where comes from _where; unit is bound
+            [*params, unit],
+        )
+    ]
+
+
 def apply_review_action(
     conn: sqlite3.Connection,
     action: str,
@@ -228,21 +252,23 @@ def apply_review_action(
     *,
     proposal_ids: list[int] | None = None,
     all_matching: bool = False,
+    unit: str = "",
 ) -> int:
+    #  One place decides what the action is about, so a group action cannot
+    #  mean one thing for Approve and another for Quarantine.
+    if all_matching:
+        chosen = _matching_ids(conn, filters)
+    elif unit:
+        chosen = unit_proposal_ids(conn, filters, unit)
+    else:
+        chosen = proposal_ids or []
     if action in {"discard", "mark_delete"}:
-        return discard_proposals(
-            conn,
-            _matching_ids(conn, filters) if all_matching else proposal_ids or [],
-            to_delete_pile=action == "mark_delete",
-        )
+        return discard_proposals(conn, chosen, to_delete_pile=action == "mark_delete")
     if action == "reanalyze":
-        return reanalyze_proposals(
-            conn,
-            _matching_ids(conn, filters) if all_matching else proposal_ids or [],
-        )
+        return reanalyze_proposals(conn, chosen)
     if action not in {"approve", "reject", "postpone"}:
         raise ValueError(f"unknown review action: {action}")
-    targets = _matching_ids(conn, filters) if all_matching else proposal_ids or []
+    targets = chosen
     if not targets:
         return 0
     status = {"approve": "approved", "reject": "rejected", "postpone": "postponed"}[action]

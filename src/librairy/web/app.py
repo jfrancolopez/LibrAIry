@@ -2254,6 +2254,7 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         action: Annotated[str, Form()],
         proposal_id: Annotated[list[int] | None, Form()] = None,
         all_matching: Annotated[bool, Form()] = False,
+        unit: Annotated[str, Form()] = "",
         category: Annotated[str | None, Form()] = None,
         state: Annotated[str, Form()] = "proposed",
         min_confidence: Annotated[OptionalFloat, Form()] = None,
@@ -2277,6 +2278,7 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             filters,
             proposal_ids=proposal_id or [],
             all_matching=all_matching,
+            unit=unit,
         )
         return TEMPLATES.TemplateResponse(
             request,

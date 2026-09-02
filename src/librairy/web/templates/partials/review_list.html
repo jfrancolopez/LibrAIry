@@ -63,10 +63,31 @@
               {% endif %}
             {% endif %}
           </summary>
-          <label class="group-pick">
-            <input type="checkbox" class="select-all" aria-label="Select every file in {{ group.label }}">
-            Select group
-          </label>
+          {# The group's own actions, and they name the number they act on.
+             A checkbox that "selects the group" could only ever select the
+             five members drawn — approving five of a hundred and fifty while
+             saying it approved the group — so the count is in the label and
+             the server resolves the unit, not the rendered rows. #}
+          <div class="group-actions">
+            <button type="button" class="btn btn-primary"
+              hx-post="/review/action"
+              hx-vals='{"action": "approve", "unit": "{{ group.unit }}", "state": "{{ filters.state }}", "category": "{{ filters.category or '' }}", "sort": "{{ filters.sort }}", "page": "{{ filters.page }}"}'
+              hx-target="#review-list" hx-swap="outerHTML"
+              hx-headers='{"x-csrf-token":"{{ request.state.session.csrf_token }}"}'
+              hx-confirm="Approve all {{ group.total }} files in {{ group.label }}? Nothing moves until you commit."
+              >Approve all {{ group.total }}</button>
+            <button type="button" class="btn"
+              hx-post="/review/action"
+              hx-vals='{"action": "postpone", "unit": "{{ group.unit }}", "state": "{{ filters.state }}", "category": "{{ filters.category or '' }}", "sort": "{{ filters.sort }}", "page": "{{ filters.page }}"}'
+              hx-target="#review-list" hx-swap="outerHTML"
+              hx-headers='{"x-csrf-token":"{{ request.state.session.csrf_token }}"}'
+              >Later</button>
+            <label class="group-pick">
+              <input type="checkbox" class="select-all"
+                aria-label="Select the {{ group.rows|length }} shown files in {{ group.label }}">
+              Select the {{ group.rows|length }} shown
+            </label>
+          </div>
           <div class="proposal-list" id="members-{{ group.unit }}">
             {% for proposal in group.rows %}
               {% include "partials/review_row.html" %}

@@ -653,3 +653,97 @@ def test_expanding_a_group_is_itself_bounded(tmp_path) -> None:  # noqa: ANN001
         page = chunk["next_page"]
     assert len(seen) == 120
     assert len(set(seen)) == 120
+
+
+def test_a_group_action_covers_the_group_not_the_preview(tmp_path) -> None:  # noqa: ANN001
+    """The failure this exists to prevent.
+
+    A group shows five of its members. An action addressed to the *rendered
+    rows* would approve five of a hundred and twenty while the button said it
+    approved the group — a decision the person did not make, reported as one
+    they did.
+    """
+    from librairy.web.review import (
+        MEMBER_PREVIEW,
+        ReviewFilters,
+        apply_review_action,
+        review_data,
+        unit_proposal_ids,
+    )
+
+    conn, settings = build(
+        tmp_path, library=100, inbox=20, findings=10, quarantine=10, history=10
+    )
+    now = "2026-09-02T00:00:00+00:00"
+    conn.execute(
+        "INSERT INTO groups(id, kind, label, dest_base, created_at)"
+        " VALUES (9100, 'photo_event', 'Whole Event', 'Photos/Filed', ?)",
+        (now,),
+    )
+    conn.executemany(
+        "INSERT INTO items(id, root, relpath, size, mtime_ns, fingerprint, state,"
+        " first_seen_at, last_seen_at) VALUES (?, 'inbox', ?, 10, 0, ?, 'proposed', ?, ?)",
+        [(700_000 + n, f"whole/IMG_{n:05d}.jpg", f"wh{n:09d}", now, now) for n in range(120)],
+    )
+    conn.executemany(
+        "INSERT INTO proposals(id, item_id, category, clean_name, dest_relpath,"
+        " confidence, group_id, status, evidence, created_at, updated_at, action,"
+        " dest_root) VALUES (?, ?, 'photos', ?, ?, 0.9, 9100, 'proposed', '[]', ?, ?,"
+        " 'move', 'library')",
+        [
+            (700_000 + n, 700_000 + n, f"IMG_{n:05d}.jpg",
+             f"Photos/Filed/IMG_{n:05d}.jpg", now, now)
+            for n in range(120)
+        ],
+    )
+    conn.commit()
+
+    filters = ReviewFilters()
+    data = review_data(conn, filters, settings)
+    group = next(g for g in data["groups"] if g["label"] == "Whole Event")
+    assert len(group["rows"]) == MEMBER_PREVIEW
+    assert group["total"] == 120
+    assert len(unit_proposal_ids(conn, filters, group["unit"])) == 120
+
+    changed = apply_review_action(conn, "approve", filters, unit=group["unit"])
+    assert changed == 120
+    approved = conn.execute(
+        "SELECT COUNT(*) FROM proposals WHERE group_id=9100 AND status='approved'"
+    ).fetchone()[0]
+    assert approved == 120
+
+
+def test_a_group_action_respects_the_filters(tmp_path) -> None:  # noqa: ANN001
+    """Acting on a group inside a narrowed view acts on what that view is about."""
+    from librairy.web.review import ReviewFilters, unit_proposal_ids
+
+    conn, settings = build(
+        tmp_path, library=100, inbox=20, findings=10, quarantine=10, history=10
+    )
+    now = "2026-09-02T00:00:00+00:00"
+    conn.execute(
+        "INSERT INTO groups(id, kind, label, dest_base, created_at)"
+        " VALUES (9101, 'album', 'Mixed Album', 'Music/Filed', ?)",
+        (now,),
+    )
+    conn.executemany(
+        "INSERT INTO items(id, root, relpath, size, mtime_ns, fingerprint, state,"
+        " first_seen_at, last_seen_at) VALUES (?, 'inbox', ?, 10, 0, ?, 'proposed', ?, ?)",
+        [(800_000 + n, f"mixed/{n:03d}.flac", f"mx{n:09d}", now, now) for n in range(10)],
+    )
+    conn.executemany(
+        "INSERT INTO proposals(id, item_id, category, clean_name, dest_relpath,"
+        " confidence, group_id, status, evidence, created_at, updated_at, action,"
+        " dest_root) VALUES (?, ?, 'music', ?, ?, ?, 9101, 'proposed', '[]', ?, ?,"
+        " 'move', 'library')",
+        [
+            (800_000 + n, 800_000 + n, f"{n:03d}.flac", f"Music/Filed/{n:03d}.flac",
+             0.95 if n < 4 else 0.5, now, now)
+            for n in range(10)
+        ],
+    )
+    conn.commit()
+
+    unit = "g9101"
+    assert len(unit_proposal_ids(conn, ReviewFilters(), unit)) == 10
+    assert len(unit_proposal_ids(conn, ReviewFilters(min_confidence=0.9), unit)) == 4
