@@ -9,7 +9,7 @@ That is the whole result. Everything below is how it was measured and what
 exactly is wrong, because [ROADMAP.md](ROADMAP.md) M1-01 says a measured
 bottleneck is a *result*, not a work order — none of it is fixed here.
 
-    Review      unusable at 100,000 files and above
+    Review      was unusable at 100,000 and above; FIXED — 1.4 s, 185 statements
     Health      unusable at 100,000 files and above
     Search      3.1 s at a million; degrading linearly, and fixable
     Browse      1.2 s at a million; one unbounded query
@@ -35,10 +35,11 @@ Two numbers per surface, and the second one matters more. A slow query is a bad
 afternoon; a query *per row* is an architecture that stops working, and it looks
 healthy until the table is large. Only the count separates them.
 
-The 100k column carries a second figure where the batching below changed it:
-`3,969 → 940` is before and after `active_plans_for`, same harness, same
-population. 300k and 1M were measured before that change and are not re-run
-here; the shape does not differ.
+The 100k column carries an arrow where the work below changed it: the second
+figure is after batching the plan lookup *and* bounding `audit_view`, same
+harness, same population. 300k and 1M are the original measurements and have
+not been re-run; Review's cost no longer depends on either number, so there is
+nothing there left to re-measure.
 
 A surface that will not finish is interrupted at sixty seconds through SQLite's
 progress handler. **A query count recorded under `EXCEEDED` is truncated, not
@@ -69,13 +70,14 @@ the grouping code.
 
 ## Results
 
-Milliseconds and (statements) behind one page.
+Milliseconds and (statements) behind one page. Bold marks a surface that did
+not finish; an arrow marks a figure this pass changed.
 
 | Surface | 100k | 300k | 1M |
 |---|---|---|---|
-| **Review page 1** | **>60,000 (3,969 → 940)** | **>60,000 (3,133)** | **>60,000 (1,613)** |
-| **Review page 50** | **>60,000 (3,906)** | **>60,000 (3,212)** | **>60,000 (1,663)** |
-| **Review, ungrouped sort** | **>60,000 (3,985)** | **>60,000 (3,212)** | **>60,000 (1,598)** |
+| Review page 1 | >60,000 (3,969) → **1,357 (185)** | >60,000 (3,133) | >60,000 (1,613) |
+| Review page 50 | >60,000 (3,906) → **1,193 (185)** | >60,000 (3,212) | >60,000 (1,663) |
+| Review, ungrouped sort | >60,000 (3,985) → **1,181 (185)** | >60,000 (3,212) | >60,000 (1,598) |
 | **Health** | **>60,000 (10)** | **>60,000 (10)** | **>60,000 (10)** |
 | **Health (attention only)** | **>60,000 (8)** | **>60,000 (8)** | **>60,000 (8)** |
 | Search `Album` | 248 (153) | 793 (153) | 3,108 (153) |
@@ -95,13 +97,23 @@ library is three to five minutes.
 
 ### 1. Review renders the entire findings table, every time
 
-> **Partly addressed, 2026-09-01.** The per-finding plan lookup is now batched:
-> `correction_state.active_plans_for` answers for a whole page in one statement
-> instead of one per finding, and `audit_view` prefetches it. At 100k that took
-> Review from **3,969 statements to 940**, and `active_plans` left the hot list
-> entirely. **Review still does not finish**, because the row-building work
-> below it is still done for every finding — the bottleneck moved to (5), which
-> is now the top cost. The unbounded `audit_view` itself is M1-02.
+> **FIXED, 2026-09-02.** Two changes, and it needed both.
+>
+> The per-finding plan lookup is batched — `correction_state.active_plans_for`
+> answers for a whole set in one statement — which took Review from 3,969
+> statements to 940 and moved the bottleneck to (5) without making the page
+> usable.
+>
+> Then `audit_view` became a bounded page. The bucket rule and the subject key
+> are both expressible in SQL (`subject_key` reads only `kind` and `relpath`),
+> so which findings matter can be decided *without building a row for any of
+> them*: three counts over the whole table, then rows built only for a page of
+> twenty-five subjects, whole cards never cut off mid-card.
+>
+> **Review at 100k: 1,357 ms and 185 statements, and it finishes.** The count
+> is now flat — the same 185 on page 1, page 50, and with grouping off — and
+> `_artist_folder_under` has left the hot list because it is called for a page
+> of subjects rather than for every finding in the database.
 
 
 `web/review.py:1213` — `audit_view` builds a row for **every** finding with
@@ -173,11 +185,15 @@ so it is not urgent — but it will not survive another order of magnitude.
 a section prefix in Python, comparing normalised folder keys, once per candidate
 finding. `LIKE 'Music/%'` on a music library is most of the library.
 
-It was dwarfed by (1) and is now the top cost of a Review page: 774 calls in the
-sixty seconds a page gets at 100k. Fixing it is not a one-line change — looking
-a folder up by *normalised* name is not something the current schema can index —
-so it is M1-02 work, and the reason bounding `audit_view` comes first: 774 calls
-that should be at most fifty.
+It was dwarfed by (1), briefly became the top cost when (1) was half-fixed, and
+is now **bounded but not cured**: it is called for the findings on the page
+rather than for every finding in the database, which is why Review completes.
+Each call still walks the library.
+
+Looking a folder up by *normalised* name is not something the current schema can
+index, so the cure is a design question rather than a query rewrite, and it is
+not urgent now that the call count is bounded. The `xfail(strict=True)` on
+unbounded library scans in `tests/test_scale_surfaces.py` stays until it is.
 
 ### 6. Dashboard is fine and worth watching
 

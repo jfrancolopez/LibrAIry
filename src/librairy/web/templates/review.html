@@ -54,10 +54,10 @@
       {% if count %}<a href="{{ anchor }}">{{ label }} <strong>{{ count }}</strong></a>{% endif %}
     {% endfor %}
     {% if audit_waiting %}
-      <a href="#library-review-waiting">Waiting for Commit <strong>{{ audit_waiting|length }}</strong></a>
+      <a href="#library-review-waiting">Waiting for Commit <strong>{{ audit_waiting_total }}</strong></a>
     {% endif %}
     {% if audit_dismissed %}
-      <a href="#library-review-dismissed" class="jump-quiet">Dismissed <strong>{{ audit_dismissed|length }}</strong></a>
+      <a href="#library-review-dismissed" class="jump-quiet">Dismissed <strong>{{ audit_dismissed_total }}</strong></a>
     {% endif %}
   </nav>
 

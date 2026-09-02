@@ -998,6 +998,15 @@
       <strong>already in your library</strong>. Nothing here has changed, and
       nothing changes unless you say so.
     </p>
+    {# A page, and it says so. Every number above comes from SQL over the whole
+       table; this line is the difference between the two, said out loud rather
+       than left for somebody to notice by counting cards. #}
+    {% if audit_more %}
+    <p class="muted">
+      Showing {{ audit_subjects_shown }} of {{ audit_subjects_total }} —
+      answer these and the next {{ audit_more }} take their place.
+    </p>
+    {% endif %}
     {% endif %}
     {# Directly under the heading of the section the action happened in, so a
        result cannot end up scrolled off a page that is mostly Inbox. #}
@@ -1045,7 +1054,9 @@
   <details class="review-group audit-group audit-waiting" id="library-review-waiting" open>
     <summary>
       <span class="audit-folder">Waiting for Commit</span>
-      <span class="muted">{{ audit_waiting|length }} approved</span>
+      {# The count is the table's, the list is a page of it. A heading that
+         counted what it had rendered would quietly shrink as the page did. #}
+      <span class="muted">{{ audit_waiting_total }} approved</span>
     </summary>
     <p class="muted audit-group-note">
       Approved and ready. Nothing has moved yet — <a href="/commit">Commit</a>
@@ -1054,6 +1065,12 @@
     <div class="audit-list">
       {% for finding in audit_waiting %}{{ audit_row(finding, csrf_token, 'waiting') }}{% endfor %}
     </div>
+    {% if audit_waiting_total > audit_waiting|length %}
+      <p class="muted audit-more">
+        Showing {{ audit_waiting|length }} of {{ audit_waiting_total }}.
+        <a href="/commit">Commit</a> lists them all.
+      </p>
+    {% endif %}
   </details>
   {% endif %}
 
@@ -1108,7 +1125,7 @@
   <details class="review-group audit-group audit-dismissed" id="library-review-dismissed">
     <summary>
       <span class="audit-folder">Dismissed</span>
-      <span class="muted">{{ audit_dismissed|length }}</span>
+      <span class="muted">{{ audit_dismissed_total }}</span>
     </summary>
     <p class="muted audit-group-note">
       Suggestions you decided against. They stay out of the active list — and
@@ -1117,6 +1134,9 @@
     <div class="audit-list">
       {% for finding in audit_dismissed %}{{ audit_row(finding, csrf_token, 'dismissed') }}{% endfor %}
     </div>
+    {% if audit_dismissed_total > audit_dismissed|length %}
+      <p class="muted audit-more">Showing {{ audit_dismissed|length }} of {{ audit_dismissed_total }}.</p>
+    {% endif %}
   </details>
   {% endif %}
 </section>

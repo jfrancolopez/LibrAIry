@@ -132,9 +132,11 @@ models "a folder is one arrival and one decision" with its own page and its own
 bounded counts. That is the shape — this generalizes it.
 
 **Work.**
-- Bound `audit_view` first. Nothing else in Review can be measured or improved
-  while every render costs the findings table; this is the precondition, not a
-  parallel task.
+- ~~Bound `audit_view` first.~~ **Done 2026-09-02.** The plan lookup is batched
+  and the audit section is a bounded page of twenty-five subjects with counts
+  from SQL. Review at 100k went from not finishing to **1,357 ms / 185
+  statements**, and the count is now flat across pages. See
+  [performance.md](performance.md).
 - Group identity, counts and confidence resolved in SQL, not in Python after a
   `LIMIT`.
 - An ordering that keeps a group together, since sorting by confidence is half

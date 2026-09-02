@@ -115,17 +115,14 @@ def test_review_counts_come_from_sql_not_from_the_page(small) -> None:  # noqa: 
     assert data["total"] > rendered
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "The plan lookup behind this was batched (one query for the page, not one "
-        "per finding), which removed ~3,000 of the ~3,300 statements. What still "
-        "grows with the findings table is destination_choice._artist_folder_under, "
-        "called per finding by the audit rows audit_view renders without a LIMIT. "
-        "Bounding audit_view is M1-02. See docs/performance.md."
-    ),
-)
 def test_review_queries_do_not_grow_with_the_findings_table(tmp_path) -> None:  # noqa: ANN001
+    """The page is a page, whatever the audit has found.
+
+    Two defects fixed here, and it took both: the per-finding plan lookup is
+    batched, and `audit_view` renders a bounded page of subjects instead of
+    every finding in the database. Either one alone still left a statement
+    count that grew with `audit_findings`.
+    """
     from librairy.web.review import ReviewFilters, review_data
 
     counts = []
@@ -143,8 +140,34 @@ def test_review_queries_do_not_grow_with_the_findings_table(tmp_path) -> None:  
         counts.append(len(counting.queries))
         conn.close()
     #  Eight times the findings must not mean more statements: the page is the
-    #  same fifty rows either way.
+    #  same fifty proposals and the same twenty-five subjects either way.
     assert counts[1] <= counts[0] * 1.2, f"{counts[0]} -> {counts[1]} queries"
+
+
+def test_the_audit_section_renders_a_bounded_page(tmp_path) -> None:  # noqa: ANN001
+    from librairy.web.review import AUDIT_PAGE, ReviewFilters, review_data
+
+    conn, settings = build(
+        tmp_path, library=400, inbox=50, findings=2_000, quarantine=50, history=100
+    )
+    data = review_data(conn, ReviewFilters(), settings)
+    assert len(data["audit_groups"]) <= AUDIT_PAGE
+    assert len(data["audit_waiting"]) <= AUDIT_PAGE
+    assert len(data["audit_dismissed"]) <= AUDIT_PAGE
+
+
+def test_the_audit_heading_counts_the_table_not_the_page(tmp_path) -> None:  # noqa: ANN001
+    """The number above a bounded list has to describe the whole of it."""
+    from librairy.web.review import ReviewFilters, review_data
+
+    conn, settings = build(
+        tmp_path, library=400, inbox=50, findings=2_000, quarantine=50, history=100
+    )
+    data = review_data(conn, ReviewFilters(), settings)
+    rendered = sum(int(group["count"]) for group in data["audit_groups"])
+    assert data["audit_open"] > rendered
+    assert data["audit_subjects_total"] > data["audit_subjects_shown"]
+    assert data["audit_more"] == data["audit_subjects_total"] - data["audit_subjects_shown"]
 
 
 @pytest.mark.xfail(

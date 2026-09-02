@@ -29,6 +29,7 @@ import json
 import logging
 import sqlite3
 from collections import defaultdict
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 
@@ -1126,6 +1127,28 @@ def findings_with_status(
         sql += " AND f.relpath LIKE ?"
         params.append(f"{scope.strip('/')}/%")
     return list(conn.execute(f"{sql} ORDER BY f.severity DESC, f.relpath", params))
+
+
+def findings_by_ids(conn: sqlite3.Connection, ids: Sequence[int]) -> list[sqlite3.Row]:
+    """The same rows as `findings_with_status`, chosen by id instead of status.
+
+    Identical column list on purpose — the row renderer reads all of it, and two
+    SELECTs that differ by a column are two rows that render differently for
+    reasons nobody can see. Ordered the same way too, so a bounded page and an
+    unbounded one put the same finding first.
+    """
+    if not ids:
+        return []
+    unique = list(dict.fromkeys(int(value) for value in ids))
+    placeholders = ",".join("?" * len(unique))
+    return list(
+        conn.execute(
+            "SELECT f.*, i.size AS item_size FROM audit_findings f "  # noqa: S608
+            f"LEFT JOIN items i ON i.id = f.item_id WHERE f.id IN ({placeholders}) "
+            "ORDER BY f.severity DESC, f.relpath",
+            unique,
+        )
+    )
 
 
 def finding_counts(conn: sqlite3.Connection) -> dict[str, int]:

@@ -6,7 +6,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from librairy.arrival_comparison import describe as describe_arrival
-from librairy.audit import FOLDER_KINDS, KINDS, findings_with_status
+from librairy.audit import FOLDER_KINDS, KINDS, findings_by_ids
 from librairy.audit_duplicates import copies as duplicate_copies
 from librairy.audit_job import progress as audit_progress
 from librairy.classify.images import vision_disagrees, vision_for_items
@@ -1187,6 +1187,104 @@ def _why_summary(evidence: str | None) -> str:
     return " · ".join(view.text for view in views[:2])
 
 
+#  How much of the Library Audit one Review page renders. The rest is counted,
+#  never drawn: `audit_view` used to build a row for every finding in the
+#  database on every render — one query per row, fifty thousand statements
+#  before a single proposal had been looked at, and a page that did not finish
+#  at any population M1-01 measured. See docs/performance.md.
+#
+#  Subjects rather than findings, because a subject is the decision: three
+#  findings about one album folder are one card, and cutting the page at
+#  twenty-five *findings* could show two thirds of a card.
+AUDIT_PAGE = 25
+
+#  The bucket rule, in SQL, matching `web/actionability.actionability` exactly:
+#  an active plan outranks the stored status, then `accepted` is waiting, `kept`
+#  is dismissed, and what is left is open. Two spellings of one rule is one
+#  place for them to disagree, so the Python partition below still has the last
+#  word — this only decides which rows are worth building.
+_HAS_ACTIVE_PLAN = (
+    "EXISTS (SELECT 1 FROM plans p WHERE p.status IN ('approved','executing')"
+    " AND (p.audit_finding_id = f.id OR p.id = f.plan_id))"
+)
+_WAITING = "(has_plan OR status='accepted')"
+_DISMISSED = "(NOT has_plan AND status='kept')"
+_OPEN = "(NOT has_plan AND status='open')"
+
+
+def _audit_source() -> str:
+    """Every audit finding Review can show, with its bucket and its subject.
+
+    `subject` is `web/subjects.subject_key` written in SQL. It reads only
+    `kind` and `relpath`, which is what makes bounding the page possible at
+    all — the grouping can be decided without building a single row.
+    """
+    kinds = ",".join(f"'{kind}'" for kind in sorted(FOLDER_KINDS))
+    return f"""
+        SELECT f.id AS id, f.status AS status, f.severity AS severity,
+               f.relpath AS relpath, {_HAS_ACTIVE_PLAN} AS has_plan,
+               CASE WHEN f.kind IN ({kinds}) THEN 'folder:' || f.relpath
+                    ELSE 'file:' || f.relpath END AS subject
+        FROM audit_findings f
+        WHERE f.status IN ('open','accepted','kept')
+    """  # noqa: S608 — kinds is a module constant, never input
+
+
+def _audit_totals(conn: sqlite3.Connection) -> dict[str, int]:
+    """The counts, over the whole table, in one statement."""
+    row = conn.execute(
+        f"""
+        SELECT
+          COALESCE(SUM(CASE WHEN {_WAITING} THEN 1 ELSE 0 END), 0) AS waiting,
+          COALESCE(SUM(CASE WHEN {_DISMISSED} THEN 1 ELSE 0 END), 0) AS dismissed,
+          COALESCE(SUM(CASE WHEN {_OPEN} THEN 1 ELSE 0 END), 0) AS open_findings,
+          COUNT(DISTINCT CASE WHEN {_OPEN} THEN subject END) AS subjects
+        FROM ({_audit_source()})
+        """  # noqa: S608
+    ).fetchone()
+    return {key: int(row[key]) for key in ("waiting", "dismissed", "open_findings", "subjects")}
+
+
+def _audit_page_ids(conn: sqlite3.Connection, limit: int = AUDIT_PAGE) -> list[int]:
+    """The findings worth building a row for, and no others.
+
+    Three bounded reads: a page of waiting, a page of dismissed, and every
+    finding belonging to a page of open *subjects* — whole cards, never a card
+    with its bottom cut off.
+    """
+    source = _audit_source()
+    ids: list[int] = []
+    for bucket in (_WAITING, _DISMISSED):
+        ids.extend(
+            int(row["id"])
+            for row in conn.execute(
+                f"SELECT id FROM ({source}) WHERE {bucket}"  # noqa: S608
+                " ORDER BY severity DESC, relpath LIMIT ?",
+                (limit,),
+            )
+        )
+    subjects = [
+        str(row["subject"])
+        for row in conn.execute(
+            f"SELECT subject, MAX(severity) AS severity, MIN(relpath) AS relpath"  # noqa: S608
+            f" FROM ({source}) WHERE {_OPEN}"
+            " GROUP BY subject ORDER BY severity DESC, relpath LIMIT ?",
+            (limit,),
+        )
+    ]
+    if subjects:
+        placeholders = ",".join("?" * len(subjects))
+        ids.extend(
+            int(row["id"])
+            for row in conn.execute(
+                f"SELECT id FROM ({source})"  # noqa: S608
+                f" WHERE {_OPEN} AND subject IN ({placeholders})",
+                subjects,
+            )
+        )
+    return ids
+
+
 def audit_view(conn: sqlite3.Connection, settings: Settings | None = None) -> dict[str, object]:
     """Library Audit findings, split by what each one is waiting for.
 
@@ -1209,7 +1307,8 @@ def audit_view(conn: sqlite3.Connection, settings: Settings | None = None) -> di
     Reads only: rendering this page must not write, which is what keeps a page
     load from competing with the worker for SQLite's one writer lock.
     """
-    rows = findings_with_status(conn, ("open", "accepted", "kept"))
+    totals = _audit_totals(conn)
+    rows = findings_by_ids(conn, _audit_page_ids(conn))
     #  One query for every row's plan, instead of one query per row. The plan
     #  is what decides which of the three lists below a finding belongs in, so
     #  it cannot simply be dropped — but it never needed asking one at a time.
@@ -1228,9 +1327,16 @@ def audit_view(conn: sqlite3.Connection, settings: Settings | None = None) -> di
     )
     return {
         "audit_groups": groups,
-        "audit_open": sum(int(group["count"]) for group in groups),
+        #  From SQL over the whole table, never `len()` of what was rendered.
+        #  The heading has to stay true when the page below it is a page.
+        "audit_open": totals["open_findings"],
         "audit_waiting": waiting,
         "audit_dismissed": dismissed,
+        "audit_subjects_total": totals["subjects"],
+        "audit_subjects_shown": len(groups),
+        "audit_waiting_total": totals["waiting"],
+        "audit_dismissed_total": totals["dismissed"],
+        "audit_more": max(0, totals["subjects"] - len(groups)),
     }
 
 
