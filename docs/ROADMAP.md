@@ -271,7 +271,12 @@ today's behaviour exactly.
 makes them degrade or fail with the size of a table they read. All three are
 named with file and line in [performance.md](performance.md).
 
-- **Health is quadratic and unusable at 100,000 files.**
+- ~~**Health is quadratic and unusable at 100,000 files.**~~ **Quadratic part
+  fixed 2026-09-02** — `unindexed` is now two counts and a subtraction, and
+  Health completes at a million for the first time. It takes **22 s**, which is
+  not usable; what remains is heavy rather than quadratic, chiefly
+  `undo_sequence._later_decisions` at 17 s of it. The original text follows
+  because the shape is worth remembering.
   `search_health.py:156` counts unindexed items with a `NOT EXISTS` against
   `search_fts`, whose `item_id` is declared `UNINDEXED` — so it scans the whole
   FTS table once per row of `items`. The query planner says so without any

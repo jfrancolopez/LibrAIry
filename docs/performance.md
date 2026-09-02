@@ -9,8 +9,10 @@ That is the whole result. Everything below is how it was measured and what
 exactly is wrong, because [ROADMAP.md](ROADMAP.md) M1-01 says a measured
 bottleneck is a *result*, not a work order — none of it is fixed here.
 
-    Review      was unusable at 100,000 and above; FIXED — 1.4 s, 185 statements
-    Health      unusable at 100,000 files and above
+    Review      was unusable everywhere; now 1.4 s at 100,000, still over
+                budget at a million — one unbounded scan left, named below
+    Health      was quadratic and never finished; now completes at a million,
+                but takes 22 s and is not yet usable there
     Search      3.1 s at a million; degrading linearly, and fixable
     Browse      1.2 s at a million; one unbounded query
     Dashboard   620 ms at a million; bounded, worth watching
@@ -75,11 +77,11 @@ not finish; an arrow marks a figure this pass changed.
 
 | Surface | 100k | 300k | 1M |
 |---|---|---|---|
-| Review page 1 | >60,000 (3,969) → **1,357 (185)** | >60,000 (3,133) | >60,000 (1,613) |
-| Review page 50 | >60,000 (3,906) → **1,193 (185)** | >60,000 (3,212) | >60,000 (1,663) |
-| Review, ungrouped sort | >60,000 (3,985) → **1,181 (185)** | >60,000 (3,212) | >60,000 (1,598) |
-| **Health** | **>60,000 (10)** | **>60,000 (10)** | **>60,000 (10)** |
-| **Health (attention only)** | **>60,000 (8)** | **>60,000 (8)** | **>60,000 (8)** |
+| Review page 1 | >60,000 (3,969) → **1,357 (185)** | >60,000 (3,133) | >60,000 (1,613) → **>60,000 (159)** |
+| Review page 50 | >60,000 (3,906) → **1,193 (185)** | >60,000 (3,212) | >60,000 (1,663) → **>60,000 (159)** |
+| Review, ungrouped sort | >60,000 (3,985) → **1,181 (185)** | >60,000 (3,212) | >60,000 (1,598) → **>60,000 (159)** |
+| Health | >60,000 (10) | >60,000 (10) | >60,000 (10) → **22,264 (41)** |
+| Health (attention only) | >60,000 (8) | >60,000 (8) | >60,000 (8) → **17,362 (18)** |
 | Search `Album` | 248 (153) | 793 (153) | 3,108 (153) |
 | Search unfiltered | 67 (153) | 276 (153) | 919 (153) |
 | Browse home | 94 (1) | 294 (1) | 1,196 (1) |
@@ -114,6 +116,11 @@ library is three to five minutes.
 > is now flat — the same 185 on page 1, page 50, and with grouping off — and
 > `_artist_folder_under` has left the hot list because it is called for a page
 > of subjects rather than for every finding in the database.
+>
+> **At a million it is still over budget**, on 159 statements. That is no longer
+> a counting problem: a page runs a fixed, small number of queries and one of
+> them reads the whole library. See (5), which is now the only thing between
+> Review and a million files.
 
 
 `web/review.py:1213` — `audit_view` builds a row for **every** finding with
@@ -133,6 +140,18 @@ the table*. Review's proposal list obeys it. The audit list embedded beside it
 never did.
 
 ### 2. Health asks a quadratic question, twice
+
+> **Quadratic part fixed, 2026-09-02.** `unindexed` is two counts and a
+> subtraction — live items, minus index rows belonging to a live item — which
+> is the same question without the correlated scan, and safe because
+> `search_fts` is written with `rowid = item_id` so there is at most one index
+> row per file. `index_counts` derives its copy from the join it had already
+> run instead of asking again.
+>
+> **Health at a million: from never finishing to 22.3 s**, and it completes.
+> That is not yet usable. What is left is not quadratic, just heavy — chiefly
+> `undo_sequence._later_decisions` at 17 s of the 22 inside
+> `attention.report`. M1-06 continues.
 
 `search_health.py:156`:
 

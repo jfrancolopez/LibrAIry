@@ -118,14 +118,7 @@ def index_counts(conn: sqlite3.Connection) -> dict[str, int]:
     is ever a problem worth reporting.
     """
     total = int(conn.execute("SELECT COUNT(*) FROM search_fts").fetchone()[0])
-    current = int(
-        conn.execute(
-            """
-            SELECT COUNT(*) FROM search_fts s JOIN items i ON i.id = s.item_id
-            WHERE i.missing_since IS NULL
-            """
-        ).fetchone()[0]
-    )
+    current = indexed_live(conn)
     missing = int(
         conn.execute(
             """
@@ -140,8 +133,30 @@ def index_counts(conn: sqlite3.Connection) -> dict[str, int]:
         "total": total,
         # A present file with no index row. Unlike the others, this one means
         # something is actually wrong.
-        "unindexed": unindexed(conn),
+        #
+        # Derived from `current`, which is already in hand, rather than calling
+        # `unindexed` and paying for the same join a second time.
+        "unindexed": max(0, live_items(conn) - current),
     }
+
+
+def live_items(conn: sqlite3.Connection) -> int:
+    """Files LibrAIry currently believes are on disk."""
+    return int(
+        conn.execute("SELECT COUNT(*) FROM items WHERE missing_since IS NULL").fetchone()[0]
+    )
+
+
+def indexed_live(conn: sqlite3.Connection) -> int:
+    """Index rows belonging to a file that is currently on disk."""
+    return int(
+        conn.execute(
+            """
+            SELECT COUNT(*) FROM search_fts s JOIN items i ON i.id = s.item_id
+            WHERE i.missing_since IS NULL
+            """
+        ).fetchone()[0]
+    )
 
 
 def unindexed(conn: sqlite3.Connection) -> int:
@@ -151,13 +166,28 @@ def unindexed(conn: sqlite3.Connection) -> int:
     used to read the whole of `index_counts` to get at one number, which meant
     the page ran the same four counts twice: once for the attention line and
     once for the panel below it.
+
+    **Subtraction, not `NOT EXISTS`.** The obvious spelling of this question —
+    every item with no matching `search_fts` row — is quadratic here and looks
+    perfectly ordinary:
+
+        SELECT COUNT(*) FROM items i WHERE i.missing_since IS NULL
+          AND NOT EXISTS (SELECT 1 FROM search_fts s WHERE s.item_id = i.id)
+
+    `search_fts` is an FTS5 table whose `item_id` is declared `UNINDEXED`, so
+    there is nothing for that subquery to seek on and the planner says exactly
+    what it does: `SCAN i`, then a `CORRELATED SCALAR SUBQUERY` doing `SCAN s
+    VIRTUAL TABLE` — a full scan of the index for every row of `items`. 3.8
+    seconds at five thousand files; unusable at a hundred thousand, which is
+    where M1-01 found it, on the one page whose job is to say something is
+    wrong.
+
+    Two counts and a subtraction answer the same question, because a row is
+    inserted into `search_fts` with `rowid = item_id`: there is at most one
+    index row per item, so the indexed-and-live count can never exceed the live
+    count. `max` guards the arithmetic anyway rather than letting a negative
+    number reach a page — if that ever fires the index has duplicate rows, and
+    reporting "0 unindexed" is the honest answer to a question about *missing*
+    rows.
     """
-    return int(
-        conn.execute(
-            """
-            SELECT COUNT(*) FROM items i
-            WHERE i.missing_since IS NULL
-              AND NOT EXISTS (SELECT 1 FROM search_fts s WHERE s.item_id = i.id)
-            """
-        ).fetchone()[0]
-    )
+    return max(0, live_items(conn) - indexed_live(conn))

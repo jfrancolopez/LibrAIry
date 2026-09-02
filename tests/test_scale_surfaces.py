@@ -206,27 +206,58 @@ def test_review_queries_do_not_grow_with_the_library(tmp_path) -> None:  # noqa:
 
 # --- Health -------------------------------------------------------------------
 
-UNINDEXED_SQL = """
-SELECT COUNT(*) FROM items i
-WHERE i.missing_since IS NULL
-  AND NOT EXISTS (SELECT 1 FROM search_fts s WHERE s.item_id = i.id)
-"""
+def test_the_unindexed_count_never_scans_the_index_per_row(small) -> None:  # noqa: ANN001
+    """The question asked of the *function*, not of a copy of its old SQL.
 
+    `search_fts` declares `item_id UNINDEXED`, so the obvious `NOT EXISTS`
+    spelling has nothing to seek on and the planner scans the whole index once
+    per row of `items` — quadratic, and 3.8 seconds at five thousand files.
+    Asserting on the plan rather than on a stopwatch, because a timing test at
+    this size would only be flaky.
+    """
+    from librairy.search_health import unindexed
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "M1-01 measured this: search_fts declares item_id UNINDEXED, so the "
-        "NOT EXISTS runs a full scan of the FTS table for every row of items — "
-        "quadratic, 3.8 seconds at 5,000 items, and Health asks for it twice per "
-        "render. See docs/performance.md and ROADMAP.md M1-01."
-    ),
-)
-def test_the_unindexed_count_is_not_a_correlated_scan(small) -> None:  # noqa: ANN001
     conn, _ = small
-    plan = [tuple(row) for row in conn.execute("EXPLAIN QUERY PLAN " + UNINDEXED_SQL)]
-    detail = " | ".join(str(row[-1]) for row in plan)
-    assert "CORRELATED" not in detail, detail
+    statements: list[str] = []
+
+    class Watching:
+        def __init__(self, inner) -> None:  # noqa: ANN001
+            self._inner = inner
+
+        def execute(self, sql, *args, **kwargs):  # noqa: ANN001, ANN201
+            statements.append(str(sql))
+            return self._inner.execute(sql, *args, **kwargs)
+
+        def __getattr__(self, name):  # noqa: ANN001, ANN204
+            return getattr(self._inner, name)
+
+    unindexed(Watching(conn))
+    assert statements, "unindexed ran no queries at all"
+    for sql in statements:
+        plan = " | ".join(
+            str(row[-1]) for row in conn.execute("EXPLAIN QUERY PLAN " + sql)
+        )
+        assert "CORRELATED" not in plan, f"{plan}\n{sql}"
+
+
+def test_the_unindexed_count_is_still_the_right_number(tmp_path) -> None:  # noqa: ANN001
+    """Faster is only worth having if it is also true."""
+    from librairy.search_health import unindexed
+
+    conn, _ = build(
+        tmp_path, library=200, inbox=0, findings=10, quarantine=10, history=10
+    )
+    #  Not zero: the fixture's quarantine rows are live items the harness never
+    #  indexes, and they are genuinely unindexed. Deltas from here.
+    baseline = unindexed(conn)
+    conn.execute("DELETE FROM search_fts WHERE rowid IN (1, 2, 3)")
+    conn.commit()
+    assert unindexed(conn) == baseline + 3
+    #  A file that has gone missing keeps its index row on purpose, and is not
+    #  a file on disk — so it counts on neither side of the subtraction.
+    conn.execute("UPDATE items SET missing_since='2026-09-02' WHERE id IN (4, 5)")
+    conn.commit()
+    assert unindexed(conn) == baseline + 3
 
 
 def test_health_reads_and_writes_nothing(small) -> None:  # noqa: ANN001
