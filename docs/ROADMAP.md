@@ -726,7 +726,46 @@ visible without opening Settings.
 
 ## M2-04 · Decision Memory, context-aware
 
-**P2 · L · Medium risk**
+**P2 · L · Medium risk · DONE 2026-09-03** — `librairy/rules.py`, schema 52,
+`tests/test_rules.py`.
+
+> **What was already true, and is now pinned.** Domain scoping did not need
+> building: every cue `decision_cues.cues_for` produces carries the category, so
+> a habit learned from books is a *different string* from anything a music row
+> can match — not a filter applied afterwards. Negative learning did not need
+> building either: an override is recorded as the ordinary decision it is, the
+> history divides, and `_dominant` stops finding an answer. Both now have tests
+> that fail if either stops being true.
+>
+> **What was built.** Promotion. A pattern that has been right often enough —
+> eight decisions, and five times as many confirmations as departures — earns
+> an *offer* on the Decision Memory page. A person presses the button, and there
+> is a rule: named, listed, explainable, switchable, removable. Nothing else in
+> the program can call `promote`, and a test asserts that by reading the source.
+>
+> **The line, stated once.** Repetition earns the offer and never the rule.
+> "You have done this eighteen times" and "you have decided this is how it
+> works" are different claims, and a program that turns the first into the
+> second on a count has taken a decision that was not its to take.
+>
+> **One authority model, not four.** A rule is level four, exactly as a learned
+> suggestion is. It fills an answer in; it cannot approve, commit or settle, and
+> it loses to a catalog identity about the file in front of it. What promotion
+> changes is durability — a rule keeps offering when the counting behind it has
+> gone quiet, because it is the owner's statement rather than an observation
+> about them.
+>
+> **Overriding a rule is counted and never acted on.** A suggestion weakens
+> itself because it is a claim about behaviour and the behaviour changed. A rule
+> is a claim its owner made, so the page says "you have filed four of these
+> somewhere else since" and leaves the decision where it belongs. Switching off
+> a policy somebody wrote down, on a count, is the same overreach as creating
+> one on a count.
+>
+> **Widening is its own press.** A rule is created at the width it was learned
+> at, category included. Making one apply everywhere is a separate, confirmed
+> action, because a filing policy learned from invoices and applied to
+> everything renames a photograph the first time it matches one.
 
 **Problem.** A habit learned about invoices should not casually become a rule
 about photographs.

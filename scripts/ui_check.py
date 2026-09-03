@@ -410,8 +410,9 @@ PAGES = {
     "browse-related": "/browse/Photos?folder=2024%2FBackyard",
     # The same context in a result list.
     "search-related": "/browse?q=IMG_5200&root=library",
-    # Everything decision memory has picked up, read-only. The widest thing on
-    # it is a destination template beside two counts.
+    # Everything decision memory has picked up: the rules somebody promoted,
+    # and the offer to promote the next one. The offer is the widest thing on
+    # the page — a sentence over a text box and a button.
     "learned": "/review/learned",
     # One import, in detail: the section tabs, the bulk control, and fifty
     # member rows with a destination each. `CameraCard-Aug24` is the dev

@@ -98,6 +98,51 @@ add. Both now say which, and `librairy ai test` reports a server that passes
 its health check and then refuses to classify instead of returning a bare
 failure. **Schema 51** records the held files and why.
 
+### Decision Memory
+
+**A habit can now become a rule, and only you can make that happen.**
+
+LibrAIry has noticed repeated decisions for a while and offered the answer back.
+What it could not do was let you say *yes, that is my filing policy* — so a
+pattern that had been right forty times was still only ever a suggestion, and
+one that went quiet because you filed three things differently took its
+knowledge with it.
+
+When a pattern has been right often enough — eight decisions, and five times as
+many confirmations as departures — the Decision Memory page offers to write it
+down:
+
+    You have filed these this way 8 times, and never anywhere else.
+    Save it as a rule?
+
+**Repetition earns the offer. It never earns the rule.** Nothing in the worker,
+on a timer, or behind a threshold can create one; a test asserts it by reading
+the source. "You have done this eighteen times" and "you have decided this is
+how it works" are different claims, and the second one is yours to make.
+
+A rule is listed, named, explains itself, and can be switched off or removed.
+It says what it matches, what it recommends, which category it belongs to, and
+why LibrAIry offered it. Making one apply outside the category it was learned in
+is a separate, confirmed press — a filing policy learned from invoices and
+applied to everything renames a photograph the first time it matches one.
+
+**And it is the same authority it always was.** A rule fills an answer in. It
+cannot approve, commit or reach Ready for Commit, and it still loses to a
+catalog identity about the file in front of it. What promoting changes is
+durability, not power: a rule keeps offering when the counting behind it has
+gone quiet, because it is your statement rather than an observation about you.
+
+Overriding one is counted and never acted on. A *suggestion* weakens itself —
+it is a claim about your behaviour, and your behaviour changed — but a rule is
+something you wrote down, so LibrAIry says "you have filed four of these
+somewhere else since" and leaves the decision to you.
+
+Two things that turn out to have been true all along, and now have tests: a
+habit learned from books is a different pattern from anything a music file can
+match, so learning has always been scoped by domain; and overriding a learned
+suggestion enough times silences it, because the override is recorded as the
+ordinary decision it is.
+
 ### Documents
 
 **A PDF that calls itself `CRACKING` is no longer filed as `CRACKING.pdf`.**

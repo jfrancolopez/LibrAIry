@@ -426,7 +426,8 @@ def remember_approvals(conn: sqlite3.Connection, proposal_ids: list[int]) -> Non
     if not proposal_ids:
         return
     from librairy.decision_cues import cues_for, outcome_for, outranked
-    from librairy.decisions import record
+    from librairy.decisions import DESTINATION, record
+    from librairy.rules import active, matching, note_override
 
     rows = conn.execute(
         f"""
@@ -444,7 +445,8 @@ def remember_approvals(conn: sqlite3.Connection, proposal_ids: list[int]) -> Non
         outcome = outcome_for(row)
         if not outcome:
             continue
-        for cue in cues_for(row):
+        ladder = cues_for(row)
+        for cue in ladder:
             record(
                 conn,
                 cue=cue,
@@ -452,6 +454,15 @@ def remember_approvals(conn: sqlite3.Connection, proposal_ids: list[int]) -> Non
                 item_id=int(row["item_id"]),
                 dest_relpath=str(row["dest_relpath"]),
             )
+        #  A rule that matched this file and was answered differently. Counted
+        #  and shown; never acted on. A learned suggestion weakens itself when
+        #  the history divides — that is `decisions._dominant` doing its job —
+        #  but a rule is something the owner wrote down, and switching one off
+        #  on a count is the same overreach as creating one on a count. See
+        #  `librairy/rules.py`.
+        overridden = matching(active(conn, DESTINATION), ladder)
+        if overridden is not None and overridden.outcome != outcome:
+            note_override(conn, [overridden.signature])
 
 
 DEST_FOLDER_LIMIT = 200
@@ -1173,7 +1184,8 @@ def learned_suggestions(
     furniture.
     """
     from librairy.decision_cues import cues_for, destination_from, outranked
-    from librairy.decisions import suggest, tally
+    from librairy.decisions import Cue, Suggestion, suggest, tally
+    from librairy.rules import active, matching
 
     if not rows:
         return {}
@@ -1182,13 +1194,36 @@ def learned_suggestions(
         {cue.signature for cues in ladders.values() for cue in cues}
     )
     counts = tally(conn, signatures)
+    #  Read once for the page, like the tally. There are never many — a rule is
+    #  something a person deliberately made — and matching one is a subset test
+    #  in Python rather than a query per row.
+    promoted = active(conn)
     found: dict[int, dict[str, object]] = {}
     for row in rows:
         if outranked(row):
             #  A catalog identity or a printed identifier answers this file's
-            #  destination better than any habit. See `decision_cues`.
+            #  destination better than any habit *or* any rule. Level three
+            #  beats level four, and promoting a habit does not move it up the
+            #  ladder — it only makes it durable. See `librairy/rules.py`.
             continue
-        answer = suggest(conn, ladders[int(row["id"])], counts=counts)
+        ladder = ladders[int(row["id"])]
+        #  A rule first, and on the same path. It is the same authority as a
+        #  learned suggestion and the same shape of answer; what it changes is
+        #  that the owner said to keep it, so it does not go quiet when the
+        #  counting behind it does.
+        rule = matching(promoted, ladder)
+        answer = (
+            Suggestion(
+                kind=rule.kind,
+                signature=rule.signature,
+                outcome=rule.outcome,
+                support=rule.support,
+                contradictions=0,
+                cue=Cue(rule.kind, rule.features),
+            )
+            if rule is not None
+            else suggest(conn, ladder, counts=counts)
+        )
         if answer is None:
             continue
         destination = destination_from(answer, row)
@@ -1203,8 +1238,16 @@ def learned_suggestions(
             else destination,
             "support": answer.support,
             "contradictions": answer.contradictions,
-            "explanation": answer.explanation,
+            #  One sentence, and which kind of authority wrote it. "Rule:
+            #  Programming Books" and "18 similar books filed here" are the
+            #  same level of authority saying two different things about where
+            #  the answer came from, and a reader has to be able to tell.
+            "explanation": (
+                f"Rule: {rule.name}" if rule is not None else answer.explanation
+            ),
             "described": answer.cue.described,
+            "rule": rule.name if rule is not None else "",
+            "rule_id": rule.id if rule is not None else 0,
         }
     return found
 

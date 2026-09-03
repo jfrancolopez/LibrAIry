@@ -2510,11 +2510,26 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         it happens to fire on.
         """
         from librairy.decisions import learned
+        from librairy.rules import all_rules, offer, promotable, suggested_name
 
+        patterns = learned(conn)
+        promoted = {rule.signature for rule in all_rules(conn)}
+        for pattern in patterns:
+            #  Offered only where the evidence is settled rather than merely
+            #  popular, and never where the owner already answered. See
+            #  `librairy.rules.promotable`.
+            signatures = set(pattern.get("signatures") or [pattern["signature"]])
+            pattern["promotable"] = promotable(pattern) and not (signatures & promoted)
+            pattern["offer"] = offer(pattern)
+            pattern["suggested_name"] = suggested_name(pattern)
         return TEMPLATES.TemplateResponse(
             request,
             "learned.html",
-            {"title": "What LibrAIry has learned", "patterns": learned(conn)},
+            {
+                "title": "What LibrAIry has learned",
+                "patterns": patterns,
+                "rules": all_rules(conn),
+            },
         )
 
     @app.post("/review/learned/suppress", response_class=HTMLResponse)
@@ -2542,6 +2557,73 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
                 restore_pattern(conn, name)
             else:
                 suppress(conn, name)
+        return RedirectResponse("/review/learned", status_code=303)
+
+    @app.post("/review/learned/promote", include_in_schema=False)
+    def review_learned_promote(
+        request: Request,  # noqa: ARG001
+        signature: Annotated[str, Form()],
+        name: Annotated[str, Form()] = "",
+    ) -> RedirectResponse:
+        """Write a habit down as a policy. Only a person reaches this.
+
+        Repetition earns the *offer* and never the rule — nothing on a worker
+        cycle, no threshold and no background pass can call this. Promoting
+        changes what LibrAIry offers and not what it may do: a rule is still
+        authority level four, may still only fill an answer in, and still loses
+        to a catalog identity about the file in front of it.
+        """
+        from librairy.decisions import learned
+        from librairy.rules import promote
+
+        found = next(
+            (
+                pattern
+                for pattern in learned(conn, limit=200)
+                if signature in (pattern.get("signatures") or [pattern["signature"]])
+            ),
+            None,
+        )
+        if found is None:
+            raise HTTPException(status_code=404, detail="no such pattern")
+        promote(
+            conn,
+            signature=str(found["signature"]),
+            kind=str(found["kind"]),
+            features=dict(found.get("features") or {}),
+            outcome=str(found["outcome"]),
+            name=name,
+            support=int(found["support"]),
+        )
+        return RedirectResponse("/review/learned", status_code=303)
+
+    @app.post("/review/rules/{rule_id}", include_in_schema=False)
+    def review_rule_action(
+        request: Request,  # noqa: ARG001
+        rule_id: int,
+        action: Annotated[str, Form()] = "",
+        name: Annotated[str, Form()] = "",
+    ) -> RedirectResponse:
+        """Everything that can be done to a promoted rule, by hand.
+
+        `widen` is the one worth naming: it makes a rule apply outside the
+        category it was learned in, and it is its own deliberate press because
+        a filing policy learned from invoices, applied to everything, renames a
+        photograph the first time it matches one.
+        """
+        from librairy import rules
+
+        actions = {
+            "enable": lambda: rules.set_enabled(conn, rule_id, True),
+            "disable": lambda: rules.set_enabled(conn, rule_id, False),
+            "widen": lambda: rules.widen(conn, rule_id),
+            "narrow": lambda: rules.narrow(conn, rule_id),
+            "forget": lambda: rules.forget(conn, rule_id),
+            "rename": lambda: rules.rename(conn, rule_id, name),
+        }
+        if action not in actions:
+            raise HTTPException(status_code=422, detail=f"unknown action: {action}")
+        actions[action]()
         return RedirectResponse("/review/learned", status_code=303)
 
     @app.get("/activity", response_class=HTMLResponse)

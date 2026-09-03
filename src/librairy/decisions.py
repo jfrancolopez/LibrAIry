@@ -470,6 +470,10 @@ def learned(conn: sqlite3.Connection, *, limit: int = 50) -> list[dict[str, obje
                 "support": support,
                 "contradictions": others,
                 "described": Cue(str(top["kind"]), features).described,
+                #  The cues themselves, not only the sentence. Promoting a
+                #  pattern stores what it matched on, and re-deriving that from
+                #  the prose would be parsing a description back into data.
+                "features": features,
                 #  Non-empty when explicit policy already answers this. A
                 #  learned pattern is the weakest kind of evidence in the
                 #  program and must never be presented as competing with an

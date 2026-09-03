@@ -1039,11 +1039,19 @@ def _four_manuals_already_filed(conn, settings: Settings) -> None:  # noqa: ANN0
             )
         )
 
+    #  Eight, not four. Three is where LibrAIry starts *suggesting*; the offer
+    #  to write a habit down as a rule needs a settled history behind it, and a
+    #  fixture that stops one short of it can never photograph the offer. See
+    #  `librairy/rules.PROMOTE_SUPPORT`.
     filed = [
         ("civic-2019.pdf", "2019 Civic Owner's Manual"),
         ("accord-2020.pdf", "2020 Accord Owner's Manual"),
         ("crv-2021.pdf", "2021 CR-V Owner's Manual"),
         ("hrv-2022.pdf", "2022 HR-V Owner's Manual"),
+        ("fit-2017.pdf", "2017 Fit Owner's Manual"),
+        ("odyssey-2018.pdf", "2018 Odyssey Owner's Manual"),
+        ("ridgeline-2023.pdf", "2023 Ridgeline Owner's Manual"),
+        ("passport-2024.pdf", "2024 Passport Owner's Manual"),
     ]
     for name, title in filed:
         manual(name, title)

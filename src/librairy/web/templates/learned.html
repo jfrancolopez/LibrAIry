@@ -11,9 +11,78 @@
      suggestion in Review should never be the first time somebody hears that a
      pattern exists, and turning one off should not require finding a file it
      happens to fire on. #}
-  <p>These are <strong>suggestions only</strong>. Nothing on this page approves
-    anything, files anything or moves a file. When one of them matches a file
-    in Review, LibrAIry offers the answer and you decide — exactly as before.</p>
+  <p>Nothing on this page approves anything, files anything or moves a file.
+    When one of these matches a file in Review, LibrAIry offers the answer and
+    you decide — exactly as before. That is as true of a rule you wrote down as
+    of a habit LibrAIry noticed: <strong>a rule fills an answer in, and never
+    takes a decision</strong>.</p>
+
+  {# Rules first, because they are yours. A habit is an observation about
+     somebody; a rule is something they said. #}
+  <h2 id="rules">Your rules</h2>
+  {% if rules %}
+    <p class="muted">Patterns you promoted. LibrAIry keeps offering these even
+      if your recent filing has been mixed — that is the difference between a
+      rule and a habit, and it is why only you can make one.</p>
+    <ul class="learned-list">
+      {% for rule in rules %}
+        <li class="learned-row{{ ' is-off' if not rule.enabled else '' }}">
+          <div class="learned-what">
+            <p><strong>{{ rule.name }}</strong>
+              {% if rule.is_global %}
+                <span class="badge badge-warn" title="This rule applies to every
+                  kind of file, not only the one it was learned from.">every category</span>
+              {% elif rule.domain %}
+                <span class="badge">{{ rule.domain }}</span>
+              {% endif %}
+            </p>
+            <p>{{ rule.described or 'Any file' }}</p>
+            <p class="mono">→ {{ rule.outcome }}/</p>
+            <p class="muted">{{ rule.why }}</p>
+            {% if rule.worth_mentioning %}
+              {# Said, never acted on. Switching off a policy somebody wrote
+                 down, on a count, is the same overreach as creating one on a
+                 count. See `librairy/rules.py`. #}
+              <p class="muted">You have filed
+                {{ rule.overrides }} matching file{{ 's' if rule.overrides != 1 else '' }}
+                somewhere else since. Still yours to keep or switch off.</p>
+            {% endif %}
+          </div>
+          <p class="muted">
+            {%- if not rule.enabled %}<strong>switched off</strong>{% else %}in use{% endif -%}
+          </p>
+          <div class="button-row">
+            {% for action, label in [
+                 ('disable', 'Switch off') if rule.enabled else ('enable', 'Switch on'),
+                 ('narrow', 'Only this category') if rule.is_global else ('widen', 'Every category'),
+                 ('forget', 'Remove rule'),
+               ] %}
+              <form method="post" action="/review/rules/{{ rule.id }}">
+                <input type="hidden" name="csrf_token" value="{{ request.state.session.csrf_token }}">
+                <input type="hidden" name="action" value="{{ action }}">
+                <button type="submit"
+                  class="{{ 'btn-danger' if action == 'forget' else 'btn-ghost' }}"
+                  {% if action == 'widen' %}
+                    {# The one thing about a rule that cannot be undone by
+                       looking at it. A filing policy learned from invoices,
+                       applied to everything, renames a photograph the first
+                       time it matches one. #}
+                    hx-confirm="Apply this rule to every kind of file, not only {{ rule.domain or 'this category' }}? It was learned from one kind and this makes it match all of them."
+                  {% elif action == 'forget' %}
+                    hx-confirm="Remove this rule? The decisions it was made from are untouched — they are still in History, and LibrAIry may offer the pattern again."
+                  {% endif %}>{{ label }}</button>
+              </form>
+            {% endfor %}
+          </div>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="muted">None yet. When a pattern below has been right often enough,
+      LibrAIry offers to write it down — and only you can accept.</p>
+  {% endif %}
+
+  <h2 id="patterns">What LibrAIry has noticed</h2>
 
   {% if patterns %}
     <ul class="learned-list">
@@ -41,6 +110,19 @@
             you chose differently
             {%- if pattern.suppressed %} · <strong>not being suggested</strong>{% endif %}
           </p>
+          {% if pattern.promotable %}
+            {# The offer, with both numbers in it: "18 times" and "and twice
+               you did not" are the same fact, and only one of them flatters
+               the suggestion. Nothing but this button creates a rule. #}
+            <form method="post" action="/review/learned/promote" class="learned-promote">
+              <input type="hidden" name="csrf_token" value="{{ request.state.session.csrf_token }}">
+              <input type="hidden" name="signature" value="{{ pattern.signature }}">
+              <p>{{ pattern.offer }} Save it as a rule?</p>
+              <label>Call it
+                <input name="name" value="{{ pattern.suggested_name }}" maxlength="80"></label>
+              <button type="submit" class="btn-primary">Save as a rule</button>
+            </form>
+          {% endif %}
           <form method="post" action="/review/learned/suppress">
             <input type="hidden" name="csrf_token" value="{{ request.state.session.csrf_token }}">
             <input type="hidden" name="signature" value="{{ pattern.signature }}">

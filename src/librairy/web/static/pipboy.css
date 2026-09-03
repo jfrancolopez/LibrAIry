@@ -3680,3 +3680,23 @@ summary.timeline-head::-webkit-details-marker { display: none; }
      a readable title beats one line beside a title broken every third letter. */
   .doc-evidence th { white-space: normal; }
 }
+
+/* The offer to write a habit down. Set apart from the pattern it is about,
+   because pressing it is a different kind of act from switching a suggestion
+   off — one changes what LibrAIry offers you, the other is you telling
+   LibrAIry what your policy is. See `librairy/rules.py`. */
+.learned-promote {
+  grid-column: 1 / -1;
+  display: flex; flex-wrap: wrap; align-items: end; gap: var(--space-2);
+  padding: var(--space-2);
+  border: var(--border-thin) solid var(--accent);
+  border-radius: var(--radius-ui);
+  background: var(--bg-metric);
+}
+/* The sentence gets its own line above the controls. Sharing a row with them
+   put "you have filed these 8 times" at the bottom of a box whose top half was
+   a text field — the offer reading as a caption for the button rather than as
+   the reason for it. */
+.learned-promote p { flex: 1 1 100%; margin: 0; }
+.learned-promote label { display: grid; gap: var(--space-1); font-size: var(--text-sm); }
+.learned-promote input { min-width: 0; }

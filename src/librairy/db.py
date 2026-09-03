@@ -9,7 +9,7 @@ from pathlib import Path
 from librairy.config import Settings
 
 LOGGER = logging.getLogger(__name__)
-SCHEMA_VERSION = 51
+SCHEMA_VERSION = 52
 
 
 class DatabaseVersionError(RuntimeError):
@@ -1491,6 +1491,47 @@ CREATE INDEX idx_processing_waits_resume ON processing_waits(paused, updated_at)
 """
 
 
+MIGRATION_052 = """
+-- A habit the owner promoted into a policy.
+--
+-- Decision Memory notices that the same choice keeps being made and offers the
+-- answer; that is a *suggestion*, and it goes quiet on its own the moment the
+-- history stops agreeing with itself. A rule is what the owner says when they
+-- have seen the pattern and want it kept: "yes, that is my filing policy".
+--
+-- The two are the same machinery and deliberately not the same authority. A
+-- rule is still level four -- it may fill an answer in and it may never
+-- approve, commit or move anything -- and the only thing that creates one is a
+-- person pressing a button. Repetition earns the *offer*; it never earns the
+-- rule.
+--
+-- `signature` is the promoted pattern, verbatim from `decision_events`, so a
+-- rule and the decisions behind it can never describe different things.
+-- `scope` is 'category' for the pattern as learned and 'global' only where
+-- somebody deliberately widened it: an automatic generalization from one
+-- domain to another is the thing this whole feature exists not to do.
+--
+-- `overrides` counts the times somebody filed a matching file somewhere else
+-- since. It is shown and it is never acted on: disabling a policy the owner
+-- wrote down is the owner's decision, not a threshold's.
+CREATE TABLE decision_rules (
+  id         INTEGER PRIMARY KEY,
+  kind       TEXT NOT NULL,
+  signature  TEXT NOT NULL UNIQUE,
+  scope      TEXT NOT NULL DEFAULT 'category',
+  features   TEXT NOT NULL,
+  outcome    TEXT NOT NULL,
+  name       TEXT NOT NULL,
+  enabled    INTEGER NOT NULL DEFAULT 1,
+  support    INTEGER NOT NULL DEFAULT 0,
+  overrides  INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX idx_decision_rules_enabled ON decision_rules(enabled, kind);
+"""
+
+
 MIGRATIONS = {
     1: MIGRATION_001,
     2: MIGRATION_002,
@@ -1543,6 +1584,7 @@ MIGRATIONS = {
     49: MIGRATION_049,
     50: MIGRATION_050,
     51: MIGRATION_051,
+    52: MIGRATION_052,
 }
 
 
