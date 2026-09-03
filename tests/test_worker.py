@@ -243,10 +243,13 @@ def test_a_duplicate_found_after_classification_is_still_staged(tmp_path: Path) 
     conn = connect(settings)
     set_dedup_option(conn, "use_rmlint", False)
 
-    # First cycle: nothing to match against, so it gets an ordinary proposal.
+    # First cycle: nothing to match against. `copy.txt` says nothing about
+    # itself and there is no AI configured here, so it is held rather than
+    # answered weakly — which is the state this test now has to reach through,
+    # because a held duplicate is exactly as stageable as a proposed one.
     run_once(conn, settings)
     first = conn.execute("SELECT state FROM items WHERE root='inbox'").fetchone()[0]
-    assert first in {"proposed", "pending"}, "either way, nobody has decided anything"
+    assert first in {"proposed", "pending", "waiting"}, "nobody has decided anything"
 
     # The twin appears in the library, and the next cycle notices.
     from librairy.scanner import scan_root

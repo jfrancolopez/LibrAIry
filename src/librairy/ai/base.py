@@ -46,6 +46,17 @@ class AIAnswer(BaseModel):
         return value
 
 
+class ProviderUnreachable(OSError):
+    """The provider's server did not answer at all.
+
+    Deliberately distinct from `classify` returning `None`, which means the
+    provider was reached and had nothing useful to say. Both used to look
+    identical from outside — Ollama and LM Studio each swallowed a refused
+    connection into the same `None` — and a file held because of one cannot be
+    told from a file held because of the other. See `librairy/waiting.py`.
+    """
+
+
 @dataclass(frozen=True)
 class HealthResult:
     ok: bool

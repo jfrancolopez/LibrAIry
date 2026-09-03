@@ -3,8 +3,9 @@ from __future__ import annotations
 import logging
 import sqlite3
 import time
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import PurePosixPath
+from urllib.error import HTTPError
 
 from librairy.ai.base import AIAnswer, HealthResult, Provider, ProviderConfig
 from librairy.ai.cloud import AnthropicProvider, GeminiProvider, OpenAIProvider
@@ -22,10 +23,50 @@ CIRCUIT_BREAK_FAILURES = 2
 LOGGER = logging.getLogger(__name__)
 
 
+#  How a provider stopped being usable, as opposed to how many times.
+UNREACHABLE = "unreachable"
+BROKEN = "broken"
+
+
+@dataclass(frozen=True)
+class AIAttempt:
+    """What the last call to `apply_ai_if_needed` actually managed to do.
+
+    Facts, not a verdict: whether AI was needed at all, whether anything was
+    asked, whether anything answered, and how each provider that did not answer
+    failed. `waiting.reason_for` turns them into the sentence a held file shows.
+
+    It exists because "the classification is weak" and "the classification is
+    weak *and nothing could be asked about it*" are two different situations
+    that produced identical proposals — see `librairy/waiting.py`.
+    """
+
+    #  False when the deterministic evidence was already good enough, which is
+    #  the majority of files and the case where none of the rest applies.
+    needed: bool = False
+    asked: tuple[str, ...] = ()
+    answered: tuple[str, ...] = ()
+    unreachable: tuple[str, ...] = ()
+    broken: tuple[str, ...] = ()
+
+
+NOT_NEEDED = AIAttempt()
+
+
 @dataclass
 class AIBatchState:
     failures: dict[str, int]
     warned_unavailable: bool = False
+    #  How each provider failed, kept for the whole batch alongside the count.
+    #  The circuit breaker stops asking a provider after two failures, so every
+    #  file after the second one is held without anything being attempted for
+    #  it — and it must still be able to say *why*, which is what happened
+    #  earlier in this same batch.
+    kinds: dict[str, str] = field(default_factory=dict)
+    #  What the most recent call managed to do. Per call rather than per batch:
+    #  `analyze_items` reads it immediately after classifying one file, and it
+    #  is overwritten by the next one.
+    attempt: AIAttempt = NOT_NEEDED
 
 
 @dataclass(frozen=True)
@@ -51,36 +92,58 @@ def apply_ai_if_needed(
     state: AIBatchState,
     providers: list[Provider] | None = None,
 ):
+    state.attempt = NOT_NEEDED
     if current.confidence >= settings.confidence_threshold:
         return current
     chain = providers if providers is not None else _providers(conn, settings)
     if not settings.use_multi_ai:
         chain = chain[:1]
     view = build_view(item, {}, tuple(current.evidence))
-    any_attempted = False
+    asked: list[str] = []
+    answered: list[str] = []
+    unreachable: list[str] = []
+    broken: list[str] = []
     for provider in chain:
-        if state.failures.get(provider.config.name, 0) >= CIRCUIT_BREAK_FAILURES:
+        name = provider.config.name
+        if state.failures.get(name, 0) >= CIRCUIT_BREAK_FAILURES:
+            #  Not asked, and it still counts: the circuit is open because this
+            #  provider failed earlier in this same batch, and that failure is
+            #  exactly as true for this file as it was for that one.
+            _blame(state.kinds.get(name, UNREACHABLE), name, unreachable, broken)
             continue
-        any_attempted = True
+        asked.append(name)
         started = time.monotonic()
         try:
             answer = provider.classify(view, settings.ai_timeout)
         except OSError as exc:
             _record_failure(conn, provider.config, state, exc)
+            _blame(state.kinds[name], name, unreachable, broken)
             continue
         except RuntimeError as exc:
             _record_failure(conn, provider.config, state, exc)
+            _blame(state.kinds[name], name, unreachable, broken)
             continue
         if answer is None:
+            #  Reached, and it produced nothing usable — an unparseable reply, a
+            #  provider that is configured but has no key. Not an outage, so it
+            #  is not counted as one.
+            broken.append(name)
             continue
+        answered.append(name)
         latency = max(0, round((time.monotonic() - started) * 1000))
         upsert_provider_status(
             conn, provider.config, HealthResult(True, latency_ms=latency), used=True
         )
         result = _classification_from_answer(settings, item, current, answer, provider.config)
         if result.confidence >= settings.confidence_threshold:
+            state.attempt = AIAttempt(
+                True, tuple(asked), tuple(answered), tuple(unreachable), tuple(broken)
+            )
             return result
-    if not any_attempted or chain:
+    state.attempt = AIAttempt(
+        True, tuple(asked), tuple(answered), tuple(unreachable), tuple(broken)
+    )
+    if not asked or chain:
         _warn_once(state)
     return current
 
@@ -209,7 +272,26 @@ def _record_failure(
     exc: Exception,
 ) -> None:
     state.failures[config.name] = state.failures.get(config.name, 0) + 1
+    state.kinds[config.name] = _failure_kind(exc)
     upsert_provider_status(conn, config, HealthResult(False, error=exc.__class__.__name__))
+
+
+def _failure_kind(exc: Exception) -> str:
+    """Did the server not answer, or did it answer "no"?
+
+    An HTTP status is the second: something is listening, it read the request
+    and it refused it — a model name that does not exist, a field this build
+    rejects. Waiting for that to recover on its own is waiting for the wrong
+    thing, and telling somebody their provider is offline when it is running
+    perfectly well sends them to fix the wrong machine.
+    """
+    if isinstance(exc, HTTPError):
+        return BROKEN
+    return UNREACHABLE if isinstance(exc, OSError) else BROKEN
+
+
+def _blame(kind: str, name: str, unreachable: list[str], broken: list[str]) -> None:
+    (unreachable if kind == UNREACHABLE else broken).append(name)
 
 
 def _warn_once(state: AIBatchState) -> None:

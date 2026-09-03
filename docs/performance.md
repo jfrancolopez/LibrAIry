@@ -1,7 +1,8 @@
 # Performance and scale
 
-**Measured 2026-09-01 against `v1.3.1` / schema 47, and again 2026-09-02 at
-the close of M1 against schema 50.**
+**Measured 2026-09-01 against `v1.3.1` / schema 47, again 2026-09-02 at the
+close of M1 against schema 50, and again 2026-09-03 after M2-01 against schema
+51.**
 
 M1-01 found two of LibrAIry's eight surfaces unusable at the scale it is
 designed for. This document is the measurement first and the work second,
@@ -257,6 +258,30 @@ exactly as `_later_decisions` was fixed. And the second column **had no index
 at all**: `UNIQUE (item_id, similar_item_id, kind)` indexes the first, and
 nothing indexed the second. That is **migration 048**, and the first schema
 change since 1.3.1 shipped.
+
+## M2-01, 2026-09-03 — what holding files costs
+
+One million library rows, 20,000 inbox proposals, same machine and same harness
+as the table below. The question is whether a section of Review that has to
+account for an unbounded held backlog can be drawn for the price of a count.
+
+| | M1 close | after M2-01 |
+|---|---|---|
+| Review page 1 | 728 ms (42) | **542 ms (43)** |
+| Health | 1,773 ms (39) | **1,407 ms (40)** |
+| Browse home | 0.2 ms (1) | 0.3 ms (1) |
+| Search, matching everything | 2,260 ms (6) | 2,194 ms (6) |
+
+**One statement each.** Review gained the `GROUP BY reason` that produces the
+section's counts; Health gained the same one for its concern. Neither runs a
+second query when nothing is held, and neither builds a row per held file — the
+listing is one `LIMIT 25` page, and `test_scale_surfaces.py` pins that six times
+as many held files cost the same number of statements and produce the same
+number of rows.
+
+The millisecond columns moved down rather than up, which is machine noise on an
+otherwise unchanged page and is exactly why the statement counts are the part
+worth reading.
 
 ## M1 close, 2026-09-02
 

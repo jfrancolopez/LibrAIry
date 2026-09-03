@@ -106,6 +106,14 @@ CLASSIFIED = {
         " for whatever lands in the library, so the result gets its own"
         " through the normal path.",
     ),
+    "processing_waits": (
+        "neither", "no",
+        "A record that analysis declined to answer *this* file and why. An"
+        " optimized copy is a file nothing has ever tried to classify, so it"
+        " has nothing to inherit — and a carried row would put a file that was"
+        " never held into the held list, saying it is waiting for a provider"
+        " nobody ever asked about it.",
+    ),
     "proposals": (
         "neither", "no",
         "An inbox-review decision about where a file should go. The result is"

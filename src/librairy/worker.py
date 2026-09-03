@@ -10,8 +10,10 @@ import sqlite3
 import time
 from contextlib import suppress
 from dataclasses import asdict, dataclass
+from datetime import datetime
 from pathlib import Path
 
+from librairy.ai.base import HealthResult
 from librairy.backup import (
     BackupRunSummary,
     backup_due,
@@ -61,6 +63,12 @@ class WorkerSummary:
     analyzed: int
     proposed: int
     pending: int
+    #  Files the pass declined to answer rather than guessing at. Reported
+    #  beside `pending` and never folded into it: a pending file has an opinion
+    #  and no destination, a held one has neither, on purpose. Not counted as
+    #  work in its own right — `analyzed` already covers the cycle that held
+    #  them, and they leave the queue until something changes.
+    held: int = 0
     content_extracted: int = 0
     content_failed: int = 0
     backup_copied: int = 0
@@ -200,6 +208,7 @@ class Worker:
                 analyzed=analysis.analyzed,
                 proposed=analysis.proposed,
                 pending=analysis.pending,
+                held=analysis.held,
                 content_extracted=content.extracted,
                 content_failed=content.failed,
                 backup_copied=backup.copied,
@@ -243,6 +252,13 @@ class Worker:
                     #  not urgent. Nothing moves — it changes where a settled
                     #  decision waits, and Commit still has to be pressed.
                     self._settled_approvals(settings)
+                    #  Ask the configured AI provider whether it is answering
+                    #  again, and put back the files that were held because it
+                    #  was not. Idle-cycle work like the rest of this tier: a
+                    #  file already waiting is not made worse by waiting five
+                    #  more seconds, and probing a dead endpoint must never
+                    #  come between an arriving file and its Review row.
+                    self._ai_recovery(settings)
                     #  Comparing the whole library against the whole index is
                     #  maintenance, not a render: Browse shows what this last
                     #  found and how old it is.
@@ -287,6 +303,53 @@ class Worker:
             approve_settled(self.conn, settings)
         except Exception:
             LOGGER.exception("settled approvals failed")
+
+    def _ai_recovery(self, settings: Settings) -> None:
+        """Notice that the provider is back, and release what was waiting on it.
+
+        Two steps, and the first is what keeps the second honest. `resume` only
+        releases files whose provider has answered *since* they were held, and
+        the only thing that writes that timestamp is a provider actually
+        answering — so without a probe, an installation whose whole inbox is
+        held would sit there forever with a perfectly healthy provider, because
+        nothing was left to ask it.
+
+        Nothing is probed when nothing is waiting on a probe. An installation
+        with no held files never opens a socket here, and one whose held files
+        are all `more-evidence` does not either — that reason is not about the
+        provider and no amount of probing will move it.
+        """
+        from librairy import waiting
+
+        try:
+            if not waiting.awaiting_provider(self.conn):
+                return
+            if self._probe_due():
+                probe_providers(self.conn, settings)
+            released = waiting.resume_recovered(self.conn)
+            if released:
+                LOGGER.info("AI provider answered again; %d file(s) resumed", released)
+        except Exception:
+            LOGGER.exception("AI recovery check failed")
+
+    def _probe_due(self) -> bool:
+        """At most one round of health checks a minute, recorded not timed.
+
+        The idle sleep backs off from five seconds to sixty, so "once a cycle"
+        would mean twelve probes a minute on a quiet installation that has just
+        gone quiet. Recorded in `worker_state` rather than held in memory so a
+        restarted worker does not get a free round.
+        """
+        now = utc_now()
+        row = self.conn.execute(
+            "SELECT value FROM worker_state WHERE key=?", (AI_PROBE_KEY,)
+        ).fetchone()
+        if row is not None:
+            last = str(json.loads(row["value"]) or "")
+            if last and _seconds_between(last, now) < AI_PROBE_SECONDS:
+                return False
+        _set_worker_state(self.conn, AI_PROBE_KEY, now)
+        return True
 
     def _database_check(self, settings: Settings) -> None:
         """Record what a full verification finds. Never blocks the inbox.
@@ -479,6 +542,56 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
+#  When the providers were last asked whether they are answering, and how often
+#  that is worth asking. See `Worker._probe_due`.
+AI_PROBE_KEY = "ai_probe_at"
+AI_PROBE_SECONDS = 60
+
+
+def probe_providers(conn: sqlite3.Connection, settings: Settings) -> int:
+    """Health-check every enabled provider and record what it said.
+
+    A health check, not a classification: `GET /api/tags` and its equivalents,
+    which cost a provider that is running almost nothing and a provider that is
+    not running one refused connection. The point is the timestamp — a provider
+    that answers writes `last_ok_at`, and that is the whole signal held files
+    resume on.
+
+    Failures are recorded rather than raised. A provider being down is the
+    normal case here; it is why this runs at all.
+    """
+    from librairy.ai.orchestrator import provider_for_config
+    from librairy.ai.registry import provider_chain
+    from librairy.ai.status import upsert_provider_status
+
+    answered = 0
+    for config in provider_chain(conn, settings, record=False):
+        try:
+            provider = provider_for_config(config, settings)
+            health = provider.health(settings.ai_timeout)
+        except (OSError, RuntimeError, ValueError) as exc:
+            upsert_provider_status(conn, config, HealthResult(False, error=exc.__class__.__name__))
+            continue
+        upsert_provider_status(conn, config, health)
+        answered += int(health.ok)
+    return answered
+
+
+def _seconds_between(earlier: str, later: str) -> float:
+    """How far apart two recorded timestamps are, or forever if one is unusable.
+
+    A malformed row must mean "probe now", never a crash: this decides whether
+    to open a socket, and a stored value nobody can parse is not a reason to
+    stop checking whether the provider is back.
+    """
+    try:
+        return (
+            datetime.fromisoformat(later) - datetime.fromisoformat(earlier)
+        ).total_seconds()
+    except ValueError:
+        return float("inf")
+
+
 def next_sleep(previous: float, work_found: bool) -> float:
     if work_found:
         return BUSY_SLEEP_SECONDS
@@ -546,7 +659,12 @@ def _set_worker_state(conn: sqlite3.Connection, key: str, value) -> None:
 
 
 # States where the file is still in the queue at all.
-STAGEABLE = frozenset({"discovered", "proposed", "pending"})
+#  'waiting' too: a file held because nothing could identify it is still
+#  undecided, and an exact duplicate is a better answer than the one the
+#  provider was going to give. Staging it does not need the provider to come
+#  back first, and leaving it out meant a held file could sit there while its
+#  twin was already in the library.
+STAGEABLE = frozenset({"discovered", "proposed", "pending", "waiting"})
 # ...but the item state cannot tell "analysis found nothing" from "the owner
 # said no" — both land in 'pending'. The proposal status can, so it is what
 # actually decides. Re-staging a rejected duplicate would argue with an answer

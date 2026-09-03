@@ -370,6 +370,11 @@ PAGES = {
     # The advisory section, which is the widest thing on the page after the
     # evidence panel: four classes, each with its own vocabulary.
     "storage": "/review",
+    # The files nothing could answer: three reasons, a four-column table of
+    # paths, and a row of actions. Paths in a table are the shape most likely
+    # to run past a 375px edge, and the fixture holds one file per reason so
+    # all three sentences are on screen at once.
+    "review-waiting": "/review",
     # Every waiting state at once. All of them are reachable without an
     # encoder, which is the point of building orchestration before execution.
     "queue": "/maintenance/optimization",

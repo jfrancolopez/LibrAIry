@@ -65,6 +65,10 @@ def test_fresh_db_migrates_to_current_schema(tmp_path: Path) -> None:
         "idx_similar_media_flags_similar_item_id",
         "idx_proposals_tier",
         "idx_history_destination",
+        # Files held because nothing could answer them: counted by reason, and
+        # released oldest-first when a provider comes back.
+        "idx_processing_waits_reason",
+        "idx_processing_waits_resume",
         "idx_quarantine_entries_item_id",
         "idx_quarantine_entries_restored_at",
         "idx_duplicate_reports_other",
@@ -177,6 +181,9 @@ def test_migration_011_closes_proposals_for_files_already_filed(tmp_path: Path) 
     # so anything a later migration creates has to be put back first.
     conn.executescript(
         """
+        DROP INDEX IF EXISTS idx_processing_waits_reason;
+        DROP INDEX IF EXISTS idx_processing_waits_resume;
+        DROP TABLE IF EXISTS processing_waits;
         DROP INDEX IF EXISTS idx_reconciliations_item;
         DROP INDEX IF EXISTS idx_reconciliations_batch;
         DROP TABLE IF EXISTS reconciliations;

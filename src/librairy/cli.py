@@ -545,8 +545,16 @@ def _ai_command(args: argparse.Namespace, conn: sqlite3.Connection, settings: Se
         provider = provider_for_config(config, settings)
         health = provider.health(settings.ai_timeout)
         answer = None
+        problem = ""
         if health.ok:
-            answer = provider.classify(_synthetic_view(), settings.ai_timeout)
+            #  A server can pass its health check and still refuse to classify
+            #  — a model that is listed but not loaded, a rejected field. That
+            #  is now an exception rather than a silent `None`, and a test
+            #  button that raises tells nobody anything.
+            try:
+                answer = provider.classify(_synthetic_view(), settings.ai_timeout)
+            except (OSError, RuntimeError) as exc:
+                problem = str(exc) or exc.__class__.__name__
         ok = health.ok and answer is not None
         # `used` means the classifier reached for it, not that someone pressed
         # Test. Recording a test as use made a disabled provider look active.
@@ -558,6 +566,7 @@ def _ai_command(args: argparse.Namespace, conn: sqlite3.Connection, settings: Se
             "enabled": config.enabled,
             "health": asdict(health),
             "answer": answer.model_dump() if answer else None,
+            "problem": problem,
             "partial": not ok,
         }
     return None

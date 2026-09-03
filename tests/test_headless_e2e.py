@@ -48,7 +48,12 @@ def test_headless_worker_plan_commit_and_undo(tmp_path: Path) -> None:
     execution = execute_plan(conn, plan_id, settings)
 
     assert summary.proposed == 1
-    assert summary.pending == 1
+    #  `mystery.bin` is a file nothing can identify, and there is no AI here to
+    #  ask about it. It is held rather than guessed at — see
+    #  `librairy/waiting.py` — so it never becomes a weak proposal, and the
+    #  count that used to be `pending` is `held`.
+    assert summary.pending == 0
+    assert summary.held == 1
     assert summary.duplicate_candidates == 1
     assert execution.done == 2
     assert any(path.is_file() for path in (settings.library_dir / "Projects").rglob("*"))

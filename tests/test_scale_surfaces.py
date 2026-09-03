@@ -882,3 +882,44 @@ def test_browse_reports_the_last_comparison_and_says_how_old_it_is(tmp_path) -> 
 
     assert data["consistency"]["measured"] is True
     assert data["consistency"]["taken"]
+
+
+def test_the_held_list_costs_the_same_at_forty_thousand_as_at_forty(tmp_path) -> None:  # noqa: ANN001
+    """A provider that was off overnight leaves tens of thousands of these.
+
+    The section shows counts over the whole held set and one bounded page of
+    rows, so both the statement count and the number of rows built have to be
+    flat in the size of that set. The counts come from `GROUP BY`; the page
+    comes from `LIMIT`.
+    """
+    from librairy import waiting
+
+    conn, _ = build(
+        tmp_path, library=100, inbox=100, findings=0, quarantine=0, history=0
+    )
+    ids = [
+        int(row["id"])
+        for row in conn.execute(
+            "SELECT id FROM items WHERE root='inbox' ORDER BY id LIMIT 60"
+        )
+    ]
+    assert len(ids) == 60, "fixture too small to tell a bounded page from a whole list"
+
+    shapes = []
+    for wanted in (ids[:10], ids):
+        conn.execute("DELETE FROM processing_waits")
+        conn.execute("UPDATE items SET state='discovered' WHERE root='inbox'")
+        for item_id in wanted:
+            waiting.hold(conn, item_id, waiting.UNAVAILABLE, "nothing to ask")
+        counting = Counting(conn)
+        summary = waiting.summary(counting)
+        assert summary["waiting_total"] == len(wanted)
+        shapes.append((len(counting.queries), len(summary["waiting_rows"])))
+
+    (small_queries, small_rows), (large_queries, large_rows) = shapes
+    assert small_queries == large_queries, (
+        f"six times the held files cost {large_queries} statements against "
+        f"{small_queries} — something in the summary is per-file"
+    )
+    assert small_rows == 10
+    assert large_rows == waiting.PAGE_SIZE, "one page, however many are held"

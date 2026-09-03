@@ -66,6 +66,7 @@
      selection scope stays exactly where it was. #}
   {% set jump = [
        ('#review-collections', 'Arrived together', collections|length),
+       ('#review-waiting', 'Needs more processing', waiting_total),
        ('#review-list', 'New files', total),
        ('#library-audit', 'Existing library', audit_open),
        ('#storage-opportunities', 'Storage', storage.count or 0),
@@ -239,6 +240,11 @@
   {% endif %}
 
   {% include "partials/review_collections.html" %}
+
+  {# Above the queue, not below it. These are the files the machine stopped on
+     rather than guessed at, and a person who cannot see that has no way to
+     know the inbox count in front of them is the whole story. #}
+  {% include "partials/review_waiting.html" %}
 
   {# One bar for everything you do to this list — how it is sorted, what is
      filtered out of it, and what happens to a selection. Three separate bands

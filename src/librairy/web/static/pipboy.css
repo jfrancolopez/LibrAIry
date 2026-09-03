@@ -3606,3 +3606,34 @@ summary.timeline-head::-webkit-details-marker { display: none; }
   border: var(--border-thin) solid var(--border);
   border-radius: var(--radius-ui); background: var(--bg-input);
 }
+
+/* Files the analysis stopped on rather than guessed at. Three counts, then one
+   bounded page of rows — the reason is the column that matters, so it gets the
+   room, and the paths wrap under their names instead of stretching the table.
+   See `librairy/waiting.py`. */
+.waiting-reasons { list-style: none; padding: 0; margin: var(--space-2) 0; display: grid; gap: var(--space-2); }
+.waiting-reasons li { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2); }
+.waiting-reasons .muted { flex: 1 1 20rem; font-size: var(--text-sm); }
+.waiting-table { width: 100%; border-collapse: collapse; margin: var(--space-2) 0; }
+.waiting-table th, .waiting-table td {
+  text-align: left; vertical-align: top;
+  padding: var(--space-1) var(--space-2);
+  border-bottom: var(--border-thin) solid var(--border);
+}
+.waiting-table td .muted { display: block; font-size: var(--text-sm); }
+.waiting-path { overflow-wrap: anywhere; }
+
+@media (max-width: 600px) {
+  /* Four columns into 375px is four columns of one character each — measured,
+     and "nothing past the edge" was true of it, which is exactly the class of
+     thing a geometry check cannot catch. Each row becomes a block: the
+     filename, its folder, why it is here, and how long it has been. The header
+     goes with the columns, because a stacked row has nothing to align to. */
+  .waiting-table, .waiting-table tbody, .waiting-table tr, .waiting-table td { display: block; }
+  .waiting-table thead { display: none; }
+  .waiting-table tr {
+    border-bottom: var(--border-thin) solid var(--border);
+    padding: var(--space-2) 0;
+  }
+  .waiting-table td { border: 0; padding: 0 0 var(--space-1); }
+}

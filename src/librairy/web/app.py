@@ -18,7 +18,7 @@ from fastapi.responses import (
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from librairy import __version__
+from librairy import __version__, waiting
 from librairy.ai.lmstudio import diagnose as lmstudio_diagnose
 from librairy.ai.lmstudio import is_chat_model, normalize_host
 from librairy.ai.lmstudio import probe as lmstudio_probe
@@ -1038,6 +1038,72 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             #  the second page of an expansion was computed under looser
             #  filters than the first and members went missing between them.
             {**data, "filters": filters, "qs": filters.query},
+        )
+
+    @app.get("/review/waiting", response_class=HTMLResponse)
+    def review_waiting(request: Request, page: PageNumber = 1) -> HTMLResponse:
+        """One page of the files LibrAIry declined to answer.
+
+        A fragment of Review rather than a page of its own, on purpose. These
+        are inbox files and they belong with the rest of the inbox work; an "AI
+        queue" screen would be a fourth place to remember to look, and the
+        first place things go to be forgotten.
+        """
+        return TEMPLATES.TemplateResponse(
+            request,
+            "partials/review_waiting.html",
+            {"request": request, **waiting.summary(conn, page)},
+        )
+
+    @app.post("/review/waiting", response_class=HTMLResponse)
+    def review_waiting_action(
+        request: Request,
+        action: Annotated[str, Form()] = "",
+        item_id: Annotated[list[int], Form()] = [],  # noqa: B006 - starlette form list
+        all_waiting: Annotated[str, Form()] = "",
+        page: Annotated[int, Form()] = 1,
+    ) -> HTMLResponse:
+        """What the owner says about held files. Never touches a file.
+
+        Three answers and no fourth. `release` is the only one that produces a
+        proposal, and it produces exactly the weak one LibrAIry refused to
+        publish by itself — which is the whole distinction the feature rests
+        on: the machine will not guess, and a person may still ask it to, having
+        been told how thin the evidence is. The proposal then goes through
+        Review and Commit like every other one, so nothing here can move a byte.
+
+        `all_waiting` resolves on the server, over the held set rather than the
+        rendered page. Somebody with four thousand of these cannot select them
+        by hand, and a button that silently meant "the twenty-five you can see"
+        would be the same lie the group actions were fixed of in M1-02.
+        """
+        chosen = waiting.held_ids(conn) if all_waiting == "true" else list(item_id)
+        if action == "release":
+            changed = waiting.release(conn, chosen)
+            notice = (
+                f"{changed} file{'' if changed == 1 else 's'} will be proposed from "
+                "what LibrAIry already knows, on the next pass. Nothing has moved."
+                if changed
+                else "Nothing matched, so nothing changed."
+            )
+        elif action in {"pause", "unpause"}:
+            changed = waiting.set_paused(conn, chosen, action == "pause")
+            resumed = "paused" if action == "pause" else "back to resuming automatically"
+            notice = (
+                f"{changed} file{'' if changed == 1 else 's'} {resumed}."
+                if changed
+                else "Nothing matched, so nothing changed."
+            )
+        else:
+            raise HTTPException(status_code=422, detail=f"unknown action: {action}")
+        return TEMPLATES.TemplateResponse(
+            request,
+            "partials/review_waiting.html",
+            {
+                "request": request,
+                **waiting.summary(conn, page),
+                "waiting_notice": notice,
+            },
         )
 
     @app.post("/review/undo", response_class=HTMLResponse)

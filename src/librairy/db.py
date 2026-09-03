@@ -9,7 +9,7 @@ from pathlib import Path
 from librairy.config import Settings
 
 LOGGER = logging.getLogger(__name__)
-SCHEMA_VERSION = 50
+SCHEMA_VERSION = 51
 
 
 class DatabaseVersionError(RuntimeError):
@@ -1459,6 +1459,38 @@ CREATE INDEX IF NOT EXISTS idx_history_destination
 """
 
 
+MIGRATION_051 = """
+-- Files held because there was nothing left worth asking.
+--
+-- Analysis used to fall back to whatever the filename suggested when the
+-- configured AI provider was off or unreachable: `ai/orchestrator.py` logged
+-- "providers unavailable ... continuing with deterministic results" and a
+-- guess became a proposal that looked exactly like a considered answer.
+--
+-- One row per held file, keyed by the item so that recording a hold twice is
+-- one row and not two -- an outage that lasts eleven worker cycles must not
+-- leave eleven records of the same file. `since` survives every re-hold; only
+-- `attempts` and `updated_at` move.
+--
+-- Not a job queue. There is no payload, no ordering, no lease and no worker
+-- id: the work to be done is already described by the item, and the state
+-- machine that owns it is `items.state`. This table only says *why* a file is
+-- in the state it is in, and what the owner has said about it.
+CREATE TABLE processing_waits (
+  item_id     INTEGER PRIMARY KEY REFERENCES items(id),
+  reason      TEXT NOT NULL,
+  detail      TEXT NOT NULL DEFAULT '',
+  attempts    INTEGER NOT NULL DEFAULT 1,
+  paused      INTEGER NOT NULL DEFAULT 0,
+  released_at TEXT,
+  since       TEXT NOT NULL,
+  updated_at  TEXT NOT NULL
+);
+CREATE INDEX idx_processing_waits_reason ON processing_waits(reason);
+CREATE INDEX idx_processing_waits_resume ON processing_waits(paused, updated_at);
+"""
+
+
 MIGRATIONS = {
     1: MIGRATION_001,
     2: MIGRATION_002,
@@ -1510,6 +1542,7 @@ MIGRATIONS = {
     48: MIGRATION_048,
     49: MIGRATION_049,
     50: MIGRATION_050,
+    51: MIGRATION_051,
 }
 
 

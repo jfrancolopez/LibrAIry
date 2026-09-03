@@ -40,6 +40,11 @@ CATEGORY_LABEL = {
     "books": "Books",
     "projects": "Projects",
     "misc": "Unsorted",
+    #  Not a category. A file the analysis declined to answer has none, and
+    #  saying "Not analysed yet" about it is untrue in the one way that matters
+    #  — it *was* analysed, and this is why there is no answer. The section
+    #  below the card says the same thing at length.
+    "waiting": "Waiting for AI",
     "": "Not analysed yet",
 }
 

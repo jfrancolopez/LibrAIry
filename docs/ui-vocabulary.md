@@ -40,6 +40,7 @@ and `Dismiss suggestion` change no file at all.
 | **Current** | where the file is now |
 | **After Commit** | where it would be if you committed |
 | **Waiting for Commit** | approved, and nothing has moved |
+| **Waiting for AI** | analysis stopped rather than guess, and is waiting for a provider |
 | **Undo** | reverse something that actually happened |
 | **Cancel request** / **Send back to Review** | withdraw something that has *not* happened |
 | **Dismissed** | you told LibrAIry not to suggest this for now |
@@ -47,6 +48,14 @@ and `Dismiss suggestion` change no file at all.
 | **Preserved original** | the original kept when an optimized version was adopted |
 | **Delete queue** | a folder you empty yourself; LibrAIry has still deleted nothing |
 | **Set aside** | a file moved out of the library into Quarantine, where it can be restored |
+
+**"Waiting" is never a word on its own.** Three things in LibrAIry wait and they
+wait for different events: an approval waits for Commit, an encode waits for a
+slot, and a held file waits for an AI provider. Each is written out in full
+wherever it appears — *Waiting for Commit*, *Waiting* as an optimization job
+state inside the queue that owns it, *Waiting for AI* — and the section heading
+for the third is **Needs more processing**, which is what the reader wants to
+know before they want to know why.
 
 Two rules follow from the table, and `tests/test_control_inventory.py` holds
 both against every control on every populated page:

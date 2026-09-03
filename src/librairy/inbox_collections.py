@@ -378,13 +378,21 @@ def _category_counts(
     Saying so is the point: one import does not get one category, and a summary
     that picked the commonest and called it the collection's kind would be
     classifying, which is not this module's job.
+
+    A held file gets a bucket of its own rather than the empty category. Both
+    have no proposal, and they are not the same fact: one has not been looked
+    at yet and the other has, and was declined. Counting them together made a
+    card say "Not analysed yet 3" beside a section of the same page saying
+    those three files were analysed and are waiting for AI.
     """
     if not folders:
         return {}
     placeholders = ",".join("?" * len(folders))
     rows = conn.execute(
         f"""
-        SELECT {_FOLDER} AS folder, COALESCE(p.category, '') AS category,
+        SELECT {_FOLDER} AS folder,
+               CASE WHEN i.state = 'waiting' THEN 'waiting'
+                    ELSE COALESCE(p.category, '') END AS category,
                COUNT(*) AS n
         {_MEMBER_JOIN} AND {_FOLDER} IN ({placeholders})
         GROUP BY folder, category

@@ -15,6 +15,11 @@ ITEM_STATES = {
     "quarantined",
     "postponed",
     "pending",
+    # Held because there was nothing left worth asking. Not a decision and not
+    # a failure: the file is intact, nothing has been guessed about it, and it
+    # is waiting for the configured AI provider to answer again -- or for its
+    # owner. See `librairy/waiting.py`.
+    "waiting",
 }
 
 LEGAL_TRANSITIONS = {
@@ -22,6 +27,7 @@ LEGAL_TRANSITIONS = {
         "unstable",
         "proposed",
         "pending",
+        "waiting",
         "quarantine-proposed",
         "committed",
         "quarantined",
@@ -58,6 +64,16 @@ LEGAL_TRANSITIONS = {
     },
     "quarantined": {"discovered"},
     "committed": {"discovered"},
+    # Back to the queue, and nowhere else. A held file has no proposal to
+    # approve, postpone or reject, so every way out of here -- the provider
+    # answering again, the owner saying "propose from what you have", a
+    # re-analysis -- is the same way out: it becomes an ordinary undiscovered
+    # file again and the next analysis pass decides it.
+    #
+    # Except one. A duplicate found while a file waits is a stronger answer
+    # than anything the provider was going to give, and staging it does not
+    # need a provider to come back first.
+    "waiting": {"discovered", "quarantine-proposed"},
 }
 
 RESET_ON_FINGERPRINT_CHANGE = {
@@ -66,6 +82,9 @@ RESET_ON_FINGERPRINT_CHANGE = {
     "quarantine-proposed",
     "postponed",
     "pending",
+    # New bytes are new evidence. A file that was held because nothing could
+    # answer it may well be answerable now that it is a different file.
+    "waiting",
 }
 
 

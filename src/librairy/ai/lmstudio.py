@@ -19,7 +19,7 @@ from typing import Any
 from urllib import request
 from urllib.error import HTTPError
 
-from librairy.ai.base import AIAnswer, HealthResult, ProviderConfig
+from librairy.ai.base import AIAnswer, HealthResult, ProviderConfig, ProviderUnreachable
 from librairy.ai.prompt import prompt_for, validate_ai_response
 
 DEFAULT_PORT = 1234
@@ -78,17 +78,22 @@ class LMStudioProvider:
                 # A 4xx is a configuration mistake — wrong model name, a
                 # rejected field — and it will fail identically forever. It
                 # used to be swallowed into a silent None, so the only symptom
-                # was AI mysteriously doing nothing.
+                # was AI mysteriously doing nothing. It is raised now, which is
+                # what lets a file held because of it say so.
                 LOGGER.warning(
                     "LM Studio rejected the request (HTTP %s): %s",
                     exc.code,
                     _body_snippet(exc),
                 )
-                return None
+                raise RuntimeError(f"lm studio refused the request: http {exc.code}") from exc
             except OSError as exc:
                 if attempt >= self.retries:
                     LOGGER.warning("LM Studio unreachable: %s", _error_message(exc))
-                    return None
+                    #  Not `None`. A server that never answered and a model
+                    #  with nothing to say are different facts, and holding a
+                    #  file for one is a different sentence from holding it for
+                    #  the other. See `librairy/waiting.py`.
+                    raise ProviderUnreachable(_error_message(exc)) from exc
                 continue
             content = (payload.get("choices") or [{}])[0].get("message", {}).get("content")
             if not isinstance(content, str):

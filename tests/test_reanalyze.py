@@ -88,15 +88,29 @@ def test_reanalyze_skips_items_that_have_gone_missing(tmp_path: Path) -> None:
 
 
 def test_reanalyze_supersedes_rather_than_duplicating_proposals(tmp_path: Path) -> None:
+    """One live proposal per item that has one, however many passes run.
+
+    `notes.txt` has no identity to read and there is no AI configured here, so
+    it is held rather than answered weakly and never gets a proposal at all —
+    see `librairy/waiting.py`. That is what makes the assertion worth making
+    per item rather than as one total: a count of two would have passed just as
+    happily on one item holding two live proposals.
+    """
     conn, settings = _seeded(tmp_path)
     analyze_items(conn, settings)
 
     analyze_items(conn, settings, reanalyze=True)
 
-    live = conn.execute(
-        "SELECT COUNT(*) AS n FROM proposals WHERE status != 'superseded'"
-    ).fetchone()["n"]
-    assert live == 2, "each item must keep exactly one live proposal"
+    per_item = [
+        row["n"]
+        for row in conn.execute(
+            "SELECT COUNT(*) AS n FROM proposals WHERE status != 'superseded' "
+            "GROUP BY item_id"
+        )
+    ]
+    assert per_item == [1], "each item must keep exactly one live proposal"
+    held = conn.execute("SELECT COUNT(*) AS n FROM processing_waits").fetchone()["n"]
+    assert held == 1, "and the one nothing could answer is held, not proposed"
 
 
 def test_analysis_actually_puts_files_into_groups(tmp_path: Path) -> None:

@@ -52,6 +52,52 @@ boundary is stamped when your database first reaches this version, and only
 files proposed or re-analysed after that are answered automatically. A queue
 you have been going through for a fortnight is still yours.
 
+### Processing
+
+**When the evidence runs out, LibrAIry stops instead of guessing.** Analysis has
+always had a floor: when the filename, the tags, the catalogs and the readers
+between them could not reach the confidence threshold, it asked the configured
+AI provider. When *that* could not answer either — the provider is off, the
+server is not running, the model name is wrong — it logged a warning and made a
+proposal from the guess it happened to be holding. Nothing on the row said the
+machine had not, in fact, finished.
+
+Those files are now **held**, in a durable state, with the reason on the row.
+Nothing is proposed about them, nothing is approved, and nothing on disk moves.
+They do not hold up the rest of the inbox: everything else in the same batch is
+classified exactly as before. They appear in a *Needs more processing* section
+of Review — not a queue page of its own — and as a concern on Health.
+
+Three reasons, and they are genuinely different questions:
+
+| | |
+|---|---|
+| **Waiting for AI** | nothing could be asked: no provider is switched on, or none answered |
+| **AI processing failed** | a provider was reached and the attempt broke |
+| **Needs more evidence** | everything was asked and answered, and it was still not enough |
+
+The first two come back on their own. The worker asks the configured provider
+whether it is answering again — only while something is actually waiting on
+one — and releases the held files a bounded batch at a time when it is. The
+third resumes for nobody, because nothing about the provider was wrong, and it
+says so rather than sitting in a queue that will never move for it.
+
+You can answer any of them yourself at any time: **Decide without AI** produces
+exactly the weak proposal LibrAIry refused to publish on its own, having told
+you it is weak, and it then goes through Review and Commit like any other.
+**Pause** stops one resuming automatically; **Resume waiting** puts it back.
+Holding is idempotent — an outage lasting eleven worker cycles is one file
+waiting with eleven attempts against one date, not eleven records — and a
+restart mid-outage loses and duplicates nothing.
+
+Telling an outage from a failure needed the providers to be honest about which
+had happened. Ollama and LM Studio both swallowed a refused connection into the
+same `None` they return for "I have nothing to say", so a configured provider
+that was simply not running was indistinguishable from one that had nothing to
+add. Both now say which, and `librairy ai test` reports a server that passes
+its health check and then refuses to classify instead of returning a bare
+failure. **Schema 51** records the held files and why.
+
 ### Performance
 
 Every page in LibrAIry now completes at a million files, and what a page costs

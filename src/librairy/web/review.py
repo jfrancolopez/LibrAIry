@@ -7,6 +7,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 from urllib.parse import urlencode
 
+from librairy import waiting
 from librairy.arrival_comparison import describe_many as describe_arrivals
 from librairy.audit import FOLDER_KINDS, KINDS, findings_by_ids
 from librairy.audit_duplicates import copies as duplicate_copies
@@ -193,7 +194,10 @@ class ReviewFilters:
 
 
 def review_data(
-    conn: sqlite3.Connection, filters: ReviewFilters, settings: Settings | None = None
+    conn: sqlite3.Connection,
+    filters: ReviewFilters,
+    settings: Settings | None = None,
+    waiting_page: int = 1,
 ) -> dict[str, object]:
     total = _proposal_count(conn, filters)
     #  Two views, and they page different things. Grouped, the page is a page
@@ -260,6 +264,13 @@ def review_data(
         # The quietest list on the page. Advisory, optional, and separate from
         # both the inbox and the audit — including in what may select it.
         "storage": storage_view(conn),
+        #  Files LibrAIry refused to have an opinion about, and why. Not part
+        #  of the list above and deliberately so: these have no proposal, so
+        #  there is nothing to approve, postpone or reject about them. Counts
+        #  plus one bounded page, never a row per held file — a provider that
+        #  was off overnight can leave tens of thousands of these.
+        #  See `librairy/waiting.py`.
+        **waiting.summary(conn, waiting_page),
     }
 
 

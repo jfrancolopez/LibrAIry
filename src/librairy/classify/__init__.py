@@ -2,11 +2,20 @@ from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass, replace
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
-from librairy.ai.orchestrator import AIBatchState, apply_ai_if_needed
+from librairy import waiting
+from librairy.ai.orchestrator import (
+    NOT_NEEDED,
+    AIBatchState,
+    apply_ai_if_needed,
+)
 from librairy.catalogs import catalog_enabled
-from librairy.classify.companions import associate_companions, sidecar_kind
+from librairy.classify.companions import (
+    associate_companions,
+    is_companion,
+    sidecar_kind,
+)
 from librairy.classify.disc import classify_disc
 from librairy.classify.documents import classify_document_like
 from librairy.classify.grouping import GroupInput, group_proposals
@@ -41,12 +50,21 @@ class AnalyzeSummary:
     proposed: int
     pending: int
     requeued: int = 0
+    #  Files the pass deliberately declined to answer. Counted separately from
+    #  `pending`, because they are not the same thing at all: a pending file is
+    #  one LibrAIry has an opinion about and no destination for, and a held one
+    #  is a file it refused to form an opinion about. See `librairy/waiting.py`.
+    held: int = 0
 
 
 # Undecided: the owner has not acted on these, so re-proposing costs them
 # nothing. Anything approved, committed, or quarantined is a decision already
 # made and is never touched.
-REANALYZABLE_STATES = ("proposed", "pending", "postponed")
+#  'waiting' too: "Analyse again" means try the whole thing again, and a file
+#  held because nothing could answer it is the one most likely to be answered
+#  by a pass run after somebody changed something. If the answer is still no,
+#  it is simply held again — one row, one more attempt against the same date.
+REANALYZABLE_STATES = ("proposed", "pending", "postponed", "waiting")
 
 
 def requeue_for_analysis(conn: sqlite3.Connection, root: str = "inbox") -> int:
@@ -80,10 +98,23 @@ def analyze_items(
     items = ready_items(conn, "inbox")
     if limit is not None:
         items = items[:limit]
-    proposed = pending = 0
+    proposed = pending = held = 0
     ai_state = AIBatchState({})
+    ids = [int(item["id"]) for item in items]
+    #  Two questions asked once for the whole batch rather than once per file.
+    #  Both are about *this* file and neither changes while the batch runs, and
+    #  asking them per item would put two statements per file back into the one
+    #  pass that has to stay cheap at a million.
+    freed = waiting.released(conn, ids)
+    opinions = _existing_proposals(conn, ids)
+    answered: list[int] = []
     for item in items:
         item_model = _item_from_row(item)
+        #  Reset per file, not per batch. `classify_item` answers a disc, and
+        #  `_enriched` answers a sidecar, without ever reaching the providers —
+        #  so without this the file after one of those would be judged on the
+        #  attempt made for the file before it.
+        ai_state.attempt = NOT_NEEDED
         result = classify_item(
             settings.inbox_dir / item["relpath"],
             item["relpath"],
@@ -92,7 +123,17 @@ def analyze_items(
             item=item_model,
             ai_state=ai_state,
         )
+        attempt = ai_state.attempt
         result = _with_runtime_destination(conn, settings, result)
+        if _hold_instead(result, attempt, item, freed, opinions):
+            waiting.hold(
+                conn,
+                int(item["id"]),
+                waiting.reason_for(attempt),
+                waiting.detail_for(attempt),
+            )
+            held += 1
+            continue
         proposal_id = upsert_proposal(
             conn,
             item_id=item["id"],
@@ -103,6 +144,7 @@ def analyze_items(
             evidence=list(result.evidence),
             group_id=_group_id(conn, item, result),
         )
+        answered.append(int(item["id"]))
         if result.dest_relpath:
             proposed += 1
             transition_item(conn, item["id"], "proposed")
@@ -110,13 +152,70 @@ def analyze_items(
             pending += 1
             transition_item(conn, item["id"], "pending")
         conn.execute("UPDATE proposals SET updated_at=updated_at WHERE id=?", (proposal_id,))
+    #  Anything that got an answer this pass is no longer waiting for one,
+    #  whether it was held a moment ago or a fortnight ago.
+    waiting.clear(conn, answered)
     # After the loop, not inside it: the cover and the tracks are separate
     # items and either may be classified first, so an album's destination is
     # only reliably known once every file in the batch has one.
     artwork = associate_companions(conn, settings)
     proposed += artwork.associated
     pending += artwork.already_present
-    return AnalyzeSummary(len(items), proposed, pending, requeued)
+    return AnalyzeSummary(len(items), proposed, pending, requeued, held)
+
+
+def _existing_proposals(conn: sqlite3.Connection, item_ids: list[int]) -> set[int]:
+    """Of these, the ones LibrAIry has already published an opinion about.
+
+    A file with a live proposal is never held, however weak the pass that
+    produced it. Holding it would put the same file in two places saying two
+    things — a row in Review offering four buttons, and a line in the held list
+    saying nothing has been decided — and the person would be right either way
+    they read it. "Analyse again" with the provider down therefore keeps what it
+    had, which is also the only answer that does not lose work.
+    """
+    if not item_ids:
+        return set()
+    placeholders = ",".join("?" for _ in item_ids)
+    return {
+        int(row["item_id"])
+        for row in conn.execute(
+            "SELECT item_id FROM proposals "  # noqa: S608 - placeholders only
+            f"WHERE status != 'superseded' AND item_id IN ({placeholders})",
+            item_ids,
+        )
+    }
+
+
+def _hold_instead(  # noqa: ANN001
+    result, attempt, item: sqlite3.Row, freed: set[int], opinions: set[int]
+) -> bool:
+    """Should this file be held rather than proposed weakly?
+
+    Five conditions, all of which have to hold, and each of which is somebody's
+    protection:
+
+    * **there is no destination.** A file that reached the threshold is
+      answered, and how it got there is not this function's business.
+    * **AI was actually needed.** A disc, and a file classified from its own
+      tags, never reach a provider — so nothing about a provider explains
+      anything about them.
+    * **it is not a companion.** A cover and a subtitle get their identity
+      after this loop, from the media they belong to, and `associate_companions`
+      finds them by looking for undecided *proposals*. Holding one would put a
+      cover into the held list saying an AI could not identify it, when the
+      album beside it was about to.
+    * **the owner has not already said "propose from what you have".** That is
+      a decision, and it outranks this one permanently — see `waiting.release`.
+    * **there is no live proposal.** See `_existing_proposals`.
+    """
+    return (
+        not result.dest_relpath
+        and getattr(attempt, "needed", False)
+        and not is_companion(PurePosixPath(item["relpath"]).name)
+        and int(item["id"]) not in freed
+        and int(item["id"]) not in opinions
+    )
 
 
 def _group_id(conn: sqlite3.Connection, item: sqlite3.Row, result) -> int | None:

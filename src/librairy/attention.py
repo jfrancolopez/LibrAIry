@@ -167,6 +167,7 @@ def report(conn: sqlite3.Connection, settings=None, counts=None) -> Report:  # n
         _delete_queue,
         _audit,
         _search,
+        _waiting,
         _photos,
         _format_impact,
         _blocked_undo,
@@ -585,6 +586,79 @@ def _search(conn: sqlite3.Connection, settings=None, counts=None) -> list[Concer
                 detail="They are in your library and Browse finds them; Search does "
                        "not. The Search index panel below has the numbers.",
                 count=found,
+            )
+        )
+    return concerns
+
+
+# --- files nothing could answer -----------------------------------------------
+
+
+def _waiting(conn: sqlite3.Connection, settings=None, counts=None) -> list[Concern]:  # noqa: ANN001, ARG001
+    """Files held because the evidence ran out and AI could not settle it.
+
+    Two concerns rather than one, because they are answered on different days
+    by different people. A provider that is down or broken is machinery, and it
+    is `ATTENTION`: nothing is lost, the files resume by themselves, and the
+    person who can fix it is the person who set the provider up. Files waiting
+    on *evidence* resume for nobody, so they are the ones that will still be
+    here next month unless somebody decides them — and that is a decision, not
+    a fault, which is why neither of these is `ACTION`. Nothing here is broken.
+
+    Counted, never listed. A provider that was off overnight can hold tens of
+    thousands of files and this stays two aggregate queries either way; the
+    list itself is a bounded section of Review.
+    """
+    from librairy import waiting
+
+    counted = waiting.counts(conn)
+    concerns: list[Concern] = []
+    machinery = sum(counted.get(reason, 0) for reason in waiting.RESUMABLE)
+    if machinery:
+        reason = (
+            waiting.FAILED if counted.get(waiting.FAILED) else waiting.UNAVAILABLE
+        )
+        concerns.append(
+            Concern(
+                code="waiting-provider",
+                level=ATTENTION,
+                headline=(
+                    f"{machinery} file{'' if machinery == 1 else 's'} "
+                    f"{'is' if machinery == 1 else 'are'} waiting for AI"
+                ),
+                detail="Nothing was guessed about them and nothing is lost. They "
+                       "return to the queue on their own when a provider answers "
+                       "again, and you can decide any of them by hand meanwhile.",
+                examples=tuple(
+                    Example(name) for name in waiting.examples(conn, reason)
+                ),
+                more=max(0, machinery - SHOWN),
+                href="/review#review-waiting",
+                action="Review",
+                count=machinery,
+            )
+        )
+    stalled = counted.get(waiting.EVIDENCE, 0)
+    if stalled:
+        concerns.append(
+            Concern(
+                code="waiting-evidence",
+                level=ATTENTION,
+                headline=(
+                    f"{stalled} file{'' if stalled == 1 else 's'} "
+                    f"{'needs' if stalled == 1 else 'need'} more than anything "
+                    "here can tell"
+                ),
+                detail="Everything that could be asked was asked and answered, and "
+                       "it was still not enough. Nothing is wrong, so nothing will "
+                       "change on its own — these wait for you.",
+                examples=tuple(
+                    Example(name) for name in waiting.examples(conn, waiting.EVIDENCE)
+                ),
+                more=max(0, stalled - SHOWN),
+                href="/review#review-waiting",
+                action="Review",
+                count=stalled,
             )
         )
     return concerns

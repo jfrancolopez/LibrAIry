@@ -519,7 +519,28 @@ finds. Then decide whether to publish.
 
 ## M2-01 · Waiting for AI
 
-**P1 · M · Medium risk**
+**P1 · M · Medium risk · DONE 2026-09-03** — `librairy/waiting.py`, schema 51,
+`tests/test_waiting.py`.
+
+> **What shipped.** A durable lifecycle state (`items.state = 'waiting'`) and a
+> row saying why, in three reasons that are different questions: nothing could
+> be asked, something was reached and broke, everything was asked and it was
+> still not enough. The first two resume by themselves when a provider answers
+> again; the third resumes for nobody and says so. Held files appear as a
+> section of Review and a concern on Health, are answerable by hand at any
+> moment, and never block the rest of the inbox.
+>
+> **What it needed that was not planned for.** Ollama and LM Studio both
+> swallowed a refused connection into the same `None` they return for "I have
+> nothing to say", so "the provider is unavailable" and "the provider had
+> nothing to add" were the same fact from outside. `ProviderUnreachable` is
+> what makes the three reasons distinguishable at all.
+>
+> **Carried to M2-03.** The recovery probe is idle-cycle work bounded by a
+> one-minute rate limit, and the resume batch is a constant. Neither is under a
+> resource policy yet, because there is not one to be under. When
+> `ResourcePolicy` is generalized out of Storage Optimization, both belong to
+> the AI axis.
 
 **Problem.** When deterministic and catalog evidence are not enough and the
 configured AI provider is disabled or unreachable, `ai/orchestrator.py` logs

@@ -617,8 +617,55 @@ def build_app(root: Path):  # noqa: ANN201
     #  proposal by hand expects to own the rows it made.
     _a_photo_event_in_the_inbox(conn, settings)
     _an_album_and_a_season_in_the_inbox(conn, settings)
+    #  After every scene that scans the inbox: this one puts files into a state
+    #  that has no proposal at all, and a later scan would find them 'waiting'
+    #  and leave them there, but a later *analysis* would try to answer them.
+    _files_waiting_for_ai(conn, settings)
 
     return create_app(settings, conn)
+
+
+def _files_waiting_for_ai(conn, settings: Settings) -> None:  # noqa: ANN001
+    """Three files the analysis refused to guess at, one per reason.
+
+    All three reasons at once, because the section's whole claim is that they
+    are different questions: two of these come back on their own when the
+    provider does, and the third never will and says so. A fixture showing only
+    the first would photograph a screen that cannot be told from a queue.
+
+    Written the way analysis writes it — `waiting.hold` and the item state —
+    rather than by inserting rows, so the fixture cannot drift from the
+    behaviour. Nothing here reaches a provider; there is none configured.
+    """
+    from librairy import waiting
+
+    held = {
+        "scan_20240817_0001.pdf": (
+            waiting.UNAVAILABLE,
+            "ollama-primary did not answer.",
+        ),
+        "IMG_2291.HEIC": (
+            waiting.FAILED,
+            "lmstudio was reached and the attempt failed.",
+        ),
+        "track_07.wav": (
+            waiting.EVIDENCE,
+            "ollama-primary answered, and it was not enough.",
+        ),
+    }
+    folder = settings.inbox_dir / "Old Drive"
+    folder.mkdir(parents=True, exist_ok=True)
+    for name in held:
+        (folder / name).write_bytes(b"?" * 2048)
+    scan_root(conn, "inbox", settings.inbox_dir, settings)
+    for name, (reason, detail) in held.items():
+        row = conn.execute(
+            "SELECT id FROM items WHERE root='inbox' AND relpath=?",
+            (f"Old Drive/{name}",),
+        ).fetchone()
+        if row is None:  # pragma: no cover - the scanner holds unstable files
+            continue
+        waiting.hold(conn, int(row["id"]), reason, detail)
 
 
 def _similar_representations(conn) -> None:  # noqa: ANN001

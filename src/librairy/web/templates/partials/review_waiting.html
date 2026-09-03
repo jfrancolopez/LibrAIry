@@ -1,0 +1,133 @@
+{# Files LibrAIry refused to have an opinion about.
+
+   A section of Review and deliberately not a page of its own: these are inbox
+   files, they belong with the rest of the inbox work, and giving them their
+   own destination would be a fourth place somebody has to remember to look.
+
+   Bounded like everything else here. The reasons are counts over the whole
+   held set; the rows are one page of them. A provider that was off overnight
+   can leave forty thousand of these, and this renders the same amount of HTML
+   for that as for one. #}
+{% if waiting_total or waiting_notice %}
+  <section class="metric wide" id="review-waiting" hx-target="#review-waiting" hx-swap="outerHTML">
+    <h2>Needs more processing</h2>
+    {% if waiting_notice %}
+      <p class="status ok">{{ waiting_notice }}</p>
+    {% endif %}
+    {% if waiting_total %}
+      <p class="muted">
+        {{ waiting_total }} file{{ 's' if waiting_total != 1 else '' }} where the
+        evidence ran out. LibrAIry has <strong>not</strong> guessed at
+        {{ 'them' if waiting_total != 1 else 'it' }} — nothing is proposed, nothing
+        is approved, and nothing on disk has moved. Everything else in your inbox
+        carried on without {{ 'them' if waiting_total != 1 else 'it' }}.
+      </p>
+
+      <ul class="waiting-reasons">
+        {% for group in waiting_reasons %}
+          <li>
+            <span class="badge{{ ' badge-info' if group.resumes else '' }}">{{ group.count }}</span>
+            <strong>{{ group.label }}</strong>
+            <span class="muted">{{ group.note }}</span>
+          </li>
+        {% endfor %}
+      </ul>
+
+      {# Which AI, and is it up. "Waiting for AI" with neither of those said is
+         a sentence that sends somebody to the Health page to find out what this
+         paragraph could have told them. #}
+      <p class="muted">
+        {% if waiting_providers %}
+          {% for provider in waiting_providers %}
+            <span class="mono">{{ provider.name }}</span>
+            {%- if provider.answering %} answered {{ provider.last_ok }}
+            {%- elif provider.error %} is not answering ({{ provider.error }})
+            {%- else %} has not answered yet
+            {%- endif %}{% if not loop.last %} · {% endif %}
+          {% endfor %}
+        {% else %}
+          {# What is *recorded*, not what is configured — a provider nothing has
+             ever asked has no status to report, and claiming it is switched off
+             would be a guess. Each row's own reason is sharper than this line
+             can be. #}
+          No AI provider has answered here yet. These files wait until one does,
+          or until you decide them yourself.
+        {% endif %}
+      </p>
+
+      {% if waiting_paused %}
+        <p class="muted">{{ waiting_paused }} of these
+          {{ 'are' if waiting_paused != 1 else 'is' }} paused, so
+          {{ 'they' if waiting_paused != 1 else 'it' }} will not resume
+          {{ 'themselves' if waiting_paused != 1 else 'itself' }} when a provider
+          answers again.</p>
+      {% endif %}
+
+      <form
+        id="waiting-actions"
+        hx-post="/review/waiting"
+        hx-headers='{"x-csrf-token":"{{ request.state.session.csrf_token }}"}'
+      >
+        <input type="hidden" name="page" value="{{ waiting_page }}">
+        <table class="waiting-table">
+          <thead>
+            <tr>
+              <th>Select</th>
+              <th>File</th>
+              <th>Why it is here</th>
+              <th>Waiting since</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in waiting_rows %}
+              <tr>
+                <td><input type="checkbox" name="item_id" value="{{ row.item_id }}"
+                           aria-label="Select {{ row.name }}"></td>
+                <td><span class="mono">{{ row.name }}</span>
+                  <span class="muted waiting-path">{{ row.relpath }}</span></td>
+                <td>
+                  <strong>{{ row.reason_label }}</strong>
+                  {% if row.detail %}<span class="muted">{{ row.detail }}</span>{% endif %}
+                  {# Said per row, because "waiting" with no end in sight is the
+                     one thing this feature must never accidentally build. #}
+                  <span class="muted">{% if row.paused %}Paused — it stays here until you
+                    say otherwise.{% elif row.resumes %}Resumes on its own when a provider
+                    answers.{% else %}Nothing will change on its own.{% endif %}</span>
+                </td>
+                <td class="muted">{{ row.waited }}{% if row.attempts > 1 %} ·
+                  {{ row.attempts }} attempts{% endif %}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+
+        {# Three answers, and the first is the only one that produces a proposal.
+           It is worded as what it costs: LibrAIry will not publish a weak
+           opinion on its own, and a person may still ask for one having been
+           told that it is weak. #}
+        <div class="button-row">
+          <button type="submit" name="action" value="release"
+            hx-confirm="Propose a destination for the selected files from what LibrAIry already knows? The evidence was not strong enough to answer on its own, so check each one before approving. Nothing moves until you commit.">Decide without AI</button>
+          <button type="submit" name="action" value="pause"
+            title="Leave these alone when a provider answers again.">Pause</button>
+          <button type="submit" name="action" value="unpause"
+            title="Let these resume when a provider answers again.">Resume waiting</button>
+          <label class="all-matching"><input type="checkbox" name="all_waiting" value="true">
+            all {{ waiting_total }}, not just this page</label>
+        </div>
+      </form>
+
+      {% if waiting_pages > 1 %}
+        <nav class="pager" aria-label="Held files">
+          {% if waiting_page > 1 %}
+            <button type="button" hx-get="/review/waiting?page={{ waiting_page - 1 }}">Previous held</button>
+          {% endif %}
+          <span class="muted">Page {{ waiting_page }} of {{ waiting_pages }}</span>
+          {% if waiting_page < waiting_pages %}
+            <button type="button" hx-get="/review/waiting?page={{ waiting_page + 1 }}">Next held</button>
+          {% endif %}
+        </nav>
+      {% endif %}
+    {% endif %}
+  </section>
+{% endif %}

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Any
 from urllib import error, request
 
-from librairy.ai.base import AIAnswer, HealthResult, ProviderConfig
+from librairy.ai.base import AIAnswer, HealthResult, ProviderConfig, ProviderUnreachable
 from librairy.ai.prompt import prompt_for, validate_ai_response
 
 
@@ -39,21 +39,35 @@ class OllamaProvider:
             "prompt": prompt_for(view),
             "stream": False,
         }
+        problem: OSError | None = None
         for attempt in range(self.retries + 1):
             try:
                 payload = _json_request("POST", _url(self.config, "/api/generate"), body, timeout)
-                return _answer_from_payload(payload)
-            except OSError:
+            except OSError as exc:
+                #  Retried the same way it always was — a flaky first request
+                #  is normal — but no longer swallowed at the end of it. A
+                #  server that never answered and a model that had nothing to
+                #  say both used to be `None`, so nothing downstream could say
+                #  which of them had happened, and a file held for one was
+                #  indistinguishable from a file held for the other.
+                problem = exc
                 if attempt >= self.retries:
-                    return None
-        return None
+                    break
+                continue
+            return _answer_from_payload(payload)
+        raise _refusal(problem)
 
 
 def first_successful_ollama(
     configs: list[ProviderConfig], view: Any, timeout: int, retries: int
 ) -> tuple[ProviderConfig, AIAnswer] | None:
     for config in configs:
-        answer = OllamaProvider(config, retries=retries).classify(view, timeout)
+        try:
+            answer = OllamaProvider(config, retries=retries).classify(view, timeout)
+        except (OSError, RuntimeError):
+            #  "Try the next endpoint" is exactly what this function is for, and
+            #  an endpoint that is down is the case it was written for.
+            continue
         if answer is not None:
             return config, answer
     return None
@@ -112,6 +126,18 @@ def _url(config: ProviderConfig, path: str) -> str:
 
 def _latency_ms(started: float) -> int:
     return max(0, round((time.monotonic() - started) * 1000))
+
+
+def _refusal(exc: OSError | None) -> Exception:
+    """What actually went wrong, as something the caller can tell apart.
+
+    An HTTP status means the server answered and its answer was no — a wrong
+    model name, a rejected field — which is a broken attempt and not an absent
+    provider. Everything else means nothing answered.
+    """
+    if isinstance(exc, error.HTTPError):
+        return RuntimeError(f"ollama refused the request: http {exc.code}")
+    return ProviderUnreachable(_error_message(exc) if exc else "no response")
 
 
 def _error_message(exc: OSError) -> str:

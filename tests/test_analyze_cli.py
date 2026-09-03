@@ -46,9 +46,18 @@ def test_analyze_propose_plan_commit_flow_keeps_pending_in_inbox(tmp_path: Path)
 
     assert json.loads(run_cli(tmp_path, "scan").stdout)["hashed"] == 2
     summary = json.loads(run_cli(tmp_path, "analyze").stdout)
-    assert summary == {"analyzed": 2, "pending": 1, "proposed": 1, "requeued": 0}
+    #  The scan has no identity anybody could read and no AI to ask about it,
+    #  so it is held rather than guessed at — one proposal, not two. See
+    #  `librairy/waiting.py`; `held` is the count that used to be `pending`.
+    assert summary == {
+        "analyzed": 2,
+        "pending": 0,
+        "proposed": 1,
+        "requeued": 0,
+        "held": 1,
+    }
     proposals = json.loads(run_cli(tmp_path, "proposals", "list").stdout)["proposals"]
-    assert len(proposals) == 2
+    assert len(proposals) == 1
     confident = [proposal for proposal in proposals if proposal["dest_relpath"]]
     assert len(confident) == 1
 
