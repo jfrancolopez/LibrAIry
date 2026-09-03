@@ -29,17 +29,26 @@ outward to the shallowest. Somebody who writes a tag on the file is saying
 something about the file; somebody who writes one on a folder is saying
 something about everything under it, and the file is closer.
 
-**Every tag is kept regardless.** `nearest` answers "which is the context here"
-for the one caller that needs a single answer; nothing is discarded, and
-`#ProjectHouse` and `#Invoices` on one file are two true things.
+**Every tag is kept, and every tag stays first-class.** `nearest` is a
+tie-break, and only for the callers that genuinely need exactly one answer — a
+photo group has one heading, and "which is *the* context" has to be decided by
+a rule rather than by list order. It is not a ranking: the others are not
+weaker evidence for having lost it. Every tag is stored, searchable, evidence
+on the proposal, and its own rung of the cue ladder
+(`decision_cues.cues_for`), so a rule about `#Taxes2026` is still found on a
+file that also carries `#ProjectHouse`.
 
 ## What a hashtag is worth
 
 Explicit user evidence: stronger than a habit and stronger than a model's
-guess, and weaker than a fact about the file's identity. It is a statement about
-*context*, not about content — `#ProjectHouse` on a `.exe` does not make the
-executable a house document, and nothing here lets a tag pick a category on its
-own.
+guess, and weaker than a fact about the file's identity. It counts **now**, in
+the decision being made, and not only once enough decisions have been watched
+to learn something about it — those are two different facts and the program
+keeps both. See `librairy/tags.py`.
+
+It is a statement about *context*, not about content — `#ProjectHouse` on a
+`.exe` does not make the executable a house document, and nothing here lets a
+tag pick a category or name a destination on its own.
 
 Where it becomes durable, searchable and promotable to a Project is
 `librairy/tags.py`. This module only reads names.

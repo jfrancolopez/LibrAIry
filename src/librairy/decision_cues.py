@@ -38,12 +38,17 @@ AUTHOR = "author"
 YEAR = "year"
 FORMAT = "format"
 FOLDER = "folder"
-#  An explicit hint somebody wrote on the file or its folder. A cue like any
-#  other, deliberately: this is how a tag comes to influence a *destination*
-#  without becoming a second authority beside Decision Memory. Repeated
-#  decisions about `#ProjectHouse` files teach an answer, and that answer is
-#  offered and promotable exactly like every other learned one.
+#  An explicit hint somebody wrote on the file or its folder. A cue like every
+#  other in shape, and unlike every other in where it came from: the rest are
+#  inferred off the file, and this one was typed by a person about this file.
+#  That is why it is asked *first* — see `cues_for`.
 TAG = "tag"
+
+#  How many of a file's tags become cues. Every tag is kept, searchable, and
+#  evidence in its own right; this bounds only how many rungs one row adds to
+#  the page's tally. A file carrying nine tags has a context that is not one
+#  thing, and the three written closest to it are the ones about it.
+TAG_CUES = 3
 
 #  Cues whose value can legitimately appear inside a destination and so may be
 #  turned back into a placeholder. `category` may not: `Documents/...` contains
@@ -91,52 +96,76 @@ def cues_for(row: sqlite3.Row) -> list[Cue]:
     cues, so a match at any of them is a match on facts this file actually has.
     """
     features = features_for(row)
+    #  Every rung is scoped by category, so a lesson about documents says
+    #  nothing about music. A row with no category has no rung it could be
+    #  scoped by, and an unscoped one would be exactly that mistake.
+    category = features.get(CATEGORY, "")
+    if not category:
+        return []
     ladder: list[dict[str, str]] = []
+    #  Tags first, at every width. `suggest` breaks a tie between two rungs of
+    #  the same specificity by the order they arrive in, and this is the whole
+    #  of "an explicit hint outranks an inferred one": what somebody wrote on
+    #  *this* file is asked before what LibrAIry worked out about files that
+    #  looked like it. Not a new authority — the same rung of the same ladder,
+    #  asked in the right order.
+    written = _tags(row)
+    for tag in written:
+        if DOCUMENT_TYPE in features:
+            ladder.append(
+                {
+                    CATEGORY: category,
+                    TAG: tag,
+                    DOCUMENT_TYPE: features[DOCUMENT_TYPE],
+                }
+            )
     if DOCUMENT_TYPE in features and (ORGANIZATION in features or AUTHOR in features):
         who = ORGANIZATION if ORGANIZATION in features else AUTHOR
         ladder.append(
             {
-                CATEGORY: features[CATEGORY],
+                CATEGORY: category,
                 DOCUMENT_TYPE: features[DOCUMENT_TYPE],
                 who: features[who],
             }
         )
+    #  **Every** tag, not only the nearest. `nearest` decides which is *the*
+    #  context for the one caller that needs a single answer; it was never
+    #  meant to make the others weaker evidence, and a rule about `#Taxes2026`
+    #  has to be findable on a file that also carries `#ProjectHouse`.
+    ladder.extend({CATEGORY: category, TAG: tag} for tag in written)
     if DOCUMENT_TYPE in features:
-        ladder.append(
-            {CATEGORY: features[CATEGORY], DOCUMENT_TYPE: features[DOCUMENT_TYPE]}
-        )
-    #  A tag before a folder. Somebody who wrote `#ProjectHouse` said something
-    #  more deliberate than "this arrived in a folder called scans", and the
-    #  ladder is ordered by how specific a cue is rather than by where it came
-    #  from — so the narrower claim is asked first.
-    tag = _nearest_tag(row)
-    if tag:
-        ladder.append({CATEGORY: features[CATEGORY], TAG: tag})
+        ladder.append({CATEGORY: category, DOCUMENT_TYPE: features[DOCUMENT_TYPE]})
     folder = _source_folder(str(row["item_relpath"] or ""))
     if folder:
         #  Where it arrived from. An import folder is something the person
         #  made, and "everything off this card went to Photos" is a real
         #  lesson — see `inbox_collections` for why the folder and not the
         #  timestamp.
-        ladder.append({CATEGORY: features[CATEGORY], FOLDER: folder})
+        ladder.append({CATEGORY: category, FOLDER: folder})
     return [Cue(DESTINATION, entry) for entry in ladder if entry]
 
 
-def _nearest_tag(row: sqlite3.Row) -> str:
-    """The most specific hashtag on this file, from its evidence.
+def _tags(row: sqlite3.Row) -> list[str]:
+    """The hashtags on this file, most specific first, from its evidence.
 
     Read from the evidence the classifier recorded rather than from
     `item_tags`, for the same reason every other cue is: a cue has to describe
     what the person was looking at when they decided, and the durable store is
     what is true *now*. `extract_hashtags` writes them most-specific-first, so
-    the first one is the nearest.
+    the order here is that order.
     """
+    found: list[str] = []
     for entry in _evidence(row):
-        if str(entry.get("source") or "") == "hashtag":
-            detail = " ".join(str(entry.get("detail") or "").split())
-            if detail:
-                return detail
-    return ""
+        if str(entry.get("source") or "") != "hashtag":
+            continue
+        if str(entry.get("field") or "") != "tag":
+            #  A `project` entry names the Project the file joined, which is
+            #  the same tag said a second way. One cue, not two.
+            continue
+        detail = " ".join(str(entry.get("detail") or "").split())
+        if detail and detail not in found:
+            found.append(detail)
+    return found[:TAG_CUES]
 
 
 def outcome_for(row: sqlite3.Row) -> str:

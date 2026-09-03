@@ -10,7 +10,8 @@
   {# The distinction, said once and said first. `Projects/` is a folder files
      are moved into; a Project is a view across everything you already have,
      and the two have never been the same thing. See docs/ui-vocabulary.md. #}
-  <p>A Project is a tag you promoted. Its files stay exactly where they are —
+  <p>A Project is a tag you promoted. Anything carrying that tag is part of it
+    from the moment the tag is read. Its files stay exactly where they are —
     nothing is moved, copied or renamed, and a Project is <strong>not</strong>
     the <span class="mono">Projects/</span> folder in your library, which is a
     filing destination like any other.</p>
@@ -47,9 +48,10 @@
 
   <h2 id="tags">Your tags</h2>
   {% if tags %}
-    <p class="muted">Every hashtag LibrAIry has read, and how many files carry it.
-      A tag is useful on its own — it is searchable and it teaches Decision
-      Memory — and it becomes a Project only when you say so.</p>
+    <p class="muted">Every hashtag LibrAIry has read, and how many files carry
+      it. A tag counts on its own — it is searchable, and it is evidence on the
+      next decision about the file it is on — and it becomes a Project only
+      when you say so.</p>
     <ul class="tag-list">
       {% for tag in tags %}
         <li class="tag-row">

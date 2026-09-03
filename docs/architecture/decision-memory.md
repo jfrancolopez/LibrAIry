@@ -36,15 +36,37 @@ the order is fixed:
 | | | may be overridden by |
 |---|---|---|
 | **1. Safety invariant** | never overwrite, never delete, revalidate hashes before moving | nothing |
-| **2. Explicit user policy** | `music.preferred_format = mp3` | the owner changing the setting |
+| **2. Explicit user policy** | `music.preferred_format = mp3`, a promoted rule | the owner changing it |
 | **3. Strong current evidence** | a catalog identity, an ISBN, a DOI | better evidence about the same file |
-| **4. Learned suggestion** | "you filed six Honda manuals here" | all of the above |
-| **5. Weak heuristic / model cue** | a filename that looks like a year | all of the above |
+| **4. Explicit user evidence** | `#ProjectHouse` — what the owner said about *this* file | a fact about the file's identity |
+| **5. Learned suggestion** | "you filed six Honda manuals here" | all of the above |
+| **6. Weak heuristic / model cue** | a filename that looks like a year | all of the above |
 
-A learned pattern sits at (4) deliberately. It is a statement about files that
+A learned pattern sits at (5) deliberately. It is a statement about files that
 *resembled* this one; a catalog identity is a statement about *this* one. Six
 Queen tracks filed under one release is a habit. MusicBrainz saying this
 recording belongs to another release is a fact, and the fact wins.
+
+### A tag and a habit about tags are two different facts
+
+(4) is above (5) because a person wrote it, on purpose, about the file in front
+of you. It counts in the decision being made **now** — it does not wait to be
+learned from:
+
+    #ProjectHouse                    what the owner is saying, now
+    "they file #ProjectHouse docs    what LibrAIry has learned they tend to do
+     under Documents/House"           with that kind of hint
+
+Both are real and the program keeps both. The first joins the file to that
+Project immediately, is evidence on the proposal, and is asked before an
+inferred cue when both could answer. The second is a count of decisions, and
+still needs the decisions.
+
+What (4) may **not** do is name a destination or pick a category. It is a
+statement about *context*, and context does not identify a file: `#ProjectHouse`
+on an installer leaves the installer alone. So it never contradicts (1)–(3) —
+it is not answering their question — and where the owner's own policy at (2)
+says where something goes, a tag is not a way around it.
 
 Explicit policy at (2) outranks it for a related reason: the owner said what
 they wanted, in a setting, on purpose. If they then override that policy

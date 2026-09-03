@@ -153,18 +153,40 @@ def test_browse_templates_have_no_mutating_affordances(tmp_path: Path) -> None:
     # The shared app header (logout form) is chrome, not a browse affordance.
     html = re.sub(r"<header class=\"app-header\".*?</header>", "", html, flags=re.S)
 
-    # One deliberate exception, named rather than waved through: the Audit
-    # button posts. It writes findings and cannot move, rename or delete a
-    # file — the whole audit module is read-only against the library — so it
-    # does not break the invariant this test exists to defend. Every other
-    # write verb stays banned, including a second POST to anywhere else.
-    audit_forms = re.findall(
+    # The exceptions, named rather than waved through. Each writes a *record*
+    # and none of them can move, rename, delete or queue a file:
+    #
+    #   /browse/audit          writes findings; the audit module is read-only
+    #                          against the library by construction
+    #   /items/{id}/tags       writes what the owner says this file is about.
+    #                          The only way to give explicit context used to be
+    #                          renaming the file, which is a filesystem change
+    #                          to avoid a form — the invariant standing on its
+    #                          head. See `librairy/tags.py`.
+    #   /items/{id}/identify   asks a catalog what an audio file is and records
+    #                          the answer. Named here because it was passing
+    #                          only by fixture: this test seeds a document, and
+    #                          that form renders for audio.
+    #
+    # Every other write verb stays banned, including a second POST anywhere
+    # else. What this test defends is that Browse cannot change the library —
+    # not that it has no controls.
+    allowed = {
+        "/browse/audit",
+        f"/items/{item_id}/tags",
+        f"/items/{item_id}/identify",
+    }
+    posted = re.findall(
         r"<form[^>]*method=\"post\"[^>]*action=\"([^\"]+)\"[^>]*>", html, flags=re.I
     )
-    assert set(audit_forms) <= {"/browse/audit"}, f"unexpected write form: {audit_forms}"
-    html = re.sub(
-        r"<form method=\"post\" action=\"/browse/audit\".*?</form>", "", html, flags=re.S
-    )
+    assert set(posted) <= allowed, f"unexpected write form: {set(posted) - allowed}"
+    for action in allowed:
+        html = re.sub(
+            rf"<form[^>]*method=\"post\"[^>]*action=\"{re.escape(action)}\".*?</form>",
+            "",
+            html,
+            flags=re.S,
+        )
 
     # The invariant is that Browse cannot change anything, not that it has no
     # controls at all: it now carries the search box that used to be its own

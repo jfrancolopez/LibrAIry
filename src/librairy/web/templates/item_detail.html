@@ -114,6 +114,44 @@
     {% endif %}
   </section>
   {% endif %}
+  {# What the owner said, kept apart from what LibrAIry worked out. Read live
+     rather than out of the proposal below, so a tag added here is true on this
+     page immediately instead of after the next analysis. #}
+  <section class="metric wide" id="tags">
+    <h2>Your tags</h2>
+    {% if tags %}
+      <ul class="facts item-tags">
+        {% for tag in tags %}
+          <li>
+            <a class="mono" href="/browse?q=%23{{ tag.tag }}">#{{ tag.label }}</a>
+            <span class="muted">{{ tag.why }}{% if tag.detail and tag.source == 'folder' %} — {{ tag.detail }}{% endif %}</span>
+            {% if tag.project %}
+              <a class="badge badge-info" href="/projects/{{ tag.project_id }}">{{ tag.project }}</a>
+            {% endif %}
+            <form method="post" action="/items/{{ item.id }}/tags">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="hidden" name="action" value="remove">
+              <input type="hidden" name="tag" value="{{ tag.tag }}">
+              <button type="submit" class="btn-ghost">Remove tag</button>
+            </form>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="muted">None. A <span class="mono">#hashtag</span> in the name
+        this file arrived under is kept here, and so is one you add.</p>
+    {% endif %}
+    <form method="post" action="/items/{{ item.id }}/tags" class="button-row">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="action" value="add">
+      <label class="field field-inline">Tag this file
+        <input name="tag" placeholder="#ProjectHouse" maxlength="60"></label>
+      <button type="submit">Add tag</button>
+    </form>
+    <p class="muted">A tag says what this file is <em>about</em>. It is
+      searchable, it is evidence on the next decision about this file, and it
+      moves and renames nothing on its own.</p>
+  </section>
   <section class="metric wide">
     <h2>Evidence</h2>
     {% if evidence_error %}<span class="status warn">Evidence unavailable: {{ evidence_error }}</span>{% endif %}

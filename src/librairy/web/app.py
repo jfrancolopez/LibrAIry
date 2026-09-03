@@ -3514,6 +3514,47 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             {"title": "Item Detail", **data},
         )
 
+    @app.post("/items/{item_id}/tags", include_in_schema=False)
+    def item_tags_route(
+        request: Request,  # noqa: ARG001
+        item_id: int,
+        action: Annotated[str, Form()] = "",
+        tag: Annotated[str, Form()] = "",
+    ) -> RedirectResponse:
+        """Tag this file, or take a tag off it. Only a person reaches this.
+
+        The one place explicit context can be given without renaming a file.
+        Until now a hashtag could only be *read* — which meant the way to tell
+        LibrAIry that a scan belongs with the roof project was to rename the
+        scan, and that is an odd thing to have to do to a document you have
+        already filed.
+
+        It writes one row and reindexes one file for search. It moves nothing,
+        renames nothing, re-decides nothing, and reaches no plan: a tag is
+        evidence for the next decision about this file, not a decision.
+        """
+        from librairy import tags as tag_store
+        from librairy.search import sync_search_item
+
+        row = conn.execute("SELECT id FROM items WHERE id=?", (item_id,)).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="that item no longer exists")
+        if action == "add":
+            if not tag_store.add(conn, item_id, tag):
+                raise HTTPException(
+                    status_code=422, detail=f"{tag!r} is not a usable tag"
+                )
+        elif action == "remove":
+            #  Removing is only ever a person saying they did not mean it. A
+            #  tag disappearing from a filename is not — most often that is
+            #  LibrAIry's own clean name, which is the round trip the store
+            #  exists to survive. See `librairy/tags.py`.
+            tag_store.remove(conn, item_id, tag.lstrip("#").strip())
+        else:
+            raise HTTPException(status_code=422, detail=f"unknown action: {action}")
+        sync_search_item(conn, item_id)
+        return RedirectResponse(f"/items/{item_id}#tags", status_code=303)
+
     @app.post("/items/{item_id}/identify", include_in_schema=False)
     def item_identify(
         request: Request,  # noqa: ARG001

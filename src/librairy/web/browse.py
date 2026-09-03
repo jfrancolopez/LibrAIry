@@ -12,6 +12,7 @@ from librairy.proposals import decode_evidence
 from librairy.quarantine import destination_intent
 from librairy.scanner import is_visible_entry, visible_files
 from librairy.search import host_path
+from librairy.tags import for_item as tags_for_item
 from librairy.web.thumbs import PreviewError, preview_for_item
 
 PAGE_SIZE = 50
@@ -472,6 +473,12 @@ def item_detail(conn: sqlite3.Connection, settings: Settings, item_id: int) -> d
         # only — this page renders the stored answer and never makes a lookup
         # happen. `None` for everything that is not audio.
         "music_identity": music_identity(conn, settings, row),
+        #  What the owner has said about this file, read live rather than out
+        #  of the proposal's frozen evidence. The proposal records what was
+        #  known when it was made; this is what is true now, which is the
+        #  difference that lets a tag added by hand show up without waiting
+        #  for the file to be analysed again. See `librairy/tags.py`.
+        "tags": tags_for_item(conn, item_id),
         #  Files LibrAIry has recorded as belonging with this one — subtitles,
         #  lyrics, a cue sheet, the album's cover. Read from what analysis
         #  worked out and wrote down, never discovered by looking at the

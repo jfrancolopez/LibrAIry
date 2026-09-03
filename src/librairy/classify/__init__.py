@@ -115,6 +115,10 @@ def analyze_items(
     #  pass that has to stay cheap at a million.
     freed = waiting.released(conn, ids)
     opinions = _existing_proposals(conn, ids)
+    #  Which tags are Projects. A file carrying one joins it the moment it is
+    #  read — no learning, no threshold — so the proposal has to be able to say
+    #  so. Asked once for the batch, like the two above.
+    promoted = tags.promoted(conn)
     answered: list[int] = []
     for item in items:
         item_model = _item_from_row(item)
@@ -149,13 +153,11 @@ def analyze_items(
             continue
         result = _with_runtime_destination(conn, settings, result)
         #  The tags this file carries, on the proposal, for every category
-        #  rather than only for photo grouping. This is what makes a hashtag a
-        #  *cue* — `decision_cues` reads it, so repeated decisions about
-        #  `#ProjectHouse` files teach a destination through the ordinary
-        #  authority path instead of a second one beside it. It is added after
-        #  the destination is rendered, because a tag may not choose one: see
-        #  `librairy/tags.py`.
-        result = _with_tag_evidence(result, str(item["relpath"]))
+        #  rather than only for photo grouping — explicit evidence in the
+        #  decision being made now, and the cue `decision_cues` later reads to
+        #  learn from. It is added *after* the destination is rendered, because
+        #  a tag may not choose one: see `librairy/tags.py`.
+        result = _with_tag_evidence(result, str(item["relpath"]), promoted)
         if _hold_instead(result, attempt, item, freed, opinions):
             waiting.hold(
                 conn,
@@ -198,21 +200,41 @@ def analyze_items(
 
 
 
-def _with_tag_evidence(result, relpath: str):  # noqa: ANN001, ANN202
+def _with_tag_evidence(result, relpath: str, promoted: dict[str, str]):  # noqa: ANN001, ANN202
     """Fold this path's hashtags into the proposal's evidence.
 
-    Explicit user evidence, on the row and in the Why panel, and — through
-    `decision_cues` — a cue Decision Memory can learn from. Deliberately
-    additive: it changes no category, no destination and no confidence, because
-    a tag is a statement about context and `#ProjectHouse` on an installer does
-    not make the installer a house document.
+    Explicit user evidence in the decision being made *now* — on the row and in
+    the Why panel — and the cue `decision_cues` reads later to learn from. Both,
+    and neither instead of the other: what somebody wrote on a file does not
+    wait for LibrAIry to have watched them file eight of them.
+
+    A tag that names a promoted Project says so here. Membership is not stored
+    — a Project's members are the items carrying its tag — but the association
+    is a fact from the moment the tag is read, and a proposal that cannot say
+    "this is part of the House project" is hiding the most useful thing it
+    knows about the file.
+
+    What it still does not do is choose anything. No category, no destination,
+    no confidence: a tag is a statement about *context*, and `#ProjectHouse` on
+    an installer does not make the installer a house document.
     """
     from librairy.classify.hashtags import extract_hashtags
 
     hints = extract_hashtags(relpath)
     if not hints.evidence:
         return result
-    return replace(result, evidence=(*result.evidence, *hints.evidence))
+    joined = tuple(
+        EvidenceEntry(
+            "hashtag",
+            "project",
+            promoted[found.tag],
+            0.9,
+            note=f"part of this project, because you tagged it #{found.label}",
+        )
+        for found in hints.found
+        if found.tag in promoted
+    )
+    return replace(result, evidence=(*result.evidence, *hints.evidence, *joined))
 
 
 def _existing_proposals(conn: sqlite3.Connection, item_ids: list[int]) -> set[int]:

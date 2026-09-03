@@ -25,10 +25,23 @@ the file, because it is a statement about *context* rather than about content:
 
 **A tag never picks a category on its own.** `#ProjectHouse` on an installer
 does not make the installer a house document, and nothing here can move a file,
-approve one, or reach Commit. Where a tag genuinely changes a destination it
-does so through Decision Memory — repeated decisions about tagged files become
-a learned answer and, if somebody promotes it, a rule — which is the existing
-authority path rather than a second one beside it.
+approve one, or reach Commit.
+
+Within that limit it is evidence **now**, in the proposal being made, and not
+only once something has been learned about it. Two different facts, and the
+program needs both:
+
+    #ProjectHouse                     what you are telling LibrAIry, now
+    "you file #ProjectHouse docs      what LibrAIry has learned you tend to
+     under Documents/House"            do with that kind of hint
+
+The first does not wait for the second. A tag that names a promoted Project
+puts the file in that Project the moment it is read; every tag is explicit
+evidence on the proposal, is asked *before* an inferred cue when both could
+answer (`decision_cues.cues_for`), and is what a rule about tagged files
+matches on. What it does not do is name a destination — that still comes from
+evidence about the file, a learned pattern, or a rule somebody promoted, and a
+tag is not a shortcut past any of them.
 
 ## Projects
 
@@ -140,16 +153,31 @@ def remove(conn: sqlite3.Connection, item_id: int, tag: str) -> None:
     )
 
 
-def for_item(conn: sqlite3.Connection, item_id: int) -> list[dict[str, str]]:
+def for_item(conn: sqlite3.Connection, item_id: int) -> list[dict[str, object]]:
+    """This file's tags, with where each came from and the Project it joined.
+
+    The Project is part of the answer rather than a second lookup: a file
+    carrying a promoted tag is in that Project from the moment the tag is read,
+    and a page that shows the tag without saying so is hiding the useful half.
+    """
     return [
         {
             "tag": str(row["tag"]),
             "label": str(row["label"]),
             "source": str(row["source"]),
+            "detail": str(row["detail"] or ""),
             "why": SOURCE_LABEL.get(str(row["source"]), str(row["source"])),
+            "project": str(row["project"] or ""),
+            "project_id": int(row["project_id"] or 0),
         }
         for row in conn.execute(
-            "SELECT tag, label, source FROM item_tags WHERE item_id=? ORDER BY tag",
+            """
+            SELECT t.tag, t.label, t.source, t.detail,
+                   p.name AS project, p.id AS project_id
+            FROM item_tags t
+            LEFT JOIN projects p ON p.tag = t.tag
+            WHERE t.item_id = ? ORDER BY t.tag
+            """,
             (item_id,),
         )
     ]
@@ -377,6 +405,20 @@ def members(
             (tag, PAGE_SIZE, offset),
         )
     ]
+
+
+def promoted(conn: sqlite3.Connection) -> dict[str, str]:
+    """Every tag that is a Project, as tag → name. One statement for a batch.
+
+    Read once per analysis pass rather than once per file: a Project is a thing
+    somebody made deliberately, so there are never many, and asking per item
+    would put a statement per file into the one loop that has to stay cheap at
+    a million.
+    """
+    return {
+        str(row["tag"]): str(row["name"])
+        for row in conn.execute("SELECT tag, name FROM projects")
+    }
 
 
 def _titled(tag: str) -> str:

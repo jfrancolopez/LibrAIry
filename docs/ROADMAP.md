@@ -804,8 +804,8 @@ Decision Memory give the same explanation for the same preselection.
 > **All five rows of the table below now pass.** A hashtag in a file's own name
 > is read; every tag is kept with where it was written; `nearest` is a stated
 > rule rather than `tags[0]`; the tag survives filing because it is stored
-> against the *item*, not the path; and it reaches a destination through
-> Decision Memory rather than through a second authority.
+> against the *item*, not the path; and it is explicit evidence in the decision
+> being made now, on the one existing authority path.
 >
 > **The store is keyed to the item, and that is the whole fix.**
 > `items.relpath` changes when a file moves and `items.id` does not, so
@@ -820,11 +820,38 @@ Decision Memory give the same explanation for the same preselection.
 > Nothing is discarded to get there; `#ProjectHouse` and `#Invoices` on one
 > file are two true things.
 >
-> **How a tag influences a destination.** As a Decision Memory cue and by no
-> other route. Repeated decisions about `#ProjectHouse` files teach an answer
-> that is offered, explainable and promotable exactly like every other learned
-> one — which keeps the authority model at one path instead of two. A tag never
-> picks a category: `#ProjectHouse` on an installer leaves the installer alone.
+> **What a tag is worth, corrected.** The first version of this entry said a
+> tag reached a destination "as a Decision Memory cue and by no other route",
+> which made an explicit hint *weaker* than a learned one until enough
+> decisions had been watched to learn something about it. That is backwards.
+> A hashtag and a habit about hashtags are two different facts:
+>
+>     #ProjectHouse                    what you are telling LibrAIry, now
+>     "you file #ProjectHouse docs     what LibrAIry has learned you tend to
+>      under Documents/House"           do with that kind of hint
+>
+> Both are kept, and the first does not wait for the second. A tag naming a
+> promoted Project joins the file to it the moment it is read; every tag is
+> explicit evidence on the proposal; and a tag rung is asked *before* an
+> inferred one of the same width, which is where the ordering actually decides
+> something — `suggest` breaks a tie by the order the rungs arrive in.
+>
+> Still one authority path, and still bounded on the other side: a tag names no
+> destination and picks no category. `#ProjectHouse` on an installer leaves the
+> installer alone, and where a file goes still comes from evidence about the
+> file, a learned pattern, or a rule somebody promoted.
+>
+> **`nearest` is a tie-break, not a ranking.** It answers "which is *the*
+> context" for the one caller that needs a single answer — a photo group has
+> one heading. Every tag is stored, searchable, evidence, and its own rung of
+> the ladder, so a rule about `#Taxes2026` is found on a file that also carries
+> `#ProjectHouse`.
+>
+> **A tag can be given without renaming a file.** The item page takes one and
+> records it as manual. Until then the only way to say `#ProjectHouse` was to
+> rename the file, which is an odd thing to have to do to a document already
+> filed — and it meant explicit evidence was something only the inbox could
+> carry.
 >
 > **A Project is a promoted tag and nothing else.** Its members are the items
 > carrying the tag, read back out of `item_tags`; there is no membership table,

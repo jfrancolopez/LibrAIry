@@ -14,6 +14,7 @@ code path that file never took.
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from pathlib import Path
 
@@ -246,34 +247,199 @@ def test_a_tag_does_not_make_a_file_into_something_it_is_not(
         assert not str(row["dest_relpath"] or "").startswith("Projects/")
 
 
-def test_a_tag_reaches_a_destination_only_through_decision_memory(
+def test_a_tag_names_no_destination_of_its_own(tmp_path: Path) -> None:
+    """A tag says what a file is *about*, which is not where it goes.
+
+    The limit on the other side of "it counts now": explicit context does not
+    become a folder. `#ProjectHouse` on a manual leaves the manual filed where
+    the evidence about the manual puts it, and a destination still comes from
+    that evidence, a learned pattern, or a rule somebody promoted.
+    """
+    conn, _ = analysed(tmp_path, "#ProjectHouse/roofing manual.epub")
+    row = conn.execute(
+        "SELECT category, dest_relpath FROM proposals LIMIT 1"
+    ).fetchone()
+    assert row is not None, "the fixture has to produce a proposal"
+
+    destination = str(row["dest_relpath"] or "")
+
+    assert "ProjectHouse" not in destination
+    assert "projecthouse" not in destination.lower()
+
+
+def test_a_tag_is_evidence_in_the_decision_being_made_now(tmp_path: Path) -> None:
+    """The correction. A hashtag is not a hint that waits to be learned from.
+
+    It is on the proposal the first time the file is seen, at explicit weight
+    and under its own source — so the first `#ProjectHouse` file says
+    `#ProjectHouse` in Review, with nothing before it and nothing counted.
+    """
+    from librairy.proposals import decode_evidence
+
+    conn, _ = analysed(tmp_path, "#ProjectHouse/roofing manual.epub")
+    row = conn.execute("SELECT evidence FROM proposals LIMIT 1").fetchone()
+    assert row is not None
+
+    written = [
+        entry for entry in decode_evidence(row["evidence"]) if entry.source == "hashtag"
+    ]
+
+    assert [entry.detail for entry in written] == ["ProjectHouse"]
+    assert written[0].weight >= 0.9
+
+
+def test_a_tagged_file_joins_its_project_with_nothing_learned(
     tmp_path: Path,
 ) -> None:
-    """The one path a tag has to a destination, and deliberately the existing
-    one: a tag is a *cue*, so repeated decisions about tagged files teach an
-    answer that is offered, explainable and promotable like every other."""
+    """Project association is immediate, and it is on the proposal.
+
+    Not "after eight decisions" and not "once a pattern forms": the file
+    carries the tag, the tag is a Project, so the file is part of it — and the
+    proposal has to be able to say so, because it is the most useful thing it
+    knows about the file.
+    """
+    from librairy.proposals import decode_evidence
+
+    conn, settings = analysed(tmp_path, "#ProjectHouse/roofing manual.epub")
+    tags.promote(conn, "projecthouse", "House")
+
+    #  A second file, analysed after the promotion and after no decisions at
+    #  all — there is nothing in this database to have learned from.
+    path = settings.inbox_dir / "#ProjectHouse/permit.epub"
+    path.write_bytes(b"%PDF-1.4\n" + b"x" * 2048)
+    scan_root(conn, "inbox", settings.inbox_dir, settings)
+    analyze_items(conn, settings)
+
+    assert conn.execute("SELECT COUNT(*) FROM decision_events").fetchone()[0] == 0
+    row = conn.execute(
+        "SELECT p.evidence FROM proposals p JOIN items i ON i.id = p.item_id"
+        " WHERE i.relpath = ?",
+        ("#ProjectHouse/permit.epub",),
+    ).fetchone()
+    assert row is not None
+    joined = [
+        entry.detail
+        for entry in decode_evidence(row["evidence"])
+        if entry.source == "hashtag" and entry.field == "project"
+    ]
+    assert joined == ["House"]
+
+
+def proposal_row(evidence: list[dict], **fields: str) -> sqlite3.Row:
+    """A proposal row with chosen evidence, for the cue ladder alone.
+
+    Built rather than analysed because the ladder's *order* is the thing under
+    test, and reaching a real document type end to end means a real PDF with a
+    real text layer — a fixture for `test_document_identity`, not for this.
+    """
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    return conn.execute(
+        "SELECT ? AS category, ? AS dest_relpath, ? AS evidence, ? AS item_relpath",
+        (
+            fields.get("category", "documents"),
+            fields.get("dest_relpath", "Documents/Manuals/Honda/roof.pdf"),
+            json.dumps(evidence),
+            fields.get("item_relpath", "scans/roof.pdf"),
+        ),
+    ).fetchone()
+
+
+def test_an_explicit_tag_is_asked_before_an_inferred_cue() -> None:
+    """What somebody wrote outranks what LibrAIry worked out.
+
+    `suggest` breaks a tie between two rungs of equal width by the order they
+    arrive in, so the ordering *is* the authority statement: a habit about
+    "manuals" must not answer over a habit about the tag the owner put on this
+    very file. This was the correction — the tag rung used to sit behind every
+    inferred one, which made an explicit hint the weaker of the two.
+    """
+    from librairy.decision_cues import DOCUMENT_TYPE, TAG, cues_for
+
+    ladder = cues_for(
+        proposal_row(
+            [
+                {"source": "document", "field": "type", "detail": "Manual"},
+                {"source": "document", "field": "organization", "detail": "Honda"},
+                {"source": "hashtag", "field": "tag", "detail": "ProjectHouse"},
+            ]
+        )
+    )
+
+    tagged = next(index for index, cue in enumerate(ladder) if TAG in cue.features)
+    inferred = [
+        index
+        for index, cue in enumerate(ladder)
+        if TAG not in cue.features and DOCUMENT_TYPE in cue.features
+    ]
+
+    assert inferred, "the fixture has to produce an inferred cue to be asked after"
+    assert all(tagged < index for index in inferred), (
+        "an inferred cue was asked before the tag the owner wrote"
+    )
+    #  And the widest claim is still the tag *with* the inferred type, not
+    #  either alone: narrower first is the rule the ladder never breaks.
+    assert ladder[0].features == {
+        "category": "documents",
+        TAG: "ProjectHouse",
+        DOCUMENT_TYPE: "Manual",
+    }
+    #  Still scoped by category, like every other cue: a tag learned about
+    #  documents says nothing about music.
+    assert "category" in ladder[tagged].features
+
+
+def test_a_project_entry_is_not_counted_as_a_second_tag() -> None:
+    """One tag says two things; it is still one cue.
+
+    `#ProjectHouse` puts a `tag` entry and a `project` entry on the proposal —
+    what was written, and what it joined. Reading both as cues would make one
+    hashtag look like two agreeing hints.
+    """
     from librairy.decision_cues import TAG, cues_for
 
-    #  An `.epub` rather than a `.pdf`: a book-like extension clears the
-    #  threshold on its own, so there is a proposal to read cues off. A PDF of
-    #  filler bytes is held, which is correct and is a different test.
-    conn, _ = analysed(tmp_path, "#ProjectHouse/roofing manual.epub")
+    ladder = cues_for(
+        proposal_row(
+            [
+                {"source": "hashtag", "field": "tag", "detail": "ProjectHouse"},
+                {"source": "hashtag", "field": "project", "detail": "House"},
+            ]
+        )
+    )
+
+    assert [cue.features[TAG] for cue in ladder if TAG in cue.features] == [
+        "ProjectHouse"
+    ]
+
+
+def test_the_nearest_tag_does_not_make_the_others_weaker(tmp_path: Path) -> None:
+    """`nearest` is a tie-break, not a ranking.
+
+    One caller needs exactly one answer — a photo group has one heading — and
+    deciding that by a rule was the M2-05 fix. It was never meant to demote the
+    rest: a rule about `#Taxes2026` has to be findable on a file that also
+    carries `#ProjectHouse`, whichever of them happens to be nearest.
+    """
+    from librairy.decision_cues import TAG, cues_for
+    from librairy.proposals import decode_evidence
+
+    conn, _ = analysed(tmp_path, "#ProjectHouse/invoice #Taxes2026.epub")
     row = conn.execute(
         "SELECT p.*, i.relpath AS item_relpath FROM proposals p"
         " JOIN items i ON i.id = p.item_id LIMIT 1"
     ).fetchone()
-    assert row is not None, "the fixture has to produce a proposal to read cues off"
+    assert row is not None
 
-    ladder = cues_for(row)
+    weights = {
+        entry.detail: entry.weight
+        for entry in decode_evidence(row["evidence"])
+        if entry.source == "hashtag" and entry.field == "tag"
+    }
+    asked = {cue.features[TAG] for cue in cues_for(row) if TAG in cue.features}
 
-    assert any(TAG in cue.features for cue in ladder), (
-        "the tag is a cue, not a second authority"
-    )
-    tagged = next(cue for cue in ladder if TAG in cue.features)
-    assert tagged.features[TAG] == "ProjectHouse"
-    #  And it is still scoped by category, like every other cue: a tag learned
-    #  about documents says nothing about music.
-    assert "category" in tagged.features
+    assert set(weights) == {"Taxes2026", "ProjectHouse"}
+    assert len(set(weights.values())) == 1, "the nearest tag was weighted higher"
+    assert asked == {"Taxes2026", "ProjectHouse"}, "only the nearest tag became a cue"
 
 
 def test_nothing_a_tag_does_reaches_the_filesystem(tmp_path: Path) -> None:
@@ -489,6 +655,91 @@ def test_the_page_says_a_project_is_not_the_projects_folder(tmp_path: Path) -> N
 
     assert "not</strong>" in page or "not the" in page
     assert "filing destination" in page
+
+
+def test_a_person_can_tag_a_file_without_renaming_it(tmp_path: Path) -> None:
+    """The only way to give explicit context used to be renaming the file.
+
+    Which is an odd thing to have to do to a document already filed, and it
+    made "explicit user evidence" something only the inbox could carry. The
+    item page takes one, keeps its provenance, and moves nothing.
+    """
+    client, conn = client_for(tmp_path)
+    item_id = item_for(conn, "#ProjectHouse/before.jpg")
+
+    client.post(
+        f"/items/{item_id}/tags",
+        data={"action": "add", "tag": "#Vacation2026"},
+        headers={"x-csrf-token": client.cookies["csrf_token"]},
+        follow_redirects=False,
+    )
+
+    added = [tag for tag in tags.for_item(conn, item_id) if tag["tag"] == "vacation2026"]
+    assert added, "the tag was not kept"
+    assert added[0]["source"] == "manual", "provenance was lost"
+    assert conn.execute("SELECT COUNT(*) FROM plan_ops").fetchone()[0] == 0
+    #  And it is findable straight away, without waiting for another analysis.
+    assert item_id in [
+        int(hit["item_id"]) for hit in search_items(conn, "#Vacation2026")
+    ]
+
+
+def test_a_tag_shows_on_the_item_page_with_where_it_came_from(
+    tmp_path: Path,
+) -> None:
+    client, conn = client_for(tmp_path)
+    item_id = item_for(conn, "#ProjectHouse/roof quote #Invoices.pdf")
+    tags.promote(conn, "projecthouse", "House")
+
+    page = client.get(f"/items/{item_id}").text
+
+    assert "#Invoices" in page and "#ProjectHouse" in page
+    assert "you tagged this file" in page, "provenance is not shown"
+    assert "House" in page, "the Project the file is already part of is not shown"
+
+
+def test_a_tag_a_person_removes_is_gone_and_nothing_else_changes(
+    tmp_path: Path,
+) -> None:
+    client, conn = client_for(tmp_path)
+    item_id = item_for(conn, "#ProjectHouse/roof quote #Invoices.pdf")
+    before = [row["relpath"] for row in conn.execute("SELECT relpath FROM items")]
+
+    client.post(
+        f"/items/{item_id}/tags",
+        data={"action": "remove", "tag": "invoices"},
+        headers={"x-csrf-token": client.cookies["csrf_token"]},
+        follow_redirects=False,
+    )
+
+    assert [tag["tag"] for tag in tags.for_item(conn, item_id)] == ["projecthouse"]
+    assert [row["relpath"] for row in conn.execute("SELECT relpath FROM items")] == before
+
+
+def test_a_tag_is_not_a_share_of_the_confidence_score(tmp_path: Path) -> None:
+    """A tag is certain and it decided nothing, so it is not part of "how sure".
+
+    Both halves matter. It is written on the file, so there is no doubt in it
+    to apportion; and it changes no confidence, so giving it a slice would hand
+    a third of the bar to the one line that settled nothing.
+    """
+    from librairy.web.evidence import confidence_segments, humanize_evidence
+
+    conn, _ = analysed(tmp_path, "#ProjectHouse/roofing manual #Taxes2026.epub")
+    row = conn.execute(
+        "SELECT evidence, confidence FROM proposals LIMIT 1"
+    ).fetchone()
+    assert row is not None
+
+    views = humanize_evidence(row["evidence"])
+    segments = confidence_segments(views, float(row["confidence"]))
+
+    assert any(view.kind == "explicit" for view in views), "the tag is not shown at all"
+    assert all(segment.kind != "explicit" for segment in segments)
+    #  The bar still adds up to the number printed beside it.
+    assert sum(segment.width_pct for segment in segments) == round(
+        float(row["confidence"]) * 100
+    )
 
 
 def test_an_unknown_project_action_is_refused(tmp_path: Path) -> None:

@@ -20,7 +20,7 @@ _SOURCE_LABEL = {
     "tmdb": "TMDB",
     "openlibrary": "Open Library",
     "library-pattern": "Your library",
-    "hashtag": "Folder hashtag",
+    "hashtag": "Your tag",
     "ai": "AI",
     "vision": "Looked at it",
     "artwork": "Cover art",
@@ -48,7 +48,12 @@ TRUST = {
     "coverart": "catalog",
     "tags": "local",
     "library-pattern": "local",
-    "hashtag": "local",
+    #  Its own kind, and the only one that did not come off the file. Somebody
+    #  typed it. "The file itself" was the closest available answer and it was
+    #  the wrong one — a hashtag is the one signal in the program with a person
+    #  behind it, and a reader deciding whether to trust a row should be told
+    #  which parts of it they wrote themselves.
+    "hashtag": "explicit",
     #  The filename and the folder it came in — both read off the file itself.
     "artwork": "local",
     "companion": "local",
@@ -65,6 +70,7 @@ TRUST = {
 }
 TRUST_LABELS = {
     "catalog": "a public catalog",
+    "explicit": "something you wrote",
     "local": "the file itself",
     "vision": "looking at the picture",
     "guess": "its name and type",
@@ -81,6 +87,14 @@ class EvidenceView:
     cloud: bool = False
     #  catalog | local | guess | ai | cloud
     kind: str = "guess"
+
+
+#  Evidence that is certain and decided nothing, so it is not a share of the
+#  score. A tag is written on the file — there is no doubt about it to
+#  apportion — and it changes no confidence, so giving it a slice of "how sure
+#  am I" would hand a third of the bar to the one line that settled nothing.
+#  It gets its "why" line and stays out of the arithmetic.
+SCORELESS_KINDS = frozenset({"explicit"})
 
 
 @dataclass(frozen=True)
@@ -106,9 +120,9 @@ def confidence_segments(views: list[EvidenceView], confidence: float) -> list[Se
     score = max(0, min(100, round(confidence * 100)))
     if not views or score == 0:
         return [Segment("guess", "nothing recorded", score)] if score else []
-    by_kind: dict[str, int] = {}
-    for view in views:
-        by_kind[view.kind] = by_kind.get(view.kind, 0) + max(view.weight_pct, 1)
+    by_kind = _scoring_kinds(views)
+    if not by_kind:
+        return [Segment("guess", "nothing recorded", score)]
     total = sum(by_kind.values())
     #  Strongest first, so the bar reads left to right as best evidence first.
     order = ["catalog", "vision", "local", "ai", "cloud", "guess"]
@@ -139,9 +153,9 @@ def evidence_mix(views: list[EvidenceView]) -> list[Segment]:
     """
     if not views:
         return []
-    by_kind: dict[str, int] = {}
-    for view in views:
-        by_kind[view.kind] = by_kind.get(view.kind, 0) + max(view.weight_pct, 1)
+    by_kind = _scoring_kinds(views)
+    if not by_kind:
+        return []
     total = sum(by_kind.values())
     order = ["catalog", "vision", "local", "ai", "cloud", "guess"]
     segments = [
@@ -155,6 +169,16 @@ def evidence_mix(views: list[EvidenceView]) -> list[Segment]:
         first = segments[0]
         segments[0] = Segment(first.kind, first.label, first.width_pct + drift)
     return [segment for segment in segments if segment.width_pct > 0]
+
+
+def _scoring_kinds(views: list[EvidenceView]) -> dict[str, int]:
+    """The evidence that is a share of a score, by kind. See `SCORELESS_KINDS`."""
+    by_kind: dict[str, int] = {}
+    for view in views:
+        if view.kind in SCORELESS_KINDS:
+            continue
+        by_kind[view.kind] = by_kind.get(view.kind, 0) + max(view.weight_pct, 1)
+    return by_kind
 
 
 def evidence_caption(views: list[EvidenceView]) -> str:
@@ -208,7 +232,15 @@ def humanize_evidence(payload: str) -> list[EvidenceView]:
         elif entry.source in {"musicbrainz", "tmdb", "acoustid", "openlibrary"}:
             text = f"Matched {entry.detail}"
         elif entry.source == "hashtag":
-            text = f"Tagged #{entry.detail}"
+            #  Two things one tag can say. "Tagged #ProjectHouse" is what is
+            #  written on the file; "Part of House" is the Project it joined
+            #  by carrying it, which is true from the moment it was read and
+            #  is usually the more useful of the two on screen.
+            text = (
+                f"Part of {entry.detail}"
+                if entry.field == "project"
+                else f"Tagged #{entry.detail}"
+            )
         elif entry.source == "library-pattern":
             text = f"Fits your existing layout: {entry.detail}"
         else:

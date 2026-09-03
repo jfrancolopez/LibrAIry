@@ -115,14 +115,36 @@ the path changes, the item does not. Four gaps closed at once:
 | Which one is "nearest" | **a rule**, not the first item of a list: the most specific place wins, and within one name the first tag written |
 | Surviving filing and re-analysis | **yes**, and every tag already in an existing proposal is carried over on upgrade |
 
-**A tag is explicit evidence, and it still cannot file anything.** It sits above
-a learned habit and above an AI guess — nobody types `#Taxes2026` by accident —
-and below anything that identifies the file, because it is a statement about
-context rather than content. `#ProjectHouse` on an installer leaves the
-installer alone. Where a tag genuinely changes a destination it does so as a
-Decision Memory cue: repeated decisions about tagged files teach an answer that
-is offered, explainable and promotable like every other one, which keeps one
-authority model instead of two.
+**A tag counts now, not once something has been learned about it.** It sits
+above a learned habit and above an AI guess — nobody types `#Taxes2026` by
+accident — and below anything that identifies the file, because it is a
+statement about context rather than content.
+
+Two different facts, and LibrAIry keeps both:
+
+    #ProjectHouse                    what you are telling it, now
+    "you file #ProjectHouse docs     what it has learned you tend to do
+     under Documents/House"           with that kind of hint
+
+The first does not wait for the second. A tag naming a Project puts the file in
+that Project the moment it is read; every tag is evidence on the proposal, in
+the Why panel, the first time the file is seen; and what you wrote is asked
+before what LibrAIry worked out when both could answer.
+
+**And it still cannot file anything.** A tag names no destination and picks no
+category — `#ProjectHouse` on an installer leaves the installer alone — and
+where a file goes still comes from evidence about the file, a learned pattern,
+or a rule you promoted.
+
+**You can tag a file without renaming it.** The item page takes one and keeps
+it as yours. Before this the only way to say `#ProjectHouse` was to put it in
+the filename, which is an odd thing to have to do to a document you have
+already filed.
+
+**A tag is not part of the confidence score.** It is certain — it is written on
+the file — and it decided nothing, so the segmented bar no longer hands a slice
+of "how sure am I" to the one line that settled nothing. It reads as *something
+you wrote*, which is its own kind of source and not "the file itself".
 
 **Projects.** A Project is a tag you promoted — files that belong together
 wherever they live. A house renovation is quotes, photographs and a video
