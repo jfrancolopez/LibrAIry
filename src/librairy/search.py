@@ -439,7 +439,14 @@ def perf_search(conn: sqlite3.Connection, query: str) -> float:
 def _fields_from_row(conn: sqlite3.Connection, row: sqlite3.Row) -> dict[str, str]:
     evidence = _evidence(row["evidence"])
     name = row["relpath"].replace("/", " ")
-    tags = " ".join(entry["detail"] for entry in evidence if entry.get("source") == "hashtag")
+    #  From the durable store, not from the proposal's evidence. The evidence
+    #  belongs to a guess that is superseded the moment the file moves, and the
+    #  clean name it produced has had the hashtag stripped out of it — so a tag
+    #  read from there was findable right up until the file was filed. See
+    #  `librairy/tags.py`.
+    from librairy.tags import words_for
+
+    tags = words_for(conn, int(row["id"]))
     # A caption, the things in the picture, and the text read out of it, in the
     # column that already holds "other words about this file". Searching "wifi"
     # and getting the screenshot of the Wi-Fi settings is the whole reason to

@@ -4,10 +4,16 @@ from librairy.classify.hashtags import extract_hashtags, strip_hashtags_from_rel
 from librairy.taxonomy import render_destination
 
 
-def test_extracts_all_tags_and_nearest_folder_wins() -> None:
+def test_extracts_all_tags_most_specific_first() -> None:
+    """Ordered by where they were written, not by where they were found.
+
+    `nearest` used to be `tags[0]` of the deepest folder carrying any — first
+    item of a list, which is an accident of ordering rather than a rule. The
+    order is the rule now, so the two cannot disagree.
+    """
     hints = extract_hashtags("Vacation 2026 #italy/Day 1 #rome/photo.jpg")
 
-    assert hints.tags == ("italy", "rome")
+    assert hints.tags == ("rome", "italy"), "deepest folder first"
     assert hints.nearest == "rome"
     assert [entry.source for entry in hints.evidence] == ["hashtag", "hashtag"]
 

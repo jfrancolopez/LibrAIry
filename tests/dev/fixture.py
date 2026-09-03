@@ -621,6 +621,9 @@ def build_app(root: Path):  # noqa: ANN201
     #  that has no proposal at all, and a later scan would find them 'waiting'
     #  and leave them there, but a later *analysis* would try to answer them.
     _files_waiting_for_ai(conn, settings)
+    #  Last: it tags files the scenes above created, and promotes one of the
+    #  tags. Everything it touches has to exist first.
+    _a_tagged_project(conn, settings)
 
     return create_app(settings, conn)
 
@@ -666,6 +669,49 @@ def _files_waiting_for_ai(conn, settings: Settings) -> None:  # noqa: ANN001
         if row is None:  # pragma: no cover - the scanner holds unstable files
             continue
         waiting.hold(conn, int(row["id"]), reason, detail)
+
+
+
+def _a_tagged_project(conn, settings: Settings) -> None:  # noqa: ANN001
+    """A house renovation: quotes, photographs and a clip, under one tag.
+
+    Written by *tagging real files* — some by the hashtag in their own name,
+    some by the folder they arrived in, one by hand — so the Projects page has
+    all three provenances on it and the Project spans more than one category.
+    That last part is the whole point of a Project: no folder holds a quote, a
+    photograph and a video walkthrough together, and a tag does.
+
+    One tag is promoted and one is not, so the page shows both halves: the
+    Projects somebody made, and the tags they could still make one from.
+    """
+    from librairy import tags  # noqa: PLC0415
+    from librairy.classify import analyze_items  # noqa: PLC0415
+
+    folder = settings.inbox_dir / "#ProjectHouse"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "roof quote #Invoices.pdf").write_bytes(JPEG)
+    (folder / "before.jpg").write_bytes(JPEG)
+    (folder / "walkthrough.mp4").write_bytes(b"\x00\x00\x00 ftypisom" + b"\0" * 512)
+    scan_root(conn, "inbox", settings.inbox_dir, settings)
+    #  Analysed, not merely scanned. A Project's whole claim is that it spans
+    #  categories no folder holds together, and three files with no category
+    #  at all would photograph that claim as "unsorted 3".
+    analyze_items(conn, settings)
+    for name in ("roof quote #Invoices.pdf", "before.jpg", "walkthrough.mp4"):
+        row = conn.execute(
+            "SELECT id FROM items WHERE root='inbox' AND relpath=?",
+            (f"#ProjectHouse/{name}",),
+        ).fetchone()
+        if row is not None:
+            tags.record(conn, int(row["id"]), f"#ProjectHouse/{name}")
+    #  One filed file too, so the Project shows something that is already in
+    #  the library rather than only inbox work.
+    filed = conn.execute(
+        "SELECT id FROM items WHERE root='library' ORDER BY id LIMIT 1"
+    ).fetchone()
+    if filed is not None:
+        tags.add(conn, int(filed["id"]), "ProjectHouse")
+    tags.promote(conn, "projecthouse", "House renovation")
 
 
 def _similar_representations(conn) -> None:  # noqa: ANN001

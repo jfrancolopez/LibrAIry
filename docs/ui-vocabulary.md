@@ -41,6 +41,8 @@ and `Dismiss suggestion` change no file at all.
 | **After Commit** | where it would be if you committed |
 | **Waiting for Commit** | approved, and nothing has moved |
 | **Waiting for AI** | analysis stopped rather than guess, and is waiting for a provider |
+| **Project** | files that belong together, wherever they live — a view, never a place |
+| **Project folder** | `Projects/{project}/` — a filing destination on disk |
 | **Undo** | reverse something that actually happened |
 | **Cancel request** / **Send back to Review** | withdraw something that has *not* happened |
 | **Dismissed** | you told LibrAIry not to suggest this for now |
@@ -48,6 +50,17 @@ and `Dismiss suggestion` change no file at all.
 | **Preserved original** | the original kept when an optimized version was adopted |
 | **Delete queue** | a folder you empty yourself; LibrAIry has still deleted nothing |
 | **Set aside** | a file moved out of the library into Quarantine, where it can be restored |
+
+**"Project" is two things, and they are told apart by one word.** A **Project**
+is a promoted tag: a view across the library, whose members are the files
+carrying that tag wherever they happen to live. A **Project folder** is
+`Projects/{project}/`, a real directory that files are moved into, and it is
+what the `projects` category files things as. Promoting `#ProjectHouse` moves
+no file into `Projects/`; filing something into `Projects/` creates no Project.
+
+The category is therefore labelled **Project folders** wherever a category name
+is shown, so that a badge and a page heading cannot read as the same thing.
+`tests/test_tags.py` holds the distinction.
 
 **"Waiting" is never a word on its own.** Three things in LibrAIry wait and they
 wait for different events: an approval waits for Commit, an encode waits for a

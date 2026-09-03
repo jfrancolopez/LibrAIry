@@ -2626,6 +2626,99 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         actions[action]()
         return RedirectResponse("/review/learned", status_code=303)
 
+    @app.get("/projects", response_class=HTMLResponse)
+    def projects_page(request: Request) -> HTMLResponse:
+        """Every Project, and the tags that could become one.
+
+        A **Project** is a promoted tag — a view across the library, whose
+        members are the files carrying that tag wherever they live. It is not
+        the `Projects/` folder, which is a filing destination on disk; see
+        `docs/ui-vocabulary.md` for why the two keep different words.
+        """
+        from librairy.tags import counts, projects
+
+        promoted = projects(conn)
+        known = {str(project["tag"]) for project in promoted}
+        return TEMPLATES.TemplateResponse(
+            request,
+            "projects.html",
+            {
+                "title": "Projects",
+                "projects": promoted,
+                "tags": [tag for tag in counts(conn) if tag["tag"] not in known],
+            },
+        )
+
+    @app.post("/projects/promote", include_in_schema=False)
+    def projects_promote(
+        request: Request,  # noqa: ARG001
+        tag: Annotated[str, Form()] = "",
+        name: Annotated[str, Form()] = "",
+    ) -> RedirectResponse:
+        """Make a Project out of a tag. Only a person reaches this.
+
+        A tag on four hundred files is a tag on four hundred files. Nothing
+        counts its way to a Project, and promoting one moves no file: the
+        library is exactly where it was a moment ago.
+        """
+        from librairy.tags import promote
+
+        if not tag.strip():
+            raise HTTPException(status_code=422, detail="a project needs a tag")
+        promote(conn, tag.strip(), name)
+        return RedirectResponse("/projects", status_code=303)
+
+    @app.post("/projects/{project_id}", include_in_schema=False)
+    def projects_action(
+        request: Request,  # noqa: ARG001
+        project_id: int,
+        action: Annotated[str, Form()] = "",
+        name: Annotated[str, Form()] = "",
+    ) -> RedirectResponse:
+        """Rename a Project, or stop treating the tag as one.
+
+        Renaming changes a display name and nothing else — not the tag, not a
+        path, not a file. A Project's identity is its tag, which is what
+        somebody actually wrote.
+        """
+        from librairy import tags as tag_store
+
+        if action == "rename":
+            tag_store.rename(conn, project_id, name)
+        elif action == "demote":
+            tag_store.demote(conn, project_id)
+        else:
+            raise HTTPException(status_code=422, detail=f"unknown action: {action}")
+        return RedirectResponse("/projects", status_code=303)
+
+    @app.get("/projects/{project_id}", response_class=HTMLResponse)
+    def project_detail(request: Request, project_id: int, page: PageNumber = 1) -> HTMLResponse:
+        """One Project: what belongs to it, what kinds, and what is unresolved.
+
+        Counts over the whole thing and one bounded page of files. A Project of
+        forty thousand files renders the same amount of HTML as one of four —
+        the same rule every paged surface here is held to.
+        """
+        from librairy.tags import PAGE_SIZE, members, project_for, summary
+
+        project = project_for(conn, project_id)
+        if project is None:
+            raise HTTPException(status_code=404, detail="no such project")
+        facts = summary(conn, project.tag)
+        total = int(facts["files"])
+        return TEMPLATES.TemplateResponse(
+            request,
+            "project.html",
+            {
+                "title": project.name,
+                "project": project,
+                "summary": facts,
+                "members": members(conn, project.tag, page),
+                "page": max(1, page),
+                "pages": max(1, -(-total // PAGE_SIZE)),
+            },
+        )
+
     @app.get("/activity", response_class=HTMLResponse)
     def activity_fragment(request: Request) -> HTMLResponse:
         """The header pill, polled from every open tab — keep it cheap."""

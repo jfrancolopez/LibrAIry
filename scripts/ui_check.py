@@ -414,6 +414,11 @@ PAGES = {
     # and the offer to promote the next one. The offer is the widest thing on
     # the page — a sentence over a text box and a button.
     "learned": "/review/learned",
+    # Projects: the promoted tags, and the tags that could become one. Compact
+    # on purpose — a Project is a file-focused view, not a dashboard.
+    "projects": "/projects",
+    # One Project: counts over everything, and a bounded page of files.
+    "project": "/projects/1",
     # One import, in detail: the section tabs, the bulk control, and fifty
     # member rows with a destination each. `CameraCard-Aug24` is the dev
     # fixture's camera card — twenty-seven files with three answers in them.

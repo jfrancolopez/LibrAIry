@@ -22,7 +22,11 @@
           ('/browse', 'Browse'),
           ('/review', 'Review')
         ] %}
+        {# `Projects` here is the *view* across the library — files that belong
+           together wherever they live — and not the `Projects/` folder, which
+           is a filing destination. See docs/ui-vocabulary.md. #}
         {% set moreitems = [
+          ('/projects', 'Projects'),
           ('/quarantine', 'Quarantine'),
           ('/delete-queue', 'Delete queue'),
           ('/reconcile', 'Reconcile'),

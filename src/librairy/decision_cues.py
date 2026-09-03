@@ -38,6 +38,12 @@ AUTHOR = "author"
 YEAR = "year"
 FORMAT = "format"
 FOLDER = "folder"
+#  An explicit hint somebody wrote on the file or its folder. A cue like any
+#  other, deliberately: this is how a tag comes to influence a *destination*
+#  without becoming a second authority beside Decision Memory. Repeated
+#  decisions about `#ProjectHouse` files teach an answer, and that answer is
+#  offered and promotable exactly like every other learned one.
+TAG = "tag"
 
 #  Cues whose value can legitimately appear inside a destination and so may be
 #  turned back into a placeholder. `category` may not: `Documents/...` contains
@@ -99,6 +105,13 @@ def cues_for(row: sqlite3.Row) -> list[Cue]:
         ladder.append(
             {CATEGORY: features[CATEGORY], DOCUMENT_TYPE: features[DOCUMENT_TYPE]}
         )
+    #  A tag before a folder. Somebody who wrote `#ProjectHouse` said something
+    #  more deliberate than "this arrived in a folder called scans", and the
+    #  ladder is ordered by how specific a cue is rather than by where it came
+    #  from — so the narrower claim is asked first.
+    tag = _nearest_tag(row)
+    if tag:
+        ladder.append({CATEGORY: features[CATEGORY], TAG: tag})
     folder = _source_folder(str(row["item_relpath"] or ""))
     if folder:
         #  Where it arrived from. An import folder is something the person
@@ -107,6 +120,23 @@ def cues_for(row: sqlite3.Row) -> list[Cue]:
         #  timestamp.
         ladder.append({CATEGORY: features[CATEGORY], FOLDER: folder})
     return [Cue(DESTINATION, entry) for entry in ladder if entry]
+
+
+def _nearest_tag(row: sqlite3.Row) -> str:
+    """The most specific hashtag on this file, from its evidence.
+
+    Read from the evidence the classifier recorded rather than from
+    `item_tags`, for the same reason every other cue is: a cue has to describe
+    what the person was looking at when they decided, and the durable store is
+    what is true *now*. `extract_hashtags` writes them most-specific-first, so
+    the first one is the nearest.
+    """
+    for entry in _evidence(row):
+        if str(entry.get("source") or "") == "hashtag":
+            detail = " ".join(str(entry.get("detail") or "").split())
+            if detail:
+                return detail
+    return ""
 
 
 def outcome_for(row: sqlite3.Row) -> str:

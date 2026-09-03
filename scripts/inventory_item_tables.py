@@ -106,6 +106,14 @@ CLASSIFIED = {
         " for whatever lands in the library, so the result gets its own"
         " through the normal path.",
     ),
+    "item_tags": (
+        "neither", "no",
+        "A hashtag somebody wrote on a file, kept against the item so that"
+        " filing does not forget it. An optimized copy is a file nobody has"
+        " ever tagged: carrying the row would put `#ProjectHouse` on something"
+        " its owner has not seen, and the tag on the original is still there"
+        " and still true.",
+    ),
     "processing_waits": (
         "neither", "no",
         "A record that analysis declined to answer *this* file and why. An"

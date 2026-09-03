@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block content %}
+  <header class="page-head">
+    <div>
+      <h1>{{ project.name }}</h1>
+      <p class="muted"><span class="mono">#{{ project.tag }}</span> — every file
+        carrying this tag, wherever it lives.</p>
+    </div>
+    <div class="button-row">
+      <a class="btn" href="/browse?q=%23{{ project.tag }}">Search these</a>
+      <a class="btn" href="/projects">All projects</a>
+    </div>
+  </header>
+
+  {# Four numbers over the whole project, and one page of files under them. A
+     project of forty thousand files draws the same amount of HTML as one of
+     four — the counts are aggregates and the list is bounded. #}
+  <section class="metric wide">
+    <ul class="facts project-facts">
+      <li><strong>{{ summary.files }}</strong> file{{ 's' if summary.files != 1 else '' }}</li>
+      <li><strong>{{ summary.categories }}</strong>
+        kind{{ 's' if summary.categories != 1 else '' }} of file</li>
+      <li><strong>{{ summary.filed }}</strong> already filed</li>
+      {% if summary.waiting %}
+        {# The only number here that is a call to action, so it is the only one
+           that is a link. #}
+        <li><a href="/review"><strong>{{ summary.waiting }}</strong> waiting on you</a></li>
+      {% endif %}
+    </ul>
+    {% if summary.kinds %}
+      <p class="muted">
+        {% for kind in summary.kinds %}
+          {{ kind.category or 'not analysed yet' }} {{ kind.files }}{% if not loop.last %} · {% endif %}
+        {% endfor %}
+      </p>
+    {% endif %}
+  </section>
+
+  {% if members %}
+    <table class="project-members">
+      <thead>
+        <tr><th>File</th><th>Kind</th><th>Where</th></tr>
+      </thead>
+      <tbody>
+        {% for member in members %}
+          <tr>
+            <td>
+              <a href="/items/{{ member.item_id }}" class="mono">{{ member.name }}</a>
+              {% if member.waiting %}
+                <span class="badge badge-warn">waiting on you</span>
+              {% endif %}
+            </td>
+            <td class="muted">{{ member.category or '—' }}</td>
+            <td class="muted project-path">{{ member.root }}/{{ member.relpath }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    {% if pages > 1 %}
+      <nav class="pager" aria-label="Project files">
+        {% if page > 1 %}
+          <a class="btn" href="/projects/{{ project.id }}?page={{ page - 1 }}">Previous files</a>
+        {% endif %}
+        <span class="muted">Page {{ page }} of {{ pages }}</span>
+        {% if page < pages %}
+          <a class="btn" href="/projects/{{ project.id }}?page={{ page + 1 }}">Next files</a>
+        {% endif %}
+      </nav>
+    {% endif %}
+  {% else %}
+    <p class="muted">Nothing carries this tag any more. The Project is still
+      here — tag a file <span class="mono">#{{ project.tag }}</span> and it
+      appears.</p>
+  {% endif %}
+{% endblock %}

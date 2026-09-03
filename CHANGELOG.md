@@ -98,6 +98,54 @@ add. Both now say which, and `librairy ai test` reports a server that passes
 its health check and then refuses to classify instead of returning a bare
 failure. **Schema 51** records the held files and why.
 
+### Tags, and Projects
+
+**A `#hashtag` now survives being filed.** It used to live in the proposal that
+read it: captured into the evidence, stripped out of the clean name on the way
+to the library, and gone by the time anything looked again. Tag four hundred
+photographs `#Vacation2026`, commit them, and the tag was no longer anywhere.
+
+Tags are stored against the **item**, which is the thing that survives a move —
+the path changes, the item does not. Four gaps closed at once:
+
+| | |
+|---|---|
+| A hashtag in the file's own name | **now read.** `IMG_4421 #Vacation2026.jpg` carried no hint at all before; only folders were looked at |
+| Several tags on one file | **all kept**, each with where it was written: your filename, a folder, or by hand |
+| Which one is "nearest" | **a rule**, not the first item of a list: the most specific place wins, and within one name the first tag written |
+| Surviving filing and re-analysis | **yes**, and every tag already in an existing proposal is carried over on upgrade |
+
+**A tag is explicit evidence, and it still cannot file anything.** It sits above
+a learned habit and above an AI guess — nobody types `#Taxes2026` by accident —
+and below anything that identifies the file, because it is a statement about
+context rather than content. `#ProjectHouse` on an installer leaves the
+installer alone. Where a tag genuinely changes a destination it does so as a
+Decision Memory cue: repeated decisions about tagged files teach an answer that
+is offered, explainable and promotable like every other one, which keeps one
+authority model instead of two.
+
+**Projects.** A Project is a tag you promoted — files that belong together
+wherever they live. A house renovation is quotes, photographs and a video
+walkthrough, and no folder holds all three. The page answers four questions —
+what belongs to it, what kinds of file, what is already filed, what is waiting
+on you — and lists its files a page at a time.
+
+Promotion is explicit. A tag on four hundred files is a tag on four hundred
+files; it becomes a Project when you say so.
+
+**A Project is not the `Projects/` folder**, and the words now keep them apart:
+
+    Project          files that belong together, wherever they live
+    Project folder   `Projects/{project}/` — a filing destination on disk
+
+Promoting `#ProjectHouse` moves no file. Filing something into `Projects/`
+creates no Project. The category is labelled *Project folders* wherever a
+category name appears, so a badge and a page heading cannot read as the same
+thing, and the physical taxonomy is exactly as it was.
+
+No tasks, no kanban, no notes, no calendars. A Project is about understanding
+related files and nothing else.
+
 ### Decision Memory
 
 **A habit can now become a rule, and only you can make that happen.**

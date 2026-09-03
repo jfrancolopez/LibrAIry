@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block content %}
+  <header class="page-head">
+    <div>
+      <h1>Projects</h1>
+      <p class="muted">Files that belong together, wherever they live.</p>
+    </div>
+  </header>
+
+  {# The distinction, said once and said first. `Projects/` is a folder files
+     are moved into; a Project is a view across everything you already have,
+     and the two have never been the same thing. See docs/ui-vocabulary.md. #}
+  <p>A Project is a tag you promoted. Its files stay exactly where they are —
+    nothing is moved, copied or renamed, and a Project is <strong>not</strong>
+    the <span class="mono">Projects/</span> folder in your library, which is a
+    filing destination like any other.</p>
+
+  {% if projects %}
+    <ul class="project-list">
+      {% for project in projects %}
+        <li class="project-card">
+          <h2><a href="/projects/{{ project.id }}">{{ project.name }}</a></h2>
+          <p class="muted"><span class="mono">#{{ project.tag }}</span> ·
+            {{ project.files }} file{{ 's' if project.files != 1 else '' }}</p>
+          <div class="button-row">
+            <form method="post" action="/projects/{{ project.id }}">
+              <input type="hidden" name="csrf_token" value="{{ request.state.session.csrf_token }}">
+              <input type="hidden" name="action" value="rename">
+              <label class="field field-inline">Call it
+                <input name="name" value="{{ project.name }}" maxlength="80"></label>
+              <button type="submit" class="btn-ghost">Rename</button>
+            </form>
+            <form method="post" action="/projects/{{ project.id }}">
+              <input type="hidden" name="csrf_token" value="{{ request.state.session.csrf_token }}">
+              <input type="hidden" name="action" value="demote">
+              <button type="submit" class="btn-ghost"
+                hx-confirm="Stop treating #{{ project.tag }} as a Project? The tag stays on every file that has it, and nothing moves.">Not a project</button>
+            </form>
+          </div>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="muted">None yet. Tag some files — a <span class="mono">#hashtag</span>
+      anywhere in a filename or a folder name — and promote one below.</p>
+  {% endif %}
+
+  <h2 id="tags">Your tags</h2>
+  {% if tags %}
+    <p class="muted">Every hashtag LibrAIry has read, and how many files carry it.
+      A tag is useful on its own — it is searchable and it teaches Decision
+      Memory — and it becomes a Project only when you say so.</p>
+    <ul class="tag-list">
+      {% for tag in tags %}
+        <li class="tag-row">
+          <a class="mono" href="/browse?q=%23{{ tag.tag }}">#{{ tag.label }}</a>
+          <span class="muted">{{ tag.files }} file{{ 's' if tag.files != 1 else '' }}</span>
+          <form method="post" action="/projects/promote">
+            <input type="hidden" name="csrf_token" value="{{ request.state.session.csrf_token }}">
+            <input type="hidden" name="tag" value="{{ tag.tag }}">
+            <button type="submit" class="btn-ghost">Promote to Project</button>
+          </form>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="muted">No tags yet. Put a <span class="mono">#hashtag</span> in a
+      filename or a folder name and LibrAIry keeps it — the name it files under
+      loses the hashtag, and the tag stays yours.</p>
+  {% endif %}
+
+  <p><a href="/browse">Back to Browse</a></p>
+{% endblock %}

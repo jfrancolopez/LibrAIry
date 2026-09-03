@@ -9,7 +9,7 @@ from pathlib import Path
 from librairy.config import Settings
 
 LOGGER = logging.getLogger(__name__)
-SCHEMA_VERSION = 52
+SCHEMA_VERSION = 53
 
 
 class DatabaseVersionError(RuntimeError):
@@ -1532,6 +1532,76 @@ CREATE INDEX idx_decision_rules_enabled ON decision_rules(enabled, kind);
 """
 
 
+MIGRATION_053 = """
+-- Tags that outlive the path they were written on.
+--
+-- A hashtag is the one thing in a filename somebody typed on purpose, and it
+-- used to survive exactly as long as the proposal that read it: the tag was
+-- captured into the proposal's frozen evidence, stripped out of the clean name
+-- on the way to the library, and then gone. Re-analysing a filed file read the
+-- library path, where the tag no longer is, and learned nothing.
+--
+-- Keyed to the **item** rather than to a path, because the item is what
+-- survives filing. `items.relpath` changes when a file moves; `items.id` does
+-- not, which is what makes `#ProjectHouse` still true a year later.
+--
+-- `source` is provenance, and it is a real distinction: "you tagged this file"
+-- and "it is in a tagged folder" are different claims, and the second is
+-- inherited by everything beneath the folder.
+CREATE TABLE item_tags (
+  item_id  INTEGER NOT NULL REFERENCES items(id),
+  tag      TEXT NOT NULL,
+  label    TEXT NOT NULL,
+  source   TEXT NOT NULL,
+  detail   TEXT NOT NULL DEFAULT '',
+  added_at TEXT NOT NULL,
+  PRIMARY KEY (item_id, tag)
+);
+CREATE INDEX idx_item_tags_tag ON item_tags(tag);
+
+-- A tag somebody promoted into a Project.
+--
+-- Deliberately *only* a tag and a name. A Project's members are the items
+-- carrying its tag, read from `item_tags` -- a membership table here would be
+-- a second copy of that, free to disagree with it, and needing to be written
+-- by everything that ever tags anything.
+--
+-- Not the same thing as the `Projects/` folder in the library taxonomy, and
+-- never to be conflated with it: that is a place on disk that files are moved
+-- into, and this is a view across files wherever they already live. See
+-- `docs/ui-vocabulary.md`.
+CREATE TABLE projects (
+  id         INTEGER PRIMARY KEY,
+  tag        TEXT NOT NULL UNIQUE,
+  name       TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+-- Every tag that is already known, moved to where it now lives.
+--
+-- Without this, upgrading loses them: a tag used to be findable because the
+-- search index read it out of the live proposal's evidence, and the index now
+-- reads `item_tags`. Somebody who tagged four hundred photographs last year
+-- would have searched for `#Vacation2026` after the upgrade and found nothing.
+--
+-- The old evidence stored the *normalised* tag in `detail` -- `_sanitize_tag`
+-- ran before the entry was written -- so it is both the tag and the best label
+-- available, and no re-normalisation is needed or possible here.
+INSERT OR IGNORE INTO item_tags(item_id, tag, label, source, detail, added_at)
+SELECT p.item_id,
+       json_extract(e.value, '$.detail'),
+       json_extract(e.value, '$.detail'),
+       'folder',
+       '',
+       COALESCE(p.created_at, '')
+FROM proposals p, json_each(p.evidence) e
+WHERE p.status != 'superseded'
+  AND json_valid(p.evidence)
+  AND json_extract(e.value, '$.source') = 'hashtag'
+  AND COALESCE(json_extract(e.value, '$.detail'), '') <> '';
+"""
+
+
 MIGRATIONS = {
     1: MIGRATION_001,
     2: MIGRATION_002,
@@ -1585,6 +1655,7 @@ MIGRATIONS = {
     50: MIGRATION_050,
     51: MIGRATION_051,
     52: MIGRATION_052,
+    53: MIGRATION_053,
 }
 
 

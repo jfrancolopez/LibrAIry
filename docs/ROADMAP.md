@@ -798,7 +798,49 @@ Decision Memory give the same explanation for the same preselection.
 
 ## M2-05 · Tags, and Projects
 
-**P2 · M · Low risk**
+**P2 · M · Low risk · DONE 2026-09-03** — `librairy/tags.py`, schema 53,
+`tests/test_tags.py`.
+
+> **All five rows of the table below now pass.** A hashtag in a file's own name
+> is read; every tag is kept with where it was written; `nearest` is a stated
+> rule rather than `tags[0]`; the tag survives filing because it is stored
+> against the *item*, not the path; and it reaches a destination through
+> Decision Memory rather than through a second authority.
+>
+> **The store is keyed to the item, and that is the whole fix.**
+> `items.relpath` changes when a file moves and `items.id` does not, so
+> `#ProjectHouse` is still true a year later — where before the tag lived in a
+> proposal's evidence, was stripped out of the clean name on the way to the
+> library, and was gone by the time anything re-read the file. Migration 053
+> backfills every tag already in existing evidence, so upgrading does not lose
+> the ones somebody already wrote.
+>
+> **`nearest`, stated:** the most specific *place* wins — the file's own name,
+> then the deepest folder outward — and within one name the first tag written.
+> Nothing is discarded to get there; `#ProjectHouse` and `#Invoices` on one
+> file are two true things.
+>
+> **How a tag influences a destination.** As a Decision Memory cue and by no
+> other route. Repeated decisions about `#ProjectHouse` files teach an answer
+> that is offered, explainable and promotable exactly like every other learned
+> one — which keeps the authority model at one path instead of two. A tag never
+> picks a category: `#ProjectHouse` on an installer leaves the installer alone.
+>
+> **A Project is a promoted tag and nothing else.** Its members are the items
+> carrying the tag, read back out of `item_tags`; there is no membership table,
+> because a second copy of that would be free to disagree. Promotion is
+> explicit, for the same reason a rule is: a tag on four hundred files is a tag
+> on four hundred files.
+>
+> **The vocabulary collision is resolved and pinned.** A **Project** is a view
+> across the library; a **Project folder** is `Projects/{project}/`, a filing
+> destination. The category is labelled *Project folders* wherever a category
+> name is shown, so a badge and a page heading cannot read as the same thing.
+> The physical taxonomy is untouched. `tests/test_tags.py` holds both halves.
+>
+> **Not built, deliberately:** tasks, kanban, notes, calendars, deadlines. A
+> Project answers what belongs to it, what kinds, what is filed and what is
+> waiting — four aggregates and a bounded page of files.
 
 **Problem.** Hashtags are half-built, and "Project" means two things.
 

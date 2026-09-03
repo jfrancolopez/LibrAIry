@@ -3700,3 +3700,47 @@ summary.timeline-head::-webkit-details-marker { display: none; }
 .learned-promote p { flex: 1 1 100%; margin: 0; }
 .learned-promote label { display: grid; gap: var(--space-1); font-size: var(--text-sm); }
 .learned-promote input { min-width: 0; }
+
+/* Projects: files that belong together, wherever they live. Compact on
+   purpose — this is a file-focused view, not a dashboard. See
+   `librairy/tags.py` for why a Project is a promoted tag and nothing else. */
+.project-list { list-style: none; padding: 0; margin: var(--space-2) 0;
+  display: grid; gap: var(--space-2);
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+}
+.project-card {
+  border: var(--border-thin) solid var(--border);
+  border-radius: var(--radius-ui);
+  padding: var(--space-2);
+  background: var(--bg-metric);
+  display: grid; gap: var(--space-1); align-content: start;
+}
+.project-card h2 { font-size: var(--text-lg); margin: 0; }
+.project-card .button-row { flex-wrap: wrap; gap: var(--space-1); }
+.project-card .field-inline input { width: 8rem; min-width: 0; }
+
+.tag-list { list-style: none; padding: 0; margin: var(--space-2) 0; display: grid; gap: var(--space-1); }
+.tag-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2); }
+.tag-row .mono { min-width: 10rem; }
+
+.project-facts { display: flex; flex-wrap: wrap; gap: var(--space-4); }
+.project-members { width: 100%; border-collapse: collapse; margin: var(--space-2) 0; }
+.project-members th, .project-members td {
+  text-align: left; vertical-align: top;
+  padding: var(--space-1) var(--space-2) var(--space-1) 0;
+  border-bottom: var(--border-thin) solid var(--border);
+}
+.project-path { overflow-wrap: anywhere; font-size: var(--text-sm); }
+
+@media (max-width: 600px) {
+  /* Same treatment as every other table here: three columns into 280px is
+     three columns of one character each, and the geometry check cannot see it. */
+  .project-members, .project-members tbody, .project-members tr,
+  .project-members td { display: block; }
+  .project-members thead { display: none; }
+  .project-members tr {
+    border-bottom: var(--border-thin) solid var(--border);
+    padding: var(--space-2) 0;
+  }
+  .project-members td { border: 0; padding: 0 0 var(--space-1); }
+}

@@ -328,10 +328,14 @@ def test_only_a_request_can_create_a_rule() -> None:
     #  promoting all appear in modules that have nothing to do with this.
     calls = re.compile(r"\bpromote\s*\(")
     source = P("src/librairy")
+    #  `tags.promote` is the same rule about a different thing — a tag becomes
+    #  a Project only when somebody says so — so it is excluded here and has
+    #  its own test in `test_tags.py`.
+    owners = {"rules.py", "tags.py"}
     callers = sorted(
         str(path.relative_to(source))
         for path in source.rglob("*.py")
-        if path.name != "rules.py" and calls.search(path.read_text(encoding="utf-8"))
+        if path.name not in owners and calls.search(path.read_text(encoding="utf-8"))
     )
 
     assert callers == ["web/app.py"], (

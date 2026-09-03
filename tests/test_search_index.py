@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from librairy import search, tags
 from librairy.config import Settings
 from librairy.content.extract import process_content_extractions, rebuild_content_index
 from librairy.db import (
@@ -92,8 +93,15 @@ def test_new_proposal_commit_and_quarantine_sync_fts(tmp_path: Path) -> None:
         clean_name="Bohemian Rhapsody.flac",
         dest_relpath="Music/Queen/A Night at the Opera/Bohemian Rhapsody.flac",
         confidence=0.9,
-        evidence=[EvidenceEntry("hashtag", "tag", "queen", 0.7)],
+        evidence=[EvidenceEntry("hashtag", "tag", "queen", 0.9)],
     )
+    #  Tags are indexed from `item_tags`, not from the proposal's evidence —
+    #  the evidence belongs to a guess that is superseded the moment the file
+    #  moves, and the clean name it produced has had the hashtag stripped out.
+    #  Analysis records both; this test writes the proposal by hand, so it
+    #  records the tag by hand too. See `librairy/tags.py`.
+    tags.add(conn, song_id, "queen", source="folder")
+    search.sync_search_item(conn, song_id)
     assert search_items(conn, "bohemian queen")[0]["item_id"] == song_id
 
     plan_id = create_plan(

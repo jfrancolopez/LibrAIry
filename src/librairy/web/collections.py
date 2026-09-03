@@ -38,7 +38,10 @@ CATEGORY_LABEL = {
     "photos": "Photos",
     "documents": "Documents",
     "books": "Books",
-    "projects": "Projects",
+    #  The *folder*, not the Project. `Projects/{project}/` is a filing
+    #  destination on disk; a Project is a view across the library made by
+    #  promoting a tag. One word for each idea — see `docs/ui-vocabulary.md`.
+    "projects": "Project folders",
     "misc": "Unsorted",
     #  Not a category. A file the analysis declined to answer has none, and
     #  saying "Not analysed yet" about it is untrue in the one way that matters

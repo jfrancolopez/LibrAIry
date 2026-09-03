@@ -4,7 +4,7 @@ import sqlite3
 from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
 
-from librairy import ocr, waiting
+from librairy import ocr, tags, waiting
 from librairy.ai.orchestrator import (
     NOT_NEEDED,
     AIBatchState,
@@ -134,12 +134,28 @@ def analyze_items(
             ocr=reader,
         )
         attempt = ai_state.attempt
+        #  Before anything decides what to do with the file, and outside every
+        #  branch below. A hashtag is a fact about the path the file arrived
+        #  under, and it is true whether the file ends up proposed, held or
+        #  deferred — recording it only on the paths that produce a proposal is
+        #  how a tagged file that nothing could identify lost its tag. And this
+        #  is the only moment it is legible: filing strips it out of the clean
+        #  name. See `librairy/tags.py`.
+        tags.record(conn, int(item["id"]), str(item["relpath"]))
         if int(item["id"]) in budget.deferred:
             #  Its turn did not come. Left exactly where it was, so the next
             #  cycle reaches it and answers it properly — a mode changes when
             #  work happens and never what the answer is.
             continue
         result = _with_runtime_destination(conn, settings, result)
+        #  The tags this file carries, on the proposal, for every category
+        #  rather than only for photo grouping. This is what makes a hashtag a
+        #  *cue* — `decision_cues` reads it, so repeated decisions about
+        #  `#ProjectHouse` files teach a destination through the ordinary
+        #  authority path instead of a second one beside it. It is added after
+        #  the destination is rendered, because a tag may not choose one: see
+        #  `librairy/tags.py`.
+        result = _with_tag_evidence(result, str(item["relpath"]))
         if _hold_instead(result, attempt, item, freed, opinions):
             waiting.hold(
                 conn,
@@ -179,6 +195,24 @@ def analyze_items(
     return AnalyzeSummary(
         len(items) - len(budget.deferred), proposed, pending, requeued, held
     )
+
+
+
+def _with_tag_evidence(result, relpath: str):  # noqa: ANN001, ANN202
+    """Fold this path's hashtags into the proposal's evidence.
+
+    Explicit user evidence, on the row and in the Why panel, and — through
+    `decision_cues` — a cue Decision Memory can learn from. Deliberately
+    additive: it changes no category, no destination and no confidence, because
+    a tag is a statement about context and `#ProjectHouse` on an installer does
+    not make the installer a house document.
+    """
+    from librairy.classify.hashtags import extract_hashtags
+
+    hints = extract_hashtags(relpath)
+    if not hints.evidence:
+        return result
+    return replace(result, evidence=(*result.evidence, *hints.evidence))
 
 
 def _existing_proposals(conn: sqlite3.Connection, item_ids: list[int]) -> set[int]:
