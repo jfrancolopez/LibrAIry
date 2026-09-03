@@ -334,6 +334,23 @@
   </select>
   <p class="muted">{{ processing_mode.note }}</p>
 
+  {# Deterministic work, so it sits under the processing mode and not under
+     Local AI: tesseract turns pixels into characters and makes no judgement,
+     and switching AI off must not stop a scanner's output being readable.
+     See `librairy/ocr.py`. #}
+  <label><input type="checkbox" name="ocr_enabled" {% if ocr_enabled %}checked{% endif %}>
+    Read scanned documents with OCR</label>
+  <p class="muted">
+    {% if ocr_available %}
+      Only for PDFs that have no text to extract, and only their first two
+      pages. What it reads is compared with everything else that named the
+      document — it never decides one on its own.
+    {% else %}
+      Not available: this image has no <span class="mono">tesseract</span>.
+      Scanned documents are reported as scans rather than guessed at.
+    {% endif %}
+  </p>
+
   <label for="ai_mode">Local AI</label>
   <select id="ai_mode" name="ai_mode">
     {% for mode in ai_modes %}

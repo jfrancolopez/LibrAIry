@@ -171,6 +171,15 @@ class ProcessingMode:
     #  encode is never suspended — see the module docstring.
     audits: bool
     transcodes: bool
+    #  Whether OCR may read pixels at all, and how many documents one cycle may
+    #  read for. Deterministic work, so it is governed here and not by the AI
+    #  axis — tesseract turns pixels into characters and makes no judgement,
+    #  and switching Local AI off must not stop a scanner's output being
+    #  readable. A document whose turn does not come this cycle is left alone
+    #  and reached by the next one, so the answer is the same and only the
+    #  timing moves. See `librairy/ocr.py`.
+    ocr: bool
+    ocr_per_cycle: int | None
     encoder: EncoderPolicy
 
 
@@ -188,6 +197,11 @@ PROCESSING_MODES = {
         max_sleep=120.0,
         audits=False,
         transcodes=False,
+        #  Still allowed, and rationed. Refusing outright would make Quiet
+        #  answer a scanned document differently rather than later, which is
+        #  the one thing a mode may not do.
+        ocr=True,
+        ocr_per_cycle=2,
         encoder=LOW,
     ),
     BALANCED: ProcessingMode(
@@ -202,6 +216,8 @@ PROCESSING_MODES = {
         max_sleep=60.0,
         audits=True,
         transcodes=True,
+        ocr=True,
+        ocr_per_cycle=10,
         encoder=LOW,
     ),
     FULL: ProcessingMode(
@@ -216,6 +232,8 @@ PROCESSING_MODES = {
         max_sleep=15.0,
         audits=True,
         transcodes=True,
+        ocr=True,
+        ocr_per_cycle=None,
         encoder=_full_encoder(),
     ),
 }

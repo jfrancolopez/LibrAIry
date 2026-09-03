@@ -951,6 +951,7 @@ def _document_row(row: sqlite3.Row) -> dict[str, object] | None:
     not the place to print somebody's bank statement.
     """
     from librairy.docmeta import TYPE_LABEL
+    from librairy.document_identity import SOURCE_LABEL
 
     entries = [
         entry
@@ -960,17 +961,40 @@ def _document_row(row: sqlite3.Row) -> dict[str, object] | None:
     if not entries:
         return None
     found = {entry.field: str(entry.detail) for entry in entries}
+    #  Every source that named the document, in the order the analysis compared
+    #  them — strongest first, because that is the order that explains the
+    #  choice. Read back off the evidence rather than recomputed: the row must
+    #  show what was decided, not what would be decided now.
+    named = [entry for entry in entries if entry.field.startswith("title/")]
+    chosen = next((entry for entry in named if entry.note == "chosen"), None)
+    sources = [
+        {
+            "source": entry.field.removeprefix("title/"),
+            "label": SOURCE_LABEL.get(
+                entry.field.removeprefix("title/"), entry.field.removeprefix("title/")
+            ),
+            "title": str(entry.detail),
+            "conflict": entry.note == "disagrees",
+            "chosen": entry.note == "chosen",
+        }
+        for entry in named
+    ]
     kind = found.get("type", "")
     return {
         "type": kind or TYPE_LABEL["document"],
-        "title": found.get("pdf title metadata") or found.get("epub metadata") or "",
-        "author": found.get("pdf author metadata") or found.get("epub author") or "",
-        "isbn": found.get("isbn") or found.get("epub identifier", ""),
-        "doi": found.get("doi in the text", ""),
-        #  Said plainly rather than hidden. There is no OCR here, so a scan is
-        #  a document LibrAIry has looked at and could not read.
+        "title": str(chosen.detail) if chosen else "",
+        "author": found.get("author", ""),
+        "isbn": found.get("isbn", ""),
+        "doi": found.get("doi", ""),
+        #  Said plainly rather than hidden: a scan nothing read is a document
+        #  LibrAIry has looked at and could not read, and a scan OCR read is a
+        #  document whose title came from pixels.
         "scanned": "no text layer" in found.get("text", ""),
-        "from_first_page": found.get("first page", ""),
+        "ocr": "read by OCR" in found.get("text", ""),
+        #  What the sources said, and whether they agreed. Empty for a document
+        #  only one thing named, which is the ordinary case and needs no table.
+        "sources": sources if len(sources) > 1 else [],
+        "conflict": found.get("conflict", ""),
     }
 
 

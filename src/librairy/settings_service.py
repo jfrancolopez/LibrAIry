@@ -28,6 +28,8 @@ from librairy.backup import (
 from librairy.catalogs import CATALOGS, CATALOGS_BY_SLUG, catalog_enabled, catalog_status
 from librairy.config import VISION_MODES, Settings
 from librairy.dedup import DedupConfigError, dedup_options, set_dedup_option
+from librairy.ocr import available as ocr_available
+from librairy.ocr import enabled as ocr_enabled
 from librairy.planner import utc_now
 from librairy.resources import modes_view
 from librairy.secrets_store import (
@@ -113,6 +115,10 @@ def settings_page_data(conn: sqlite3.Connection, settings: Settings) -> dict[str
         #  Two words, and the per-workload numbers behind them stay behind
         #  them. See `librairy/resources.py` for why there are two and not one.
         **modes_view(conn),
+        #  Beside them, because it is the same question — how much of the
+        #  machine may this take — and the answer is bounded by the same axis.
+        "ocr_enabled": ocr_enabled(conn),
+        "ocr_available": ocr_available(),
     }
 
 

@@ -18,29 +18,36 @@ zip with an XML manifest in it, which needs nothing at all. So this reads what
 the document says about itself, and only falls back to the name when the
 document says nothing.
 
-**The ladder, strongest first**, and every rung is something *recorded* rather
-than inferred:
+**Everything that can be read is read**, and each answer is kept with its
+source rather than collapsed into one:
 
-    1  embedded metadata      the PDF's Info dictionary, the EPUB's OPF
-    2  an identifier          an ISBN or a DOI printed in the front matter
-    3  front-matter text      the first page, where a title page is
-    4  the filename           somebody typed it, possibly wrongly
+    embedded metadata      the PDF's Info dictionary, the EPUB's OPF
+    an identifier          an ISBN or a DOI printed in the front matter
+    front-matter text      the first page, where a title page is
+    scanned text           OCR, and only where there is no text to extract
 
     --- the line ---
 
        a model's suggestion   plausible is not the same as true
 
 Nothing below the line is read here at all: this module runs no model and
-makes no request. Where a model does contribute elsewhere, **deterministic
-metadata outranks it** — a title read out of the file is not overwritten by a
-title something guessed from the file.
+makes no request.
+
+**This used to be a ladder, and the ladder was wrong about a real file.**
+Embedded metadata outranks front-matter text under any ordering anybody would
+write down, so a PDF whose Info dictionary said `CRACKING` was filed as
+`CRACKING.pdf` while its own title page said `Programming Rust`. The rung was
+never the problem — the problem was stopping at the first one that answered.
+Every source that has something to say is collected here now, and
+`librairy/document_identity.py` decides what they add up to. `title` remains
+what this module believes on its own, so nothing that read it before has
+changed meaning.
 
 **Scanned documents are said to be scanned.** A PDF with pages and no
-extractable text is an image of a document, and LibrAIry has no OCR — there is
-no tesseract in the image and this pass does not add one. So it reports what
-is true, `no text layer`, and classifies from metadata and the filename
-without pretending anything was read. The alternative is a document that looks
-identified and is not.
+extractable text is an image of a document. Where OCR is switched on, it is
+read; where it is not, that is reported as `no text layer` and the document is
+classified from metadata and the filename without pretending anything was
+read. The alternative is a document that looks identified and is not.
 
 **Nothing here runs on GET.** `pdfinfo` and `pdftotext` are subprocesses, and a
 Review page drawing forty rows must not spawn eighty of them. Facts are read
@@ -117,9 +124,23 @@ class DocumentFacts:
     isbn: str = ""
     doi: str = ""
     kind: str = UNKNOWN
-    #  A PDF with pages and no text layer. Reported, never worked around:
-    #  LibrAIry has no OCR and does not pretend the text was read.
+    #  A PDF with pages and no text layer. Reported, never worked around: an
+    #  image of a document is not a document that was read, and where OCR is
+    #  switched off it stays that way rather than being guessed at.
     scanned: bool = False
+    #  What each reader said the title was, kept separately. `title` above is
+    #  this module's own answer; these are what
+    #  `librairy/document_identity.py` compares, and the reason a PDF whose
+    #  metadata says `CRACKING` and whose first page says `Programming Rust` is
+    #  a question rather than a filename.
+    embedded_title: str = ""
+    content_title: str = ""
+    ocr_title: str = ""
+    #  Whether OCR was actually run, and whether it was wanted but not run.
+    #  Both are shown: "there is no text and nobody looked" and "there is no
+    #  text and looking found nothing" are different states of the same file.
+    ocr_read: bool = False
+    ocr_wanted: bool = False
     #  Whether anything could be read at all. False for a format with no
     #  reader, or a tool that is not installed — which is a normal outcome and
     #  never an error.
@@ -162,7 +183,7 @@ def readable(relpath: str) -> bool:
 
 
 def facts_for_item(
-    conn, settings: Settings, item_id: int, path: Path  # noqa: ANN001
+    conn, settings: Settings, item_id: int, path: Path, *, ocr=None  # noqa: ANN001
 ) -> DocumentFacts:
     """This document's identity, measured once and remembered against its bytes.
 
@@ -176,9 +197,12 @@ def facts_for_item(
     from librairy.tools.common import DOCUMENT_TOOL, set_cached_metadata
 
     cached = cached_facts(conn, item_id, path)
-    if cached is not None:
+    #  A cached answer from a pass that could not read pixels is not an answer
+    #  about a scan. Somebody switching OCR on should get the document read,
+    #  not the record of the day nothing could read it.
+    if cached is not None and not (ocr is not None and cached.ocr_wanted and not cached.ocr_read):
         return cached
-    facts = facts_for(path, settings)
+    facts = facts_for(path, settings, ocr=ocr)
     fingerprint = _fingerprint(conn, item_id)
     if fingerprint:
         set_cached_metadata(
@@ -237,6 +261,11 @@ def _as_payload(facts: DocumentFacts) -> dict:
         "kind": facts.kind,
         "scanned": facts.scanned,
         "read": facts.read,
+        "embedded_title": facts.embedded_title,
+        "content_title": facts.content_title,
+        "ocr_title": facts.ocr_title,
+        "ocr_read": facts.ocr_read,
+        "ocr_wanted": facts.ocr_wanted,
         "sources": [list(pair) for pair in facts.sources],
     }
 
@@ -253,6 +282,11 @@ def _from_payload(payload: dict) -> DocumentFacts:
         kind=str(payload.get("kind") or UNKNOWN),
         scanned=bool(payload.get("scanned")),
         read=bool(payload.get("read")),
+        embedded_title=str(payload.get("embedded_title") or ""),
+        content_title=str(payload.get("content_title") or ""),
+        ocr_title=str(payload.get("ocr_title") or ""),
+        ocr_read=bool(payload.get("ocr_read")),
+        ocr_wanted=bool(payload.get("ocr_wanted")),
         sources=tuple(
             (str(pair[0]), str(pair[1]))
             for pair in payload.get("sources") or []
@@ -266,6 +300,7 @@ def facts_for(
     settings: Settings,
     *,
     run=None,  # noqa: ANN001
+    ocr=None,  # noqa: ANN001
 ) -> DocumentFacts:
     """Read one document's identity. Analysis-time work, never a page render.
 
@@ -274,46 +309,74 @@ def facts_for(
     cannot parse — comes back as "nothing was read" rather than an exception:
     a document nobody could identify is a normal outcome and must not cost a
     scan.
+
+    `ocr` is a callable that turns a path into text, or `None` for "do not
+    read pixels". Passed in rather than looked up so that this module keeps
+    knowing nothing about settings, resource modes or whether tesseract is
+    installed — see `librairy/ocr.py`, which decides all three.
     """
     suffix = path.suffix.lower()
     if suffix == ".epub":
         return _epub(path)
     if suffix == ".pdf":
-        return _pdf(path, settings, run=run or subprocess.run)
+        return _pdf(path, settings, run=run or subprocess.run, ocr=ocr)
     return DocumentFacts()
 
 
 # --- PDF ------------------------------------------------------------------------------
 
 
-def _pdf(path: Path, settings: Settings, *, run) -> DocumentFacts:  # noqa: ANN001
+def _pdf(path: Path, settings: Settings, *, run, ocr=None) -> DocumentFacts:  # noqa: ANN001
     info = _pdfinfo(path, run=run)
     text = _front_text(path, run=run)
-    title = _clean(info.get("Title", ""))
+    embedded = _clean(info.get("Title", ""))
     author = _clean(info.get("Author", ""))
     pages = _int(info.get("Pages", ""))
     sources: list[tuple[str, str]] = []
-    if title:
-        sources.append(("PDF title metadata", title))
+    if embedded:
+        sources.append(("PDF title metadata", embedded))
     if author:
         sources.append(("PDF author metadata", author))
-    #  The title page, used only when the file's own metadata said nothing.
-    #  Never to *correct* metadata: a running header is not more authoritative
-    #  than what the producing application wrote down.
-    if not title and text:
-        heading = _heading(text)
-        if heading:
-            title = heading
-            sources.append(("first page", heading))
-    isbn = _first(_ISBN, text)
-    doi = _first(_DOI, text)
+    #  Read whether or not the metadata answered. It used to be read only when
+    #  the metadata said nothing, which is why a PDF that claimed to be called
+    #  `CRACKING` was never compared with its own title page.
+    content = _heading(text) if text else ""
+    if content:
+        sources.append(("first page", content))
+
+    #  A PDF with pages and no text worth the name. Only then, and only when
+    #  somebody has switched OCR on: reading pixels is expensive, and every
+    #  document that already has a text layer is a document OCR would tell us
+    #  nothing new about.
+    scanned = bool(pages) and len(text.strip()) < TEXT_FLOOR
+    ocr_title = ""
+    ocr_read = False
+    ocr_text = ""
+    wanted = scanned and ocr is not None
+    if wanted:
+        ocr_text = ocr(path)
+        ocr_read = bool(ocr_text.strip())
+        if ocr_read:
+            ocr_title = _heading(ocr_text)
+            if ocr_title:
+                sources.append(("scanned text", ocr_title))
+
+    #  Both texts, because an identifier printed on a scanned title page is
+    #  exactly as much an identifier as one in a text layer.
+    searchable = f"{text}\n{ocr_text}" if ocr_text else text
+    isbn = _first(_ISBN, searchable)
+    doi = _first(_DOI, searchable)
     if isbn:
         sources.append(("ISBN in the text", isbn))
     if doi:
         sources.append(("DOI in the text", doi))
-    scanned = bool(pages) and len(text.strip()) < TEXT_FLOOR
-    if scanned:
+    if scanned and not ocr_read:
         sources.append(("text", "no text layer — this is a scan"))
+
+    #  What this module believes on its own, unchanged: the metadata if there
+    #  is any, the title page otherwise, and the scanned text after that.
+    #  Comparing the three is somebody else's job — see `document_identity`.
+    title = embedded or content or ocr_title
     year = _year(info.get("CreationDate", "")) or _year(title)
     return DocumentFacts(
         title=title,
@@ -323,9 +386,14 @@ def _pdf(path: Path, settings: Settings, *, run) -> DocumentFacts:  # noqa: ANN0
         year=year,
         isbn=isbn,
         doi=doi,
-        kind=classify(title=title, text=text, isbn=isbn, doi=doi, suffix=".pdf"),
+        kind=classify(title=title, text=searchable, isbn=isbn, doi=doi, suffix=".pdf"),
         scanned=scanned,
-        read=bool(info or text),
+        read=bool(info or text or ocr_read),
+        embedded_title=embedded,
+        content_title=content,
+        ocr_title=ocr_title,
+        ocr_read=ocr_read,
+        ocr_wanted=scanned,
         sources=tuple(sources),
     )
 
@@ -413,6 +481,11 @@ def _epub(path: Path) -> DocumentFacts:
         #  An EPUB is a book by construction. Nothing else is published in one.
         kind=BOOK,
         read=True,
+        #  The OPF is embedded metadata in exactly the sense a PDF's Info
+        #  dictionary is, and the comparison has to see it as one — otherwise
+        #  an EPUB is compared on its filename alone and `dune.epub` beats the
+        #  `Dune` written inside it.
+        embedded_title=title,
         sources=tuple(sources),
     )
 

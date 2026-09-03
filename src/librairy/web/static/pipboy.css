@@ -3657,3 +3657,26 @@ summary.timeline-head::-webkit-details-marker { display: none; }
   }
   .waiting-table td { border: 0; padding: 0 0 var(--space-1); }
 }
+
+/* Every source that named a document, and whether they agreed. Open when they
+   did not — a disagreement nobody notices is the bug this exists to fix — and
+   folded away when they did, because four rows of agreement is furniture.
+   See `librairy/document_identity.py`. */
+.doc-sources { grid-column: 1 / -1; font-size: var(--text-sm); }
+.doc-sources > summary { cursor: pointer; }
+.doc-evidence { width: 100%; border-collapse: collapse; margin: var(--space-1) 0; }
+.doc-evidence th, .doc-evidence td {
+  text-align: left; vertical-align: top; font-weight: normal;
+  padding: 0.15em var(--space-2) 0.15em 0;
+}
+.doc-evidence th { color: var(--text-dim); white-space: nowrap; }
+.doc-evidence td { overflow-wrap: anywhere; }
+.doc-evidence .is-conflict td:first-of-type { color: var(--warn); }
+.doc-evidence .is-conflict th { color: var(--warn); }
+
+@media (max-width: 600px) {
+  /* The label may wrap too. Three columns into 280px is not much, and the
+     title is the column worth the room — "Embedded title" over two lines beside
+     a readable title beats one line beside a title broken every third letter. */
+  .doc-evidence th { white-space: normal; }
+}

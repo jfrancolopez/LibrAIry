@@ -409,19 +409,15 @@ def test_a_row_with_no_document_evidence_has_no_identity_block(tmp_path: Path) -
 
 
 def _encode(evidence) -> str:  # noqa: ANN001
-    import json
+    """The real encoder, not a local copy of it.
 
-    return json.dumps(
-        [
-            {
-                "source": entry.source,
-                "field": entry.field,
-                "detail": entry.detail,
-                "weight": entry.weight,
-            }
-            for entry in evidence
-        ]
-    )
+    A hand-written one here dropped `note`, which is where the comparison
+    records which source was chosen and which disagreed — so the row under test
+    was built from evidence the program never actually writes.
+    """
+    from librairy.proposals import encode_evidence
+
+    return encode_evidence(list(evidence))
 
 
 @poppler

@@ -839,9 +839,25 @@ def _documents_in_the_inbox(conn, settings: Settings) -> None:  # noqa: ANN001
             pages=3,
         )
     )
-    #  No text on any page: this is what a photocopy looks like to a program
-    #  with no OCR, and the row has to say so rather than guess a title.
+    #  No text on any page: this is what a photocopy looks like when nothing
+    #  has read the pixels, and the row has to say so rather than guess.
     (settings.inbox_dir / "IMG_20240612_0001.pdf").write_bytes(build_pdf(pages=2))
+    #  The `CRACKING` case, found in real use and the reason M2-02 exists: a
+    #  PDF whose embedded title is nothing like what its own title page says.
+    #  Three sources name one work and one names something else, so it reaches
+    #  Review as a disagreement rather than being filed as `CRACKING.pdf`.
+    (settings.inbox_dir / "programming_rust_2e.pdf").write_bytes(
+        build_pdf(
+            title="CRACKING",
+            author="Jim Blandy",
+            lines=(
+                "Programming Rust",
+                "Fast, Safe Systems Development",
+                "Jim Blandy, Jason Orendorff and Leonora F. S. Tindall",
+            ),
+            pages=2,
+        )
+    )
     write_epub(
         settings.inbox_dir / "dune.epub",
         title="Dune",
@@ -899,7 +915,11 @@ def _documents_in_the_inbox(conn, settings: Settings) -> None:  # noqa: ANN001
     scan_root(conn, "library", settings.library_dir, settings)
     scan_root(conn, "inbox", settings.inbox_dir, settings)
     for name in (
-        "scan-0473.pdf", "IMG_20240612_0001.pdf", "dune.epub", "1706.03762v5.pdf"
+        "scan-0473.pdf",
+        "IMG_20240612_0001.pdf",
+        "dune.epub",
+        "1706.03762v5.pdf",
+        "programming_rust_2e.pdf",
     ):
         row = conn.execute(
             "SELECT id FROM items WHERE root='inbox' AND relpath=?", (name,)

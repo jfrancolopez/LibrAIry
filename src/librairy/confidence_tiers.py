@@ -79,6 +79,20 @@ IDENTIFIED_FIELDS = STRONG_FIELDS
 #  read as an answer.
 NO_MATCH = "no-match"
 
+#  The evidence field `classify/documents.py` writes when the sources that
+#  named a document do not agree. A contested document may carry an ISBN and
+#  must still not be settled by it: the identifier is real, and which work it
+#  identifies is precisely what is in question. See
+#  `librairy/document_identity.py`.
+CONTESTED = "conflict"
+
+
+def contested(evidence: object) -> bool:
+    """Did the analysis record that its sources disagreed about this file?"""
+    return any(
+        str(entry.get("field") or "") == CONTESTED for entry in entries(evidence)
+    )
+
 
 def entries(evidence: object) -> list[dict[str, Any]]:
     """The evidence of one proposal, however the caller is holding it.
@@ -137,6 +151,12 @@ def tier_for(
     #  destination is still a question — knowing what a file *is* is not
     #  knowing where its owner keeps it.
     if not dest_relpath:
+        return UNCERTAIN
+    #  Before the identity, and that is the whole point. A document whose ISBN
+    #  is printed on a page whose title disagrees with its metadata has an
+    #  identifier and an open question, and answering it automatically would
+    #  file the book the argument was about.
+    if contested(evidence):
         return UNCERTAIN
     if identity_of(evidence):
         return SETTLED

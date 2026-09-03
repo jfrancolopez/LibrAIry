@@ -98,6 +98,40 @@ add. Both now say which, and `librairy ai test` reports a server that passes
 its health check and then refuses to classify instead of returning a bare
 failure. **Schema 51** records the held files and why.
 
+### Documents
+
+**A PDF that calls itself `CRACKING` is no longer filed as `CRACKING.pdf`.**
+That was a real file, and it was not a bug so much as a rule that reads
+perfectly well until you meet it: *the document's own metadata outranks its
+filename*, applied by stopping at the first source that answered. Its title page
+said `Programming Rust` and nothing ever asked.
+
+Every source that names a document is now compared rather than ranked — the
+filename, the embedded metadata, the first page, OCR where there is nothing to
+extract, and a catalog. Two independent sources naming the same work is what
+earns a filled-in answer. When they disagree, the row shows all of them, marks
+the odd one out, and says in a sentence which was taken and why:
+
+    Embedded title    CRACKING              conflict
+    First page        Programming Rust      taken
+    Filename          programming rust 2e
+
+    Embedded title disagrees. First page and Filename name the same work.
+
+A contested document still gets a destination — it is *contested*, not weak, and
+there is an answer with a reason attached — but it never joins a bulk approve
+and never reaches the settled tier, even when it carries an ISBN. Which work the
+identifier identifies is precisely what is in question.
+
+**OCR, opt-in and off by default.** It runs only on a PDF that has no text to
+extract, only on its first two pages, and only when you have switched it on and
+the image has `tesseract`. What it reads is a candidate like any other — one
+vote, never an answer on its own. It is governed by **Overall processing** and
+not by Local AI: tesseract turns pixels into characters and makes no judgement,
+and switching AI off must not stop a scanner's output being readable. Quiet
+rations it to two documents a cycle rather than refusing it, so a scanned
+document is answered later and never differently.
+
 ### How hard to work
 
 **There is now a way to tell LibrAIry to be quiet.** Two settings, in two words

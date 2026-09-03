@@ -89,11 +89,49 @@
       <span class="muted mono">DOI {{ proposal.document.doi }}</span>
       {% endif %}
       {% if proposal.document.scanned %}
-      <span class="badge badge-warn" title="LibrAIry has no OCR, so nothing was
-        read from the pages">No text layer — this is a scan</span>
+      <span class="badge badge-warn" title="Nothing read the pages. Switch OCR
+        on in Settings if you have scans.">No text layer — this is a scan</span>
+      {% endif %}
+      {% if proposal.document.ocr %}
+      <span class="badge badge-info" title="This document had no text layer, so
+        its first pages were read as images.">Read by OCR</span>
       {% endif %}
     </p>
     </div>
+    {% if proposal.document.sources %}
+      {# Every source that named this document, and whether they agreed.
+         Folded away when they did — four rows of agreement is furniture — and
+         open when they did not, because a disagreement nobody notices is the
+         bug this exists to fix.
+
+         Deliberately not a debug panel. Four lines, the conflicting one
+         marked, and one sentence saying which source was taken and why. #}
+      <details class="doc-sources"{% if proposal.document.conflict %} open{% endif %}>
+        <summary>
+          {% if proposal.document.conflict %}
+            <span class="badge badge-warn">Sources disagree</span>
+          {% else %}
+            <span class="muted">{{ proposal.document.sources | length }} sources agree</span>
+          {% endif %}
+        </summary>
+        <table class="doc-evidence">
+          <tbody>
+            {% for named in proposal.document.sources %}
+              <tr{% if named.conflict %} class="is-conflict"{% endif %}>
+                <th scope="row">{{ named.label }}</th>
+                <td>{{ named.title }}</td>
+                <td class="muted">
+                  {%- if named.chosen %}taken{% elif named.conflict %}conflict{% endif -%}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% if proposal.document.conflict %}
+          <p class="muted">{{ proposal.document.conflict }}</p>
+        {% endif %}
+      </details>
+    {% endif %}
     {% endif %}
 
     <div class="proposal-line">

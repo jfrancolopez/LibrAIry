@@ -370,6 +370,10 @@ PAGES = {
     # The advisory section, which is the widest thing on the page after the
     # evidence panel: four classes, each with its own vocabulary.
     "storage": "/review",
+    # A document whose sources disagree, with the comparison open. Filtered
+    # because the fixture's inbox is bigger than one page of decisions and the
+    # `CRACKING` case is the only one that renders this block.
+    "review-document": "/review?category=documents&max_confidence=0.85",
     # The files nothing could answer: three reasons, a four-column table of
     # paths, and a row of actions. Paths in a table are the shape most likely
     # to run past a 375px edge, and the fixture holds one file per reason so

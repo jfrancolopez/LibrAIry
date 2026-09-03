@@ -756,11 +756,16 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         setting is read on every worker cycle and on every page that shows it,
         and there is nothing a person could lose by it landing on Balanced.
         """
+        from librairy.ocr import set_enabled as set_ocr
         from librairy.resources import set_ai_mode, set_processing_mode
 
         form = await _request_form(request)
         set_processing_mode(conn, str(form.get("processing_mode", "")))
         set_ai_mode(conn, str(form.get("ai_mode", "")))
+        #  On the same form because it is the same question — how much of the
+        #  machine may this take — and it is bounded by the same axis. See
+        #  `librairy/ocr.py` for why it is not under Local AI.
+        set_ocr(conn, "ocr_enabled" in form)
         return _settings_redirect(request)
 
     @app.post("/settings/vision", response_class=HTMLResponse)

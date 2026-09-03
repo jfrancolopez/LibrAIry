@@ -4,7 +4,7 @@ import sqlite3
 from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
 
-from librairy import waiting
+from librairy import ocr, waiting
 from librairy.ai.orchestrator import (
     NOT_NEEDED,
     AIBatchState,
@@ -29,6 +29,7 @@ from librairy.indexer import apply_library_pattern, pattern_key
 from librairy.lifecycle import transition_item
 from librairy.models import EvidenceEntry, Item
 from librairy.proposals import upsert_proposal
+from librairy.resources import processing_mode
 from librairy.scanner import ready_items
 from librairy.settings_service import effective_settings
 from librairy.taxonomy import render_destination
@@ -100,6 +101,13 @@ def analyze_items(
         items = items[:limit]
     proposed = pending = held = 0
     ai_state = AIBatchState({})
+    #  How many documents this cycle may read pixels for, and the reader that
+    #  spends it. `None` when OCR is off, not installed, or the mode says no —
+    #  answered once for the batch rather than once per file, so that a
+    #  hundred PDFs do not each ask whether tesseract exists. See
+    #  `librairy/ocr.py`.
+    budget = ocr.budget_for(processing_mode(conn))
+    reader = ocr.reader(conn, processing_mode(conn), budget)
     ids = [int(item["id"]) for item in items]
     #  Two questions asked once for the whole batch rather than once per file.
     #  Both are about *this* file and neither changes while the batch runs, and
@@ -115,6 +123,7 @@ def analyze_items(
         #  so without this the file after one of those would be judged on the
         #  attempt made for the file before it.
         ai_state.attempt = NOT_NEEDED
+        budget.item = int(item["id"])
         result = classify_item(
             settings.inbox_dir / item["relpath"],
             item["relpath"],
@@ -122,8 +131,14 @@ def analyze_items(
             conn=conn,
             item=item_model,
             ai_state=ai_state,
+            ocr=reader,
         )
         attempt = ai_state.attempt
+        if int(item["id"]) in budget.deferred:
+            #  Its turn did not come. Left exactly where it was, so the next
+            #  cycle reaches it and answers it properly — a mode changes when
+            #  work happens and never what the answer is.
+            continue
         result = _with_runtime_destination(conn, settings, result)
         if _hold_instead(result, attempt, item, freed, opinions):
             waiting.hold(
@@ -161,7 +176,9 @@ def analyze_items(
     artwork = associate_companions(conn, settings)
     proposed += artwork.associated
     pending += artwork.already_present
-    return AnalyzeSummary(len(items), proposed, pending, requeued, held)
+    return AnalyzeSummary(
+        len(items) - len(budget.deferred), proposed, pending, requeued, held
+    )
 
 
 def _existing_proposals(conn: sqlite3.Connection, item_ids: list[int]) -> set[int]:
@@ -192,7 +209,7 @@ def _hold_instead(  # noqa: ANN001
 ) -> bool:
     """Should this file be held rather than proposed weakly?
 
-    Five conditions, all of which have to hold, and each of which is somebody's
+    Six conditions, all of which have to hold, and each of which is somebody's
     protection:
 
     * **there is no destination.** A file that reached the threshold is
@@ -200,6 +217,10 @@ def _hold_instead(  # noqa: ANN001
     * **AI was actually needed.** A disc, and a file classified from its own
       tags, never reach a provider — so nothing about a provider explains
       anything about them.
+    * **it has nothing to show.** A document whose sources disagree is a
+      question with an answer and a reason attached — the opposite of a file
+      nothing could say anything about — and it belongs in Review rather than
+      in the held list. See `librairy/document_identity.py`.
     * **it is not a companion.** A cover and a subtitle get their identity
       after this loop, from the media they belong to, and `associate_companions`
       finds them by looking for undecided *proposals*. Holding one would put a
@@ -212,6 +233,7 @@ def _hold_instead(  # noqa: ANN001
     return (
         not result.dest_relpath
         and getattr(attempt, "needed", False)
+        and not getattr(result, "ask", False)
         and not is_companion(PurePosixPath(item["relpath"]).name)
         and int(item["id"]) not in freed
         and int(item["id"]) not in opinions
@@ -257,6 +279,7 @@ def classify_item(
     conn: sqlite3.Connection | None = None,
     item: Item | None = None,
     ai_state: AIBatchState | None = None,
+    ocr=None,  # noqa: ANN001 - a callable from `librairy.ocr.reader`, or None
 ):
     # Before anything reads the extension: inside a VIDEO_TS the extension is
     # the least informative thing about the file. A .VOB is not a video to
@@ -275,7 +298,7 @@ def classify_item(
         #  names itself outranks a guess from its filename, so it gets the
         #  chance to. Only for formats there is a reader for, and only when it
         #  actually said something; everything else keeps the answer it had.
-        spoke = _document_result(path, relpath, settings, conn, item)
+        spoke = _document_result(path, relpath, settings, conn, item, ocr=ocr)
         if spoke is not None:
             return _enriched(conn, settings, item, ai_state, spoke)
         return _enriched(conn, settings, item, ai_state, heuristic)
@@ -322,7 +345,7 @@ def classify_item(
                 #  Read from the document, the same way music reads its tags
                 #  from the file rather than from its name. Analysis-time work
                 #  — never a page render. See `docmeta`.
-                facts=_document_facts(path, relpath, settings, conn, item),
+                facts=_document_facts(path, relpath, settings, conn, item, ocr=ocr),
             ),
         )
     return _enriched(conn, settings, item, ai_state, _unknown(relpath))
@@ -513,13 +536,13 @@ def _lastfm_lookup(conn, settings):
     return lookup_for_settings(settings)
 
 
-def _document_result(path: Path, relpath: str, settings, conn, item=None):  # noqa: ANN001, ANN202
+def _document_result(path: Path, relpath: str, settings, conn, item=None, *, ocr=None):  # noqa: ANN001, ANN202
     """The document's own answer, or None when it had nothing to say."""
     from librairy.docmeta import readable
 
     if not readable(relpath):
         return None
-    facts = _document_facts(path, relpath, settings, conn, item)
+    facts = _document_facts(path, relpath, settings, conn, item, ocr=ocr)
     if facts is None or not facts.identified:
         return None
     return classify_document_like(
@@ -527,7 +550,7 @@ def _document_result(path: Path, relpath: str, settings, conn, item=None):  # no
     )
 
 
-def _document_facts(path: Path, relpath: str, settings, conn=None, item=None):  # noqa: ANN001, ANN202
+def _document_facts(path: Path, relpath: str, settings, conn=None, item=None, *, ocr=None):  # noqa: ANN001, ANN202
     """What a PDF or EPUB says about itself. `None` for everything else.
 
     Best-effort in exactly the way `_audio_tags` is: an encrypted PDF, a
@@ -545,8 +568,8 @@ def _document_facts(path: Path, relpath: str, settings, conn=None, item=None):  
         #  re-analysis of an unchanged document then costs a SELECT rather
         #  than two subprocesses.
         if conn is not None and item is not None:
-            return facts_for_item(conn, settings, item.id, path)
-        return facts_for(path, settings)
+            return facts_for_item(conn, settings, item.id, path, ocr=ocr)
+        return facts_for(path, settings, ocr=ocr)
     except Exception:  # noqa: BLE001 - identity is best-effort, like tags
         return None
 

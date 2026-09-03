@@ -578,7 +578,42 @@ whatever provider the configuration names.
 
 ## M2-02 · Documents that disagree
 
-**P1 · L · Medium risk**
+**P1 · L · Medium risk · DONE 2026-09-03** — `librairy/document_identity.py`,
+`librairy/ocr.py`, `tests/test_document_identity.py`.
+
+> **What shipped.** Documents are no longer identified by a ladder that stops at
+> the first source that answers. Every source that names one — the filename, the
+> embedded metadata, the first page, OCR where there is nothing to extract, and
+> a catalog — is compared, and what they *add up to* decides. Two independent
+> sources naming the same work is what earns a preselection; sources that
+> disagree produce a recommendation, a reason, and a question on the row.
+>
+> **Why comparison and not a better ordering.** Authority alone re-creates the
+> bug. The embedded title outranks the first page under every ordering anybody
+> would write down, and in the `CRACKING` case the embedded title is the one
+> that is wrong. What distinguishes the right answer is that three sources name
+> a version of "Programming Rust" and one does not — a fact about the set, not
+> about any member of it. Authority still picks the *wording* among the sources
+> that agree, so a resolved ISBN's "2nd Edition" beats a running header.
+>
+> **OCR is off by default and mostly a list of reasons not to run.** Not a PDF,
+> has a text layer, switched off, no tesseract, the mode says not now, the cycle
+> has read enough — six gates, and what passes all six gets two pages rather
+> than a document. It is governed by the **processing** mode and not the AI one:
+> tesseract makes no judgement, and switching Local AI off must not stop a
+> scanner's output being readable. Quiet rations it to two documents a cycle
+> rather than refusing it, so a mode still changes the rate and never the answer.
+>
+> **Two false conflicts the fixture found**, both fixed and both worth naming: an
+> arXiv identifier is not a title (a name with no word in it names nothing), and
+> a filename that loses to two agreeing sources *inside* the document is an old
+> name rather than a disagreement.
+>
+> **Document grouping is untouched, and M1-03 stays PARTIAL.** Nothing here
+> creates a document group, so the group grid still has no workflow that reaches
+> it. That remains M2-06, and the distinction stands: document *row*
+> presentation works and is now richer; document *group* presentation is
+> complete when a real workflow can reach it and not before.
 
 **Problem.** A PDF whose embedded Title reads `CRACKING` becomes a file called
 that. Found in real use.
