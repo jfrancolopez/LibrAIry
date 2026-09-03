@@ -11,27 +11,15 @@ argument, the preset is chosen from a fixed table, the source is resolved under
 a known root and the output under the job's own staging directory. A test can
 assert every one of those on a job row in microseconds.
 
-## Why the resource policy is here too
+## Where the resource policy went
 
-"Resource use: Low" has to be a measured fact, and the measurement pointed
-somewhere unobvious. `-threads N` is FFmpeg's setting; **libx265 builds its own
-worker pool**, sized from the CPUs it can see, and ignores it. Measured in the
-production image (10 CPUs visible, no cgroup CPU quota), average CPU seconds
-consumed per wall-clock second:
-
-    pools=1:frame-threads=1   1.05x        pools=4:frame-threads=4   4.02x
-    pools=2:frame-threads=2   2.09x        pools=8:frame-threads=8   6.22x
-
-The figure tracks the pool size and not the machine, which is what makes it an
-*absolute* bound rather than a share: the same numbers hold on a bigger NAS.
-Peak thread count over the same runs was 19 to 31 and told us nothing — an
-unbounded encode and a bounded one differ by a couple of threads and by a
-factor of four in CPU consumed, which is why "-threads 2, therefore two cores"
-is not an answer.
-
-`Low` is `pools=2:frame-threads=2` with `-threads 2`: two cores' worth, about a
-fifth of the measured machine, and the same two cores on a machine with sixty.
-`scripts/measure_encoder_load.py` reproduces the table.
+`ResourcePolicy` used to be defined here, because for one release the encoder
+was the only workload in LibrAIry with any resource control at all. It is
+`resources.EncoderPolicy` now — unchanged in every field, including the
+measurements in its docstring — so that the module about how hard the program
+may work holds all of it, and this module holds only the command builder and
+the verifier. `LOW` is still the policy every mode but Full Power uses, and it
+is still the only one the encoder gets unless somebody asks for more.
 """
 
 from __future__ import annotations
@@ -45,6 +33,7 @@ from pathlib import Path
 from librairy.config import Settings
 from librairy.optimization_queue import job_staging_dir
 from librairy.paths import validate_relpath
+from librairy.resources import FULL, LOW, PROCESSING_MODES, EncoderPolicy
 
 # --- what a job may ask for ------------------------------------------------------
 #
@@ -79,34 +68,17 @@ class ExecutionRefused(RuntimeError):
     """
 
 
-@dataclass(frozen=True)
-class ResourcePolicy:
-    """How hard the encoder is allowed to work. One value in v1.
+#  Kept as names here because everything that builds a command imports them
+#  from here, and because "the encoder's policy" is a sentence about the
+#  encoder. The definition and the measurements are in `librairy/resources.py`.
+ResourcePolicy = EncoderPolicy
 
-    `pools` is the number that actually bounds consumption; see the module
-    docstring for the measurements. `nice` and `ionice` are applied when the
-    runtime provides them and skipped silently when it does not — they lower
-    priority under contention, which is a different and weaker guarantee than
-    bounding the pool, and neither is load-bearing.
-    """
-
-    name: str = "low"
-    label: str = "Low"
-    pools: int = 2
-    frame_threads: int = 2
-    threads: int = 2
-    nice: int = 19
-    ionice_class: int = 3  # idle
-
-    @property
-    def x265_params(self) -> str:
-        return f"pools={self.pools}:frame-threads={self.frame_threads}"
-
-
-LOW = ResourcePolicy()
-# Deliberately the only member. A "High" that has not been measured is a
-# promise nobody checked, and the setting is displayed rather than editable.
-POLICIES = {LOW.name: LOW}
+# Both are measured, and they are the two ends of the same table — see
+# `resources.EncoderPolicy`. `Low` is what every processing mode but Full Power
+# uses, and there is still no editable middle: a policy nobody has measured is
+# a promise nobody checked.
+FULL_ENCODER = PROCESSING_MODES[FULL].encoder
+POLICIES = {LOW.name: LOW, FULL_ENCODER.name: FULL_ENCODER}
 
 
 # --- the stream shapes v1 will touch ----------------------------------------------

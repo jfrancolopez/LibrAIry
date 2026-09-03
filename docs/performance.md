@@ -1,8 +1,8 @@
 # Performance and scale
 
 **Measured 2026-09-01 against `v1.3.1` / schema 47, again 2026-09-02 at the
-close of M1 against schema 50, and again 2026-09-03 after M2-01 against schema
-51.**
+close of M1 against schema 50, and again 2026-09-03 after M2-01 and M2-03
+against schema 51.**
 
 M1-01 found two of LibrAIry's eight surfaces unusable at the scale it is
 designed for. This document is the measurement first and the work second,
@@ -258,6 +258,37 @@ exactly as `_later_decisions` was fixed. And the second column **had no index
 at all**: `UNIQUE (item_id, similar_item_id, kind)` indexes the first, and
 nothing indexed the second. That is **migration 048**, and the first schema
 change since 1.3.1 shipped.
+
+## M2-03, 2026-09-03 — what each processing mode costs
+
+200 files in the inbox, one worker cycle per mode, no AI provider configured.
+`scripts/measure_worker_load.py` reproduces it. CPU seconds per wall-clock
+second, which is what a busy worker takes away from everything else on the box.
+
+| | files a cycle | in the cycle | sustained | CPU s per file |
+|---|---|---|---|---|
+| Quiet | 10 | 0.72 | **0.34** | 0.317 |
+| Balanced | 50 | 0.76 | **0.70** | 0.086 |
+| Full Power | 50 | 0.76 | **0.76** | 0.087 |
+
+**The batch cap is not what makes Quiet quiet, and the measurement is what says
+so.** A Quiet cycle costs 0.72 CPU seconds per wall second and a Balanced one
+0.76 — near enough identical, because a cycle's fixed costs do not shrink with
+its batch: the inbox scan, the duplicate pass and the companion pass run either
+way. What the cap buys is a *shorter* cycle, and the pause after it is where the
+difference actually lives. Sustained, Quiet takes less than half the machine
+Balanced does.
+
+The per-file column is the price of that, and it is worth saying out loud:
+Quiet costs 3.7× as much CPU per file, because it pays the same fixed cycle
+cost for a fifth of the progress. That is the trade the mode is: the same work,
+spread out, at a higher total cost. It is the right trade when something else
+needs the machine and the wrong one when nothing does, which is why Balanced is
+the default.
+
+**What this does not measure.** A NAS serving video off the same disks, which is
+the situation the mode exists for and cannot be reproduced on a build machine.
+These are the reproducible numbers; the judgement is made with them in hand.
 
 ## M2-01, 2026-09-03 — what holding files costs
 

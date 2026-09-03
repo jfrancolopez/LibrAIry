@@ -310,6 +310,48 @@
   </div>
 </form>
 
+{# Outside #settings-form for the same reason the catalog cards are: HTML has
+   no nested forms, and a browser silently discards the inner one and posts its
+   fields to the outer one instead.
+
+   Its own form on its merits too. Turning the machine down while somebody is
+   watching a film off the same NAS should not mean re-posting every catalog
+   key and filing template on the page. #}
+<div class="tab-panel" data-tab-panel="system">
+<form method="post" action="/settings/resources" class="metric wide">
+  <input type="hidden" name="csrf_token" value="{{ request.state.session.csrf_token }}">
+  <h2 id="resources">How hard to work</h2>
+  <p class="muted">Two settings, because a local AI model is either the cheapest
+    thing LibrAIry does or the most expensive one, and only you know which. No
+    mode changes a decision or skips a check — they change how fast, and how
+    much of the machine it takes while it does it.</p>
+
+  <label for="processing_mode">Overall processing</label>
+  <select id="processing_mode" name="processing_mode">
+    {% for mode in processing_modes %}
+      <option value="{{ mode.name }}"{% if mode.name == processing_mode.name %} selected{% endif %}>{{ mode.label }}</option>
+    {% endfor %}
+  </select>
+  <p class="muted">{{ processing_mode.note }}</p>
+
+  <label for="ai_mode">Local AI</label>
+  <select id="ai_mode" name="ai_mode">
+    {% for mode in ai_modes %}
+      <option value="{{ mode.name }}"{% if mode.name == ai_mode.name %} selected{% endif %}>{{ mode.label }}</option>
+    {% endfor %}
+  </select>
+  <p class="muted">{{ ai_mode.note }}</p>
+  {% if ai_mode.off %}
+    {# Said here rather than discovered later. "Off" is a real answer and a
+       reasonable one; it is not a way for files to disappear. #}
+    <p class="muted">Files nothing else can identify are held under
+      <strong>Needs more processing</strong> in Review, with a reason, and you
+      can decide any of them by hand.</p>
+  {% endif %}
+  <button type="submit" class="btn-primary">Save</button>
+</form>
+</div>
+
 {# Outside #settings-form on purpose: each card owns a key form and a toggle
    form, and HTML has no nested forms — a browser silently discards the inner
    one and posts its fields to the outer form instead. #}

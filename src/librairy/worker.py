@@ -36,6 +36,14 @@ from librairy.models import EvidenceEntry
 from librairy.planner import utc_now
 from librairy.proposals import upsert_proposal
 from librairy.quarantine import quarantine_operation
+from librairy.resources import (
+    BALANCED,
+    PROCESSING_MODES,
+    ProcessingMode,
+    ai_mode,
+    batch_limit,
+    processing_mode,
+)
 from librairy.scanner import scan_root
 from librairy.settings_service import effective_settings
 from librairy.web.thumbs import prune_cache
@@ -51,6 +59,12 @@ THUMBNAIL_CACHE_BYTES = 512 * 1024 * 1024
 MAX_SLEEP_SECONDS = 60.0
 # How often, while idle, to check whether the inbox changed under us.
 INBOX_POLL_SECONDS = 2.0
+#  When the providers were last asked whether they are answering, and the
+#  default interval for asking. The interval a running worker actually uses
+#  comes from the AI mode; this is what a caller with no mode gets, and it is
+#  Normal's number. See `Worker._probe_due` and `librairy/resources.py`.
+AI_PROBE_KEY = "ai_probe_at"
+AI_PROBE_SECONDS = 60
 
 
 @dataclass(frozen=True)
@@ -127,6 +141,11 @@ class Worker:
         self.conn = conn
         self.settings = settings
         self.stop_requested = False
+        #  How long `run_forever` waits between cycles, which is decided by the
+        #  same mode the cycle itself ran under. Re-read every cycle, so
+        #  switching to Quiet slows the loop down from the next cycle onwards
+        #  without a restart.
+        self.mode = PROCESSING_MODES[BALANCED]
 
     def request_stop(self, signum=None, frame=None) -> None:  # noqa: ARG002
         self.stop_requested = True
@@ -134,6 +153,12 @@ class Worker:
     def run_once(self) -> WorkerSummary:
         with acquire_lock(self.settings):
             settings = effective_settings(self.conn, self.settings)
+            #  Read once for the cycle, so every workload in it is governed by
+            #  the same answer. A mode changed halfway through a cycle takes
+            #  effect on the next one, which is the only version of this that
+            #  cannot half-apply. See `librairy/resources.py`.
+            mode = processing_mode(self.conn)
+            self.mode = mode
             # Before anything else, and on *every* cycle including busy ones.
             # Starting an optimization is gated behind an idle cycle; noticing
             # that one has finished is not, or a job that completed during a
@@ -157,7 +182,9 @@ class Worker:
                 self.conn, "quarantine", settings.quarantine_dir, settings
             )
             _set_worker_state(self.conn, "current_phase", "dedup")
-            library_hashed = hash_size_colliding_library_files(self.conn, settings)
+            library_hashed = hash_size_colliding_library_files(
+                self.conn, settings, limit=mode.hash_cap
+            )
             candidates = detect_exact_duplicates(self.conn, settings)
             duplicate_candidates = _stage_quarantine_proposals(self.conn, candidates)
             similar_flags = detect_similar_media(self.conn, settings)
@@ -171,9 +198,11 @@ class Worker:
             # comparison is worth having.
             record_similar_reports(self.conn, settings)
             _set_worker_state(self.conn, "current_phase", "analyze")
-            analysis = analyze_items(self.conn, settings, settings.batch_size)
+            analysis = analyze_items(self.conn, settings, batch_limit(mode, settings.batch_size))
             _set_worker_state(self.conn, "current_phase", "content")
-            content = process_content_extractions(self.conn, settings, settings.batch_size)
+            content = process_content_extractions(
+                self.conn, settings, batch_limit(mode, settings.batch_size)
+            )
             #  After analysis, deliberately. Companion evidence is *supporting*
             #  evidence: an arriving JPEG whose metadata cannot be read must
             #  still be classified, proposed and reviewable, so nothing here is
@@ -228,7 +257,11 @@ class Worker:
             audit_stage = ""
             if not summary.did_work:
                 _set_worker_state(self.conn, "current_phase", "audit")
-                audit_stage = self._audit_slice(settings)
+                #  Quiet declines to *start* a slice. It never abandons one
+                #  that is running: an audit run resumes from where it stopped,
+                #  and the mode is about how much machine LibrAIry takes, not
+                #  about throwing work away.
+                audit_stage = self._audit_slice(settings) if mode.audits else ""
                 _set_worker_state(self.conn, "audit_yielding", False)
                 # Tier five, and last for a reason. Optimization is offered
                 # only on a cycle that changed nothing *and* had no audit
@@ -263,8 +296,9 @@ class Worker:
                     #  maintenance, not a render: Browse shows what this last
                     #  found and how old it is.
                     self._consistency_check(settings)
-                    _set_worker_state(self.conn, "current_phase", "optimization")
-                    self._optimization_slice(settings)
+                    if mode.transcodes:
+                        _set_worker_state(self.conn, "current_phase", "optimization")
+                        self._optimization_slice(settings)
             else:
                 # Recorded as a fact rather than inferred from a clock. The
                 # progress panel needs to distinguish "waiting its turn" from
@@ -322,9 +356,14 @@ class Worker:
         from librairy import waiting
 
         try:
-            if not waiting.awaiting_provider(self.conn):
+            mode = ai_mode(self.conn)
+            #  Switched off means there is nothing to come back to. Held files
+            #  stay held, visible and answerable by hand — which is what "Off"
+            #  should mean — and no socket is opened to a provider the owner
+            #  has said not to use.
+            if mode.off or not waiting.awaiting_provider(self.conn):
                 return
-            if self._probe_due():
+            if self._probe_due(mode.probe_seconds):
                 probe_providers(self.conn, settings)
             released = waiting.resume_recovered(self.conn)
             if released:
@@ -332,21 +371,28 @@ class Worker:
         except Exception:
             LOGGER.exception("AI recovery check failed")
 
-    def _probe_due(self) -> bool:
-        """At most one round of health checks a minute, recorded not timed.
+    def _probe_due(self, seconds: int = AI_PROBE_SECONDS) -> bool:
+        """At most one round of health checks per interval, recorded not timed.
 
         The idle sleep backs off from five seconds to sixty, so "once a cycle"
         would mean twelve probes a minute on a quiet installation that has just
         gone quiet. Recorded in `worker_state` rather than held in memory so a
         restarted worker does not get a free round.
+
+        The interval is the AI mode's: Limited asks every five minutes, Full
+        Power every thirty seconds. It is the one number on that axis that is
+        about the *worker* rather than about a call, which is why it lives with
+        the rest of the mode rather than beside the constant below.
         """
+        if seconds <= 0:
+            return False
         now = utc_now()
         row = self.conn.execute(
             "SELECT value FROM worker_state WHERE key=?", (AI_PROBE_KEY,)
         ).fetchone()
         if row is not None:
             last = str(json.loads(row["value"]) or "")
-            if last and _seconds_between(last, now) < AI_PROBE_SECONDS:
+            if last and _seconds_between(last, now) < seconds:
                 return False
         _set_worker_state(self.conn, AI_PROBE_KEY, now)
         return True
@@ -514,7 +560,10 @@ class Worker:
         sleep_seconds = BUSY_SLEEP_SECONDS
         while not self.stop_requested:
             summary = self.run_once()
-            sleep_seconds = next_sleep(sleep_seconds, summary.work_found)
+            #  `self.mode` is what the cycle that just ran was governed by, so
+            #  a mode changed while the worker was busy takes effect on the
+            #  pause after it rather than a cycle later.
+            sleep_seconds = next_sleep(sleep_seconds, summary.work_found, self.mode)
             _sleep_interruptibly(sleep_seconds, self)
 
 
@@ -541,11 +590,6 @@ def main(argv: list[str] | None = None) -> int:
     run_forever(conn, settings)
     return 0
 
-
-#  When the providers were last asked whether they are answering, and how often
-#  that is worth asking. See `Worker._probe_due`.
-AI_PROBE_KEY = "ai_probe_at"
-AI_PROBE_SECONDS = 60
 
 
 def probe_providers(conn: sqlite3.Connection, settings: Settings) -> int:
@@ -592,10 +636,18 @@ def _seconds_between(earlier: str, later: str) -> float:
         return float("inf")
 
 
-def next_sleep(previous: float, work_found: bool) -> float:
+def next_sleep(previous: float, work_found: bool, mode: ProcessingMode | None = None) -> float:
+    """How long to wait before the next cycle, under one processing mode.
+
+    The mode defaults to Balanced, whose three numbers are the constants this
+    function used to read directly — so a caller with no opinion gets exactly
+    the previous behaviour, and the constants stay as the documented meaning of
+    "normal".
+    """
+    mode = mode or PROCESSING_MODES[BALANCED]
     if work_found:
-        return BUSY_SLEEP_SECONDS
-    return min(max(previous * 2, IDLE_SLEEP_SECONDS), MAX_SLEEP_SECONDS)
+        return mode.busy_sleep
+    return min(max(previous * 2, mode.idle_sleep), mode.max_sleep)
 
 
 def inbox_signature(inbox_dir: Path) -> str:

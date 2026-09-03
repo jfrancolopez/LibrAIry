@@ -100,6 +100,16 @@
       <h3>Worker</h3>
       <p class="big">{{ current_phase }}</p>
       <p class="muted">{{ worker_state.get('last_cycle_at', 'no heartbeat yet') }}</p>
+      {# Only when it is somewhere other than the defaults. A line reading
+         "Balanced · Normal" on every installation that never touched the
+         setting is furniture; a line reading "Quiet" on the day somebody
+         wonders why nothing is happening is the answer.
+         See `librairy/resources.py`. #}
+      {% if modes_changed %}
+        <p class="muted">Working at <strong>{{ processing_mode.label }}</strong> ·
+          AI <strong>{{ ai_mode.label }}</strong>
+          <a class="btn-link" href="/settings#resources">Change</a></p>
+      {% endif %}
     </article>
 
     <article class="widget card">

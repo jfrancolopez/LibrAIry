@@ -197,6 +197,16 @@ code {
   display: grid;
   gap: var(--space-4);
 }
+/* A grid item's `min-width` is `auto`, which means "never narrower than your
+   widest child" — so one wide thing anywhere on a page pushes the whole shell
+   past the viewport rather than being the only thing that overflows. Found on
+   Settings at 375px, where the page was 514px wide and the offender was
+   somewhere below the six levels the harness reports.
+
+   This does not make anything fit; it makes the thing that does not fit be the
+   thing that is reported. Every other page already fitted, and allowing an item
+   to shrink cannot change a layout that was not being stretched. */
+.shell > * { min-width: 0; }
 
 .panel > p,
 .panel > .muted,
@@ -368,6 +378,10 @@ button, .btn { justify-self: start; }
   line-height: 1;
 }
 .metric.wide { grid-column: 1 / -1; }
+/* Same reason as `.shell > *`: a grid item is never narrower than its widest
+   child unless it is told it may be. Settings is the page made of these, and
+   one wide row inside one section was stretching the whole page. */
+.metric > * { min-width: 0; }
 
 .centerpiece { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent-glow); }
 
@@ -1977,6 +1991,12 @@ summary.timeline-head::-webkit-details-marker { display: none; }
 
 #path-helper { display: grid; gap: var(--space-2); }
 #path-helper textarea { width: 100%; font-size: var(--text-sm); }
+/* The four path boxes sat inline after their label text, so each label's
+   min-content width was its sentence *plus* a browser-default input — about
+   390px, and the widest thing on the Settings page at 375. Stacked instead:
+   the same boxes, with the label above rather than beside. */
+#path-helper label { display: grid; gap: var(--space-1); }
+#path-helper input, #path-helper select { width: 100%; min-width: 0; }
 #path-cmd { background: var(--bg-input); padding: var(--space-2) var(--space-3); border-radius: var(--radius-ui); }
 
 .settings-nav {

@@ -29,6 +29,7 @@ from librairy.catalogs import CATALOGS, CATALOGS_BY_SLUG, catalog_enabled, catal
 from librairy.config import VISION_MODES, Settings
 from librairy.dedup import DedupConfigError, dedup_options, set_dedup_option
 from librairy.planner import utc_now
+from librairy.resources import modes_view
 from librairy.secrets_store import (
     MANAGED_KEYS,
     all_key_states,
@@ -109,6 +110,9 @@ def settings_page_data(conn: sqlite3.Connection, settings: Settings) -> dict[str
         ],
         "key_states": all_key_states(conn, settings),
         "ai_providers": AI_PROVIDERS,
+        #  Two words, and the per-workload numbers behind them stay behind
+        #  them. See `librairy/resources.py` for why there are two and not one.
+        **modes_view(conn),
     }
 
 
@@ -401,9 +405,9 @@ def optimization_settings(conn: sqlite3.Connection) -> dict[str, object]:
     The two that *are* editable are the two that are genuinely a preference:
     whether jobs start on their own at all, and when.
     """
-    from librairy.optimization_exec import LOW
     from librairy.optimization_queue import MAX_CONCURRENT
     from librairy.protected import protected_roots
+    from librairy.resources import processing_mode
     from librairy.worker import _window
 
     start, end = _window(conn, None)
@@ -412,7 +416,11 @@ def optimization_settings(conn: sqlite3.Connection) -> dict[str, object]:
         "window_start": start,
         "window_end": end,
         "concurrency": MAX_CONCURRENT,
-        "resource_use": LOW.label,
+        #  Displayed, and now decided by the processing mode rather than fixed:
+        #  `Low` unless somebody has asked for Full Power. Still not editable
+        #  here — it is one word of a whole-program setting, and editing it
+        #  from two places is how two places come to disagree.
+        "resource_use": processing_mode(conn).encoder.label,
         "protected_roots": list(protected_roots(conn)),
     }
 

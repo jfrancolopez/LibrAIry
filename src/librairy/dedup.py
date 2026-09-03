@@ -146,7 +146,16 @@ def hash_size_colliding_library_files(
     conn: sqlite3.Connection,
     settings: Settings,
     hash_file: Callable[[Path], str] = blake2b_file,
+    limit: int | None = None,
 ) -> int:
+    """Fingerprint the library files that could be copies of something arriving.
+
+    `limit` bounds one pass. Reading a file to hash it is the most I/O-heavy
+    thing the worker does on its own, and it is the one somebody watching a
+    film off the same disk actually notices — so the Quiet processing mode caps
+    it and the rest do not. Unbounded is what this always did, and remains the
+    default for every caller that has no opinion.
+    """
     sizes = [
         row["size"]
         for row in conn.execute(
@@ -156,13 +165,17 @@ def hash_size_colliding_library_files(
     if not sizes:
         return 0
     placeholders = ",".join("?" for _ in sizes)
+    #  `LIMIT` in the statement rather than a slice in Python: the point of the
+    #  cap is to not read a hundred thousand rows to hash twenty-five of them.
+    bound = "" if limit is None else " LIMIT ?"
     rows = conn.execute(
         f"""
         SELECT id, relpath FROM items
         WHERE root='library' AND missing_since IS NULL AND fingerprint IS NULL
           AND size IN ({placeholders})
+        ORDER BY id{bound}
         """,
-        sizes,
+        [*sizes, *([limit] if limit is not None else [])],
     ).fetchall()
     hashed = 0
     for row in rows:

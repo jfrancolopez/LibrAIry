@@ -42,7 +42,6 @@ from librairy.config import Settings
 from librairy.db import transaction
 from librairy.fingerprint import blake2b_file
 from librairy.optimization_exec import (
-    LOW,
     ExecutionRefused,
     ResourcePolicy,
     build_ffmpeg_command,
@@ -63,6 +62,7 @@ from librairy.optimization_queue import (
     job_staging_dir,
 )
 from librairy.planner import utc_now
+from librairy.resources import processing_mode
 
 LOGGER = logging.getLogger(__name__)
 
@@ -160,7 +160,7 @@ def launch(
     conn: sqlite3.Connection,
     settings: Settings,
     job,
-    policy: ResourcePolicy = LOW,
+    policy: ResourcePolicy | None = None,
 ) -> bool:
     """Start the encoder for one job and return immediately.
 
@@ -168,7 +168,13 @@ def launch(
     marks the job running, rather than trusted from the eligibility decision
     that led here. Between deciding and launching there is a gap, and a gap is
     where two encoders come from.
+
+    The policy comes from the processing mode unless a caller names one — which
+    only a test does. `Low` in every mode but Full Power, and the choice is made
+    here rather than passed down from the worker so that a job launched by any
+    other route gets the same answer.
     """
+    policy = policy or processing_mode(conn).encoder
     job_id = int(job["id"])
     if _OWNED:
         return False

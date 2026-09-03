@@ -109,11 +109,20 @@ def test_a_job_contributes_a_name_and_never_an_argument() -> None:
         assert f'"{preset}"' in text or preset in (HEVC,)
 
 
-def test_there_is_exactly_one_resource_policy() -> None:
-    """A "High" nobody has measured is a promise nobody checked."""
-    assert list(POLICIES) == [LOW.name]
+def test_every_resource_policy_is_one_that_was_measured() -> None:
+    """A "High" nobody has measured is a promise nobody checked.
+
+    Two now rather than one: `Low` and the Full Power end of the same measured
+    table in `resources.EncoderPolicy`. There is still nothing editable between
+    them and nothing above them — a mode picks one of these two, and no number
+    here comes from a form.
+    """
+    from librairy.resources import FULL, PROCESSING_MODES
+
+    assert list(POLICIES) == [LOW.name, "full"]
     assert LOW.label == "Low"
-    assert queue.MAX_CONCURRENT == 1
+    assert PROCESSING_MODES[FULL].encoder.pools <= 8, "bounded by the measured table"
+    assert queue.MAX_CONCURRENT == 1, "one encode at a time, in every mode"
 
 
 def test_the_low_policy_bounds_the_encoder_pool() -> None:

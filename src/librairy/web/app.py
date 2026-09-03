@@ -744,6 +744,25 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             return _settings_error(request, str(exc))
         return _settings_redirect(request)
 
+    @app.post("/settings/resources", response_class=HTMLResponse)
+    async def settings_resources(request: Request) -> Response:
+        """How hard LibrAIry may work, on two axes and in two words.
+
+        Its own form because it is its own decision: a person turning the
+        machine down while somebody watches a film off the same NAS should not
+        have to re-post their catalog keys and their filing templates to do it.
+
+        An unknown value stores the default rather than being refused. This
+        setting is read on every worker cycle and on every page that shows it,
+        and there is nothing a person could lose by it landing on Balanced.
+        """
+        from librairy.resources import set_ai_mode, set_processing_mode
+
+        form = await _request_form(request)
+        set_processing_mode(conn, str(form.get("processing_mode", "")))
+        set_ai_mode(conn, str(form.get("ai_mode", "")))
+        return _settings_redirect(request)
+
     @app.post("/settings/vision", response_class=HTMLResponse)
     async def settings_vision(request: Request) -> Response:
         form = await _request_form(request)

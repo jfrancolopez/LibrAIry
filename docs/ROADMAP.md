@@ -536,11 +536,10 @@ finds. Then decide whether to publish.
 > nothing to add" were the same fact from outside. `ProviderUnreachable` is
 > what makes the three reasons distinguishable at all.
 >
-> **Carried to M2-03.** The recovery probe is idle-cycle work bounded by a
-> one-minute rate limit, and the resume batch is a constant. Neither is under a
-> resource policy yet, because there is not one to be under. When
-> `ResourcePolicy` is generalized out of Storage Optimization, both belong to
-> the AI axis.
+> **Carried to M2-03, and done there.** The recovery probe's interval is the
+> Local AI mode's — never for Off, five minutes for Limited, thirty seconds for
+> Full Power — and switching AI off stops the worker knocking on a door the
+> owner has closed.
 
 **Problem.** When deterministic and catalog evidence are not enough and the
 configured AI provider is disabled or unreachable, `ai/orchestrator.py` logs
@@ -619,7 +618,44 @@ by the queue.
 
 ## M2-03 · Resource modes and a separate AI limiter
 
-**P1 · M · Low risk**
+**P1 · M · Low risk · DONE 2026-09-03** — `librairy/resources.py`,
+`tests/test_resources.py`, measurements in
+[performance.md](performance.md#m2-03-2026-09-03--what-each-processing-mode-costs).
+
+> **What shipped.** Two settings — *Overall processing* Quiet / Balanced / Full
+> Power, and *Local AI* Off / Limited / Normal / Full Power — with the
+> per-workload numbers derived from them and not exposed. `ResourcePolicy` is
+> `resources.EncoderPolicy` now, unchanged in every field, and it is one of
+> several workloads a mode governs rather than the only one there is. Balanced
+> and Normal reproduce the previous behaviour value for value.
+>
+> **What the measurement corrected.** The batch cap was expected to be what
+> makes Quiet quiet, and it is not: a Quiet cycle costs 0.72 CPU seconds per
+> wall second against Balanced's 0.76, because a cycle's fixed costs do not
+> shrink with its batch. The cap buys a *shorter* cycle and the pause after it
+> is where the difference lives — sustained, 0.34 against 0.70. The per-file
+> cost goes up 3.7× as a result, which is the trade the mode actually is, and
+> it is written down rather than left to be discovered.
+>
+> **Not done, and deliberately.** "Quiet leaves the NAS responsive under a full
+> inbox, measured" is measured on a laptop, not a NAS serving video off the
+> same disks. That half of the acceptance needs the production machine and is
+> the one thing here that a build agent cannot answer.
+>
+> **And it found something else.** Pointing `scripts/ui_check.py` at Settings
+> for the first time reported the page **514px wide at a 375px viewport** — a
+> pre-existing, page-wide overflow that no pass had measured because Settings
+> was not one of the harness's pages. Three fixes landed because they are
+> correct in their own right and verified against every other page: grid items
+> in `.shell` and `.metric` may now shrink, and the four path boxes stack under
+> their labels instead of sitting beside them. That took it to **459px**.
+>
+> The remaining 84px is the same pattern repeated: `<label>some sentence
+> <select></label>` on nearly every field, whose min-content is the sentence
+> plus a browser-default control. Fixing it properly restyles every field on
+> the page, which is a UI pass and not a resource-modes pass, so Settings is
+> **not** in the harness's page list yet — a check that always fails is a check
+> that stops being read. Carried as M2 polish, with the number written down.
 
 **Problem.** There is no way to tell LibrAIry to be quiet. The only resource
 control in the program is `ResourcePolicy`, and it exists solely inside Storage

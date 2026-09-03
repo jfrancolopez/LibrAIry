@@ -10,6 +10,7 @@ from librairy.config import Settings
 from librairy.humanize import human_bytes
 from librairy.lifecycle import state_counts, vanished_count
 from librairy.live import LIVE
+from librairy.resources import modes_view
 
 
 @dataclass(frozen=True)
@@ -98,6 +99,12 @@ def dashboard_data(conn: sqlite3.Connection, settings: Settings) -> dict[str, ob
         # this much and nothing said why. One line, and only when there are
         # any — a nought here would be a card about nothing.
         "vanished_count": vanished_count(conn),
+        #  How hard LibrAIry is currently allowed to work. Shown here so the
+        #  answer to "why is nothing happening?" does not require opening
+        #  Settings — and only when it is somewhere other than the defaults,
+        #  because a line reading "Balanced · Normal" on every installation
+        #  that never touched it is furniture. See `librairy/resources.py`.
+        **modes_view(conn),
         # What is happening with your files, which is the question this page
         # answers. Health answers a different one — is LibrAIry itself well —
         # and the two were converging.

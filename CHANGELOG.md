@@ -98,6 +98,54 @@ add. Both now say which, and `librairy ai test` reports a server that passes
 its health check and then refuses to classify instead of returning a bare
 failure. **Schema 51** records the held files and why.
 
+### How hard to work
+
+**There is now a way to tell LibrAIry to be quiet.** Two settings, in two words
+each, on the Settings page and shown on the Dashboard whenever they are not the
+defaults:
+
+| | |
+|---|---|
+| **Overall processing** | Quiet · Balanced · Full Power |
+| **Local AI** | Off · Limited · Normal · Full Power |
+
+Separate on purpose. A local model on a machine with a GPU is the cheapest thing
+in the program and a model sharing two cores with everything else is the most
+expensive, and no single slider can express which of those is true of your
+hardware.
+
+A mode is a **cap and never an override**: `batch_size` is a number you typed,
+and Quiet lowers a ceiling rather than arguing with it. It changes the *rate*
+and never the answer — every file ends up in the same place with the same
+evidence in every mode, which is asserted rather than asserted-to. The only
+thing a mode may do is decline to *start* something expensive, and the only two
+of those are a library audit and a transcode, both of which already waited for a
+quiet moment. Nothing is ever suspended part-way.
+
+**Balanced and Normal are exactly what LibrAIry did before**, value for value.
+An upgrade changes nothing about how much of your machine it uses.
+
+*Limited* asks one provider per file with a thirty-second timeout, no retries
+and no looking at pictures. *Off* asks nothing at all — files nothing else can
+identify are held under **Needs more processing** with a reason, and the worker
+stops checking whether a provider is back, because there is nothing to come back
+to. A caption a model has already produced is still read and still used in every
+mode: the limit is on inference, not on memory.
+
+**Measured, and the measurement corrected the design.** The batch cap was
+expected to be what makes Quiet quiet. It is not — a Quiet cycle costs 0.72 CPU
+seconds per wall second and a Balanced one 0.76, because a cycle's fixed costs
+do not shrink with its batch. What the cap buys is a shorter cycle, and the
+pause after it is where the difference lives: sustained, Quiet takes 0.34
+against Balanced's 0.70. The full table, including what it costs per file, is in
+`docs/performance.md`; `scripts/measure_worker_load.py` reproduces it.
+
+`ResourcePolicy` — the one measured resource control LibrAIry had, and it lived
+inside Storage Optimization — is now `resources.EncoderPolicy` and is one of
+several workloads a mode governs rather than the only one there is. The encoder
+stays at the measured `Low` in every mode but Full Power, where it may use the
+machine it is on.
+
 ### Performance
 
 Every page in LibrAIry now completes at a million files, and what a page costs

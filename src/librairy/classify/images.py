@@ -41,6 +41,7 @@ from librairy.config import Settings
 from librairy.models import EvidenceEntry, Item
 from librairy.naming import EMBEDDED_UUID_RE, is_noise, slugify
 from librairy.planner import utc_now
+from librairy.resources import ai_mode
 
 LOGGER = logging.getLogger(__name__)
 
@@ -125,6 +126,15 @@ def enrich_with_vision(
     if not vision_wanted(settings, item.relpath, result.confidence):
         return result
     stored = stored_vision(conn, item.id, fingerprint=item.fingerprint)
+    #  Looking at a picture is the most expensive AI call LibrAIry makes, and
+    #  the first one worth dropping when the machine is busy. A stored answer is
+    #  still read and still used: the mode limits *inference*, and forgetting
+    #  what a model already said about a file would be a change of behaviour
+    #  rather than a change of rate. See `librairy/resources.py`.
+    if not ai_mode(conn).vision:
+        return result if stored is None else apply_vision(
+            settings, item, result, _as_answer(stored), stored.model
+        )
     config = provider or local_vision_provider(conn, settings)
     if config is None:
         LOGGER.debug("vision skipped: no local AI provider is switched on")

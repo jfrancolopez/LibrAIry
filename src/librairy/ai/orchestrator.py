@@ -16,6 +16,7 @@ from librairy.ai.registry import provider_chain
 from librairy.ai.status import upsert_provider_status
 from librairy.config import Settings
 from librairy.models import EvidenceEntry, Item
+from librairy.resources import ai_chain, ai_mode, ai_retries, ai_timeout
 from librairy.taxonomy import clean_name_from_title, render_destination
 
 AI_CONFIDENCE_CAP = 0.85
@@ -95,9 +96,16 @@ def apply_ai_if_needed(
     state.attempt = NOT_NEEDED
     if current.confidence >= settings.confidence_threshold:
         return current
+    #  Automatic work, so the Local AI mode governs it: how many providers may
+    #  be asked, how long each may take, how often it may retry. A provider
+    #  test and "ask every provider about this file" are somebody pressing a
+    #  button and are deliberately not capped — see `librairy/resources.py`.
+    mode = ai_mode(conn)
     chain = providers if providers is not None else _providers(conn, settings)
     if not settings.use_multi_ai:
         chain = chain[:1]
+    chain = ai_chain(mode, chain)
+    timeout = ai_timeout(mode, settings.ai_timeout)
     view = build_view(item, {}, tuple(current.evidence))
     asked: list[str] = []
     answered: list[str] = []
@@ -114,7 +122,7 @@ def apply_ai_if_needed(
         asked.append(name)
         started = time.monotonic()
         try:
-            answer = provider.classify(view, settings.ai_timeout)
+            answer = provider.classify(view, timeout)
         except OSError as exc:
             _record_failure(conn, provider.config, state, exc)
             _blame(state.kinds[name], name, unreachable, broken)
@@ -206,10 +214,16 @@ def every_provider_answer(
 
 
 def _providers(conn: sqlite3.Connection, settings: Settings) -> list[Provider]:
-    providers: list[Provider] = []
-    for config in provider_chain(conn, settings):
-        providers.append(provider_for_config(config, settings))
-    return providers
+    """The configured chain, built with the retry budget the AI mode allows.
+
+    Retries are per provider and multiply the cost of an outage: two retries
+    against three providers is nine connection attempts for one file. Limited
+    takes none, which is what makes it cheap when the thing it is limiting is
+    a provider that is not there.
+    """
+    retries = ai_retries(ai_mode(conn), settings.max_ai_retries)
+    budgeted = settings.model_copy(update={"max_ai_retries": retries})
+    return [provider_for_config(config, budgeted) for config in provider_chain(conn, settings)]
 
 
 def provider_for_config(config: ProviderConfig, settings: Settings) -> Provider:
