@@ -42,6 +42,7 @@ and `Dismiss suggestion` change no file at all.
 | **Waiting for Commit** | approved, and nothing has moved |
 | **Waiting for AI** | analysis stopped rather than guess, and is waiting for a provider |
 | **Tag** | what a file is about, written by you — searchable, and evidence on the next decision about it |
+| **Browse** | read-focused, and performs no Library filesystem mutation. Metadata actions — a tag, an identification, an audit finding — are legitimate here; anything that moves, renames or deletes a file is not, and goes through Commit |
 | **Project** | files that belong together, wherever they live — a view, never a place |
 | **Project folder** | `Projects/{project}/` — a filing destination on disk |
 | **Undo** | reverse something that actually happened |

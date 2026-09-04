@@ -367,6 +367,73 @@ def test_the_bounded_surfaces_stay_bounded_at_fifty_thousand(tmp_path) -> None: 
     assert len(counting.queries) - before < 60
 
 
+def test_a_history_read_does_not_grow_with_the_library(tmp_path) -> None:  # noqa: ANN001
+    """The contract M3-01 exists to provide, at a population and in statements.
+
+    Two years of daily rows against a library four hundred times larger than
+    the window asked for: the read has to cost the same either way, because it
+    reads days and never items. Years of *metric* rows are synthesized, which
+    is cheap; years of files are not simulated, which would be measuring
+    something else.
+    """
+    from librairy import metrics
+
+    conn, _ = build(
+        tmp_path, library=40_000, inbox=200, findings=100, quarantine=50, history=200
+    )
+    from datetime import date, timedelta
+
+    parts = [int(part) for part in metrics.today().split("-")]
+    conn.executemany(
+        "INSERT INTO metrics_daily(day, metric, kind, value, taken_at)"
+        " VALUES (?, 'library.files', 'gauge', ?, 'then')",
+        [
+            ((date(*parts) - timedelta(days=back)).isoformat(), back)
+            for back in range(metrics.KEEP_DAYS)
+        ],
+    )
+    counting = Counting(conn)
+
+    found = metrics.series(counting, ["library.files"], days=90)
+
+    assert len(found["library.files"]) == 90, "the window was not the bound"
+    assert len(counting.queries) == 1, counting.queries
+    #  And asking for more than the retention gets the retention, not a scan
+    #  that reads whatever happens to be there.
+    assert len(metrics.series(conn, ["library.files"], days=10_000)["library.files"]) <= (
+        metrics.MAX_DAYS
+    )
+
+
+@pytest.mark.scale
+def test_the_rollup_stays_affordable_at_fifty_thousand(tmp_path) -> None:  # noqa: ANN001
+    """A measurement is only cheap because it is rare — so it has to be rare.
+
+    The expensive half is the two aggregates that read `items`: total size, and
+    the spread across top-level folders. This holds the statement count flat
+    and checks the whole thing is one bounded pass rather than a query per
+    folder. The wall-clock figure lives in `docs/performance.md`, where it can
+    be compared against a run rather than asserted against a laptop.
+    """
+    from librairy import metrics
+
+    conn, _ = build(
+        tmp_path, library=50_000, inbox=2_000, findings=1_000, quarantine=1_000,
+        history=5_000,
+    )
+    counting = Counting(conn)
+
+    metrics.rollup(counting)
+
+    #  Twelve measures, one distribution pass, a `worker_state` write and a
+    #  prune — plus one row-write per metric. Bounded by the number of metrics
+    #  and the number of top-level folders, never by the library.
+    assert len(counting.queries) < 60, len(counting.queries)
+    assert metrics.series(conn, ["library.files"], days=1)["library.files"][0][
+        "value"
+    ] == 50_000
+
+
 def test_a_group_larger_than_a_page_says_how_large_it_is(tmp_path) -> None:  # noqa: ANN001
     """The heading counts the group; the list shows a page of it.
 

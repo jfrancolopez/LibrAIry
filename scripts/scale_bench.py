@@ -488,7 +488,7 @@ def _repeated(queries: list[str]) -> str:
 def measure(
     conn: sqlite3.Connection, settings: Settings, *, budget: float = 60.0
 ) -> list[Measurement]:
-    from librairy import attention
+    from librairy import attention, metrics
     from librairy.search import SearchFilters, search_data
     from librairy.web.browse import browse_home
     from librairy.web.commit_queue import queue_rows, queue_summary
@@ -522,6 +522,14 @@ def measure(
         lambda: review_data(counting, ReviewFilters(sort="name"), settings),
     )
     record("Dashboard", lambda: dashboard_data(counting, settings))
+    #  The two halves of M3-01, measured together because they are the whole
+    #  bargain: the rollup is allowed to be expensive precisely because it runs
+    #  once an hour, and the read that pays for it has to be flat.
+    record("Metrics rollup", lambda: metrics.rollup(counting))
+    record(
+        "Metrics history (90d)",
+        lambda: metrics.series(counting, [name.name for name in metrics.MEASURES], 90),
+    )
     record("Health", lambda: health_data(counting, settings))
     record("Health (attention)", lambda: attention.report(counting, settings))
     record("Commit summary", lambda: queue_summary(counting))

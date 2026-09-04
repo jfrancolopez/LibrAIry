@@ -187,6 +187,8 @@ def test_migration_011_closes_proposals_for_files_already_filed(tmp_path: Path) 
     # so anything a later migration creates has to be put back first.
     conn.executescript(
         """
+        DROP TABLE IF EXISTS metrics_daily;
+        DROP INDEX IF EXISTS idx_proposals_group_key;
         DROP INDEX IF EXISTS idx_item_tags_tag;
         DROP TABLE IF EXISTS item_tags;
         DROP TABLE IF EXISTS projects;

@@ -9,7 +9,7 @@ from pathlib import Path
 from librairy.config import Settings
 
 LOGGER = logging.getLogger(__name__)
-SCHEMA_VERSION = 54
+SCHEMA_VERSION = 55
 
 
 class DatabaseVersionError(RuntimeError):
@@ -1642,6 +1642,31 @@ CREATE INDEX idx_groups_kind ON groups(kind);
 """
 
 
+#  The first table in this program with a memory of size.
+#
+#  One row per metric per day, and the primary key is the whole idempotence
+#  story: a rollup run twice for one day replaces its own answer rather than
+#  appending a second "daily" row. `kind` is stored rather than only declared
+#  in code so that somebody reading the raw table can tell a snapshot from a
+#  count — averaging two gauges is meaningful and adding them is not, and the
+#  other way round for counts.
+#
+#  Nothing operational reads it. Losing it degrades trends and breaks nothing.
+MIGRATION_055 = """
+CREATE TABLE metrics_daily (
+  day      TEXT NOT NULL,          -- a UTC day, YYYY-MM-DD
+  metric   TEXT NOT NULL,
+  kind     TEXT NOT NULL CHECK (kind IN ('gauge', 'count')),
+  value    INTEGER NOT NULL,
+  -- When the number was taken. A gauge for today is a snapshot at a moment,
+  -- and a chart that says "as of 14:00" is telling the truth where one
+  -- labelled with the date alone is rounding it.
+  taken_at TEXT NOT NULL,
+  PRIMARY KEY (day, metric)
+);
+"""
+
+
 MIGRATIONS = {
     1: MIGRATION_001,
     2: MIGRATION_002,
@@ -1697,6 +1722,7 @@ MIGRATIONS = {
     52: MIGRATION_052,
     53: MIGRATION_053,
     54: MIGRATION_054,
+    55: MIGRATION_055,
 }
 
 

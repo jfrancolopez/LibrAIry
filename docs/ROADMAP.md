@@ -1100,7 +1100,56 @@ group's base is two aggregated rows rather than a scan of its members.
 
 ## M3-01 · A small durable metrics model
 
-**P1 · M · Low risk**
+**P1 · M · Low risk · DONE 2026-09-04** — `librairy/metrics.py`, schema 55,
+`tests/test_metrics.py`.
+
+> **Every metric is a recomputation, never an increment.** The one decision the
+> rest follows from. A counter incremented as things happen has to be right
+> about every retry, every crash and every half-executed plan, and can never be
+> checked against anything. Each measure here is instead a query over data that
+> is already authoritative — `history`, `quarantine_entries`, `proposals`, the
+> `items` table — so re-running a day is the same answer again, and the primary
+> key `(day, metric)` makes that a replacement rather than a second row.
+> Idempotence is a property of the schema and the arithmetic, not of anybody
+> remembering to check.
+>
+> **Current state is not history.** Nothing operational reads the table. The
+> Dashboard's top and middle bands stay live aggregates over indexed columns,
+> because a rollup that became the source of truth for the present would be a
+> cache that can be wrong about it. This answers the bottom band only, and a
+> test reads the source of `web/dashboard` and `attention` to keep it that way.
+>
+> **The one honest asymmetry**, which decides the repair story:
+>
+>     counts   recomputable for any past day whose source rows still exist
+>     gauges   measurable only now — a snapshot nobody took is gone
+>
+> So `backfill` gives an upgrade months of commit history out of `history`, and
+> cannot give it last March's library size. Inventing one is the single thing
+> this table must never contain.
+>
+> **Days are UTC days**, chosen rather than inherited: every timestamp in the
+> program is `utc_now()`, and a local date would put a metric's boundary
+> somewhere else from the rows it is derived from.
+>
+> **Twelve measures and a category spread**, each naming the Dashboard question
+> it answers — the dataclass requires it, and a test asserts it, because a
+> metric with no question behind it is one nobody reads and everybody has to
+> keep working. 29 rows a day at a million items; two years is ~21,000 rows and
+> `KEEP_DAYS = 730` prunes past that.
+>
+> **What it costs** (`docs/performance.md`): the rollup is 73 ms at 100k, 219
+> ms at 300k and **821 ms at 1M** — it has to read `items` twice — and a
+> 90-day read is **0.18 ms at every population**, one statement. Hourly, 821 ms
+> is 0.02% of a worker's time, which is why the rollup runs after the inbox
+> work on *every* cycle rather than behind the idle gate: that 0.02% is worth
+> less than a busy installation's entire history.
+>
+> **Health was measured against this and the answer was no.** 1,487 ms at a
+> million, of which the FTS index-integrity counts are the largest share — and
+> those are current operational state. Answering them from a rollup is exactly
+> the mistake this design refuses. If they get cheaper it is by the
+> recorded-verdict pattern `search_health` already uses, which is M1-06's work.
 
 **Problem.** Of 41 tables, none records a measurement over time. `history` and
 `audit_runs` can answer some questions retroactively; nothing can answer "was

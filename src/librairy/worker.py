@@ -245,6 +245,17 @@ class Worker:
                 quarantine_vanished=quarantine_scan.missing,
                 companions_paired=companions,
             )
+            #  Today's measurement, at most once an hour. Deliberately *not*
+            #  in the idle tier below, and the reasoning is worth stating
+            #  because everything else expensive is: a rollup is eight tenths
+            #  of a second at a million items, once an hour, which is two
+            #  hundredths of one percent of a worker's time — and it runs
+            #  here, after every piece of inbox work in this cycle has already
+            #  finished, so it competes with nothing. Putting it behind the
+            #  idle gate would mean a busy installation records no history at
+            #  all, and a trend with holes in it is worth less than the
+            #  fraction of a second it saves. See `librairy/metrics.py`.
+            self._metrics_rollup()
             # Everything above is inbox work, and it has already happened.
             # A library audit is asked for, not needed, so it gets a bounded
             # slice of a cycle that changed nothing — a file dropped in the
@@ -310,6 +321,21 @@ class Worker:
             if audit_stage:
                 _set_worker_state(self.conn, "last_audit_stage", audit_stage)
             return summary
+
+    def _metrics_rollup(self) -> None:
+        """Write today's row, if today's row has gone stale.
+
+        Wrapped like every other maintenance step, and this one has the least
+        excuse of all to break a cycle: nothing reads it operationally, so a
+        failure costs a gap in a chart and nothing else.
+        """
+        from librairy import metrics
+
+        try:
+            if metrics.due(self.conn):
+                metrics.rollup(self.conn)
+        except Exception:
+            LOGGER.exception("metrics rollup failed")
 
     def _consistency_check(self, settings: Settings) -> None:
         """Compare the library against the index, and record what it finds.

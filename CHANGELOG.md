@@ -98,6 +98,34 @@ add. Both now say which, and `librairy ai test` reports a server that passes
 its health check and then refuses to classify instead of returning a bare
 failure. **Schema 51** records the held files and why.
 
+### Something that remembers how big your library was
+
+Of forty-two tables, not one recorded a measurement over time — so *was the
+Review backlog smaller last Tuesday* had no answer at all. Now one small table
+takes a daily reading: how big the library is, what it occupies, how much is
+waiting on you, how much you filed, how many duplicates you cleared, and how
+your categories are shaping up.
+
+It is a **record of what was**, and deliberately never a source of truth for
+what is. Everything on screen that says what needs you *now* still asks the
+library directly, because a stored number that can be wrong about the present
+is worse than no stored number at all.
+
+**Running it twice is harmless**, and not because anything checks. Every value
+is worked out again from what already happened rather than counted up as things
+happen, so asking twice gets the same answer — and one row per day per measure
+means a second run replaces the first instead of adding to it.
+
+**An upgrade starts with history rather than an empty chart.** What you have
+filed is recoverable from the journal you already have, so those trends go back
+as far as your journal does. What LibrAIry cannot do is tell you how big your
+library was last March — nobody measured it, and it will not invent a number.
+
+Days are **UTC days**, said out loud rather than left to the container's clock.
+Two years are kept, which is about 21,000 rows and well under a megabyte.
+
+Deleting the whole thing costs you trends and nothing else.
+
 ### Documents that belong together
 
 **Documents can now be one decision.** Every other medium got this a milestone

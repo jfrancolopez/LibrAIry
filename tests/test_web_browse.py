@@ -142,7 +142,23 @@ def test_error_page_identifies_itself(tmp_path: Path) -> None:
     assert 'href="/history"' in response.text
 
 
-def test_browse_templates_have_no_mutating_affordances(tmp_path: Path) -> None:
+def test_browse_performs_no_library_filesystem_mutation(tmp_path: Path) -> None:
+    """The invariant, in the words that survived contact with the product.
+
+    It used to read "Browse cannot change anything", which was absolute and
+    already untrue: the Audit button was a named exception and the identify
+    button was an unnamed one that passed only because this fixture seeds a
+    document. Tagging a filed file made a third, and the honest resolution is
+    to say what Browse actually guarantees:
+
+        Browse is read-focused and performs no Library filesystem mutation.
+
+    Metadata actions — a tag, an identification, an audit finding — are
+    legitimate item-level actions. Forcing them onto another page to preserve
+    the older wording would make the product worse in order to keep a sentence.
+    What stays banned is anything that moves, renames, deletes or queues a
+    file: filing still converges at Commit.
+    """
     client, conn, settings = client_for(tmp_path)
     item_id = seed_item(conn, settings, "Documents/a.txt", "documents")
 
@@ -153,15 +169,15 @@ def test_browse_templates_have_no_mutating_affordances(tmp_path: Path) -> None:
     # The shared app header (logout form) is chrome, not a browse affordance.
     html = re.sub(r"<header class=\"app-header\".*?</header>", "", html, flags=re.S)
 
-    # The exceptions, named rather than waved through. Each writes a *record*
-    # and none of them can move, rename, delete or queue a file:
+    # The metadata actions, named rather than waved through. Each writes a
+    # *record* and none can move, rename, delete or queue a file:
     #
     #   /browse/audit          writes findings; the audit module is read-only
     #                          against the library by construction
     #   /items/{id}/tags       writes what the owner says this file is about.
     #                          The only way to give explicit context used to be
-    #                          renaming the file, which is a filesystem change
-    #                          to avoid a form — the invariant standing on its
+    #                          renaming the file — a filesystem change to avoid
+    #                          a form, which is the invariant standing on its
     #                          head. See `librairy/tags.py`.
     #   /items/{id}/identify   asks a catalog what an audio file is and records
     #                          the answer. Named here because it was passing
@@ -169,8 +185,8 @@ def test_browse_templates_have_no_mutating_affordances(tmp_path: Path) -> None:
     #                          that form renders for audio.
     #
     # Every other write verb stays banned, including a second POST anywhere
-    # else. What this test defends is that Browse cannot change the library —
-    # not that it has no controls.
+    # else. What this test defends is that Browse changes no file on disk — not
+    # that it has no controls.
     allowed = {
         "/browse/audit",
         f"/items/{item_id}/tags",

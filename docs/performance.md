@@ -1,8 +1,8 @@
 # Performance and scale
 
 **Measured 2026-09-01 against `v1.3.1` / schema 47, again 2026-09-02 at the
-close of M1 against schema 50, and again 2026-09-03 after M2-01 and M2-03
-against schema 51.**
+close of M1 against schema 50, again 2026-09-03 after M2-01 and M2-03 against
+schema 51, and again 2026-09-04 for M3-01 against schema 55.**
 
 M1-01 found two of LibrAIry's eight surfaces unusable at the scale it is
 designed for. This document is the measurement first and the work second,
@@ -289,6 +289,58 @@ the default.
 **What this does not measure.** A NAS serving video off the same disks, which is
 the situation the mode exists for and cannot be reproduced on a build machine.
 These are the reproducible numbers; the judgement is made with them in hand.
+
+## M3-01, 2026-09-04 — what a measurement costs, and what reading one costs
+
+The whole bargain of the metrics table in two columns. A rollup is allowed to
+be expensive because it happens once an hour; the read it pays for has to be
+flat, or the Dashboard would have swapped one slow page for another.
+
+| library | rollup | 90 days of every metric |
+|---|---|---|
+| 100,000 | **73 ms** | 0.15 ms |
+| 300,000 | **219 ms** | 0.14 ms |
+| 1,000,000 | **821 ms** | 0.18 ms |
+
+The rollup grows with the library because two of its measures have to read the
+`items` table, and those two are the whole cost:
+
+    library.files + library.bytes        157 ms at 1M   (SCAN items)
+    the spread across top-level folders  580 ms at 1M   (SCAN items + GROUP BY)
+    everything else                      under 1 ms each, on an index
+
+Hourly, 821 ms is **0.02%** of a worker's time — which is why the rollup sits
+after the inbox work on every cycle rather than behind the idle gate. Putting
+it in the idle tier would have saved that 0.02% and cost a busy installation
+its entire history.
+
+The read does not grow at all: it is a few hundred rows keyed by day, and 90
+points cost the same on a library of four files and one of four million. That
+is the contract, and `test_scale_surfaces` asserts it as a statement count
+rather than as a duration.
+
+**Table growth.** 29 rows a day at a million items — twelve named measures plus
+two per top-level folder. Two years is about 21,000 rows, well under a
+megabyte, and `KEEP_DAYS` prunes past that.
+
+### Health, measured again, and why the metrics layer does not help it
+
+M1-06 carries Health at 1.8 s. Re-measured at a million on schema 55: **1,487
+ms across 40 statements**, of which the index-integrity counts are the largest
+single share:
+
+    SELECT COUNT(*) FROM search_fts                              241 ms
+    the same joined to items, for rows whose file has gone        314 ms
+    SELECT COUNT(*) FROM items WHERE missing_since IS NULL         63 ms
+
+M3-01 was checked against this deliberately and **is the wrong tool for it**.
+Those counts are current operational state — is the search index consistent
+with the library *right now* — and answering them from a historical rollup
+would make a record of the past into the source of truth for the present,
+which is the one thing this table must never become. If they are to get
+cheaper it is by the recorded-verdict pattern `search_health` already uses:
+measure on an idle cycle, show the verdict and its age. That is M1-06's work
+and it stays there.
 
 ## M2-01, 2026-09-03 — what holding files costs
 
