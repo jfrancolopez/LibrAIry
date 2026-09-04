@@ -9,7 +9,7 @@ from pathlib import Path
 from librairy.config import Settings
 
 LOGGER = logging.getLogger(__name__)
-SCHEMA_VERSION = 60
+SCHEMA_VERSION = 61
 
 
 class DatabaseVersionError(RuntimeError):
@@ -1840,6 +1840,34 @@ CREATE TABLE backup_divergence_scans (
 """
 
 
+#  Whether a registered offline drive is here, and when it last was.
+#
+#  Presence *now* is a probe and does not need a table. "Not seen since the
+#  twelfth of June" cannot be probed at all once the drive is gone, and it is
+#  the more useful half of the answer — a drawer is a normal place for a backup
+#  drive to be, and the question people actually have is how long it has been
+#  there.
+#
+#  Three states rather than two, and the third is the one worth storing:
+#  something being present at the mount point is not the same as the *drive*
+#  being present. An unplugged disk leaves its folder behind, and a different
+#  disk mounted at the same path is the ordinary accident this feature exists
+#  to catch. See `librairy/offline_drives.py`.
+MIGRATION_061 = """
+CREATE TABLE offline_presence (
+  destination_id INTEGER PRIMARY KEY REFERENCES backup_destinations(id),
+  state          TEXT NOT NULL,
+  -- How much of the identity check ran. A drive registered with a volume id
+  -- and later checked where none can be read is still allowed, and must not
+  -- look identical to one that was checked both ways.
+  verification   TEXT NOT NULL DEFAULT '',
+  detail         TEXT NOT NULL DEFAULT '',
+  checked_at     TEXT NOT NULL,
+  present_at     TEXT NOT NULL DEFAULT ''
+);
+"""
+
+
 MIGRATIONS = {
     1: MIGRATION_001,
     2: MIGRATION_002,
@@ -1901,6 +1929,7 @@ MIGRATIONS = {
     58: MIGRATION_058,
     59: MIGRATION_059,
     60: MIGRATION_060,
+    61: MIGRATION_061,
 }
 
 

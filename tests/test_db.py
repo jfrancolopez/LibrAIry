@@ -191,6 +191,7 @@ def test_migration_011_closes_proposals_for_files_already_filed(tmp_path: Path) 
     # so anything a later migration creates has to be put back first.
     conn.executescript(
         """
+        DROP TABLE IF EXISTS offline_presence;
         DROP TABLE IF EXISTS backup_divergence_scans;
         DROP INDEX IF EXISTS idx_divergence_scope;
         DROP TABLE IF EXISTS backup_divergence;

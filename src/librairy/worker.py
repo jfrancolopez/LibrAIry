@@ -146,6 +146,10 @@ class Worker:
         #  switching to Quiet slows the loop down from the next cycle onwards
         #  without a restart.
         self.mode = PROCESSING_MODES[BALANCED]
+        #  When an offline drive was last looked for. Zero so the first cycle
+        #  always looks: a worker restarting is exactly when somebody may have
+        #  plugged something in.
+        self._offline_checked = 0.0
 
     def request_stop(self, signum=None, frame=None) -> None:  # noqa: ARG002
         self.stop_requested = True
@@ -254,6 +258,10 @@ class Worker:
             #  most hourly per policy, which is what keeps that affordable.
             #  See `librairy/backup_runs.py`.
             self._policy_backups(settings)
+            #  And the drives that are usually not there. Polled rather than
+            #  scheduled, because "it is plugged in" is the trigger and it is
+            #  not something a clock knows about.
+            self._offline_drives(settings)
             #  Today's measurement — **offered** every cycle, **taken** at most
             #  once an hour. Those are two different things and the second is
             #  the one that matters: `metrics.due` is the guard, and without it
@@ -337,8 +345,8 @@ class Worker:
     def _policy_backups(self, settings: Settings) -> None:
         """Run the configured backup policies whose turn it is.
 
-        Online destinations only. An offline drive is compared when it appears,
-        which is presence detection and its own piece of work — polling a
+        Online destinations here; an offline drive is handled by
+        `_offline_drives` below, because its trigger is different. Polling a
         drawer every hour to be told it is still a drawer is the retry storm
         this feature exists to avoid.
         """
@@ -357,6 +365,56 @@ class Worker:
                 )
         except Exception:
             LOGGER.exception("policy backup failed")
+
+    def _offline_drives(self, settings: Settings) -> None:
+        """Notice a backup drive being plugged in, and compare it when it is.
+
+        The trigger is a *transition*, not a state. A drive that has been
+        connected since Tuesday is not re-compared every cycle, and one that
+        was in a drawer thirty seconds ago is compared now — which is what
+        makes an Offline Backup feel like it noticed rather than like it was
+        polling.
+
+        Absent is the normal case and costs almost nothing: two stats per
+        registered drive, every `POLL_SECONDS`. No run is opened, no failure is
+        recorded, and nothing anywhere turns red. A drive in a drawer is where
+        a backup drive is supposed to be.
+        """
+        from librairy import backup_runs, destinations, offline_drives, transfer_run
+
+        #  Monotonic, not the wall clock: this is an interval and a clock that
+        #  jumps backwards over a daylight-saving change should not stop a
+        #  backup drive being noticed for an hour.
+        if time.monotonic() - self._offline_checked < offline_drives.POLL_SECONDS:
+            return
+        self._offline_checked = time.monotonic()
+        try:
+            for drive in offline_drives.registered(self.conn):
+                #  Two triggers, and the first one is why this is not just a
+                #  schedule. A drive plugged in at five past ten would otherwise
+                #  wait for the hourly guard while it sat there connected, and
+                #  by eleven it is usually back in the drawer. So an appearance
+                #  compares immediately, and a drive left plugged in falls back
+                #  to the same cadence as everything else.
+                just_arrived = offline_drives.appeared(self.conn, settings, drive)
+                if not just_arrived and not offline_drives.presence(self.conn, drive.id).here:
+                    continue
+                #  Everything from here is the ordinary machinery: the same
+                #  policies, the same plan, the same adapter, and the same four
+                #  answers — none of which is a deletion.
+                for policy, destination in destinations.active(self.conn):
+                    if destination.id != drive.id:
+                        continue
+                    if not just_arrived and not backup_runs.due(
+                        self.conn, destination.id, policy.category
+                    ):
+                        continue
+                    listing = _listing_for(self.conn, settings, destination, policy)
+                    transfer_run.run_policy(
+                        self.conn, settings, policy, destination, listing
+                    )
+        except Exception:
+            LOGGER.exception("offline drive check failed")
 
     def _metrics_rollup(self) -> None:
         """Write today's row, if today's row has gone stale.

@@ -78,11 +78,15 @@ def test_this_release_is_1_3_1_and_the_schema_moved_twelve_times_since() -> None
       to go and look at them. A bounded page is a different requirement from
       a truncated record of the world, and only the first was ever the rule.
 
+    * **61** remembers where a backup drive is, and when it last was here.
+      Presence now is a probe; "not seen since the twelfth of June" cannot be
+      probed once the drive is gone, and it is the more useful half.
+
     The number is written down here so that changing it is a deliberate act
     with a sentence attached, rather than something noticed at upgrade time.
     """
     assert __version__ == "1.3.1"
-    assert SCHEMA_VERSION == 60  # noqa: PLR2004
+    assert SCHEMA_VERSION == 61  # noqa: PLR2004
 
 
 def test_the_changelog_records_this_version_as_the_newest_release() -> None:

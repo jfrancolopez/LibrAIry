@@ -1260,7 +1260,7 @@ model, path safety, planning, the execution adapter and online Backup are done
 (`librairy/destinations.py`, `librairy/transfer_paths.py`,
 `librairy/volumes.py`, `librairy/transfer_plan.py`, `librairy/transfer_run.py`,
 `librairy/backup_runs.py`, `librairy/transfer_listing.py`,
-`librairy/divergence.py`, schema 60). Offline presence detection, the Browse
+`librairy/divergence.py`, `librairy/offline_drives.py`, schema 61). The Browse
 action and the surfaces are open.
 
 > **One gate item before this closes.**
@@ -1440,7 +1440,33 @@ action and the surfaces are open.
 > decides what a set contains, and a counter that always moves is what decides
 > it now.
 >
-> **A second one, found by measuring.** Writing a million divergent rows took
+> **A drive in a drawer is where a backup drive is supposed to be.** So absent
+> produces no failed run, no alert, no retry and nothing red — the only thing it
+> produces is a date, *last seen 12 June*, which is why presence is stored
+> rather than probed: it cannot be probed once the drive is gone.
+>
+> **Three states, because two would lie.** A directory at the mount point with
+> nothing of ours in it is a leftover mount point, which is what an unplugged
+> USB disk usually leaves behind — that is *absent*. A directory with somebody
+> else's marker, or on a filesystem whose id disagrees, is a *different drive*,
+> and that is a refusal said out loud. Collapsing the two would either tell
+> somebody their drive is unplugged while a drive is plugged in, or write a
+> backup onto a stranger's disk.
+>
+> **Two tiers of looking**, because one of them costs a subprocess. `probe` is
+> two stats and a short read and runs on a 30-second poll; `look` adds the
+> volume id, which on macOS is `diskutil`, and runs only when the cheap one
+> disagrees with what was recorded — a few times a year rather than a few times
+> a minute. The full check runs again immediately before any transfer, because
+> a drive can be pulled in between.
+>
+> **Two triggers, and the first is why this is not a schedule.** A drive
+> plugged in at five past ten would otherwise wait for the hourly guard while
+> it sat there connected, and by eleven it is usually back in the drawer. So an
+> appearance compares immediately and a drive left plugged in falls back to the
+> ordinary cadence.
+>
+> **A second bug worth recording, found by measuring.** Writing a million divergent rows took
 > **57 seconds** — every connection here is opened `isolation_level=None`, so
 > each 2,000-row batch was its own WAL commit. `db.transaction` took it to 4.0
 > seconds, and it was already required for a reason that has nothing to do with

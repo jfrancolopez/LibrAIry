@@ -47,7 +47,11 @@ and `Dismiss suggestion` change no file at all.
 | **Mirror** | keeps a destination current. Anything there that your library no longer has is **reported**, never deleted |
 | **Offline Backup** | a registered drive that updates while it is connected. Nothing is ever removed from it |
 | **Only at the destination** | a file at a backup that your library no longer has. Never called *extra*, *stale* or *orphaned* — those invite tidying, and nothing here tidies |
-| **Divergence** | how a Mirror's destination differs from your library right now. Information, and never a queue of things to remove |
+| **Divergence** | how a Mirror's destination differs from your library right now. Information, and never a queue of things to remove. Stored whole, so it can be paged through and worked from — a count with a sample of the paths is not an answer somebody can act on |
+| **Not connected** | a registered offline drive that is not here. A normal state and never an error: not *unavailable*, *missing*, *offline* or *overdue*, and never coloured like a fault. Shown with the date it was last seen, which is the useful half |
+| **Connected** | a registered offline drive that is here, and is the drive that was registered |
+| **A different drive is at that path** | something is mounted where the drive should be and it is not that drive. Said plainly, because "not connected" would be a lie told while a drive is plugged in |
+| **Identified by its marker file only** | the drive was recognised, and the operating system could not say what filesystem it is. Less checking than happened at registration, so it is said rather than shown as a full check |
 | **Project** | files that belong together, wherever they live — a view, never a place |
 | **Project folder** | `Projects/{project}/` — a filing destination on disk |
 | **Undo** | reverse something that actually happened |
