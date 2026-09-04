@@ -127,6 +127,8 @@ def test_fresh_db_migrates_to_current_schema(tmp_path: Path) -> None:
         # Which later decision consumed the state an earlier one created.
         "idx_plan_ops_item",
         "idx_history_op",
+        # Which comparison last saw a file that is only at a destination.
+        "idx_divergence_scope",
     }
 
     #  The identity column migration 046 added, so a rebuild and a fresh
@@ -189,6 +191,8 @@ def test_migration_011_closes_proposals_for_files_already_filed(tmp_path: Path) 
     # so anything a later migration creates has to be put back first.
     conn.executescript(
         """
+        DROP TABLE IF EXISTS backup_divergence_scans;
+        DROP INDEX IF EXISTS idx_divergence_scope;
         DROP TABLE IF EXISTS backup_divergence;
         DROP TABLE IF EXISTS backup_divergence_totals;
         DROP INDEX IF EXISTS idx_backup_runs_destination;

@@ -73,12 +73,16 @@ def test_this_release_is_1_3_1_and_the_schema_moved_twelve_times_since() -> None
     * **59** records what is only at a destination: a complete count, and a
       bounded sample of the paths. Recorded so a Mirror can say it, and
       never so anything can act on it.
+    * **60** stores that set whole instead of sampling it, because somebody
+      asking which files are only on their backup is usually asking in order
+      to go and look at them. A bounded page is a different requirement from
+      a truncated record of the world, and only the first was ever the rule.
 
     The number is written down here so that changing it is a deliberate act
     with a sentence attached, rather than something noticed at upgrade time.
     """
     assert __version__ == "1.3.1"
-    assert SCHEMA_VERSION == 59
+    assert SCHEMA_VERSION == 60  # noqa: PLR2004
 
 
 def test_the_changelog_records_this_version_as_the_newest_release() -> None:

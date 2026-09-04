@@ -364,6 +364,60 @@ cheaper it is by the recorded-verdict pattern `search_health` already uses:
 measure on an idle cycle, show the verdict and its age. That is M1-06's work
 and it stays there.
 
+## M3-03, 2026-09-04 — storing the whole divergence set
+
+The first version of `divergence.py` kept a complete count and a thousand
+paths, on the assumption that four hundred thousand path strings was not a
+thing to keep in SQLite. That is a bounded *sample*, and it cannot be paged,
+searched or worked through — which is what somebody asking "which files are
+only on my backup?" intends to do. So the cap came off and the assumption got
+measured instead: `scripts/measure_divergence.py`.
+
+| destination-only rows | first write | rewrite | reconcile | count | page 1 | deep page (cursor) | deep page (OFFSET) | database |
+|---|---|---|---|---|---|---|---|---|
+| 100,000 | 399 ms | 507 ms | 510 ms | 7.5 ms | 0.1 ms | 0.1 ms | 2.7 ms | 17.8 MB |
+| 300,000 | 1.2 s | 1.6 s | 1.6 s | 22.5 ms | 0.1 ms | 0.1 ms | 10.2 ms | 52.0 MB |
+| 1,000,000 | **4.0 s** | 5.4 s | 5.4 s | **76.8 ms** | **0.1 ms** | **0.1 ms** | 31.3 ms | 171.8 MB |
+
+The simple table is fine, so the stored manifest catalogue does not get built.
+
+**Reading is flat.** A page costs 0.1 ms whether it is the first or the eight
+thousandth, because the cursor *is* the primary key. The same page by OFFSET
+costs 31 ms at a million rows and gets worse with depth, which is the whole
+argument for keyset paging and the reason `page()` takes a path rather than a
+number. The count is a real 77 ms aggregate at a million and is a status line,
+not a page.
+
+**Writing is hourly, and was accidentally five hundred transactions.** The
+first measurement said **57 s** for a million rows. Every connection in this
+program is opened `isolation_level=None`, so each 2,000-row batch was its own
+WAL commit. Wrapping a scan in `db.transaction` took it to 4.0 s — and it was
+already required for a different reason: the upserts and the reconciling DELETE
+are one statement about the destination, and a process killed between them
+would leave a set that was never true.
+
+### The listing is the remaining memory-bound half
+
+Carried out of increment 5 and now measured. `transfer_listing` has to hold the
+whole listing — a directory walk and `rclone lsjson` both produce all of it —
+so the question was what comparing it *adds* on top:
+
+| destination files | listing held | `destination_only` adds | `compare` adds |
+|---|---|---|---|
+| 100,000 | 20.1 MB | 1.6 MB | 15.9 MB |
+| 300,000 | 60.5 MB | 4.8 MB | 38.0 MB |
+| 1,000,000 | **201 MB** | **16 MB** | 137 MB |
+
+`compare` builds a dictionary of the destination and a set of every library
+path. `destination_only` walks two already-sorted streams and builds neither,
+which is why the unbounded side — the one that writes every divergent file — is
+the cheap one: 16 MB on top of the listing at a million files, against 137 MB.
+
+Peak for a comparison of a million-file destination is therefore about
+**340 MB**, and the floor under it is the 201 MB listing itself. Reducing that
+means not materialising it, which means a stored manifest — the same fallback
+the table above declined to build. Recorded, not built.
+
 ## M2-01, 2026-09-03 — what holding files costs
 
 One million library rows, 20,000 inbox proposals, same machine and same harness

@@ -52,14 +52,12 @@ import sqlite3
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 
-from librairy import divergence
 from librairy.destinations import (
     CHANGED,
     COPY,
     CURRENT,
     DIFFERENCES,
     EXTRA,
-    MIRROR,
     MISSING,
     REPORT,
     TRANSFERS,
@@ -263,6 +261,52 @@ def compare(
     return counts, entries
 
 
+def destination_only(
+    conn: sqlite3.Connection,
+    policy: Policy,
+    listing: list[DestinationFile],
+) -> Iterator[Entry]:
+    """Every file that is at the destination and not in the library. All of them.
+
+    `compare` answers *how many*, in a bounded page, which is what a screen
+    needs. This answers *which ones*, without a bound, which is what
+    `divergence.record` needs in order to store the whole set — and it yields,
+    so that four hundred thousand of them are four hundred thousand INSERTs in
+    batches rather than four hundred thousand objects in a list.
+
+    ## A merge, not a set
+
+    Both sides are already in path order — the library from an indexed range
+    scan, a destination listing because listings are sorted — so membership is
+    decided by walking them together. Nothing accumulates: no dictionary of the
+    destination, no set of a million library paths. It is the one part of a
+    comparison that is bounded on *both* sides, and it is bounded because the
+    ordering was already paid for.
+
+    SQLite's default collation compares text by UTF-8 bytes and Python compares
+    by code point, and for UTF-8 those are the same order. The merge depends on
+    that agreement; `tests/test_divergence.py` pins it with paths that would
+    expose a disagreement.
+    """
+    ours = iter(library_files(conn, policy.category))
+    mine = next(ours, None)
+    for there in sorted(listing, key=lambda found: found.relpath):
+        while mine is not None and mine.relpath < there.relpath:
+            mine = next(ours, None)
+        if mine is not None and mine.relpath == there.relpath:
+            continue
+        yield Entry(
+            relpath=there.relpath,
+            difference=EXTRA,
+            #  Whatever the mode says, which for every mode is `keep` or
+            #  `report`. There is no third possibility to yield here, because
+            #  `destinations.ACTIONS` has no fourth answer to this question.
+            action=action_for(policy.mode, EXTRA),
+            size=0,
+            destination_size=there.size,
+        )
+
+
 def plan_for(
     conn: sqlite3.Connection,
     policy: Policy,
@@ -286,11 +330,6 @@ def plan_for(
         library_files(conn, policy.category),
         listing,
         policy.mode,
-        #  A Mirror keeps a larger sample of what is only at the destination,
-        #  because that sample is what somebody reads. Every other difference
-        #  is still one page: they are illustrations of a number, and the
-        #  number is what matters.
-        keep=divergence.KEEP if policy.mode == MIRROR else PAGE,
     )
     return Plan(
         policy=policy,

@@ -9,7 +9,7 @@ from pathlib import Path
 from librairy.config import Settings
 
 LOGGER = logging.getLogger(__name__)
-SCHEMA_VERSION = 59
+SCHEMA_VERSION = 60
 
 
 class DatabaseVersionError(RuntimeError):
@@ -1755,18 +1755,9 @@ CREATE INDEX idx_backup_runs_destination ON backup_runs(destination_id, id DESC)
 """
 
 
-#  What is only at a destination, and how much of it there is.
-#
-#  Two tables because they answer two questions and only one of them scales: a
-#  *count* is one row per destination and category, and *which files* is a
-#  bounded sample. A destination holding four hundred thousand files the
-#  library no longer has is worth being told about; storing four hundred
-#  thousand path strings and rewriting them hourly is not the way to tell
-#  somebody.
-#
-#  Keyed on the file rather than on the run: a file sitting there across ten
-#  Mirror runs is one fact about today, not ten findings. See
-#  `librairy/divergence.py`.
+#  What is only at a destination — the first shape, kept a count and a sample of
+#  a thousand paths. `MIGRATION_060` replaces it, for the reason written there.
+#  Left as it was: a migration is what happened, not what is now true.
 MIGRATION_059 = """
 CREATE TABLE backup_divergence (
   destination_id INTEGER NOT NULL REFERENCES backup_destinations(id),
@@ -1785,6 +1776,65 @@ CREATE TABLE backup_divergence_totals (
   -- The complete number, from the comparison. Never a count of the rows above.
   count          INTEGER NOT NULL DEFAULT 0,
   checked_at     TEXT NOT NULL,
+  PRIMARY KEY (destination_id, category)
+);
+"""
+
+
+#  The current divergence set, stored whole.
+#
+#  The first version of this table kept a thousand paths and a complete count,
+#  which reads well and answers the wrong question. "412,338 only at the
+#  destination, here are a thousand of them" tells somebody the size of a
+#  problem and then refuses to show it to them; the other 411,338 are not on a
+#  later page, they were never written down. And the person asking is usually
+#  asking because they intend to go and look at those files.
+#
+#  So the *dataset* is complete — one row per file that is only at the
+#  destination, right now — and boundedness is kept where boundedness belongs:
+#  the comparison streams, the delete is one statement, and the page has a
+#  LIMIT. A bounded web response is a different requirement from a truncated
+#  record of the world, and only the first one was ever the rule.
+#
+#  Nothing is lost by recreating these: every row is a re-derivable observation
+#  of a destination, and the next comparison writes them all again. That is
+#  also the reason a stale row is harmless — see `librairy/divergence.py`.
+MIGRATION_060 = """
+DROP TABLE IF EXISTS backup_divergence;
+DROP TABLE IF EXISTS backup_divergence_totals;
+
+CREATE TABLE backup_divergence (
+  destination_id INTEGER NOT NULL REFERENCES backup_destinations(id),
+  -- Which policy scope found it. Derivable from the path, stored because a
+  -- comparison reconciles one scope at a time and must not touch the others.
+  category       TEXT NOT NULL,
+  relpath        TEXT NOT NULL,
+  size           INTEGER NOT NULL DEFAULT 0,
+  -- Both dates are worth having: "there since March" and "checked twenty
+  -- minutes ago" are different reassurances.
+  first_seen_at  TEXT NOT NULL,
+  last_seen_at   TEXT NOT NULL,
+  -- Which comparison last saw this file. Set membership decided by a counter
+  -- that always moves, never by a clock that has one-second granularity and
+  -- cannot tell two comparisons in the same second apart.
+  generation     INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (destination_id, relpath)
+) WITHOUT ROWID;
+
+CREATE INDEX idx_divergence_scope ON backup_divergence(destination_id, category, generation);
+
+-- One row per scope: what the last comparison was, and whether it saw the
+-- whole destination. An incomplete one refreshes what it did see and removes
+-- nothing, because half a listing is not evidence that the other half is gone.
+CREATE TABLE backup_divergence_scans (
+  destination_id INTEGER NOT NULL REFERENCES backup_destinations(id),
+  category       TEXT NOT NULL,
+  generation     INTEGER NOT NULL DEFAULT 0,
+  complete       INTEGER NOT NULL DEFAULT 0,
+  -- When anybody last looked, and when the set was last known whole. Not the
+  -- same question, and a drive in a drawer is the case that proves it.
+  checked_at     TEXT NOT NULL,
+  verified_at    TEXT NOT NULL DEFAULT '',
   PRIMARY KEY (destination_id, category)
 );
 """
@@ -1850,6 +1900,7 @@ MIGRATIONS = {
     57: MIGRATION_057,
     58: MIGRATION_058,
     59: MIGRATION_059,
+    60: MIGRATION_060,
 }
 
 

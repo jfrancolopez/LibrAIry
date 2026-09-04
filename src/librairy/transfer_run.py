@@ -63,7 +63,7 @@ from pathlib import Path
 
 from librairy import divergence, transfer_paths
 from librairy.config import Settings
-from librairy.destinations import LOCAL, MIRROR, OFFLINE
+from librairy.destinations import LOCAL, OFFLINE, REPORTING
 from librairy.planner import utc_now
 from librairy.tools import rclone
 from librairy.transfer_paths import TransferRefused
@@ -239,7 +239,7 @@ def run_policy(
     this has to be able to say.
     """
     from librairy import backup_runs
-    from librairy.transfer_plan import plan_for
+    from librairy.transfer_plan import destination_only, plan_for
 
     plan = plan_for(conn, policy, destination, listing)
     if plan.unavailable:
@@ -252,18 +252,28 @@ def run_policy(
             finished_at=utc_now(),
             detail=plan.unavailable,
         )
-    if policy.mode == MIRROR:
-        #  The whole of what Mirror adds, and the only place the two modes
-        #  differ: what is only at the destination is written down so it can be
-        #  read. Recorded before the transfer rather than after, because it is
-        #  a fact about the comparison and stays true whether or not the copy
-        #  that follows it succeeds. See `librairy/divergence.py`.
+    if policy.mode in REPORTING:
+        #  The whole of what Mirror adds, and the only place the modes differ:
+        #  what is only at the destination is written down so it can be read.
+        #  Recorded before the transfer rather than after, because it is a fact
+        #  about the comparison and stays true whether or not the copy that
+        #  follows it succeeds.
+        #
+        #  Not `plan.reported`, which is a bounded page for a screen. The whole
+        #  set, streamed, because somebody asking which files are only on their
+        #  backup is usually asking in order to go and look at them. See
+        #  `librairy/divergence.py`.
+        #
+        #  `complete=True` is earned: this line is only reached when a listing
+        #  was obtained, and `transfer_listing` returns `None` rather than a
+        #  partial one. A half-read destination never gets this far, and if it
+        #  ever could, it would have to say so here.
         divergence.record(
             conn,
             destination_id=destination.id,
             category=policy.category,
-            entries=plan.reported,
-            count=plan.destination_only,
+            entries=destination_only(conn, policy, listing),
+            complete=True,
         )
     run_id = backup_runs.begin(
         conn,

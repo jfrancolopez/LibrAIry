@@ -165,6 +165,12 @@ ACTIONS: dict[tuple[str, str], str] = {
 #  whether there is anything to do at all.
 TRANSFERS = (COPY, UPDATE)
 
+#  The modes that say out loud what is only at the destination. Read off the
+#  matrix rather than listed beside it, so that the matrix stays the only place
+#  a mode's behaviour is decided — a hand-written list would be a second place
+#  to keep in step, and the first one to fall behind.
+REPORTING = tuple(mode for mode in MODES if ACTIONS[(mode, EXTRA)] == REPORT)
+
 #  What a destination is reached through.
 LOCAL = "local"  # a path on this machine, including a mounted drive
 REMOTE = "remote"  # an rclone remote

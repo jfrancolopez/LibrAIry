@@ -1260,23 +1260,26 @@ model, path safety, planning, the execution adapter and online Backup are done
 (`librairy/destinations.py`, `librairy/transfer_paths.py`,
 `librairy/volumes.py`, `librairy/transfer_plan.py`, `librairy/transfer_run.py`,
 `librairy/backup_runs.py`, `librairy/transfer_listing.py`,
-`librairy/divergence.py`, schema 59). Offline presence detection, the Browse
-action, the surfaces and the scale gate are open.
+`librairy/divergence.py`, schema 60). Offline presence detection, the Browse
+action and the surfaces are open.
 
-> **Two gate items before this closes.**
+> **One gate item before this closes.**
 >
-> 1. **The real-rclone tests must actually run.** Two integration tests drive
->    rclone against temporary directories — a Mirror leaving a
->    destination-only file alone, and a rerun after an interrupted copy
->    converging. They skip cleanly and **have not executed on the author's
->    machine**, where rclone is not installed.
-> 2. **The destination listing is the remaining memory bound and has not been
->    measured.** The library side streams; the destination side is a dictionary
->    because it is looked up by path. A destination holding 1M entries, or 400k
->    that the library no longer has, must be measured at 100k / 300k / 1M
->    before this is called done. If it is unreasonable, the fix is the smallest
->    bounded design that works — a streaming merge, a temporary SQLite
->    catalogue — **chosen after the measurement and not before it.**
+> **The real-rclone tests must actually run.** Two integration tests drive
+> rclone against temporary directories — a Mirror leaving a destination-only
+> file alone, and a rerun after an interrupted copy converging. They skip
+> cleanly and **have not executed on the author's machine**, where rclone is
+> not installed.
+>
+> ~~The destination listing is the remaining memory bound and has not been
+> measured.~~ **Measured**, 2026-09-04, at 100k / 300k / 1M — see
+> `docs/performance.md`. The listing itself is 201 MB at a million files and
+> has to be held, because a directory walk and `rclone lsjson` both produce all
+> of it. What comparing it *adds* is the part that was open: `destination_only`
+> merges two already-sorted streams and adds 16 MB, against 137 MB for
+> `compare`, which builds a dictionary of the destination and a set of every
+> library path. Peak is about 340 MB. Reasonable, so the stored manifest
+> catalogue was **not** built.
 
 > **The semantics were written down before anything could run them**, because
 > `rclone sync` is one word longer than `rclone copy` and removes files.
@@ -1403,18 +1406,47 @@ action, the surfaces and the scale gate are open.
 > hand and it clears on the next comparison, because rows that comparison did
 > not see are dropped. Nothing has to notice the deletion.
 >
-> **The count is complete; the paths are a bounded sample.** A destination
-> holding four hundred thousand files the library no longer has is worth being
-> told about; storing four hundred thousand path strings and rewriting them
-> hourly is not the way to tell somebody. `1,000 of 412,338 shown` is exact
-> about both numbers.
+> **A bounded response is not a truncated record of the world.** The first
+> version of the divergence table kept a complete count and a thousand paths —
+> `1,000 of 412,338 shown`, exact about both numbers and useless, because the
+> other 411,338 were not on a later page. They were never written down.
+> Somebody asking which files are only on their backup is usually asking in
+> order to go and look at them, and that matters most for Offline Backup, where
+> the last known set has to still be readable after the drive is back in the
+> drawer.
+>
+> So the cap came off (schema 60) and the assumption got measured instead. One
+> row per divergent file; boundedness kept where it belongs — the comparison
+> streams, reconciliation is one DELETE, the page is a LIMIT and a cursor, the
+> count is SQL. At a million rows: 172 MB of database, a 77 ms count, and a
+> **0.1 ms page whether it is the first or the eight thousandth**, because the
+> cursor is the primary key. The same page by OFFSET costs 31 ms and gets worse
+> with depth.
+>
+> **A comparison that did not finish deletes nothing.** Membership is a
+> generation counter: files a comparison saw are stamped with it, and only a
+> comparison that saw the *whole* destination removes what carries an older
+> one. Half a listing is not evidence that the other half is gone — for a drive
+> unplugged mid-scan it is evidence of nothing at all — so an incomplete scan
+> refreshes what it saw, records itself unverified, and leaves the rest alone.
+> `divergence.record` gives `complete` no default, because claiming a partial
+> listing was whole is the one way to lose information here.
 >
 > **A bug worth recording**, because it is the second time this exact shape has
-> appeared: clearing was written as *delete anything not seen since now*, and
-> `utc_now()` has one-second granularity — so two comparisons in the same second
-> were indistinguishable and a file removed by hand stayed on the page until
-> the clock ticked. Timestamps are for showing people. Set membership decides
-> what a set contains.
+> appeared: clearing was first written as *delete anything not seen since now*,
+> and `utc_now()` has one-second granularity — so two comparisons in the same
+> second were indistinguishable and a file removed by hand stayed on the page
+> until the clock ticked. Timestamps are for showing people. Set membership
+> decides what a set contains, and a counter that always moves is what decides
+> it now.
+>
+> **A second one, found by measuring.** Writing a million divergent rows took
+> **57 seconds** — every connection here is opened `isolation_level=None`, so
+> each 2,000-row batch was its own WAL commit. `db.transaction` took it to 4.0
+> seconds, and it was already required for a reason that has nothing to do with
+> speed: the upserts and the reconciling DELETE are one statement about the
+> destination, and a process killed between them would leave a set that was
+> never true.
 
 **Problem.** One remote, the whole library, copy-only. Three different
 intentions collapsed into one.
