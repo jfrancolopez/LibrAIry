@@ -9,7 +9,7 @@ from pathlib import Path
 from librairy.config import Settings
 
 LOGGER = logging.getLogger(__name__)
-SCHEMA_VERSION = 56
+SCHEMA_VERSION = 57
 
 
 class DatabaseVersionError(RuntimeError):
@@ -1708,6 +1708,17 @@ CREATE INDEX idx_backup_policies_destination ON backup_policies(destination_id);
 """
 
 
+#  The other half of an offline drive's identity.
+#
+#  The marker file answers "was this drive registered with LibrAIry" and can be
+#  cloned; the volume id answers "is this the same filesystem" and cannot, but
+#  is not available on every platform. Neither is sufficient and both are
+#  cheap. Empty is a legitimate value — see `librairy/volumes.py`.
+MIGRATION_057 = """
+ALTER TABLE backup_destinations ADD COLUMN volume TEXT NOT NULL DEFAULT '';
+"""
+
+
 MIGRATIONS = {
     1: MIGRATION_001,
     2: MIGRATION_002,
@@ -1765,6 +1776,7 @@ MIGRATIONS = {
     54: MIGRATION_054,
     55: MIGRATION_055,
     56: MIGRATION_056,
+    57: MIGRATION_057,
 }
 
 

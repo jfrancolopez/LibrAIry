@@ -336,6 +336,125 @@ def test_a_drive_that_is_not_connected_at_all_is_refused(tmp_path: Path) -> None
         transfer_paths.checked_offline(settings, str(tmp_path / "nothing"), "wd-8tb")
 
 
+def test_a_cloned_marker_on_a_different_filesystem_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The hole the marker alone cannot cover.
+
+    Copy a backup drive and the copy carries the same marker, so it claims to
+    be the original. The volume id is what tells them apart, and it is why the
+    identity is two facts rather than one.
+    """
+    from librairy import volumes
+
+    settings = settings_for(tmp_path)
+    drive = tmp_path / "Volumes" / "WD"
+    drive.mkdir(parents=True)
+    transfer_paths.register(drive, "wd-8tb-2026")
+    monkeypatch.setattr(volumes, "identity_for", lambda _path: "uuid:THE-CLONE")
+
+    assert not transfer_paths.attached(drive, "wd-8tb-2026", "uuid:THE-ORIGINAL")
+    with pytest.raises(TransferRefused, match="filesystem"):
+        transfer_paths.checked_offline(
+            settings, str(drive), "wd-8tb-2026", "uuid:THE-ORIGINAL"
+        )
+
+
+def test_the_registered_drive_is_accepted_on_both_counts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from librairy import volumes
+
+    settings = settings_for(tmp_path)
+    drive = tmp_path / "Volumes" / "WD"
+    drive.mkdir(parents=True)
+    transfer_paths.register(drive, "wd-8tb-2026")
+    monkeypatch.setattr(volumes, "identity_for", lambda _path: "uuid:THE-ORIGINAL")
+
+    assert transfer_paths.attached(drive, "wd-8tb-2026", "uuid:THE-ORIGINAL")
+    found = transfer_paths.checked_offline(
+        settings, str(drive), "wd-8tb-2026", "uuid:THE-ORIGINAL"
+    )
+    assert found.volume == "uuid:THE-ORIGINAL"
+
+
+def test_a_drive_that_moved_to_another_mount_point_is_still_itself(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The hole the *volume id* covers and the marker cannot: the operating
+    system mounted it somewhere else this time, and it is the same disk."""
+    from librairy import volumes
+
+    settings = settings_for(tmp_path)
+    moved = tmp_path / "Volumes" / "WD 1"
+    moved.mkdir(parents=True)
+    transfer_paths.register(moved, "wd-8tb-2026")
+    monkeypatch.setattr(volumes, "identity_for", lambda _path: "uuid:THE-ORIGINAL")
+
+    found = transfer_paths.checked_offline(
+        settings, str(moved), "wd-8tb-2026", "uuid:THE-ORIGINAL"
+    )
+
+    assert found.path == moved.resolve()
+
+
+def test_a_platform_that_cannot_say_falls_back_to_the_marker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An absence is not a disagreement.
+
+    Refusing every backup because `diskutil` changed, or because the filesystem
+    exposes no id, would make a drive stop working on the day somebody upgraded
+    their operating system. Only an actual mismatch refuses.
+    """
+    from librairy import volumes
+
+    settings = settings_for(tmp_path)
+    drive = tmp_path / "Volumes" / "WD"
+    drive.mkdir(parents=True)
+    transfer_paths.register(drive, "wd-8tb-2026")
+    monkeypatch.setattr(volumes, "identity_for", lambda _path: "")
+
+    assert volumes.matches("uuid:RECORDED", "")
+    assert volumes.matches("", "uuid:FOUND")
+    assert not volumes.matches("uuid:RECORDED", "uuid:OTHER")
+    assert transfer_paths.attached(drive, "wd-8tb-2026", "uuid:RECORDED")
+    assert transfer_paths.checked_offline(
+        settings, str(drive), "wd-8tb-2026", "uuid:RECORDED"
+    )
+
+
+def test_volume_identity_never_raises_into_a_caller(tmp_path: Path) -> None:
+    """It runs immediately before deciding whether to copy somebody's photos.
+
+    Every way of failing is the same failure — the platform did not answer —
+    and the answer to that is the marker on its own, not an exception.
+    """
+    from librairy import volumes
+
+    assert volumes.identity_for(tmp_path / "nothing-here") in ("", volumes.identity_for(tmp_path))
+    assert isinstance(volumes.identity_for(tmp_path), str)
+
+
+def test_a_destination_remembers_both_halves_of_the_identity(tmp_path: Path) -> None:
+    conn = connect(settings_for(tmp_path))
+
+    made = dest.add_destination(
+        conn,
+        name="WD 8TB",
+        kind=dest.LOCAL,
+        target="/Volumes/WD",
+        modes=[dest.OFFLINE],
+        identity="wd-8tb-2026",
+        volume="uuid:THE-ORIGINAL",
+    )
+
+    found = dest.destination(conn, made)
+    assert found is not None
+    assert found.identity == "wd-8tb-2026"
+    assert found.volume == "uuid:THE-ORIGINAL"
+
+
 # --- the policy model ---------------------------------------------------------------
 
 

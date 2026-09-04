@@ -187,11 +187,13 @@ class Destination:
     #  other two.
     modes: tuple[str, ...]
     enabled: bool
-    #  For an offline drive: something that identifies the volume itself rather
-    #  than wherever the operating system mounted it this morning. Checked
-    #  before a single byte is written, because `/Volumes/Backup` is whatever
-    #  was plugged in most recently.
+    #  For an offline drive, two facts and neither is sufficient alone.
+    #  `identity` is the marker LibrAIry wrote — was this drive registered with
+    #  us — and `volume` is what the operating system calls the filesystem —
+    #  is this the same one. A marker can be cloned; a volume id is not
+    #  available everywhere. Both are checked before a single byte is written.
     identity: str = ""
+    volume: str = ""
     created_at: str = ""
 
     @property
@@ -231,6 +233,7 @@ def add_destination(
     target: str,
     modes: tuple[str, ...] | list[str],
     identity: str = "",
+    volume: str = "",
     enabled: bool = True,
 ) -> int:
     if kind not in KINDS:
@@ -242,9 +245,9 @@ def add_destination(
         raise ValueError("a destination needs a name and a target")
     cursor = conn.execute(
         """
-        INSERT INTO backup_destinations(name, kind, target, modes, identity, enabled,
-                                        created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO backup_destinations(name, kind, target, modes, identity, volume,
+                                        enabled, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             name.strip(),
@@ -252,6 +255,7 @@ def add_destination(
             target.strip(),
             ",".join(allowed),
             identity.strip(),
+            volume.strip(),
             int(enabled),
             utc_now(),
         ),
@@ -378,6 +382,19 @@ def active(conn: sqlite3.Connection) -> list[tuple[Policy, Destination]]:
     ]
 
 
+def _column(row: sqlite3.Row, name: str) -> str:
+    """One column, or "" on a row that predates it.
+
+    `sqlite3.Row` raises on an unknown key rather than returning None, and this
+    reader runs against historical fixtures in `test_release_acceptance` where
+    the migration adding it has not been replayed yet.
+    """
+    try:
+        return str(row[name] or "")
+    except (IndexError, KeyError):
+        return ""
+
+
 def _destination(row: sqlite3.Row) -> Destination:
     return Destination(
         id=int(row["id"]),
@@ -387,5 +404,6 @@ def _destination(row: sqlite3.Row) -> Destination:
         modes=tuple(part for part in str(row["modes"]).split(",") if part),
         enabled=bool(row["enabled"]),
         identity=str(row["identity"] or ""),
+        volume=_column(row, "volume"),
         created_at=str(row["created_at"] or ""),
     )

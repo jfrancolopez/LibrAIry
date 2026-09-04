@@ -24,7 +24,53 @@ ALLOWED_VERBS = {"copy", "copyto", "check", "lsjson", "listremotes", "version", 
 #  argument went straight through. Matched by prefix, because rclone spells
 #  several of these with a suffix (`--delete-before`, `--delete-during`) and a
 #  new one should be refused before anybody has heard of it.
-DESTRUCTIVE_FLAGS = ("--delete", "--rmdirs", "--purge", "--backup-dir")
+#
+#  Kept as defence in depth. It is not the boundary — `ALLOWED_FLAGS` is.
+DESTRUCTIVE_FLAGS = (
+    "--delete",
+    "--rmdirs",
+    "--purge",
+    "--backup-dir",
+    "--max-delete",
+    "--suffix",
+)
+
+#  **The boundary.** Every option this program may pass, listed.
+#
+#  An allowlist rather than a denylist, and the difference is the whole point:
+#  a denylist has to keep up with every option rclone will ever add, and it only
+#  has to be behind once. This has to keep up with what LibrAIry needs, which is
+#  a change somebody makes deliberately, with a test, in this file.
+#
+#  So a destructive option cannot arrive by being unheard-of. It has to be added
+#  here first, by name, by somebody reading this comment.
+ALLOWED_FLAGS = frozenset(
+    {
+        "--config",
+        "--bwlimit",
+        "--transfers",
+        "--checkers",
+        "--contimeout",
+        "--timeout",
+        "--retries",
+        "--low-level-retries",
+        "--stats",
+        "--stats-one-line",
+        "--use-json-log",
+        "--log-level",
+        "--fast-list",
+        "--size-only",
+        "--checksum",
+        "--no-traverse",
+        "--ignore-existing",
+        "--update",
+        "--recursive",
+        "-R",
+        "--json",
+        "--files-from",
+        "--no-check-dest",
+    }
+)
 
 
 class RcloneError(RuntimeError):
@@ -101,6 +147,16 @@ def _assert_safe(command: list[str]) -> list[str]:
     if forbidden:
         raise RcloneError(f"destructive rclone verb refused: {sorted(forbidden)[0]}")
     for argument in command[2:]:
+        if not argument.startswith("-"):
+            #  A path or a remote. Where those may point is decided by
+            #  `librairy/transfer_paths.py`, which is a different question and
+            #  a much longer one.
+            continue
         if any(argument.startswith(flag) for flag in DESTRUCTIVE_FLAGS):
             raise RcloneError(f"destructive rclone option refused: {argument}")
+        #  `--flag=value` and `--flag value` are the same flag. Splitting means
+        #  the allowlist holds names rather than having to anticipate spellings.
+        name = argument.split("=", 1)[0]
+        if name not in ALLOWED_FLAGS:
+            raise RcloneError(f"rclone option not on the allowlist: {name}")
     return command

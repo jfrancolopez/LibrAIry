@@ -31,12 +31,21 @@ destination containing it invites a later tool to treat the whole tree as one
 managed directory; and the same tree both ways is a transfer that can only
 either do nothing or corrupt something.
 
-**An offline drive is identified before it is written to.** `/Volumes/Backup`
-is whatever was plugged in most recently, and a stale mount point pointing at a
-different disk is the ordinary case rather than an exotic one. A registered
-drive carries a marker file written when it was registered; if the marker is
-absent or says something else, the drive at that path is **not** the drive that
-was registered, and no work happens. See `identify`.
+**An offline drive is identified before it is written to, two ways.**
+`/Volumes/Backup` is whatever was plugged in most recently, and a stale mount
+point pointing at a different disk is the ordinary case rather than an exotic
+one. Both facts are checked and each covers the other's hole:
+
+    the volume            is this the same filesystem? From the operating
+                          system, where it will say — `librairy/volumes.py`
+    the marker file       was this filesystem registered with LibrAIry?
+                          Written by us, works everywhere
+
+A marker alone can be cloned: copy a backup drive and the copy claims to be the
+original. A volume id alone says nothing about whether this program has ever
+seen the drive. Either one disagreeing refuses the transfer; a platform that
+cannot answer the first falls back to the second, which is not a regression
+because it is where this started.
 
 ## What is not checked here
 
@@ -51,6 +60,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from librairy import volumes
 from librairy.config import Settings
 
 #  The file that says which registered drive this is. A plain text file, on
@@ -74,6 +84,9 @@ class LocalTarget:
 
     path: Path
     identity: str = ""
+    #  What the operating system says the filesystem is, where it says
+    #  anything. Empty is a legitimate answer — see `librairy/volumes.py`.
+    volume: str = ""
 
 
 def library_source(settings: Settings, relpath: str = "") -> Path:
@@ -162,12 +175,12 @@ def register(path: Path, identity: str) -> None:
 def identify(path: Path) -> str:
     """What the drive at this path says it is, or "" if it says nothing.
 
-    The whole of offline-drive identity, and it is deliberately dull: a mount
-    point is not an identity, a volume label can be duplicated by anybody with
-    a USB stick, and a filesystem UUID cannot be read portably without asking
-    the operating system questions that differ on every platform. A marker file
-    written at registration is checkable everywhere, survives being unplugged,
-    and cannot be true of two drives unless somebody copied it deliberately.
+    Half of offline-drive identity, and deliberately the dull half: a marker
+    file written at registration is checkable on every platform and every
+    filesystem, survives being unplugged, and answers a question no volume id
+    can — *was this drive registered with LibrAIry*. The other half, *is this
+    the same filesystem*, is `librairy/volumes.py`, and it is the one that
+    catches a clone.
     """
     marker = path / MARKER
     try:
@@ -176,21 +189,30 @@ def identify(path: Path) -> str:
         return ""
 
 
-def attached(path: Path, identity: str) -> bool:
+def attached(path: Path, identity: str, volume: str = "") -> bool:
     """Is the registered drive here right now?
 
-    Both halves. A directory existing at the mount point is not the drive —
-    an unplugged USB disk often leaves its folder behind, empty, and a backup
+    Every half. A directory existing at the mount point is not the drive — an
+    unplugged USB disk often leaves its folder behind, empty, and a backup
     written into that folder goes onto the system disk and looks like it
     worked.
     """
-    if not identity:
-        return path.is_dir()
-    return path.is_dir() and identify(path) == identity
+    if not path.is_dir():
+        return False
+    if identity and identify(path) != identity:
+        return False
+    return volumes.matches(volume, volumes.identity_for(path))
 
 
-def checked_offline(settings: Settings, target: str, identity: str) -> LocalTarget:
-    """A registered offline drive, checked for being present *and* being itself."""
+def checked_offline(
+    settings: Settings, target: str, identity: str, volume: str = ""
+) -> LocalTarget:
+    """A registered offline drive, checked for being present *and* being itself.
+
+    Called immediately before a transfer and not once at planning time. A drive
+    can be pulled between deciding to copy and copying, and the mount point it
+    leaves behind is a directory that will happily accept files.
+    """
     found = local_destination(settings, target)
     if not found.path.is_dir():
         raise TransferRefused("that drive is not connected")
@@ -199,7 +221,26 @@ def checked_offline(settings: Settings, target: str, identity: str) -> LocalTarg
             "the drive at that path is not the one that was registered — nothing"
             " was copied"
         )
-    return LocalTarget(path=found.path, identity=identity)
+    here = volumes.identity_for(found.path)
+    if not volumes.matches(volume, here):
+        #  The case the marker cannot catch: a *clone*. Same marker, different
+        #  filesystem, and it is the copy rather than the drive that was
+        #  registered.
+        raise TransferRefused(
+            "the filesystem at that path is not the one that was registered —"
+            " nothing was copied"
+        )
+    return LocalTarget(path=found.path, identity=identity, volume=here or volume)
+
+
+def volume_of(path: Path) -> str:
+    """What the operating system calls the filesystem here, or "".
+
+    Read at registration and stored beside the marker. Re-exported from here so
+    that everything about identifying a destination is reachable from the
+    module that decides whether to write to one.
+    """
+    return volumes.identity_for(path)
 
 
 def _resolved(path: Path) -> Path:

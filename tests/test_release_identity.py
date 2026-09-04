@@ -35,11 +35,11 @@ def _tags() -> list[str]:
     ).stdout.split()
 
 
-def test_this_release_is_1_3_1_and_the_schema_moved_nine_times_since() -> None:
+def test_this_release_is_1_3_1_and_the_schema_moved_ten_times_since() -> None:
     """The released version, and the schema main is on.
 
     A release number is not a schema change and a schema change is not a
-    release: 1.3.1 shipped on 47, which is what acceptance passed on. Nine
+    release: 1.3.1 shipped on 47, which is what acceptance passed on. Ten
     unreleased migrations since, and each one is a sentence:
 
     * **48** indexes the other end of a `similar_media_flags` pair, so Review
@@ -64,12 +64,15 @@ def test_this_release_is_1_3_1_and_the_schema_moved_nine_times_since() -> None:
     * **56** says where library content is copied to and what each place is
       for. Three modes, none of which can express deleting anything — see
       `librairy/destinations.py`.
+    * **57** adds the other half of an offline drive's identity: the marker
+      file says it was registered with us and can be cloned, the volume id
+      says it is the same filesystem and is not available everywhere.
 
     The number is written down here so that changing it is a deliberate act
     with a sentence attached, rather than something noticed at upgrade time.
     """
     assert __version__ == "1.3.1"
-    assert SCHEMA_VERSION == 56
+    assert SCHEMA_VERSION == 57
 
 
 def test_the_changelog_records_this_version_as_the_newest_release() -> None:

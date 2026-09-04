@@ -1256,9 +1256,11 @@ do not disagree.
 ## M3-03 · Backup, Mirror, Offline Backup
 
 **P1 · XL · High risk · IN PROGRESS** — semantics, the destination and policy
-model, path safety and planning are done (`librairy/destinations.py`,
-`librairy/transfer_paths.py`, `librairy/transfer_plan.py`, schema 56).
-Execution, presence detection, the Browse action and the surfaces are open.
+model, path safety, planning and the execution adapter are done
+(`librairy/destinations.py`, `librairy/transfer_paths.py`,
+`librairy/volumes.py`, `librairy/transfer_plan.py`, `librairy/transfer_run.py`,
+schema 57). Presence detection, the Browse action, the surfaces and the scale
+gate are open.
 
 > **The semantics were written down before anything could run them**, because
 > `rclone sync` is one word longer than `rclone copy` and removes files.
@@ -1287,11 +1289,19 @@ Execution, presence detection, the Browse action and the surfaces are open.
 > with `/data/library` and is not inside it, which is the bug every hand-written
 > containment check has had once.
 >
-> **An offline drive is identified before it is written to.** `/Volumes/Backup`
-> is whatever was plugged in most recently, and an unplugged disk often leaves
-> its mount folder behind — empty, and a backup written into it goes onto the
-> system disk and looks like it worked. A marker file written at registration
-> is checkable on every platform and survives being unplugged.
+> **An offline drive is identified two ways before it is written to**, because
+> each covers the other's hole. The **marker file** LibrAIry wrote answers *was
+> this drive registered with us* — checkable on every platform, and catches the
+> case that matters most: an unplugged disk leaves its mount folder behind,
+> empty, and a backup written into it goes onto the system disk and looks like
+> it worked. The **volume id** answers *is this the same filesystem* — it
+> catches a clone, which a marker cannot, and it survives the drive being
+> mounted somewhere else, which a path cannot.
+>
+> Neither is required. A platform that cannot answer the second falls back to
+> the first, because refusing every backup on the day somebody upgrades their
+> operating system would be worse than the risk it removes. **Only an actual
+> disagreement refuses.**
 >
 > **A comparison is a catalogue difference, not a hash.** Twenty terabytes
 > hashed on a schedule is a machine that does nothing else. The library side is
@@ -1302,6 +1312,31 @@ Execution, presence detection, the Browse action and the surfaces are open.
 > **"Nothing to do" and "nobody could look" are different**, and a plan says
 > which. A drive in a drawer rendering as a healthy backup is the failure this
 > feature exists to prevent.
+>
+> **The execution adapter has no door.** No function in it takes a command, a
+> verb or a list of options: the only way to move bytes is to hand `send` a
+> plan, and a plan can only hold `copy` and `update` because those are the only
+> actions the vocabulary two layers up can produce. Deletion is unrepresentable
+> at the policy level and there is no way back into it at the execution level,
+> which is the same pattern applied twice.
+>
+> **The option denylist became an allowlist.** A denylist has to keep up with
+> every option rclone will ever add and only has to be behind once; an
+> allowlist has to keep up with what LibrAIry needs, which is a change somebody
+> makes deliberately in one file with a test. `--max-delete` and `--suffix`
+> were both absent from the first version.
+>
+> **A plan is not trusted forever.** Source containment, destination
+> separation and offline-drive identity are all re-checked immediately before
+> launching rather than once at planning time — a drive pulled in between
+> leaves a mount point behind, and a mount point is a directory that will
+> happily accept files.
+>
+> **A failed run is never recorded as current.** A backup that is behind and
+> says it is fine is worse than one that is behind. Failures are categorised —
+> full, interrupted, unavailable, refused, missing tool — because a full disk
+> and a dropped connection want different things from a person, and "backup
+> failed" wants nothing from them but worry.
 
 **Problem.** One remote, the whole library, copy-only. Three different
 intentions collapsed into one.
