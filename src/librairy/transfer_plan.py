@@ -52,12 +52,14 @@ import sqlite3
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 
+from librairy import divergence
 from librairy.destinations import (
     CHANGED,
     COPY,
     CURRENT,
     DIFFERENCES,
     EXTRA,
+    MIRROR,
     MISSING,
     REPORT,
     TRANSFERS,
@@ -190,7 +192,11 @@ def library_files(
 
 
 def compare(
-    library: Iterable[LibraryFile], destination: list[DestinationFile], mode: str
+    library: Iterable[LibraryFile],
+    destination: list[DestinationFile],
+    mode: str,
+    *,
+    keep: int = PAGE,
 ) -> tuple[dict[str, int], list[Entry]]:
     """Two catalogues in, four counts and a bounded sample of rows out.
 
@@ -224,7 +230,7 @@ def compare(
         else:
             difference = CURRENT
         counts[difference] += 1
-        if per_difference[difference] < PAGE:
+        if per_difference[difference] < keep:
             per_difference[difference] += 1
             entries.append(
                 Entry(
@@ -240,7 +246,7 @@ def compare(
         if there.relpath in ours_by_path:
             continue
         counts[EXTRA] += 1
-        if per_difference[EXTRA] < PAGE:
+        if per_difference[EXTRA] < keep:
             per_difference[EXTRA] += 1
             entries.append(
                 Entry(
@@ -277,7 +283,14 @@ def plan_for(
             unavailable=f"{destination.name} could not be reached",
         )
     counts, entries = compare(
-        library_files(conn, policy.category), listing, policy.mode
+        library_files(conn, policy.category),
+        listing,
+        policy.mode,
+        #  A Mirror keeps a larger sample of what is only at the destination,
+        #  because that sample is what somebody reads. Every other difference
+        #  is still one page: they are illustrations of a number, and the
+        #  number is what matters.
+        keep=divergence.KEEP if policy.mode == MIRROR else PAGE,
     )
     return Plan(
         policy=policy,

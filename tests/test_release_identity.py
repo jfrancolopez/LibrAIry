@@ -35,11 +35,11 @@ def _tags() -> list[str]:
     ).stdout.split()
 
 
-def test_this_release_is_1_3_1_and_the_schema_moved_eleven_times_since() -> None:
+def test_this_release_is_1_3_1_and_the_schema_moved_twelve_times_since() -> None:
     """The released version, and the schema main is on.
 
     A release number is not a schema change and a schema change is not a
-    release: 1.3.1 shipped on 47, which is what acceptance passed on. Eleven
+    release: 1.3.1 shipped on 47, which is what acceptance passed on. Twelve
     unreleased migrations since, and each one is a sentence:
 
     * **48** indexes the other end of a `similar_media_flags` pair, so Review
@@ -70,12 +70,15 @@ def test_this_release_is_1_3_1_and_the_schema_moved_eleven_times_since() -> None
     * **58** records what each backup run did — and deliberately has no
       "this destination is up to date" column, because a flag like that
       only has to be wrong once. Comparing answers it instead.
+    * **59** records what is only at a destination: a complete count, and a
+      bounded sample of the paths. Recorded so a Mirror can say it, and
+      never so anything can act on it.
 
     The number is written down here so that changing it is a deliberate act
     with a sentence attached, rather than something noticed at upgrade time.
     """
     assert __version__ == "1.3.1"
-    assert SCHEMA_VERSION == 58
+    assert SCHEMA_VERSION == 59
 
 
 def test_the_changelog_records_this_version_as_the_newest_release() -> None:

@@ -61,9 +61,9 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from librairy import transfer_paths
+from librairy import divergence, transfer_paths
 from librairy.config import Settings
-from librairy.destinations import LOCAL, OFFLINE
+from librairy.destinations import LOCAL, MIRROR, OFFLINE
 from librairy.planner import utc_now
 from librairy.tools import rclone
 from librairy.transfer_paths import TransferRefused
@@ -251,6 +251,19 @@ def run_policy(
             started_at=utc_now(),
             finished_at=utc_now(),
             detail=plan.unavailable,
+        )
+    if policy.mode == MIRROR:
+        #  The whole of what Mirror adds, and the only place the two modes
+        #  differ: what is only at the destination is written down so it can be
+        #  read. Recorded before the transfer rather than after, because it is
+        #  a fact about the comparison and stays true whether or not the copy
+        #  that follows it succeeds. See `librairy/divergence.py`.
+        divergence.record(
+            conn,
+            destination_id=destination.id,
+            category=policy.category,
+            entries=plan.reported,
+            count=plan.destination_only,
         )
     run_id = backup_runs.begin(
         conn,

@@ -1259,15 +1259,24 @@ do not disagree.
 model, path safety, planning, the execution adapter and online Backup are done
 (`librairy/destinations.py`, `librairy/transfer_paths.py`,
 `librairy/volumes.py`, `librairy/transfer_plan.py`, `librairy/transfer_run.py`,
-`librairy/backup_runs.py`, `librairy/transfer_listing.py`, schema 58). Mirror
-reporting, offline presence detection, the Browse action, the surfaces and the
-scale gate are open.
+`librairy/backup_runs.py`, `librairy/transfer_listing.py`,
+`librairy/divergence.py`, schema 59). Offline presence detection, the Browse
+action, the surfaces and the scale gate are open.
 
-> **Gate item, not a permanent skip.** Two integration tests run rclone for
-> real against temporary directories — a Mirror leaving a destination-only file
-> alone, and a rerun after an interrupted copy converging. They skip cleanly
-> and **have not executed on the author's machine**, where rclone is not
-> installed. They must pass somewhere it is before M3-03 closes.
+> **Two gate items before this closes.**
+>
+> 1. **The real-rclone tests must actually run.** Two integration tests drive
+>    rclone against temporary directories — a Mirror leaving a
+>    destination-only file alone, and a rerun after an interrupted copy
+>    converging. They skip cleanly and **have not executed on the author's
+>    machine**, where rclone is not installed.
+> 2. **The destination listing is the remaining memory bound and has not been
+>    measured.** The library side streams; the destination side is a dictionary
+>    because it is looked up by path. A destination holding 1M entries, or 400k
+>    that the library no longer has, must be measured at 100k / 300k / 1M
+>    before this is called done. If it is unreasonable, the fix is the smallest
+>    bounded design that works — a streaming merge, a temporary SQLite
+>    catalogue — **chosen after the measurement and not before it.**
 
 > **The semantics were written down before anything could run them**, because
 > `rclone sync` is one word longer than `rclone copy` and removes files.
@@ -1379,6 +1388,33 @@ scale gate are open.
 > only idle ones, guarded to at most hourly per policy. An offline drive is
 > never polled on a schedule: being told hourly that a drawer is still a drawer
 > is the retry storm this feature exists to avoid.
+>
+> **Mirror is Backup with one cell changed**, and the simplicity is the safety
+> feature. Three of the four answers are identical; the fourth is `report`
+> instead of `keep`. A second architecture for Mirror is how "represent the
+> current library" quietly becomes "make the destination match", which is one
+> word away from removing things — so a test asserts the two modes differ in
+> exactly one cell and share one adapter.
+>
+> **Current divergence is not run history.** A file sitting at a destination
+> across ten Mirror runs is *one* fact about today, not ten findings — so it is
+> keyed on the file: re-running updates when it was last seen and leaves when
+> it was first seen alone, which gives both dates worth having. Remove it by
+> hand and it clears on the next comparison, because rows that comparison did
+> not see are dropped. Nothing has to notice the deletion.
+>
+> **The count is complete; the paths are a bounded sample.** A destination
+> holding four hundred thousand files the library no longer has is worth being
+> told about; storing four hundred thousand path strings and rewriting them
+> hourly is not the way to tell somebody. `1,000 of 412,338 shown` is exact
+> about both numbers.
+>
+> **A bug worth recording**, because it is the second time this exact shape has
+> appeared: clearing was written as *delete anything not seen since now*, and
+> `utc_now()` has one-second granularity — so two comparisons in the same second
+> were indistinguishable and a file removed by hand stayed on the page until
+> the clock ticked. Timestamps are for showing people. Set membership decides
+> what a set contains.
 
 **Problem.** One remote, the whole library, copy-only. Three different
 intentions collapsed into one.

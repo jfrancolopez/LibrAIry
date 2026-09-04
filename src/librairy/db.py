@@ -9,7 +9,7 @@ from pathlib import Path
 from librairy.config import Settings
 
 LOGGER = logging.getLogger(__name__)
-SCHEMA_VERSION = 58
+SCHEMA_VERSION = 59
 
 
 class DatabaseVersionError(RuntimeError):
@@ -1755,6 +1755,41 @@ CREATE INDEX idx_backup_runs_destination ON backup_runs(destination_id, id DESC)
 """
 
 
+#  What is only at a destination, and how much of it there is.
+#
+#  Two tables because they answer two questions and only one of them scales: a
+#  *count* is one row per destination and category, and *which files* is a
+#  bounded sample. A destination holding four hundred thousand files the
+#  library no longer has is worth being told about; storing four hundred
+#  thousand path strings and rewriting them hourly is not the way to tell
+#  somebody.
+#
+#  Keyed on the file rather than on the run: a file sitting there across ten
+#  Mirror runs is one fact about today, not ten findings. See
+#  `librairy/divergence.py`.
+MIGRATION_059 = """
+CREATE TABLE backup_divergence (
+  destination_id INTEGER NOT NULL REFERENCES backup_destinations(id),
+  category       TEXT NOT NULL,
+  relpath        TEXT NOT NULL,
+  size           INTEGER NOT NULL DEFAULT 0,
+  -- Both dates are worth having: "there since March" and "checked twenty
+  -- minutes ago" are different reassurances.
+  first_seen_at  TEXT NOT NULL,
+  last_seen_at   TEXT NOT NULL,
+  PRIMARY KEY (destination_id, relpath)
+);
+CREATE TABLE backup_divergence_totals (
+  destination_id INTEGER NOT NULL REFERENCES backup_destinations(id),
+  category       TEXT NOT NULL,
+  -- The complete number, from the comparison. Never a count of the rows above.
+  count          INTEGER NOT NULL DEFAULT 0,
+  checked_at     TEXT NOT NULL,
+  PRIMARY KEY (destination_id, category)
+);
+"""
+
+
 MIGRATIONS = {
     1: MIGRATION_001,
     2: MIGRATION_002,
@@ -1814,6 +1849,7 @@ MIGRATIONS = {
     56: MIGRATION_056,
     57: MIGRATION_057,
     58: MIGRATION_058,
+    59: MIGRATION_059,
 }
 
 

@@ -46,7 +46,8 @@ and `Dismiss suggestion` change no file at all.
 | **Backup** | keeps recovery copies. A file leaving your library never leaves a backup |
 | **Mirror** | keeps a destination current. Anything there that your library no longer has is **reported**, never deleted |
 | **Offline Backup** | a registered drive that updates while it is connected. Nothing is ever removed from it |
-| **Only at the destination** | a file at a backup that your library no longer has. Never called *extra*, and never *stale* on its own — both words invite tidying, and nothing here tidies |
+| **Only at the destination** | a file at a backup that your library no longer has. Never called *extra*, *stale* or *orphaned* — those invite tidying, and nothing here tidies |
+| **Divergence** | how a Mirror's destination differs from your library right now. Information, and never a queue of things to remove |
 | **Project** | files that belong together, wherever they live — a view, never a place |
 | **Project folder** | `Projects/{project}/` — a filing destination on disk |
 | **Undo** | reverse something that actually happened |
