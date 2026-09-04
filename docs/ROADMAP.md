@@ -519,6 +519,49 @@ finds. Then decide whether to publish.
 
 # M2 — Intelligence and processing
 
+## M2 at close — 2026-09-04
+
+| | |
+|---|---|
+| **M2-01** Waiting for AI | COMPLETE |
+| **M2-02** Documents that disagree | COMPLETE |
+| **M2-03** Resource modes and a separate AI limiter | COMPLETE — two partials accepted: NAS-under-load belongs to production validation, and the Settings 375px overflow to the UI track |
+| **M2-04** Decision Memory, context-aware | COMPLETE |
+| **M2-05** Tags, and Projects | COMPLETE — one semantic correction after review, see the entry |
+| **M2-06** Documents that belong together | COMPLETE — and M1-03 with it |
+
+### The gate
+
+Six features passing is not six features holding together, and the difference
+is where the defects were. `tests/test_m2_integration.py` makes only the claims
+no single feature can make, and it exists because every cross-feature bug this
+milestone produced was invisible from inside the feature that caused it:
+
+* a tagged file **lost its tag** when nothing could classify it — recording sat
+  after the branch a held file takes
+* a **companion was held**, because the pass that associates artwork looks for
+  undecided *proposals* and a held file has none
+* a document set that grew **forked into two identical headings**, because its
+  base is a majority and can move, and the group was found by its base
+
+What the gate holds: nothing M2 added can move a file; a resource mode changes
+*when* work happens and never what the answer is; a held file blocks nothing
+and keeps its tag; the three waiting reasons still mean three different things;
+and a tag and a rule still reach a destination by the same single path.
+
+### Carried out of M2
+
+* **M1-06 PARTIAL** — Health at 1.8 s against "well under a second". The
+  residual is FTS counting, and it is a measurement pass of its own.
+* **The Settings page at 375px** overflows by 84px, from the
+  `<label>sentence <select></label>` pattern used on every field. A UI pass,
+  not a resource-modes pass.
+* **NAS responsiveness under load** cannot be measured on the test rig. It
+  belongs to production validation.
+* **An organization on a financial document.** M2-06's `document_set` needs
+  one and nothing reads a bank's name off a statement, so a year of statements
+  groups only if somebody tags them.
+
 ## M2-01 · Waiting for AI
 
 **P1 · M · Medium risk · DONE 2026-09-03** — `librairy/waiting.py`, schema 51,
@@ -976,6 +1019,15 @@ schema 54, `partials/members/documents.html`, `tests/test_document_groups.py`.
 > already-filed ones is one document, not a group of nine. Members keep their
 > `group_id` after Commit, the way an album's tracks do, because what a group
 > *was* is how Commit and History explain what happened.
+>
+> **What the integration gate found.** A set that grows moves its own base —
+> the base is a majority — and the group was being found by `(kind, label,
+> dest_base)` like every other kind. So a set of two that became a set of five
+> filed somewhere else created a *second* group under an identical heading:
+> the eleven-PDFs problem wearing the opposite hat. A document set is now found
+> by its key, which is on its members and indexed, and its base moves with it.
+> Only visible across two passes, which is why it took a gate rather than a
+> feature test.
 >
 > **What did not come out as hoped.** The roadmap's own example — a year of
 > bank statements — does not group yet. `document_set` needs an organization,

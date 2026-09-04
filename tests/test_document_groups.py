@@ -597,6 +597,72 @@ def test_turning_the_rule_off_leaves_the_rows_exactly_as_they_were(
     ] == [None, None]
 
 
+def test_a_set_that_grows_stays_one_group(tmp_path: Path) -> None:
+    """Found by the M2 integration gate, and only visible across two passes.
+
+    A document set's base is a *majority*, so it can move when the set grows.
+    Finding the group by (kind, label, dest_base) — which is how every other
+    kind of group is found — meant a set of two that became a set of five filed
+    somewhere else created a **second** group under an identical heading. The
+    eleven-PDFs problem wearing the opposite hat: two headings for one thing.
+    """
+
+    def build(settings: Settings) -> None:
+        for index in (1, 2):
+            write_epub(
+                settings.inbox_dir / f"books/e{index}.epub",
+                title=f"Earthsea Book {index}",
+                author="Le Guin",
+            )
+
+    conn, settings = analysed(tmp_path, build)
+    #  The first two are going one place; three more arrive going somewhere
+    #  else, which moves the majority.
+    conn.execute("UPDATE proposals SET dest_relpath='Books/Old/x.epub'")
+    for index in (3, 4, 5):
+        write_epub(
+            settings.inbox_dir / f"books/e{index}.epub",
+            title=f"Earthsea Book {index}",
+            author="Le Guin",
+        )
+    scan_root(conn, "inbox", settings.inbox_dir, settings)
+    analyze_items(conn, settings)
+
+    headings = groups(conn)
+
+    assert len(headings) == 1, f"one set produced two headings: {headings}"
+    assert headings[0][2] == 5
+
+
+def test_a_held_file_is_not_a_member_of_anything(tmp_path: Path) -> None:
+    """M2-01 and M2-06 meeting. A file nothing could answer has no answer to
+    approve, so it belongs in the waiting list and not under a heading with an
+    Approve button over it."""
+    from librairy import waiting
+
+    def build(settings: Settings) -> None:
+        for index in (1, 2):
+            write_epub(
+                settings.inbox_dir / f"books/e{index}.epub",
+                title=f"Earthsea Book {index}",
+                author="Le Guin",
+            )
+        #  A PDF of filler bytes: nothing can read it, no provider is
+        #  configured, so it is held rather than guessed at.
+        (settings.inbox_dir / "books/mystery.pdf").write_bytes(
+            b"%PDF-1.4\n" + b"x" * 2048
+        )
+
+    conn, _ = analysed(tmp_path, build)
+
+    held = {int(row["item_id"]) for row in conn.execute("SELECT item_id FROM processing_waits")}
+
+    assert held, "the fixture has to hold something for this to mean anything"
+    assert waiting.reason_for is not None
+    assert group_of(conn, "books/mystery.pdf") is None
+    assert groups(conn) == [(SERIES, "Earthsea", 2)]
+
+
 # --- the line against `document_works` ----------------------------------------------
 
 

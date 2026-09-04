@@ -376,7 +376,7 @@ def group_documents(conn: sqlite3.Connection, item_ids: list[int]) -> int:
     undecided = ",".join("?" for _ in UNDECIDED)
     made = 0
     for key, label, kind, reason in _shared(conn, keys):
-        group_id = _ensure_group(conn, kind, label, reason, _dest_base(conn, key))
+        group_id = _group_for(conn, key, kind, label, reason)
         conn.execute(
             f"""
             UPDATE proposals SET group_id = ?
@@ -388,6 +388,38 @@ def group_documents(conn: sqlite3.Connection, item_ids: list[int]) -> int:
         _note_arrival(conn, group_id)
         made += 1
     return made
+
+
+def _group_for(
+    conn: sqlite3.Connection, key: str, kind: str, label: str, reason: str
+) -> int:
+    """This set's group: the one it already has, or a new one.
+
+    Found by the **key** rather than by (kind, label, dest_base), which is how
+    every other kind of group is found. That difference is deliberate and it
+    fixes a real defect: a document set's base is a majority, so it can move
+    when the set grows, and a set of two that becomes a set of five filed
+    somewhere else would have created a *second* group under an identical
+    heading — the same eleven-PDFs problem wearing the opposite hat.
+
+    The key is on the members and indexed, so any one of them can say which
+    group this set is. When it moves, the base moves with it rather than
+    forking: `dest_base` is what the outlier split reads, and it has to
+    describe where the set is going now.
+    """
+    row = conn.execute(
+        "SELECT group_id FROM proposals WHERE group_key = ? AND group_id IS NOT NULL"
+        " ORDER BY group_id LIMIT 1",
+        (key,),
+    ).fetchone()
+    base = _dest_base(conn, key)
+    if row is None:
+        return _ensure_group(conn, kind, label, reason, base)
+    group_id = int(row["group_id"])
+    conn.execute(
+        "UPDATE groups SET dest_base = ? WHERE id = ?", (base, group_id)
+    )
+    return group_id
 
 
 def _note_arrival(conn: sqlite3.Connection, group_id: int) -> None:
