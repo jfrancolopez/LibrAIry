@@ -374,6 +374,12 @@ PAGES = {
     # because the fixture's inbox is bigger than one page of decisions and the
     # `CRACKING` case is the only one that renders this block.
     "review-document": "/review?category=documents&max_confidence=0.85",
+    # A document group, which until M2-06 was a face no workflow could reach.
+    # The fixture's two Honda manuals are the smallest thing that earns one:
+    # the same organization and the same kind of document, which is a reason a
+    # heading can state. Filtered to documents so the set is not four pages
+    # down among the photographs.
+    "review-documents-group": "/review?category=documents",
     # The files nothing could answer: three reasons, a four-column table of
     # paths, and a row of actions. Paths in a table are the shape most likely
     # to run past a 375px edge, and the fixture holds one file per reason so

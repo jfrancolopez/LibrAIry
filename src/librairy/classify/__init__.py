@@ -4,7 +4,7 @@ import sqlite3
 from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
 
-from librairy import ocr, tags, waiting
+from librairy import document_groups, ocr, tags, waiting
 from librairy.ai.orchestrator import (
     NOT_NEEDED,
     AIBatchState,
@@ -167,6 +167,12 @@ def analyze_items(
             )
             held += 1
             continue
+        #  Why this document might belong with others, if any others turn up.
+        #  Stored rather than acted on: nothing here knows whether this is the
+        #  second of anything, and the pass after the loop is where that is
+        #  decided. `None` for everything that is not a document, and for every
+        #  document with no defensible reason — which is most of them.
+        set_candidate = document_groups.candidate(result.category, result.evidence)
         proposal_id = upsert_proposal(
             conn,
             item_id=item["id"],
@@ -176,6 +182,10 @@ def analyze_items(
             confidence=result.confidence,
             evidence=list(result.evidence),
             group_id=_group_id(conn, item, result),
+            group_key=set_candidate.key if set_candidate else None,
+            group_hint=(
+                document_groups.hint_for(set_candidate) if set_candidate else None
+            ),
         )
         answered.append(int(item["id"]))
         if result.dest_relpath:
@@ -194,6 +204,10 @@ def analyze_items(
     artwork = associate_companions(conn, settings)
     proposed += artwork.associated
     pending += artwork.already_present
+    #  And after that, for the same reason: a set is a fact about several
+    #  files, and no document knows whether it is the second of anything until
+    #  the others in the batch have been read. See `librairy/document_groups.py`.
+    document_groups.group_documents(conn, ids)
     return AnalyzeSummary(
         len(items) - len(budget.deferred), proposed, pending, requeued, held
     )

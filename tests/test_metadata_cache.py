@@ -124,8 +124,13 @@ def test_the_migration_keeps_every_ffprobe_row(tmp_path: Path) -> None:
           confidence REAL NOT NULL, group_id INTEGER, status TEXT NOT NULL
           DEFAULT 'proposed', evidence TEXT NOT NULL, created_at TEXT NOT NULL,
           updated_at TEXT NOT NULL);
+        -- The real shape rather than a stand-in: `label` and `dest_base` have
+        -- been on this table since migration 002, and migration 054 rebuilds it
+        -- to widen the `kind` CHECK. A fixture with an invented `key` column
+        -- was asserting that the upgrade works on a database nobody has, which
+        -- is the note every other table here already carries.
         CREATE TABLE groups (id INTEGER PRIMARY KEY, kind TEXT NOT NULL,
-          key TEXT NOT NULL, created_at TEXT NOT NULL);
+          label TEXT NOT NULL, dest_base TEXT, created_at TEXT NOT NULL);
         CREATE TABLE worker_state (key TEXT PRIMARY KEY, value TEXT NOT NULL);
         CREATE TABLE track_identity (item_id INTEGER PRIMARY KEY,
           fingerprint TEXT NOT NULL DEFAULT '', provider TEXT NOT NULL,

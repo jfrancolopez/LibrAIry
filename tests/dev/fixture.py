@@ -868,6 +868,7 @@ def _documents_in_the_inbox(conn, settings: Settings) -> None:  # noqa: ANN001
     layer at all, and one EPUB whose OPF carries a title, an author and an
     ISBN.
     """
+    from librairy import document_groups  # noqa: PLC0415
     from librairy.classify import classify_item  # noqa: PLC0415
     from librairy.lifecycle import transition_item  # noqa: PLC0415
     from librairy.proposals import upsert_proposal  # noqa: PLC0415
@@ -879,6 +880,22 @@ def _documents_in_the_inbox(conn, settings: Settings) -> None:  # noqa: ANN001
             author="Honda Motor Co.",
             lines=(
                 "2024 CR-V Owner's Manual",
+                "American Honda Motor Co., Inc.",
+                "Read this manual before operating the vehicle.",
+            ),
+            pages=3,
+        )
+    )
+    #  A second manual from the same manufacturer, which is what makes the
+    #  first one part of something. One Honda manual is a document; two are a
+    #  decision — see `librairy/document_groups.py` — and without a second the
+    #  document group face is a template again.
+    (settings.inbox_dir / "scan-0474.pdf").write_bytes(
+        build_pdf(
+            title="2022 Civic Owner's Manual",
+            author="Honda Motor Co.",
+            lines=(
+                "2022 Civic Owner's Manual",
                 "American Honda Motor Co., Inc.",
                 "Read this manual before operating the vehicle.",
             ),
@@ -960,8 +977,10 @@ def _documents_in_the_inbox(conn, settings: Settings) -> None:  # noqa: ANN001
     )
     scan_root(conn, "library", settings.library_dir, settings)
     scan_root(conn, "inbox", settings.inbox_dir, settings)
+    analysed: list[int] = []
     for name in (
         "scan-0473.pdf",
+        "scan-0474.pdf",
         "IMG_20240612_0001.pdf",
         "dune.epub",
         "1706.03762v5.pdf",
@@ -973,6 +992,10 @@ def _documents_in_the_inbox(conn, settings: Settings) -> None:  # noqa: ANN001
         if row is None:
             continue
         result = classify_item(settings.inbox_dir / name, name, settings)
+        #  The same two columns the analysis pass writes, from the same rule.
+        #  Seeding a group directly would prove the template; this proves that
+        #  two of these documents actually earn one.
+        found = document_groups.candidate(result.category, result.evidence)
         upsert_proposal(
             conn,
             item_id=int(row["id"]),
@@ -981,11 +1004,15 @@ def _documents_in_the_inbox(conn, settings: Settings) -> None:  # noqa: ANN001
             dest_relpath=result.dest_relpath,
             confidence=result.confidence,
             evidence=list(result.evidence),
+            group_key=found.key if found else None,
+            group_hint=document_groups.hint_for(found) if found else None,
         )
+        analysed.append(int(row["id"]))
         #  The state the worker leaves an analysed item in. Without it the row
         #  renders perfectly and Approve answers 500: `discovered -> approved`
         #  is not a legal transition, and it should not be.
         transition_item(conn, int(row["id"]), "proposed")
+    document_groups.group_documents(conn, analysed)
     #  Analysis reads what is filed as well, which is what puts the PDF's ISBN
     #  in the cache and makes the work comparison possible at all.
     from librairy.docmeta import facts_for_item  # noqa: PLC0415
@@ -1068,6 +1095,7 @@ def _four_manuals_already_filed(conn, settings: Settings) -> None:  # noqa: ANN0
     would prove the page and not the learning: the point under test is that an
     ordinary filing teaches something, and that only a completed one does.
     """
+    from librairy import document_groups  # noqa: PLC0415
     from librairy.executor import execute_plan  # noqa: PLC0415
     from librairy.lifecycle import transition_item  # noqa: PLC0415
     from librairy.planner import OperationSpec, approve_plan, create_plan  # noqa: PLC0415
@@ -1118,6 +1146,17 @@ def _four_manuals_already_filed(conn, settings: Settings) -> None:  # noqa: ANN0
             if settled
             else f"Documents/2025/{title}.pdf"
         )
+        evidence = [
+            EvidenceEntry("heuristic", "category", "document extension", 0.88),
+            EvidenceEntry("document", "type", "Manual", 0.85),
+            EvidenceEntry("document", "organization", "Honda Motor Co.", 0.85),
+        ]
+        #  The same key the analysis pass would write. Without it the one Honda
+        #  manual still waiting sits outside a group headed "Manuals from Honda
+        #  Motor Co.", which is a fixture telling a lie about the feature — and
+        #  with it the scene gains the case the outlier split is for: it is the
+        #  one heading somewhere else. See `librairy/document_groups.py`.
+        found = document_groups.candidate("documents", evidence)
         proposal = upsert_proposal(
             conn,
             item_id=int(row["id"]),
@@ -1125,11 +1164,9 @@ def _four_manuals_already_filed(conn, settings: Settings) -> None:  # noqa: ANN0
             clean_name=f"{title}.pdf",
             dest_relpath=dest,
             confidence=0.88,
-            evidence=[
-                EvidenceEntry("heuristic", "category", "document extension", 0.88),
-                EvidenceEntry("document", "type", "Manual", 0.85),
-                EvidenceEntry("document", "organization", "Honda Motor Co.", 0.85),
-            ],
+            evidence=evidence,
+            group_key=found.key if found else None,
+            group_hint=document_groups.hint_for(found) if found else None,
         )
         transition_item(conn, int(row["id"]), "proposed")
         if not settled:
@@ -1140,6 +1177,15 @@ def _four_manuals_already_filed(conn, settings: Settings) -> None:  # noqa: ANN0
         )
         approve_plan(conn, plan, settings)
         execute_plan(conn, plan, settings)
+    document_groups.group_documents(
+        conn,
+        [
+            int(row["id"])
+            for row in conn.execute(
+                "SELECT id FROM items WHERE root='inbox' AND relpath LIKE '%.pdf'"
+            )
+        ],
+    )
 
 
 def _decisions_that_split_a_pair(conn, settings: Settings) -> None:  # noqa: ANN001

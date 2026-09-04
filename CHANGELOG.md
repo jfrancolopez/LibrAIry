@@ -98,6 +98,44 @@ add. Both now say which, and `librairy ai test` reports a server that passes
 its health check and then refuses to classify instead of returning a bare
 failure. **Schema 51** records the held files and why.
 
+### Documents that belong together
+
+**Documents can now be one decision.** Every other medium got this a milestone
+ago — an album is twelve tracks, a season is ten episodes, a camera card is two
+hundred photographs, and each is *one* question. A book was none of those, so
+the document group face LibrAIry built for them was a page nothing could reach.
+
+Three reasons, and a group carries the one it was made for:
+
+| | |
+|---|---|
+| **A series or set** | one title in parts or editions — `Programming Rust` 1st and 2nd |
+| **A set from one organization** | the same kind of document from the same place — a shelf of Honda manuals |
+| **A tagged set** | your own hashtag, over documents of the same kind |
+
+The heading names the set and the line under it says what makes it one
+decision. Approving it once is then a thing you can actually mean.
+
+**What does not make a group** is most of it. Not a category. Not a folder. Not
+files arriving together: things dropped in at the same time are related more
+often than not, and *more often than not* is exactly the standard that writes a
+wrong heading — so an arrival can add to a reason that already stood up and can
+never be one. And not a shared ISBN: two files with one identifier are one book
+in two containers, which is the comparison LibrAIry already offers, where
+keeping both is a proper answer rather than a group with one button.
+
+**A document whose sources disagree is not folded into a set.** What it is, is
+the question in front of you, and a heading is where a question stops being
+noticed. A filename disagreeing on its own is not that — `pr2.epub` is what
+ebooks are called — so those stay in the set, keep their lowered confidence and
+show up in its "to look at" count.
+
+**The odd one out still gets pulled out.** A member not going where the rest of
+the set is going becomes its own decision beside it, with a line saying so.
+
+**Anything grouped stays bounded.** A set of ten thousand documents draws one
+page of members, like every other group.
+
 ### Tags, and Projects
 
 **A `#hashtag` now survives being filed.** It used to live in the proposal that

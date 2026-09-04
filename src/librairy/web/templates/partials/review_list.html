@@ -111,6 +111,18 @@
              the same mistake in the other direction. `filters.form` is posted
              whole, so the server resolves the unit under exactly the view this
              button was drawn in. #}
+          {% if group.reason and not group.outlier %}
+            {# What makes these one decision, in the words written when the
+               reason was known. Only the kinds that have one carry it: an
+               album is an album and needs no line under its heading, but
+               "these two documents are one decision" is a claim, and a claim
+               with an Approve button under it has to say what it rests on.
+
+               The organization's own punctuation: `Honda Motor Co.` already
+               ends in a stop, and the sentence adding another produced
+               "Honda Motor Co..". The same fix `decisions.explanation` needed. #}
+            <p class="group-reason muted">{{ group.reason }}{{ '' if group.reason.endswith('.') else '.' }}</p>
+          {% endif %}
           {% if group.outlier %}
             {# A split, and it names its reason. The only signal strong enough
                to move a file out of its group is structural: it is not going

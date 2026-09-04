@@ -71,6 +71,8 @@ def upsert_proposal(
     action: str = "move",
     dest_root: str = "library",
     group_id: int | None = None,
+    group_key: str | None = None,
+    group_hint: str | None = None,
 ) -> int:
     validate_evidence(evidence)
     validate_action(action, dest_root)
@@ -89,8 +91,8 @@ def upsert_proposal(
             """
             INSERT INTO proposals(
               item_id, category, clean_name, dest_relpath, confidence, action, dest_root, group_id,
-              status, evidence, tier, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'proposed', ?, ?, ?, ?)
+              group_key, group_hint, status, evidence, tier, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'proposed', ?, ?, ?, ?)
             """,
             (
                 item_id,
@@ -101,6 +103,8 @@ def upsert_proposal(
                 action,
                 dest_root,
                 group_id,
+                group_key,
+                group_hint,
                 encoded,
                 tier,
                 now,
@@ -114,8 +118,8 @@ def upsert_proposal(
     conn.execute(
         """
         UPDATE proposals SET category=?, clean_name=?, dest_relpath=?, confidence=?,
-          action=?, dest_root=?, group_id=?, status='proposed', evidence=?, tier=?,
-          updated_at=?
+          action=?, dest_root=?, group_id=?, group_key=?, group_hint=?,
+          status='proposed', evidence=?, tier=?, updated_at=?
         WHERE id=?
         """,
         (
@@ -126,6 +130,8 @@ def upsert_proposal(
             action,
             dest_root,
             group_id,
+            group_key,
+            group_hint,
             encoded,
             tier,
             now,

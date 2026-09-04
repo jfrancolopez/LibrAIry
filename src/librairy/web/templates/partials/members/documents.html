@@ -1,0 +1,62 @@
+{# Documents, as documents.
+
+   Not a grid of thumbnails and not a list of filenames. Deciding about a set
+   of manuals is reading: the question "is this the one I think it is" is
+   answered by the title, the type and who wrote it — and by a cover only when
+   there is one to render. So the face is the identity, with the first page
+   above it where a first page exists, which is PDFs, and a plain format marker
+   where it does not, because an `.epub` has no page image and a broken picture
+   is a worse answer than none.
+
+   Each fact is its own element rather than a run of text: `.cell-facts` is a
+   flex row and its gap only separates elements, so a bare `{{ size }}` after a
+   badge rendered as `Manual1.0 KB`.
+
+   What is deliberately absent is the extracted text. A member of a set is not
+   the place to print somebody's bank statement, and it was not the place on
+   the row either — see `_document_row`. #}
+{% from "partials/members/cell.html" import pick, score, open_row, body, zoom %}
+{% for proposal in rows %}
+  <li class="member-cell doc-cell">
+    <label class="cell-pick">{{ pick(proposal) }}<span>Select</span></label>
+    {% set title = proposal.document.title if proposal.document and proposal.document.title
+                   else (proposal.display_name or proposal.item_relpath) %}
+    {% if proposal.can_preview %}
+      <button type="button" class="cell-face" {{ zoom(proposal, title) }}
+              title="View {{ title }} full screen">
+        <img src="/preview/items/{{ proposal.item_id }}/thumb"
+             alt="First page of {{ title }}" loading="lazy" decoding="async">
+      </button>
+    {% else %}
+      <span class="cell-face is-blank" aria-hidden="true">{{ proposal.item_relpath.rsplit(".", 1)[-1] | upper }}</span>
+    {% endif %}
+    {# The title the sources settled on, and the filename when there is no
+       title. A set whose members all read `scan_0004.pdf` is a set nobody can
+       check, and so is one where a title silently replaced a filename. #}
+    <p class="cell-name" title="{{ proposal.item_relpath }}">{{ title }}</p>
+    <p class="cell-facts muted">
+      {% if proposal.document %}
+        {% if proposal.document.type %}<span class="badge">{{ proposal.document.type }}</span>{% endif %}
+        {% if proposal.document.author %}<span>{{ proposal.document.author }}</span>{% endif %}
+        {% if proposal.document.isbn %}<span class="mono">ISBN {{ proposal.document.isbn }}</span>{% endif %}
+        {% if proposal.document.doi %}<span class="mono">DOI {{ proposal.document.doi }}</span>{% endif %}
+      {% endif %}
+      {% if proposal.size_label %}<span>{{ proposal.size_label }}</span>{% endif %}
+    </p>
+    {# Said on the face and not only behind Why: a scan nothing could read,
+       sitting in a set of readable ones, is the member most likely to be the
+       wrong one, and seeing that should not need opening a panel. #}
+    {% if proposal.document and proposal.document.scanned %}
+      <p class="cell-facts"><span class="badge badge-warn">no text layer</span></p>
+    {% elif proposal.document and proposal.document.ocr %}
+      <p class="cell-facts"><span class="badge">read by OCR</span></p>
+    {% endif %}
+    <p class="cell-facts">
+      {{ score(proposal) }}
+      {% if not proposal.dest_relpath %}<span class="badge badge-warn">no destination</span>{% endif %}
+      {% for flag in proposal.flags %}<span class="badge badge-warn">{{ flag.label }}</span>{% endfor %}
+      {{ open_row(proposal) }}
+    </p>
+    {{ body(proposal) }}
+  </li>
+{% endfor %}

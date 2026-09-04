@@ -35,11 +35,11 @@ def _tags() -> list[str]:
     ).stdout.split()
 
 
-def test_this_release_is_1_3_1_and_the_schema_moved_six_times_since() -> None:
+def test_this_release_is_1_3_1_and_the_schema_moved_seven_times_since() -> None:
     """The released version, and the schema main is on.
 
     A release number is not a schema change and a schema change is not a
-    release: 1.3.1 shipped on 47, which is what acceptance passed on. Six
+    release: 1.3.1 shipped on 47, which is what acceptance passed on. Seven
     unreleased migrations since, and each one is a sentence:
 
     * **48** indexes the other end of a `similar_media_flags` pair, so Review
@@ -54,12 +54,15 @@ def test_this_release_is_1_3_1_and_the_schema_moved_six_times_since() -> None:
       the one thing in Decision Memory a count may never create.
     * **53** keeps a hashtag against the item rather than against the path it
       was written on, so filing a file no longer forgets what it was tagged.
+    * **54** carries why two documents might be one decision, and widens what
+      a group is allowed to be — a book series is not an album, and calling
+      it one to avoid a table rebuild would put a wrong word in the data.
 
     The number is written down here so that changing it is a deliberate act
     with a sentence attached, rather than something noticed at upgrade time.
     """
     assert __version__ == "1.3.1"
-    assert SCHEMA_VERSION == 53
+    assert SCHEMA_VERSION == 54
 
 
 def test_the_changelog_records_this_version_as_the_newest_release() -> None:

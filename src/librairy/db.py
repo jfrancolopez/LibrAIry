@@ -9,7 +9,7 @@ from pathlib import Path
 from librairy.config import Settings
 
 LOGGER = logging.getLogger(__name__)
-SCHEMA_VERSION = 53
+SCHEMA_VERSION = 54
 
 
 class DatabaseVersionError(RuntimeError):
@@ -1602,6 +1602,46 @@ WHERE p.status != 'superseded'
 """
 
 
+#  Documents that are one decision, and the reason they are.
+#
+#  Three columns and one rebuild. `group_key` is what two documents have to
+#  share for a group to exist, `group_hint` carries the words that key was
+#  built from — the heading and the sentence under it — and `groups.reason` is
+#  where that sentence lands once the group is real. The hint is beside the key
+#  rather than derived from it because a key is normalised and a heading is
+#  not: `book_series|books|programming rust` is what matches, and
+#  `Programming Rust` is what a person reads.
+#
+#  The `kind` CHECK is rebuilt for the same reason migration 014 rebuilt it for
+#  a ripped disc: calling a book series an "archive" to avoid a table rebuild
+#  would put a wrong word in the data for ever to save one statement.
+MIGRATION_054 = """
+ALTER TABLE proposals ADD COLUMN group_key TEXT;
+ALTER TABLE proposals ADD COLUMN group_hint TEXT;
+CREATE INDEX idx_proposals_group_key ON proposals(group_key);
+
+CREATE TABLE groups_new (
+  id         INTEGER PRIMARY KEY,
+  kind       TEXT NOT NULL CHECK (kind IN
+               ('album','season','photo_event','project','archive','disc',
+                'book_series','document_set','tagged_set')),
+  label      TEXT NOT NULL,
+  dest_base  TEXT,
+  -- What makes these files one decision, in a sentence, written when the
+  -- reason was actually known. Empty for the kinds that predate it: an album
+  -- is an album, and the heading has never needed a line under it.
+  reason     TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL
+);
+INSERT INTO groups_new(id, kind, label, dest_base, reason, created_at)
+  SELECT id, kind, label, dest_base, '', created_at FROM groups;
+DROP TABLE groups;
+ALTER TABLE groups_new RENAME TO groups;
+-- Dropping the table took its index with it.
+CREATE INDEX idx_groups_kind ON groups(kind);
+"""
+
+
 MIGRATIONS = {
     1: MIGRATION_001,
     2: MIGRATION_002,
@@ -1656,6 +1696,7 @@ MIGRATIONS = {
     51: MIGRATION_051,
     52: MIGRATION_052,
     53: MIGRATION_053,
+    54: MIGRATION_054,
 }
 
 

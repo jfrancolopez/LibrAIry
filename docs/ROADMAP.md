@@ -51,13 +51,14 @@ sized against.
 |---|---|
 | **M1-01** Scale measured | COMPLETE |
 | **M1-02** The group is a real object | COMPLETE |
-| **M1-03** Media-specific group previews | **PARTIAL** — photos, music, video complete; documents have no group to render, carried to M2-06 |
+| **M1-03** Media-specific group previews | COMPLETE — documents reached in M2-06 |
 | **M1-04** Outliers found for you | COMPLETE |
 | **M1-05** Confidence tiers | COMPLETE |
 | **M1-06** Pages that do not survive their tables | **PARTIAL** — Browse and Search complete; Health at 1.8 s against "well under a second", carried to M2 |
 
 Nothing here is called complete because a template exists. M1-03 built four
-faces and only three of them can be reached, and it says so.
+faces and for a milestone only three of them could be reached, and it said so
+until the fourth had a real workflow behind it — see M2-06.
 
 ---
 
@@ -249,12 +250,13 @@ title, author and type it already showed. That is a real improvement and it is
 not what this item asked for, so:
 
     document row presentation                COMPLETE
-    document/book grouping + group grid      OPEN — see M2-06
+    document/book grouping + group grid      COMPLETE — M2-06, 2026-09-04
 
-The grid is cheap once a group exists. What does not exist is a *defensible
-reason* for two documents to be one decision, and inventing one to satisfy a
-checkbox would produce exactly the wrongly-grouped headings M1-04 says are
-worse than none. Carried forward rather than closed.
+The grid was always cheap. What did not exist was a *defensible reason* for two
+documents to be one decision, and inventing one to satisfy a checkbox would
+have produced exactly the wrongly-grouped headings M1-04 says are worse than
+none. M2-06 wrote the reason first and the grid second, which is the order this
+item was held open for.
 
 And **the harness could not see any of this**: `scripts/ui_check.py` renders over `file://`, where
 `/preview/items/…/thumb` resolves to nothing, so a grid of photographs
@@ -270,8 +272,8 @@ its byte budget. A picture is offered only where one can be rendered — images,
 video, and the PDFs a first page can come from — so an `.epub` or a `.txt`
 never draws a broken image where its face should be.
 
-**Met for photographs, music and video. Not met for documents and books**,
-because no group of them can be built to render. See M2-06.
+**Met for photographs, music and video from M1-03, and for documents and books
+from M2-06**, which built the groups this face had nothing to draw.
 
 **Scale.** Groups of thousands.
 
@@ -921,7 +923,66 @@ have two names.
 
 ## M2-06 · Documents that belong together
 
-**P2 · M · Medium risk**
+**P2 · M · Medium risk · DONE 2026-09-04** — `librairy/document_groups.py`,
+schema 54, `partials/members/documents.html`, `tests/test_document_groups.py`.
+
+> **M1-03 is now COMPLETE.** The fourth group face has a workflow that reaches
+> it, which is the only thing it was ever waiting for.
+>
+> **Three reasons, and each one is a sentence on the group.**
+>
+>     book_series    one title in parts or editions — an explicit volume,
+>                    part or edition marker over an identical stem
+>     document_set   the same organization and the same kind of document
+>     tagged_set     the same explicit tag and the same kind of document
+>
+> The heading says what the set is; the line under it says what makes it one
+> decision, written when the reason was known rather than reconstructed by a
+> page. That is the acceptance, and it is one stored column.
+>
+> **The rule earns its keep by what it refuses.** Not a category. Not a folder.
+> Not an arrival: files dropped in together are related more often than not,
+> and *more often than not* is the standard that writes a wrong heading — so
+> arrival can strengthen a sentence a real relationship already earned and can
+> never write one. Not a shared ISBN either: two files with one identifier are
+> one work in two containers, which `document_works` already answers, and
+> better — there, keeping both is a first-class outcome.
+>
+> **The guard that mattered most was not the one expected.** "The same kind of
+> document" looked sufficient for a tagged set until it put a boiler manual and
+> a novel under one heading: both `.epub`, so both typed `Book`, so "the same
+> kind" was satisfied by a fact neither file had any choice about. A type earns
+> a group only when it says **more than the category already did**. Two
+> *invoices* tagged `#ProjectHouse` are a set; two *books* are two books.
+>
+> **A conflicted identity weakens rather than prevents — with one line drawn.**
+> A source that actually read the document disagreeing stops a group: what the
+> file *is* is the open question, and a heading is where a question goes to
+> stop being noticed. The **filename** dissenting alone does not, because an
+> abbreviated filename is the ordinary case for an ebook and treating it as a
+> real conflict made every set of them ungroupable for the reason that says
+> least about the files. Those members keep the lowered confidence M2-02 gave
+> them and surface in the group's "to look at" count.
+>
+> **The outlier split is M1-04's, reused.** One correction was needed:
+> `groups.dest_base` is now the folder a **majority** of members are going to,
+> not the unanimous one. Unanimity let a single dissenting member erase the
+> base for everybody — switching off the split in precisely the case it exists
+> for. A book series still has no base, because each volume has its own folder
+> and "not going where the group is going" is the design there rather than an
+> anomaly.
+>
+> **A group is work still to be done.** One live document joining eight
+> already-filed ones is one document, not a group of nine. Members keep their
+> `group_id` after Commit, the way an album's tracks do, because what a group
+> *was* is how Commit and History explain what happened.
+>
+> **What did not come out as hoped.** The roadmap's own example — a year of
+> bank statements — does not group yet. `document_set` needs an organization,
+> and nothing reads a bank's name off a statement: the classifier extracts an
+> organization for manuals only. Tagging them reaches the same place through
+> `tagged_set`. Reading an organization off a financial document is its own
+> piece of work and is not smuggled in here.
 
 **Carried forward from M1-03**, which built the group presentation for every
 medium that has groups and found that documents and books have none. A group is
@@ -972,9 +1033,14 @@ the rule: a face with nothing behind it was the reason this item exists.
 
 **Acceptance.** Every document group can say what makes it one decision;
 turning the rule off leaves today's rows exactly as they are; the grid renders
-bounded like every other group.
+bounded like every other group. **All three met** — the third by using the same
+member paging every other group uses, and the second is asserted rather than
+argued: with the rule answering nothing, the documents are the rows they have
+always been, no group, no heading, no key.
 
-**Scale.** Hundreds of thousands of documents.
+**Scale.** Hundreds of thousands of documents. One indexed column and one
+aggregate per batch: the pass asks only about keys the batch produced, and a
+group's base is two aggregated rows rather than a scan of its members.
 
 ---
 

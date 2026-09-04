@@ -831,23 +831,26 @@ def _work_row(conn, settings, row: sqlite3.Row) -> dict[str, object] | None:  # 
     }
 
 
-#  Which face a group wears. One decision foundation and four presentations:
+#  Which face a group wears. One decision foundation and five presentations:
 #  what changes is how a member is *drawn*, never what a decision is, what a
 #  group action covers, or what Commit does with any of it. A mixed group has
 #  no single medium and so keeps the ordinary rows — a grid of thumbnails over
 #  three photographs and a spreadsheet would be a worse answer than a list.
-#  Documents and books are absent on purpose. Nothing groups them — a group is
-#  an album, a season, a disc, a camera event or a project, and a book belongs
-#  to none of those — so a document grid would be a template no page could
-#  reach. The medium still gets its presentation, on the row, which is where a
-#  document actually is: its first page, its title, its author and its type.
-#  See `review_row.html`.
+#
+#  Documents and books were absent here for a year, and the comment said why:
+#  nothing grouped them, so a document grid was a template no page could reach.
+#  `document_groups` now builds one — a series, a set from one organization, a
+#  tagged set — and this is the face it reaches. It applies to *groups* and
+#  never to loose rows: `layout_for` is asked once per unit, and a document
+#  with no group is the row it has always been.
 LAYOUTS = {
     "photos": "photos",
     "music": "music",
     "movies": "video",
     "shows": "video",
     "music_videos": "video",
+    "documents": "documents",
+    "books": "documents",
 }
 ROWS = "rows"
 
@@ -1465,6 +1468,7 @@ def _unit_select(filters: ReviewFilters, key: str) -> tuple[str, list[object]]:
                p.group_id AS group_id,
                COALESCE(g.kind, 'ungrouped') AS kind,
                COALESCE(g.label, 'Ungrouped') AS label,
+               MIN(COALESCE(g.reason, '')) AS reason,
                COUNT(*) AS members,
                MAX(p.confidence) AS best,
                MIN(p.confidence) AS worst,
@@ -1838,6 +1842,11 @@ def grouped_page(
             "doubtful": int(unit["doubtful"] or 0),
             "undecided": int(unit["undecided"] or 0),
             "category": "" if int(unit["categories"] or 0) > 1 else str(unit["category"] or ""),
+            #  What makes these files one decision, in the words written when
+            #  the reason was known. Only the kinds that have one carry it: an
+            #  album is an album and its heading has never needed a line under
+            #  it. See `librairy/document_groups.py`.
+            "reason": str(unit["reason"] or ""),
             #  A group of one medium is drawn as that medium. A mixed one is
             #  not, and says so by staying a list.
             "layout": (
