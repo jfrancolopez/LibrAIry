@@ -9,7 +9,7 @@ from pathlib import Path
 from librairy.config import Settings
 
 LOGGER = logging.getLogger(__name__)
-SCHEMA_VERSION = 55
+SCHEMA_VERSION = 56
 
 
 class DatabaseVersionError(RuntimeError):
@@ -1667,6 +1667,47 @@ CREATE TABLE metrics_daily (
 """
 
 
+#  Where Library content is copied to, and what each place is for.
+#
+#  `modes` is a capability list rather than one value: a NAS can be a Backup or
+#  a Mirror and a drive in a drawer can only be an Offline Backup, and a policy
+#  naming a mode its destination cannot satisfy would be permanently failing.
+#
+#  The unique key on (category, destination) is the whole of "overlap is
+#  deterministic": a category may go to several destinations, and a category
+#  and a destination have exactly one mode between them. Two rows disagreeing
+#  about what a destination is *for* is the one ambiguity nobody could resolve
+#  by reading the screen.
+#
+#  Nothing here can express deletion. See `librairy/destinations.py`.
+MIGRATION_056 = """
+CREATE TABLE backup_destinations (
+  id         INTEGER PRIMARY KEY,
+  name       TEXT NOT NULL UNIQUE,
+  kind       TEXT NOT NULL CHECK (kind IN ('local', 'remote')),
+  -- An rclone remote (`nas:library`) or an absolute local path. Never used as
+  -- transfer authority on its own -- see `librairy/transfer_paths.py`.
+  target     TEXT NOT NULL,
+  modes      TEXT NOT NULL,
+  -- For an offline drive: what identifies the volume rather than wherever the
+  -- operating system mounted it this morning.
+  identity   TEXT NOT NULL DEFAULT '',
+  enabled    INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE backup_policies (
+  id             INTEGER PRIMARY KEY,
+  category       TEXT NOT NULL,
+  destination_id INTEGER NOT NULL REFERENCES backup_destinations(id),
+  mode           TEXT NOT NULL CHECK (mode IN ('backup', 'mirror', 'offline')),
+  enabled        INTEGER NOT NULL DEFAULT 1,
+  created_at     TEXT NOT NULL,
+  UNIQUE (category, destination_id)
+);
+CREATE INDEX idx_backup_policies_destination ON backup_policies(destination_id);
+"""
+
+
 MIGRATIONS = {
     1: MIGRATION_001,
     2: MIGRATION_002,
@@ -1723,6 +1764,7 @@ MIGRATIONS = {
     53: MIGRATION_053,
     54: MIGRATION_054,
     55: MIGRATION_055,
+    56: MIGRATION_056,
 }
 
 

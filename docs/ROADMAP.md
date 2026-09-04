@@ -1255,7 +1255,53 @@ do not disagree.
 
 ## M3-03 · Backup, Mirror, Offline Backup
 
-**P1 · XL · High risk**
+**P1 · XL · High risk · IN PROGRESS** — semantics, the destination and policy
+model, path safety and planning are done (`librairy/destinations.py`,
+`librairy/transfer_paths.py`, `librairy/transfer_plan.py`, schema 56).
+Execution, presence detection, the Browse action and the surfaces are open.
+
+> **The semantics were written down before anything could run them**, because
+> `rclone sync` is one word longer than `rclone copy` and removes files.
+>
+> **Deletion is not a concept these modules can express.** `destinations.ACTIONS`
+> is the full cross product of every mode and every way a destination can
+> differ, and it has four answers: copy, update, keep, report. There is no
+> fifth constant to put in a cell, so adding one means inventing the concept in
+> a module whose docstring explains why it does not exist — a conversation
+> rather than a typo.
+>
+>     Backup   extra → keep      a file leaving the library is what a backup is for
+>     Mirror   extra → report    knows the difference; may not erase it
+>     Offline  extra → report    three months in a drawer is where deleting is worst
+>
+> **The rclone gate had a hole and it is closed.** Every check was on the verb,
+> so `rclone copy --delete-excluded` — which removes files at the destination —
+> went straight through. Destructive *options* are now refused by prefix, on
+> construction and again on execution, and a test reads the source to confirm
+> nothing in the program builds a command by hand.
+>
+> **A path from a form is not authority.** Sources resolve inside the library
+> or are refused, symlinks are followed and then judged, and a destination may
+> not be the library, sit inside it, or contain it — all three, because all
+> three are ways to copy a library onto itself. `/data/library-backup` starts
+> with `/data/library` and is not inside it, which is the bug every hand-written
+> containment check has had once.
+>
+> **An offline drive is identified before it is written to.** `/Volumes/Backup`
+> is whatever was plugged in most recently, and an unplugged disk often leaves
+> its mount folder behind — empty, and a backup written into it goes onto the
+> system disk and looks like it worked. A marker file written at registration
+> is checkable on every platform and survives being unplugged.
+>
+> **A comparison is a catalogue difference, not a hash.** Twenty terabytes
+> hashed on a schedule is a machine that does nothing else. The library side is
+> the `items` table — indexed, correct, never walked — and the destination side
+> is one listing. Bytes are verified where a hash is actually worth paying for:
+> at the moment of copying, which `backup.py` already does four ways.
+>
+> **"Nothing to do" and "nobody could look" are different**, and a plan says
+> which. A drive in a drawer rendering as a healthy backup is the failure this
+> feature exists to prevent.
 
 **Problem.** One remote, the whole library, copy-only. Three different
 intentions collapsed into one.

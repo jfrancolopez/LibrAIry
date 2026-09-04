@@ -43,6 +43,10 @@ and `Dismiss suggestion` change no file at all.
 | **Waiting for AI** | analysis stopped rather than guess, and is waiting for a provider |
 | **Tag** | what a file is about, written by you — searchable, and evidence on the next decision about it |
 | **Browse** | read-focused, and performs no Library filesystem mutation. Metadata actions — a tag, an identification, an audit finding — are legitimate here; anything that moves, renames or deletes a file is not, and goes through Commit |
+| **Backup** | keeps recovery copies. A file leaving your library never leaves a backup |
+| **Mirror** | keeps a destination current. Anything there that your library no longer has is **reported**, never deleted |
+| **Offline Backup** | a registered drive that updates while it is connected. Nothing is ever removed from it |
+| **Only at the destination** | a file at a backup that your library no longer has. Never called *extra*, and never *stale* on its own — both words invite tidying, and nothing here tidies |
 | **Project** | files that belong together, wherever they live — a view, never a place |
 | **Project folder** | `Projects/{project}/` — a filing destination on disk |
 | **Undo** | reverse something that actually happened |
@@ -52,6 +56,13 @@ and `Dismiss suggestion` change no file at all.
 | **Preserved original** | the original kept when an optimized version was adopted |
 | **Delete queue** | a folder you empty yourself; LibrAIry has still deleted nothing |
 | **Set aside** | a file moved out of the library into Quarantine, where it can be restored |
+
+**Backup, Mirror and Offline Backup are not synonyms**, and every one of them
+means "copy outward and never remove". The difference between the first two is
+a *sentence*: a Mirror tells you when the destination holds something your
+library no longer has. It does not mean LibrAIry may erase the difference —
+that costs some "perfect sync" purity and it fits a program whose premise is
+that it does not delete your files. See `librairy/destinations.py`.
 
 **"Project" is two things, and they are told apart by one word.** A **Project**
 is a promoted tag: a view across the library, whose members are the files
