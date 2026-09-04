@@ -1,0 +1,146 @@
+{# How the library is changing. The only part of this page made of recorded
+   history rather than of the library itself.
+
+   The rule the whole band is built on: a day with no reading was **not
+   observed**, and was not zero. A line stops where the measurements stop and
+   picks up again where they resume; a bar is drawn only for a day that was
+   actually computed; and every chart says how much of its window it is made
+   of. Drawing a smooth curve across a fortnight of downtime is the prettiest
+   thing this page could do and the least true. See `librairy/web/charts.py`. #}
+<section class="band band-history" aria-labelledby="history-heading">
+  <header class="band-head">
+    <h2 id="history-heading">How your library is changing</h2>
+    {# The window, as four links rather than a date picker. The question this
+       band answers is "how is this going", never "what happened on the 14th". #}
+    <nav class="range-picker" aria-label="History range">
+      {% for range in history.ranges %}
+        <a class="range{{ ' is-current' if range.current }}"
+           href="/dashboard?days={{ range.days }}"
+           {% if range.current %}aria-current="true"{% endif %}>{{ range.label }}</a>
+      {% endfor %}
+    </nav>
+  </header>
+
+  {% if history.unmeasured %}
+    {# A new install. Not six empty boxes — a sentence saying when this starts
+       working, because "no data" and "broken" look identical otherwise. #}
+    <p class="muted history-empty">
+      History begins as LibrAIry observes your library — the first reading is
+      taken within the hour, and the charts appear here once there are two.
+    </p>
+  {% else %}
+    <div class="chart-grid">
+      {% for chart in history.charts %}
+        <article class="chart-card{{ ' is-empty' if chart.empty }}">
+          <header>
+            <h3><a href="{{ chart.href }}">{{ chart.title }}</a></h3>
+            <p class="chart-question muted">{{ chart.question }}</p>
+          </header>
+
+          {% if chart.empty %}
+            <p class="muted chart-none">Not recorded over this period.</p>
+          {% else %}
+            <p class="chart-figure">
+              {% if chart.kind == 'bars' %}
+                <strong>{{ chart.total }}</strong>
+                <span class="muted">over {{ chart.observed }} recorded day{{ '' if chart.observed == 1 else 's' }}</span>
+              {% else %}
+                <strong>{{ chart.latest.label }}</strong>
+                {% if chart.trend %}
+                  {# The span measured, never the span requested: "+312 this
+                     month" over eight days of history is a lie about the
+                     month. And no percentage against nought — see `_trend`. #}
+                  <span class="trend trend-{{ chart.trend.direction }}">{{ chart.trend.label }}{% if chart.trend.percent is not none and chart.trend.direction != 'flat' %} ({{ chart.trend.percent }}%){% endif %}</span>
+                  <span class="muted">over {{ chart.trend.span }} day{{ '' if chart.trend.span == 1 else 's' }}</span>
+                {% endif %}
+              {% endif %}
+            </p>
+
+            <svg class="chart chart-{{ chart.kind }}" viewBox="0 0 100 30"
+                 preserveAspectRatio="none" role="img"
+                 aria-label="{{ chart.summary }}">
+              <title>{{ chart.summary }}</title>
+              {% if chart.kind == 'bars' %}
+                {% for point in chart.points %}
+                  <rect class="chart-bar{{ ' is-zero' if point.value == 0 }}"
+                        x="{{ (point.x - chart.bar_width / 2) | round(3) }}"
+                        y="{{ (28 - point.height) | round(3) }}"
+                        width="{{ chart.bar_width }}" height="{{ point.height }}">
+                    <title>{{ point.day }}: {{ point.label }}</title>
+                  </rect>
+                {% endfor %}
+              {% else %}
+                {# One polyline per unbroken run. The gaps between them are the
+                   days nobody measured, and nothing is drawn across them. #}
+                {% for segment in chart.segments %}
+                  {% if segment | length > 1 %}
+                    <polyline class="chart-line" fill="none" vector-effect="non-scaling-stroke"
+                              points="{% for point in segment %}{{ point.x }},{{ point.y }} {% endfor %}"/>
+                  {% else %}
+                    <circle class="chart-dot" cx="{{ segment[0].x }}" cy="{{ segment[0].y }}" r="0.8"/>
+                  {% endif %}
+                {% endfor %}
+              {% endif %}
+            </svg>
+
+            <p class="chart-foot muted">
+              {% if chart.partial %}
+                {{ chart.observed }} of {{ chart.window }} days recorded
+              {% else %}
+                {{ chart.window }} days
+              {% endif %}
+              {% if chart.kind != 'bars' and chart.high %}· peak {{ chart.high_label }}{% endif %}
+            </p>
+          {% endif %}
+        </article>
+      {% endfor %}
+
+      {% if history.categories %}
+        <article class="chart-card chart-categories">
+          <header>
+            <h3>What it is made of</h3>
+            <p class="chart-question muted">where the files and the space go</p>
+          </header>
+          {# One bar rather than a pie: shares of a whole are compared by
+             length far better than by angle, and this one stays readable on a
+             phone. Past eight, the tail is gathered into one band with its own
+             count — dropping it would leave a distribution that no longer adds
+             up to the library. #}
+          <div class="composition" role="img"
+               aria-label="{{ history.categories | map(attribute='folder') | join(', ') }}">
+            {% for slice in history.categories %}
+              <span class="composition-part{{ ' is-rest' if slice.rest }}"
+                    style="width: {{ slice.percent }}%"
+                    title="{{ slice.folder }}: {{ '{:,}'.format(slice.files) }} files, {{ slice.label }}"></span>
+            {% endfor %}
+          </div>
+          <ul class="composition-key">
+            {% for slice in history.categories %}
+              <li>
+                <span class="composition-swatch{{ ' is-rest' if slice.rest }}"></span>
+                {% if slice.rest %}
+                  <span>{{ slice.folder }}</span>
+                {% else %}
+                  <a href="{{ slice.href }}">{{ slice.folder }}</a>
+                {% endif %}
+                <span class="muted">{{ '{:,}'.format(slice.files) }} · {{ slice.label }}</span>
+              </li>
+            {% endfor %}
+          </ul>
+          {% if history.category_day %}
+            {# A distribution is a snapshot. One taken three days ago should say
+               so rather than reading as the library right now. #}
+            <p class="chart-foot muted">measured {{ history.category_day }}</p>
+          {% endif %}
+        </article>
+      {% endif %}
+    </div>
+
+    {% if history.first_day %}
+      <p class="chart-foot muted history-since">
+        Days are UTC. LibrAIry has records from {{ history.first_day }};
+        anything earlier is not drawn, because nobody measured it.
+      </p>
+    {% endif %}
+  {% endif %}
+</section>

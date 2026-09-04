@@ -226,7 +226,14 @@ def test_the_dashboard_does_not_walk_the_library(tmp_path: Path, monkeypatch) ->
 
 
 def test_the_query_count_is_bounded(tmp_path: Path) -> None:
-    """It must not grow with the number of files, findings or entries."""
+    """It must not grow with the number of files, findings or entries.
+
+    A number, not a shape: fourteen is what the page currently asks for, and
+    the point of pinning it is that adding a *fact* costs one more statement
+    while adding a per-row lookup costs thousands. Two of the fourteen are
+    M3-02's held-file counts — how many files are waiting on a provider that
+    will come back, and how many are waiting on a person.
+    """
     _client, conn, settings = scene(tmp_path)
 
     class Counting:
@@ -244,7 +251,7 @@ def test_the_query_count_is_bounded(tmp_path: Path) -> None:
     counting = Counting(conn)
     operations_overview(counting, settings)
 
-    assert len(counting.queries) <= 12, counting.queries
+    assert len(counting.queries) <= 14, counting.queries
 
 
 def test_a_file_already_waiting_for_commit_is_not_also_undecided(tmp_path: Path) -> None:

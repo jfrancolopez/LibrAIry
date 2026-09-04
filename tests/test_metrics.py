@@ -352,22 +352,64 @@ def test_backfill_recovers_history_an_upgrade_arrives_with(tmp_path: Path) -> No
     for offset in (1, 2, 5):
         filed(conn, _days_before(offset), offset * 2)
 
-    written = metrics.backfill(conn, days=30)
+    metrics.backfill(conn, days=30)
 
-    assert written == 3
     found = metrics.series(conn, ["filed.files"], days=30)["filed.files"]
-    assert [int(point["value"]) for point in found] == [10, 4, 2]
+    assert [int(point["value"]) for point in found] == [10, 0, 0, 4, 2]
 
 
-def test_backfill_writes_no_row_for_a_day_nothing_happened(tmp_path: Path) -> None:
-    """A year of explicit noughts is a year of rows saying nothing happened,
-    which the absence of a row already says."""
+def test_a_backfilled_nought_is_written_because_it_was_observed(
+    tmp_path: Path,
+) -> None:
+    """Absence has to mean exactly one thing, and it already means "nobody
+    measured this".
+
+    The first version of `backfill` skipped noughts, on the reasoning that the
+    absence of a row already said nothing happened. It does not: a day with no
+    row would then be both "nothing was filed" and "nobody looked", which is
+    the one ambiguity a chart cannot draw honestly. Asking History and being
+    told none is an observation.
+    """
     conn = connect(settings_for(tmp_path))
-    filed(conn, _days_before(2), 3)
+    filed(conn, _days_before(3), 2)
 
     metrics.backfill(conn, days=30)
 
-    assert rows(conn) == 1
+    days = {
+        str(row["day"]): int(row["value"])
+        for row in conn.execute(
+            "SELECT day, value FROM metrics_daily WHERE metric='filed.files'"
+        )
+    }
+    assert days[_days_before(3)] == 2
+    assert days[_days_before(1)] == 0, "a day that was computed has a row"
+
+
+def test_backfill_starts_at_the_first_day_there_is_any_record_of(
+    tmp_path: Path,
+) -> None:
+    """Not a day earlier. Before that there is nothing to have counted, and a
+    flat line running back through a month when the program did not exist is
+    history invented out of an absence."""
+    conn = connect(settings_for(tmp_path))
+    filed(conn, _days_before(3), 2)
+
+    metrics.backfill(conn, days=60)
+
+    days = sorted(
+        str(row["day"]) for row in conn.execute("SELECT DISTINCT day FROM metrics_daily")
+    )
+    assert days[0] == _days_before(3), days[:3]
+    assert metrics.first_recorded_day(conn) == _days_before(3)
+
+
+def test_backfill_on_a_database_with_no_record_writes_nothing(
+    tmp_path: Path,
+) -> None:
+    conn = connect(settings_for(tmp_path))
+
+    assert metrics.backfill(conn, days=30) == 0
+    assert rows(conn) == 0
 
 
 # --- against the rest of the program ------------------------------------------------
@@ -408,6 +450,43 @@ def test_the_worker_measures_after_the_inbox_and_not_instead_of_it(
     source = inspect.getsource(Worker.run_once)
     assert source.index("analyze_items") < source.index("self._metrics_rollup()")
     assert source.index("self._inbox_companions") < source.index("self._metrics_rollup()")
+
+
+def test_a_busy_worker_does_not_rescan_the_library_every_cycle(
+    tmp_path: Path,
+) -> None:
+    """The guard that makes "821 ms" and "every cycle" both true.
+
+    The rollup is placed after inbox work on *every* cycle so that a busy
+    installation still records history — but a worker cycling every five
+    seconds must not scan a million items eight hundred times an hour. Placement
+    and frequency are two different things and only one of them is "every
+    cycle".
+
+    Driven through the worker rather than through `due()`, because the wiring
+    is what could quietly change: someone dropping the guard would leave every
+    metrics test passing.
+    """
+    from librairy.worker import Worker
+
+    conn = connect(settings_for(tmp_path))
+    library(conn, 5)
+    counting = _Counting(conn)
+    worker = Worker.__new__(Worker)
+    worker.conn = counting
+
+    worker._metrics_rollup()  # noqa: SLF001
+    first = counting.statements
+    taken = conn.execute("SELECT taken_at FROM metrics_daily LIMIT 1").fetchone()["taken_at"]
+    for _ in range(20):
+        worker._metrics_rollup()  # noqa: SLF001
+
+    assert first > 20, "the first cycle should have actually measured something"
+    #  Twenty more cycles cost one lookup each, and nothing was remeasured.
+    assert counting.statements - first == 20, "a cycle did work it was not due for"
+    assert conn.execute("SELECT taken_at FROM metrics_daily LIMIT 1").fetchone()[
+        "taken_at"
+    ] == taken
 
 
 def test_the_rollup_only_runs_when_it_is_due(tmp_path: Path) -> None:

@@ -398,6 +398,16 @@ def test_a_history_read_does_not_grow_with_the_library(tmp_path) -> None:  # noq
 
     assert len(found["library.files"]) == 90, "the window was not the bound"
     assert len(counting.queries) == 1, counting.queries
+    #  And the whole band the Dashboard draws from it: nine statements, none of
+    #  which touches `items`. Measured 2 ms at forty thousand and at a million
+    #  alike — see `docs/performance.md`.
+    from librairy.web import charts
+
+    counting = Counting(conn)
+    band = charts.history(counting, 30)
+    assert len(counting.queries) <= 12, counting.queries  # noqa: PLR2004
+    assert not any("FROM items" in query for query in counting.queries), counting.queries
+    assert band.charts
     #  And asking for more than the retention gets the retention, not a scan
     #  that reads whatever happens to be there.
     assert len(metrics.series(conn, ["library.files"], days=10_000)["library.files"]) <= (

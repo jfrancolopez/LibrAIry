@@ -1175,7 +1175,57 @@ growth is bounded and stated; deleting it degrades trends and breaks nothing.
 
 ## M3-02 · Dashboard as command center
 
-**P1 · L · Low risk**
+**P1 · L · Low risk · DONE 2026-09-04** — `librairy/web/charts.py`,
+`partials/dashboard_history.html`, `tests/test_dashboard_history.py`.
+
+> **Three bands, and the split between them is the architecture.** What needs
+> you and what LibrAIry is doing are live aggregates over the library, and
+> always will be. How the library is changing reads `metrics_daily` and never
+> the library. A test reads the source to keep the first two off the rollup: a
+> record of the past that answered "what needs me now" would be a cache that
+> can be wrong about the present.
+>
+> **A day with no reading is a hole, not a nought.** The rule the band is built
+> on, and the one it would have been easiest to break — a line from the origin
+> up to the first real reading is the prettiest thing this page could draw and
+> the least true, and once drawn it is indistinguishable from a measurement. So
+> a line stops where the readings stop and starts again where they resume, a
+> bar exists only for a day that was computed, and every panel says how much of
+> its window it is made of.
+>
+> **Which forced a correction in M3-01.** `backfill` used to skip noughts,
+> reasoning that an absent row already said nothing happened. It does not:
+> absence would then mean both "nothing was filed" and "nobody looked". Now one
+> invariant holds — **a row exists if and only if the value was observed** —
+> and `backfill` starts at `first_recorded_day` rather than writing "nothing
+> happened" about a month before the program existed.
+>
+> **Trends say the span they measured.** Never the span requested: "+312 this
+> month" over eight days of history is a lie about the month. No percentage
+> against a starting value of nought, and no trend at all across fewer than two
+> days.
+>
+> **No colour opinion about direction.** A growing library green and a growing
+> backlog red requires the program to have a view about which way each should
+> go. It does not: the sign carries the direction and the label carries the
+> meaning.
+>
+> **No charting library.** The page polls every five seconds, the repository
+> has no frontend build, and a sparkline is thirty numbers and a `<polyline>`.
+> The geometry is arithmetic in Python where it can be tested; the template
+> draws what it is handed. One hue stepped by weight for the composition bar
+> rather than eight invented hues — the theme is a terminal palette, and eight
+> colours at 375px are eight things to look up in a legend.
+>
+> **What it costs** (`docs/performance.md`): the band is **1.8–2.0 ms and nine
+> statements at every population** — 100k, 300k and 1M alike — because it reads
+> days and never files. It added about 2 ms to the page.
+>
+> **Waiting for AI is on the page twice, saying two different things**, which
+> is M2-01's distinction kept rather than flattened: files that resume by
+> themselves sit beside what the worker is doing, and files whose evidence
+> genuinely ran out are in what needs you. Putting both under "needs you" is
+> how people learn to ignore an alert.
 
 **Problem.** The Dashboard answers "what needs me" and "what is happening"
 well. It cannot answer "how is my library changing".

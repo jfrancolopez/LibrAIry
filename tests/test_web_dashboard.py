@@ -55,7 +55,7 @@ def test_dashboard_reads_existing_tables_without_engine_mutation(tmp_path: Path)
     after = _counts(conn)
 
     assert response.status_code == 200
-    assert "hx-get=\"/dashboard/stats\"" in response.text
+    assert 'hx-get="/dashboard/stats?days=' in response.text
     assert before == after
 
 
@@ -84,9 +84,24 @@ def test_dashboard_keeps_polling_after_the_first_swap(tmp_path: Path) -> None:
     swapped = client.get("/dashboard/stats")
 
     assert 'hx-trigger="every 5s"' in swapped.text
-    assert 'hx-get="/dashboard/stats"' in swapped.text
+    assert 'hx-get="/dashboard/stats?days=' in swapped.text
     # And exactly one element claims the id, on the full page too.
     assert page.text.count('id="dashboard-stats"') == 1
+
+
+def test_the_chosen_history_range_survives_the_poll(tmp_path: Path) -> None:
+    """Otherwise the five-second refresh puts the range back to the default
+    every time, which reads as the page arguing with you."""
+    client, _, _ = setup_client(tmp_path)
+
+    page = client.get("/dashboard?days=90")
+    swapped = client.get("/dashboard/stats?days=90")
+
+    assert 'hx-get="/dashboard/stats?days=90"' in page.text
+    assert 'hx-get="/dashboard/stats?days=90"' in swapped.text
+    #  And a range nobody offers falls back to the default rather than being
+    #  honoured — a query string is somebody's typing, not an API.
+    assert 'hx-get="/dashboard/stats?days=30"' in client.get("/dashboard?days=4000").text
 
 
 def test_dashboard_leads_with_the_thing_that_wants_you(tmp_path: Path) -> None:

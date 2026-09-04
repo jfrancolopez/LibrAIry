@@ -421,23 +421,26 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         return HTMLResponse("")
 
     @app.get("/dashboard", response_class=HTMLResponse)
-    def dashboard(request: Request) -> HTMLResponse:
+    def dashboard(request: Request, days: int = 0) -> HTMLResponse:
         return TEMPLATES.TemplateResponse(
             request,
             "dashboard.html",
             {
                 "title": "Dashboard",
                 "csrf_token": request.state.session["csrf_token"],
-                **dashboard_data(conn, settings),
+                **dashboard_data(conn, settings, days=days),
             },
         )
 
     @app.get("/dashboard/stats", response_class=HTMLResponse)
-    def dashboard_stats(request: Request) -> HTMLResponse:
+    def dashboard_stats(request: Request, days: int = 0) -> HTMLResponse:
+        #  The window travels with the poll. Without it the five-second refresh
+        #  would quietly put the chosen range back to the default every time,
+        #  which reads as the page fighting you.
         return TEMPLATES.TemplateResponse(
             request,
             "partials/dashboard_stats.html",
-            dashboard_data(conn, settings),
+            dashboard_data(conn, settings, days=days),
         )
 
     @app.get("/health", response_class=HTMLResponse)

@@ -11,6 +11,7 @@ from librairy.humanize import human_bytes
 from librairy.lifecycle import state_counts, vanished_count
 from librairy.live import LIVE
 from librairy.resources import modes_view
+from librairy.web.charts import DEFAULT_RANGE, history
 
 
 @dataclass(frozen=True)
@@ -65,7 +66,9 @@ LIFECYCLE_LABELS = {
 LIFECYCLE_ORDER = tuple(LIFECYCLE_LABELS)
 
 
-def dashboard_data(conn: sqlite3.Connection, settings: Settings) -> dict[str, object]:
+def dashboard_data(
+    conn: sqlite3.Connection, settings: Settings, *, days: int = 0
+) -> dict[str, object]:
     worker_state = _worker_state(conn)
     counts = state_counts(conn)
     # The card is about work in progress, which means the inbox. Library items
@@ -109,6 +112,12 @@ def dashboard_data(conn: sqlite3.Connection, settings: Settings) -> dict[str, ob
         # answers. Health answers a different one — is LibrAIry itself well —
         # and the two were converging.
         **operations_overview(conn, settings),
+        #  The third band, and the only part of this page that reads recorded
+        #  history rather than the library. Everything above is a live
+        #  aggregate and stays that way: a rollup that answered "what needs me
+        #  now" would be a cache that can be wrong about the present.
+        #  See `librairy/web/charts.py`.
+        "history": history(conn, days or DEFAULT_RANGE),
     }
 
 
@@ -220,6 +229,19 @@ def _needs_attention(
                     f"{'' if findings['open'] == 1 else 's'} to look at",
             "href": "/review#audit",
         })
+    #  Files LibrAIry declined to guess at. They need somebody only when they
+    #  are not going to resume on their own — a provider that is merely down
+    #  puts them back by itself, and a line saying "3 files need you" about
+    #  something that will fix itself in ten minutes is the kind of alert
+    #  people learn to ignore. See `librairy/waiting.py`.
+    stuck = waiting_for_you(conn)
+    if stuck:
+        items.append({
+            "text": f"{stuck} file{'' if stuck == 1 else 's'} "
+                    f"{'needs' if stuck == 1 else 'need'} more than LibrAIry "
+                    "could work out",
+            "href": "/review#review-waiting",
+        })
     from librairy.search_health import recorded_health
 
     # Read, not checked: the dashboard polls every five seconds and rendering
@@ -232,11 +254,56 @@ def _needs_attention(
     return items
 
 
+def waiting_for_you(conn: sqlite3.Connection) -> int:
+    """Held files that will not resume by themselves.
+
+    The distinction M2-01 built and this page has to respect: a file held
+    because a provider is down is waiting on the provider, and one held because
+    the evidence genuinely ran out is waiting on a person. Only the second is
+    something to put in front of somebody.
+    """
+    from librairy.waiting import EVIDENCE
+
+    try:
+        row = conn.execute(
+            "SELECT COUNT(*) FROM processing_waits WHERE reason=? AND paused=0"
+            " AND released_at IS NULL",
+            (EVIDENCE,),
+        ).fetchone()
+    except sqlite3.OperationalError:
+        return 0
+    return int(row[0] or 0) if row else 0
+
+
+def _held(conn: sqlite3.Connection) -> dict[str, int]:
+    """How many files are held, and how many of those resume on their own."""
+    try:
+        rows = conn.execute(
+            "SELECT reason, COUNT(*) AS n FROM processing_waits"
+            " WHERE released_at IS NULL GROUP BY reason"
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return {}
+    return {str(row["reason"]): int(row["n"]) for row in rows}
+
+
 def _activity(conn: sqlite3.Connection) -> list[dict[str, str]]:
     """What LibrAIry is doing now, from state it already keeps."""
     from librairy.audit_job import progress as audit_progress
+    from librairy.waiting import RESUMABLE
 
     rows: list[dict[str, str]] = []
+    #  Waiting on AI is a state of the *program*, not a queue of work — so it
+    #  belongs here, beside what the worker is doing, and says which way it
+    #  will resolve. Without it "idle" and "stuck behind a dead provider" look
+    #  identical on this page, which is the question somebody opens it to ask.
+    held = _held(conn)
+    resuming = sum(count for reason, count in held.items() if reason in RESUMABLE)
+    if resuming:
+        rows.append({
+            "what": "Waiting for AI",
+            "detail": f"{resuming} file{'' if resuming == 1 else 's'} · resumes on its own",
+        })
     audit = audit_progress(conn)
     if audit and audit.get("state") in {"running", "queued"}:
         done, total = audit.get("done", 0), audit.get("total", 0)

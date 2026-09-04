@@ -624,8 +624,91 @@ def build_app(root: Path):  # noqa: ANN201
     #  Last: it tags files the scenes above created, and promotes one of the
     #  tags. Everything it touches has to exist first.
     _a_tagged_project(conn, settings)
+    #  And after everything, because it measures what everything above built.
+    _a_measured_history(conn)
+    #  A worker that has run. Without it the Dashboard's middle band says
+    #  "unknown" in the largest type on the card and "no heartbeat yet" under
+    #  it, which is what a broken installation looks like — and this scene is
+    #  meant to be a working one.
+    from librairy.planner import utc_now as _now  # noqa: PLC0415
+
+    conn.execute(
+        "INSERT INTO worker_state(key, value) VALUES ('current_phase', '\"idle\"')"
+        " ON CONFLICT(key) DO UPDATE SET value=excluded.value"
+    )
+    conn.execute(
+        "INSERT INTO worker_state(key, value) VALUES ('last_cycle_at', ?)"
+        " ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        (f'"{_now()}"',),
+    )
 
     return create_app(settings, conn)
+
+
+def _a_measured_history(conn) -> None:  # noqa: ANN001
+    """Six weeks of readings, with a hole in the middle of them.
+
+    A Dashboard photographed against one day of history proves the layout and
+    nothing else. What has to be visible is the shape of the thing: a library
+    growing, storage growing faster than the file count because the files
+    getting added are bigger, a backlog that gets worse and then better, days
+    when work happened and days when none did — and, deliberately, **eleven
+    days nobody measured**.
+
+    That gap is the point. It is what a machine switched off for a fortnight
+    looks like, and the charts must show it as a hole rather than closing it up
+    into a smooth line. Synthesized rather than simulated: years of metric rows
+    are cheap, and years of files would be measuring something else.
+    """
+    from datetime import date, timedelta
+
+    from librairy import metrics
+
+    #  Today's real reading first, so the story is built *backwards from what
+    #  this fixture actually contains*. Inventing a library of a thousand files
+    #  and then stamping today with the real hundred and twenty-eight produced
+    #  a cliff on every chart, and a truthful "-86%" about a fiction.
+    metrics.rollup(conn)
+    parts = [int(part) for part in metrics.today().split("-")]
+    now = date(*parts)
+    taken = f"{metrics.today()}T09:00:00+00:00"
+    current = {
+        str(row["metric"]): int(row["value"])
+        for row in conn.execute(
+            "SELECT metric, value FROM metrics_daily WHERE day=?", (metrics.today(),)
+        )
+    }
+    files = current.get("library.files", 128)
+    used = current.get("library.bytes", 900_000)
+    waiting = current.get("review.waiting", 12)
+    for back in range(1, 42):
+        day = (now - timedelta(days=back)).isoformat()
+        #  The outage. Three weeks ago the worker was off for eight days, so
+        #  nothing was measured — and nothing may be drawn there. This gap is
+        #  the point of the whole scene: it has to render as a hole.
+        if 18 <= back <= 25:  # noqa: PLR2004
+            continue
+        #  Walking backwards: what was filed *on* a day is what the library did
+        #  not yet have the day before.
+        filed = 0 if back % 7 in (5, 6) else (back * 3) % 7 + 1
+        files = max(1, files - filed)
+        used = max(1000, used - filed * 5_400 - (back % 5) * 400)
+        #  A backlog that grew while the worker was off and has been coming
+        #  down since, which is the shape somebody actually wants to read.
+        waiting = waiting + (2 if back < 17 else -1) + (back % 3) - 1  # noqa: PLR2004
+        for name, kind, value in (
+            ("library.files", metrics.GAUGE, files),
+            ("library.bytes", metrics.GAUGE, used),
+            ("review.waiting", metrics.GAUGE, max(0, waiting)),
+            ("filed.files", metrics.COUNT, filed),
+            ("setaside.duplicates", metrics.COUNT, 1 if back % 5 == 0 else 0),
+        ):
+            conn.execute(
+                "INSERT INTO metrics_daily(day, metric, kind, value, taken_at)"
+                " VALUES (?, ?, ?, ?, ?) ON CONFLICT(day, metric) DO UPDATE SET"
+                " value=excluded.value",
+                (day, name, kind, value, taken),
+            )
 
 
 def _files_waiting_for_ai(conn, settings: Settings) -> None:  # noqa: ANN001

@@ -323,6 +323,28 @@ rather than as a duration.
 two per top-level folder. Two years is about 21,000 rows, well under a
 megabyte, and `KEEP_DAYS` prunes past that.
 
+### M3-02, the Dashboard, at three populations
+
+The point of the whole exercise, in one table. The history band reads
+`metrics_daily` and never `items`, so it costs the same on a library of forty
+thousand files and one of a million:
+
+| library | history band, 30 days | 365 days | whole page |
+|---|---|---|---|
+| 100,000 | **1.9 ms** · 9 statements | 8.9 ms | 37 ms · 35 statements |
+| 300,000 | **1.8 ms** · 9 statements | 8.9 ms | 85 ms · 35 statements |
+| 1,000,000 | **2.0 ms** · 9 statements | 8.7 ms | 282 ms · 35 statements |
+
+Two things worth reading off it. The band is **flat** — its cost follows the
+number of days asked for and nothing else, which is the contract M3-01 was
+built to provide. And the whole page still grows with the library, because the
+top two bands are live aggregates and must stay that way: replacing "what needs
+me now" with yesterday's rollup would buy a better number here at the cost of a
+page that can be wrong about the present.
+
+Adding the third band cost the page about **2 ms**. The 349 ms recorded for
+Dashboard at M1 close is now 282 ms, from unrelated indexing since.
+
 ### Health, measured again, and why the metrics layer does not help it
 
 M1-06 carries Health at 1.8 s. Re-measured at a million on schema 55: **1,487

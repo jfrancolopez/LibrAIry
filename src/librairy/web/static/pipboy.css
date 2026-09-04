@@ -3744,3 +3744,133 @@ summary.timeline-head::-webkit-details-marker { display: none; }
   }
   .project-members td { border: 0; padding: 0 0 var(--space-1); }
 }
+
+/* --- Dashboard: three bands ---------------------------------------------------
+   Attention, activity, history — separated by space and one hairline rather
+   than by another layer of boxes. The page already draws a card round every
+   widget; wrapping those in framed panels would be three borders deep before
+   anything says a number. */
+.band { margin: 0 0 var(--space-6); }
+.band + .band { padding-top: var(--space-5); border-top: var(--border-thin) solid var(--border); }
+.band > h2 {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-lg); letter-spacing: 0.04em; text-transform: uppercase;
+  color: var(--text-dim);
+}
+.band-head {
+  display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4);
+  align-items: baseline; justify-content: space-between;
+  margin-bottom: var(--space-3);
+}
+.band-head h2 { margin: 0; font-size: var(--text-lg); letter-spacing: 0.04em;
+  text-transform: uppercase; color: var(--text-dim); }
+/* A heading that only a screen reader needs. The attention band is already the
+   loudest thing on the page and a second title above the hero would push the
+   one number somebody came for further down. */
+.visually-hidden {
+  position: absolute; width: 1px; height: 1px; margin: -1px;
+  padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+}
+
+.range-picker { display: flex; flex-wrap: wrap; gap: var(--space-1); }
+.range {
+  padding: var(--space-1) var(--space-2); font-size: var(--text-sm);
+  border: var(--border-thin) solid var(--border); border-radius: var(--radius-ui);
+  text-decoration: none; color: var(--text-dim);
+}
+.range.is-current { color: var(--on-accent); background: var(--accent); border-color: var(--accent); }
+
+.chart-grid {
+  display: grid; gap: var(--space-3);
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  /* Cards size to their contents. Stretching them to the tallest in the row
+     left a bar chart with two inches of empty box under it, which reads as
+     missing data on a panel whose whole job is to be honest about missing. */
+  align-items: start;
+}
+.chart-card {
+  border: var(--border-thin) solid var(--border); border-radius: var(--radius-ui);
+  background: var(--bg-metric); padding: var(--space-3);
+  display: grid; gap: var(--space-2); align-content: start; min-width: 0;
+}
+.chart-card h3 { margin: 0; font-size: var(--text-base); }
+.chart-card h3 a { text-decoration: none; }
+.chart-question { margin: 0; font-size: var(--text-sm); }
+.chart-figure {
+  margin: 0; display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-2);
+  align-items: baseline;
+}
+/* Direct child: a bare `strong` selector reaches every bold word inside the
+   card. See `test_type_scale_is_not_leaked_by_descendant_selectors`. */
+.chart-figure > strong { font-size: var(--text-xl); font-variant-numeric: tabular-nums; }
+/* Not colour-coded by direction. A growing library is green and a growing
+   backlog is red only if the program has an opinion about which way each of
+   them should go, and it does not: your library getting bigger is the point,
+   and whether a rising number is good is your call to make from the label
+   beside it. The sign carries the direction; the colour carries emphasis. */
+.trend { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--text); }
+.trend-flat { color: var(--text-dim); font-weight: 400; }
+/* The drawing box stretches to the column; `vector-effect` on the line is what
+   keeps the stroke one width instead of stretching with it. */
+.chart { width: 100%; height: 3.5rem; display: block; overflow: visible; }
+.chart-line { stroke: var(--accent-2); stroke-width: 1.5px; stroke-linejoin: round; }
+.chart-dot { fill: var(--accent-2); }
+.chart-bar { fill: var(--accent-2); }
+/* A day that was measured and found to be nought. Dimmed rather than absent —
+   absence on this page means nobody looked, and the two must not look alike. */
+.chart-bar.is-zero { fill: var(--text-dim); opacity: 0.45; }
+.chart-foot { margin: 0; font-size: var(--text-sm); }
+.chart-none { margin: 0; }
+.chart-card.is-empty { opacity: 0.7; }
+.history-empty { margin: 0; }
+.history-since { margin-top: var(--space-3); }
+
+/* Shares of a whole, as one bar. Length is compared far better than angle, and
+   this stays readable at 375px where a pie's labels do not. */
+.composition {
+  display: flex; width: 100%; height: 1.1rem; overflow: hidden;
+  border-radius: var(--radius-ui); background: var(--bg-input);
+}
+/* One hue, stepped by weight rather than eight arbitrary colours. The theme is
+   a terminal palette and inventing hues for it would leave the chart looking
+   borrowed from another program — and eight hues at 375px are eight things to
+   look up in a legend. Stepping means the order is also information: the
+   strongest band is the largest, every time, and no two neighbours match. */
+.composition-part { display: block; height: 100%; background: var(--accent-2); }
+.composition-part:nth-child(2) { opacity: 0.78; }
+.composition-part:nth-child(3) { opacity: 0.62; }
+.composition-part:nth-child(4) { opacity: 0.5; }
+.composition-part:nth-child(5) { opacity: 0.42; }
+.composition-part:nth-child(6) { opacity: 0.36; }
+.composition-part:nth-child(7) { opacity: 0.31; }
+.composition-part:nth-child(8) { opacity: 0.27; }
+.composition-part + .composition-part { box-shadow: inset 1px 0 0 var(--bg-input); }
+.composition-part.is-rest { background: var(--text-dim); opacity: 0.5; }
+.composition-key { list-style: none; padding: 0; margin: 0; display: grid; gap: var(--space-1); }
+.composition-key li {
+  display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: baseline;
+  font-size: var(--text-sm);
+}
+.composition-swatch {
+  width: 0.7rem; height: 0.7rem; flex: 0 0 auto; border-radius: 2px;
+  background: var(--accent-2);
+}
+/* The same steps in the same order, so a band and its label are the same
+   colour. Two nth-child cycles that disagreed put Movies and Photos in one
+   green and made the legend a guess. */
+.composition-key li:nth-child(2) .composition-swatch { opacity: 0.78; }
+.composition-key li:nth-child(3) .composition-swatch { opacity: 0.62; }
+.composition-key li:nth-child(4) .composition-swatch { opacity: 0.5; }
+.composition-key li:nth-child(5) .composition-swatch { opacity: 0.42; }
+.composition-key li:nth-child(6) .composition-swatch { opacity: 0.36; }
+.composition-key li:nth-child(7) .composition-swatch { opacity: 0.31; }
+.composition-key li:nth-child(8) .composition-swatch { opacity: 0.27; }
+.composition-swatch.is-rest { background: var(--text-dim); opacity: 0.5; }
+
+@media (max-width: 600px) {
+  /* One chart at a time. Two 150px charts side by side are two charts nobody
+     can read, which is worse than scrolling. */
+  .chart-grid { grid-template-columns: 1fr; }
+  .chart { height: 4.5rem; }
+  .band-head { flex-direction: column; align-items: stretch; }
+}

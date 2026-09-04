@@ -245,16 +245,19 @@ class Worker:
                 quarantine_vanished=quarantine_scan.missing,
                 companions_paired=companions,
             )
-            #  Today's measurement, at most once an hour. Deliberately *not*
-            #  in the idle tier below, and the reasoning is worth stating
-            #  because everything else expensive is: a rollup is eight tenths
-            #  of a second at a million items, once an hour, which is two
-            #  hundredths of one percent of a worker's time — and it runs
-            #  here, after every piece of inbox work in this cycle has already
-            #  finished, so it competes with nothing. Putting it behind the
-            #  idle gate would mean a busy installation records no history at
-            #  all, and a trend with holes in it is worth less than the
-            #  fraction of a second it saves. See `librairy/metrics.py`.
+            #  Today's measurement — **offered** every cycle, **taken** at most
+            #  once an hour. Those are two different things and the second is
+            #  the one that matters: `metrics.due` is the guard, and without it
+            #  a worker cycling every five seconds would scan a million items
+            #  eight hundred times an hour.
+            #
+            #  Deliberately not in the idle tier below, where everything else
+            #  expensive lives. A measurement is eight tenths of a second at a
+            #  million items, hourly — two hundredths of one percent of a
+            #  worker's time — and it runs here, after every piece of inbox
+            #  work in this cycle has already finished, so it competes with
+            #  nothing. Behind the idle gate it would save that 0.02% and cost
+            #  a busy installation its entire history. See `librairy/metrics.py`.
             self._metrics_rollup()
             # Everything above is inbox work, and it has already happened.
             # A library audit is asked for, not needed, so it gets a bounded

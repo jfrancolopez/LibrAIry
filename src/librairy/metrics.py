@@ -44,6 +44,19 @@ So `backfill` can give an upgrade months of commit history from `history`, and
 cannot give it last month's library size. That is not a limitation to work
 around; it is what a snapshot is.
 
+## A row exists if and only if the value was observed
+
+One invariant across the whole table, and the Dashboard depends on it: absence
+means *nobody measured this*, and never *this was zero*. A gauge is written
+only where it was taken. A count is written wherever it was computed —
+including where the answer was nought, because "History was asked and said
+none" is an observation and is not the same claim as silence.
+
+Which is why `backfill` starts at `first_recorded_day` and writes noughts from
+there: before that day there is nothing to have counted, and a chart drawing a
+flat line back through a month when the program did not exist would be
+inventing history out of an absence.
+
 ## Days are UTC days
 
 Chosen rather than inherited. Every timestamp in this program is `utc_now()`,
@@ -283,24 +296,64 @@ def backfill(conn: sqlite3.Connection, days: int = DEFAULT_DAYS) -> int:
     It writes no gauges. Nobody measured the library's size last March and
     inventing a number for it would be the one thing this table must never
     contain.
+
+    **Zeros are written, and that is a correction.** The first version skipped
+    them, on the reasoning that "a year of noughts is a year of rows saying
+    nothing happened, which the absence of a row already says". That reasoning
+    is wrong, and the Dashboard is where it would have shown: absence has to
+    mean exactly one thing, and it already means *nobody measured this*. A day
+    with no row would then have been both "nothing was filed" and "nobody
+    looked", which is precisely the ambiguity a chart cannot draw honestly.
+
+    So one invariant holds across the whole table: **a row exists if and only
+    if the value was observed.** For a count, observed means a query asked
+    History and got an answer — zero included.
+
+    It starts at the first day this program has any record of, and not a day
+    earlier. Before that there is nothing to have counted, and a row saying
+    "nothing was filed" about a week before LibrAIry existed is technically
+    true and practically a lie about what is known.
     """
     from datetime import date, timedelta
 
+    first = first_recorded_day(conn)
+    if not first:
+        return 0
     parts = [int(part) for part in today().split("-")]
     now = date(*parts)
     taken = utc_now()
     written = 0
     for back in range(1, max(0, min(days, MAX_DAYS)) + 1):
         day = (now - timedelta(days=back)).isoformat()
+        if day < first:
+            continue
         start, end = bounds(day)
         for measure in COUNTS:
-            value = _value(conn, measure.sql, (start, end))
-            if value:
-                #  Only days that had something. A year of explicit noughts is
-                #  a year of rows saying nothing happened, which the absence of
-                #  a row already says.
-                written += _write(conn, day, measure, value, taken)
+            written += _write(
+                conn, day, measure, _value(conn, measure.sql, (start, end)), taken
+            )
     return written
+
+
+def first_recorded_day(conn: sqlite3.Connection) -> str:
+    """The earliest day this program has any record of, or "".
+
+    The honest left edge of a backfill. Taken from the sources the counts are
+    derived from, so it is the first day about which an answer could be given
+    at all — before it, "nothing happened" is a statement about the world
+    rather than about the library.
+    """
+    earliest = ""
+    for sql in (
+        "SELECT MIN(ts) FROM history",
+        "SELECT MIN(quarantined_at) FROM quarantine_entries",
+        "SELECT MIN(created_at) FROM proposals",
+    ):
+        row = conn.execute(sql).fetchone()
+        stamp = str((row[0] if row else "") or "")[:10]
+        if stamp and (not earliest or stamp < earliest):
+            earliest = stamp
+    return earliest
 
 
 def due(conn: sqlite3.Connection, *, seconds: int = REFRESH_SECONDS) -> bool:

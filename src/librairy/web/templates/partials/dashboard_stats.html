@@ -3,7 +3,20 @@
    wrapper carrying hx-trigger is replaced by a response that has none, and the
    dashboard refreshes exactly once and then goes quiet forever. #}
 <div id="dashboard-stats"
-     hx-get="/dashboard/stats" hx-trigger="every 5s" hx-swap="outerHTML">
+     hx-get="/dashboard/stats?days={{ history.days }}" hx-trigger="every 5s" hx-swap="outerHTML">
+
+  {# Three bands, in the order the questions actually get asked:
+
+         1  what needs my attention          the strongest thing on the page
+         2  what is LibrAIry doing           live, and only when it says something
+         3  how is my library changing       recorded history, and only that
+
+     The first two read the library itself and always will. The third reads
+     `metrics_daily` and never the library. That separation is the whole
+     architecture of this page: a record of the past must not become the source
+     of truth for the present. #}
+  <section class="band band-attention" aria-labelledby="attention-heading">
+  <h2 class="visually-hidden" id="attention-heading">What needs your attention</h2>
 
   {# One focal point. Seven equally-weighted cards make you read all seven to
      find out whether anything wants you; this answers that before you read
@@ -72,6 +85,10 @@
     </section>
   {% endif %}
 
+  </section>
+
+  <section class="band band-activity" aria-labelledby="activity-heading">
+  <h2 id="activity-heading">What LibrAIry is doing</h2>
   <div class="widget-grid">
     {% if activity %}
       <article class="widget card">
@@ -192,4 +209,7 @@
     </article>
 
   </div>
+  </section>
+
+  {% include "partials/dashboard_history.html" %}
 </div>

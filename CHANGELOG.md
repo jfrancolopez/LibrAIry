@@ -98,6 +98,44 @@ add. Both now say which, and `librairy ai test` reports a server that passes
 its health check and then refuses to classify instead of returning a bare
 failure. **Schema 51** records the held files and why.
 
+### A Dashboard that answers three questions in order
+
+**What needs me? What is LibrAIry doing? How is my library changing?** The page
+now says so out loud, in that order, with the first as the loudest thing on it.
+
+The third band is new, and it is drawn from the daily readings. Library growth,
+storage, the decision backlog, what you have filed, duplicates cleared, and what
+your library is actually made of — over 7, 30, 90 days or a year.
+
+**A day nobody measured is a hole, not a zero.** LibrAIry did not exist last
+March, so it will not draw a line saying your library held nothing then. A line
+stops where the readings stop and picks up where they resume; a bar exists only
+for a day that was actually computed; and every chart says how much of its
+window it is made of — "22 of 30 days recorded". A week when the machine was
+off looks like a week when the machine was off.
+
+And the other half of that: a day that *was* measured and found nothing is
+drawn. "I filed nothing on Sunday" and "the machine was off" are different
+facts and they now look different.
+
+**Trends say the span they actually measured.** "+312 files over 29 days", not
+"+312 this month" when the history began eight days ago. No percentages against
+a starting value of nothing, and no trend at all from two readings a day apart.
+
+**Nothing on the page has an opinion about which way your numbers should go.**
+A growing library is not coloured as good news and a growing backlog is not
+coloured as bad; the sign says which way and the label says what it is.
+
+**Waiting for AI appears twice, saying two different things.** Files that will
+resume by themselves sit beside what the worker is doing. Files where the
+evidence genuinely ran out are in what needs you. They are different situations
+and only one of them is yours.
+
+Everything at the top of the page still comes from your library as it is right
+now. The recorded history is a record and never a substitute — which is also
+why the band costs the same on a library of a thousand files and one of a
+million.
+
 ### Something that remembers how big your library was
 
 Of forty-two tables, not one recorded a measurement over time — so *was the
