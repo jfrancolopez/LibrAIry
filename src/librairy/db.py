@@ -9,7 +9,7 @@ from pathlib import Path
 from librairy.config import Settings
 
 LOGGER = logging.getLogger(__name__)
-SCHEMA_VERSION = 57
+SCHEMA_VERSION = 58
 
 
 class DatabaseVersionError(RuntimeError):
@@ -1719,6 +1719,42 @@ ALTER TABLE backup_destinations ADD COLUMN volume TEXT NOT NULL DEFAULT '';
 """
 
 
+#  What each backup run did.
+#
+#  Note what is *not* here: no "this destination is up to date" column. That
+#  absence is the design. A stored flag would have to be right about every way
+#  a transfer can end — killed, disconnected, disk full, a file that vanished
+#  halfway — and only has to be wrong once for a backup to sit there saying it
+#  is fine. Whether a destination is current is answered by comparing, every
+#  time it is asked. See `librairy/backup_runs.py`.
+MIGRATION_058 = """
+CREATE TABLE backup_runs (
+  id              INTEGER PRIMARY KEY,
+  destination_id  INTEGER NOT NULL REFERENCES backup_destinations(id),
+  category        TEXT NOT NULL,
+  mode            TEXT NOT NULL,
+  state           TEXT NOT NULL CHECK (state IN
+                    ('planned','running','succeeded','failed')),
+  started_at      TEXT NOT NULL,
+  finished_at     TEXT,
+  -- What the comparison said before anything moved.
+  planned_copies  INTEGER NOT NULL DEFAULT 0,
+  planned_updates INTEGER NOT NULL DEFAULT 0,
+  -- Files at the destination the library no longer has. Recorded because it is
+  -- worth knowing and shown because it is worth seeing. Never acted on.
+  destination_only INTEGER NOT NULL DEFAULT 0,
+  -- What actually moved. True whether or not the run finished: 73 files
+  -- reaching a destination is a fact, and it is not permission to call the
+  -- destination current.
+  transferred     INTEGER NOT NULL DEFAULT 0,
+  bytes_sent      INTEGER NOT NULL DEFAULT 0,
+  outcome         TEXT NOT NULL DEFAULT '',
+  detail          TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX idx_backup_runs_destination ON backup_runs(destination_id, id DESC);
+"""
+
+
 MIGRATIONS = {
     1: MIGRATION_001,
     2: MIGRATION_002,
@@ -1777,6 +1813,7 @@ MIGRATIONS = {
     55: MIGRATION_055,
     56: MIGRATION_056,
     57: MIGRATION_057,
+    58: MIGRATION_058,
 }
 
 

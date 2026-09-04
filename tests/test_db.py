@@ -58,6 +58,7 @@ def test_fresh_db_migrates_to_current_schema(tmp_path: Path) -> None:
         "idx_proposals_category",
         "idx_proposals_group_id",
         "idx_backup_policies_destination",
+        "idx_backup_runs_destination",
         "idx_proposals_group_key",
         "idx_groups_kind",
         "idx_provider_status_kind",
@@ -188,6 +189,8 @@ def test_migration_011_closes_proposals_for_files_already_filed(tmp_path: Path) 
     # so anything a later migration creates has to be put back first.
     conn.executescript(
         """
+        DROP INDEX IF EXISTS idx_backup_runs_destination;
+        DROP TABLE IF EXISTS backup_runs;
         DROP INDEX IF EXISTS idx_backup_policies_destination;
         DROP TABLE IF EXISTS backup_policies;
         DROP TABLE IF EXISTS backup_destinations;

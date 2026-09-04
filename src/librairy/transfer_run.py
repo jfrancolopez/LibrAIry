@@ -86,6 +86,11 @@ FULL = "full"  # the destination ran out of room
 INTERRUPTED = "interrupted"  # killed, timed out, connection dropped
 FAILED = "failed"  # rclone said no and none of the above fit
 
+#  What rclone says it moved. Parsed from its own summary rather than counted
+#  by us, because after a failure our count is a guess and this is evidence:
+#  "Transferred: 73 / 100, 73%" is rclone reporting what it actually did.
+_TRANSFERRED = re.compile(r"Transferred:\s+(\d+)\s*/\s*(\d+)")
+
 #  What a secret looks like in a command or in output. Redaction happens on the
 #  way *into* the record, never on the way out to a screen, so nothing that was
 #  never stored can be leaked by a later template.
@@ -174,7 +179,12 @@ def send(
             detail=status.detail,
         )
 
-    command = rclone.copy_command(_config(settings), source, target)
+    #  Ask rclone to say what it moved. Without this a run that failed halfway
+    #  has no evidence of how far it got, and "73 files did reach the
+    #  destination" would have to be either invented or thrown away.
+    command = rclone.copy_command(
+        _config(settings), source, target, stats=True
+    )
     safe = redacted(command)
     try:
         completed = (runner or _run)(command, TIMEOUT)
@@ -183,13 +193,20 @@ def send(
     except OSError as exc:
         return _result(MISSING_TOOL, started, began, str(exc), safe)
 
+    moved = _moved(completed.stderr or "")
     if completed.returncode != 0:
+        #  `moved` and not nought. A run that copied seventy-three of a hundred
+        #  files did seventy-three files' worth of good, and that is true
+        #  whatever happened next — it is simply not permission to call the
+        #  destination current, which nothing in this program stores anyway.
+        #  See `librairy/backup_runs.py`.
         return _result(
             _why(completed.stderr or ""),
             started,
             began,
             redact(completed.stderr or "")[:400],
             safe,
+            files=moved,
         )
     return _result(
         OK,
@@ -197,9 +214,64 @@ def send(
         began,
         "",
         safe,
-        files=len(work),
+        #  rclone's own count where it gave one, and the plan's otherwise: a
+        #  clean run transferred what differed, which is what the plan named.
+        files=moved or len(work),
         bytes_sent=plan.bytes_to_send,
     )
+
+
+def run_policy(
+    conn,  # noqa: ANN001 - sqlite3.Connection
+    settings: Settings,
+    policy,  # noqa: ANN001 - destinations.Policy
+    destination,  # noqa: ANN001 - destinations.Destination
+    listing: list | None,
+    *,
+    runner: Callable[[list[str], int], subprocess.CompletedProcess[str]] | None = None,
+) -> tuple[Plan, Result]:
+    """Compare, record, transfer, record. The whole of one backup.
+
+    The order matters and it is the point: the run row is opened **before**
+    anything moves, so a process killed mid-transfer leaves a row saying it was
+    running rather than leaving nothing at all. An absence cannot be told from
+    a run that never started, and "we do not know how that ended" is a thing
+    this has to be able to say.
+    """
+    from librairy import backup_runs
+    from librairy.transfer_plan import plan_for
+
+    plan = plan_for(conn, policy, destination, listing)
+    if plan.unavailable:
+        #  Nobody could look. Not a run, because nothing was attempted — and
+        #  recording it as a failed one would fill the history of a drive that
+        #  lives in a drawer with failures that are just Tuesdays.
+        return plan, Result(
+            outcome=UNAVAILABLE,
+            started_at=utc_now(),
+            finished_at=utc_now(),
+            detail=plan.unavailable,
+        )
+    run_id = backup_runs.begin(
+        conn,
+        destination_id=destination.id,
+        category=policy.category,
+        mode=policy.mode,
+        planned_copies=plan.to_copy,
+        planned_updates=plan.to_update,
+        destination_only=plan.destination_only,
+    )
+    result = send(conn, settings, plan, runner=runner)
+    backup_runs.finish(
+        conn,
+        run_id,
+        succeeded=result.ok,
+        transferred=result.files,
+        bytes_sent=result.bytes_sent,
+        outcome=result.outcome,
+        detail=result.detail,
+    )
+    return plan, result
 
 
 def _checked(settings: Settings, plan: Plan) -> tuple[Path, str]:
@@ -248,6 +320,18 @@ def _mask(match: re.Match[str]) -> str:
     if match.group(1):
         return f"{match.group(1)}***"
     return "***@"
+
+
+def _moved(stderr: str) -> int:
+    """How many files rclone says it transferred, or 0 if it did not say.
+
+    Evidence rather than arithmetic. Zero here means "rclone did not tell us",
+    which is reported as nothing having been proven to move rather than as
+    nothing having moved — the two are different and only one of them is a
+    claim this program is entitled to make.
+    """
+    found = _TRANSFERRED.search(stderr)
+    return int(found.group(1)) if found else 0
 
 
 def _why(stderr: str) -> str:

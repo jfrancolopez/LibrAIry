@@ -78,6 +78,16 @@ class TransferRefused(RuntimeError):
     """A transfer that will not be attempted, and the reason in one sentence."""
 
 
+#  How thoroughly a destination was identified. Recorded rather than inferred,
+#  because reduced verification must not be invisible: a drive registered with
+#  a volume id and later checked on a runtime that cannot read one is *still
+#  allowed* — and somebody looking at its status should be able to see that
+#  only half the check ran.
+FULLY_VERIFIED = "verified"  # marker and volume both agreed
+MARKER_ONLY = "marker-only"  # a volume id was recorded; nothing could read one
+UNVERIFIED = "unverified"  # no identity was ever registered
+
+
 @dataclass(frozen=True)
 class LocalTarget:
     """A checked local destination directory."""
@@ -87,6 +97,7 @@ class LocalTarget:
     #  What the operating system says the filesystem is, where it says
     #  anything. Empty is a legitimate answer — see `librairy/volumes.py`.
     volume: str = ""
+    verification: str = UNVERIFIED
 
 
 def library_source(settings: Settings, relpath: str = "") -> Path:
@@ -230,7 +241,28 @@ def checked_offline(
             "the filesystem at that path is not the one that was registered —"
             " nothing was copied"
         )
-    return LocalTarget(path=found.path, identity=identity, volume=here or volume)
+    return LocalTarget(
+        path=found.path,
+        identity=identity,
+        volume=here or volume,
+        verification=verification(identity, volume, here),
+    )
+
+
+def verification(identity: str, recorded: str, found: str) -> str:
+    """How much of the identity check actually ran.
+
+    Three states, and the middle one is why this exists. A drive registered
+    with a volume id and later checked on a runtime that cannot read one is
+    still allowed — that fallback is deliberate — but it is *less* checking
+    than happened at registration, and a status that showed it identically to a
+    full check would be hiding a reduction rather than making a decision.
+    """
+    if not identity and not recorded:
+        return UNVERIFIED
+    if recorded and not found:
+        return MARKER_ONLY
+    return FULLY_VERIFIED
 
 
 def volume_of(path: Path) -> str:

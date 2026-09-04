@@ -49,6 +49,7 @@ rows to look at. Not forty thousand rows.
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 
 from librairy.destinations import (
@@ -163,13 +164,18 @@ class DestinationFile:
 
 def library_files(
     conn: sqlite3.Connection, category: str, *, limit: int = 0
-) -> list[LibraryFile]:
+) -> Iterator[LibraryFile]:
     """The library files one policy covers, from the index and never from disk.
 
     A category is a top-level folder — the taxonomy files into `Photos/`,
     `Music/` and so on — so the covered set is a prefix match on an indexed
     column rather than a walk. At a million files this is the difference
     between a query and an afternoon.
+
+    **Yields.** Three hundred thousand photographs are three hundred thousand
+    rows, and building a list of them to work out that four need copying is a
+    Python object per file for no reason. `compare` consumes this one row at a
+    time and keeps only counts and a page.
     """
     prefix = f"{_folder(category)}/"
     sql = (
@@ -179,27 +185,33 @@ def library_files(
     )
     if limit:
         sql += f" LIMIT {int(limit)}"
-    return [
-        LibraryFile(relpath=str(row["relpath"]), size=int(row["size"] or 0))
-        for row in conn.execute(sql, (f"{_escaped(prefix)}%",))
-    ]
+    for row in conn.execute(sql, (f"{_escaped(prefix)}%",)):
+        yield LibraryFile(relpath=str(row["relpath"]), size=int(row["size"] or 0))
 
 
 def compare(
-    library: list[LibraryFile], destination: list[DestinationFile], mode: str
+    library: Iterable[LibraryFile], destination: list[DestinationFile], mode: str
 ) -> tuple[dict[str, int], list[Entry]]:
     """Two catalogues in, four counts and a bounded sample of rows out.
 
     Deterministic and inspectable: same inputs, same answer, in a function that
     touches nothing. Every test about what a mode does can be written against
     this without a filesystem, a remote, or a subprocess anywhere near it.
+
+    The library side streams; the destination side does not, because it is
+    looked up by path and needs random access. That listing is therefore the
+    memory bound of a comparison, and it is the destination's own size rather
+    than the library's — which is the right way round, since the transfer
+    itself never sees either list.
     """
     theirs = {found.relpath: found for found in destination}
     counts = dict.fromkeys(DIFFERENCES, 0)
     entries: list[Entry] = []
     per_difference = dict.fromkeys(DIFFERENCES, 0)
+    ours_by_path: set[str] = set()
 
     for ours in library:
+        ours_by_path.add(ours.relpath)
         there = theirs.get(ours.relpath)
         if there is None:
             difference = MISSING
@@ -224,7 +236,6 @@ def compare(
                 )
             )
 
-    ours_by_path = {found.relpath for found in library}
     for there in destination:
         if there.relpath in ours_by_path:
             continue

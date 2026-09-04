@@ -245,6 +245,15 @@ class Worker:
                 quarantine_vanished=quarantine_scan.missing,
                 companions_paired=companions,
             )
+            #  Backups, after every piece of inbox work in this cycle has
+            #  finished and before the idle tier. Tier four: it is the owner's
+            #  configured policy rather than something they asked for just now,
+            #  so it never goes in front of a file arriving in the inbox — and
+            #  it is not idle-gated either, because a machine that is never
+            #  idle should still have backups. The comparison is guarded to at
+            #  most hourly per policy, which is what keeps that affordable.
+            #  See `librairy/backup_runs.py`.
+            self._policy_backups(settings)
             #  Today's measurement — **offered** every cycle, **taken** at most
             #  once an hour. Those are two different things and the second is
             #  the one that matters: `metrics.due` is the guard, and without it
@@ -324,6 +333,30 @@ class Worker:
             if audit_stage:
                 _set_worker_state(self.conn, "last_audit_stage", audit_stage)
             return summary
+
+    def _policy_backups(self, settings: Settings) -> None:
+        """Run the configured backup policies whose turn it is.
+
+        Online destinations only. An offline drive is compared when it appears,
+        which is presence detection and its own piece of work — polling a
+        drawer every hour to be told it is still a drawer is the retry storm
+        this feature exists to avoid.
+        """
+        from librairy import backup_runs, destinations, transfer_run
+        from librairy.destinations import OFFLINE
+
+        try:
+            for policy, destination in destinations.active(self.conn):
+                if policy.mode == OFFLINE:
+                    continue
+                if not backup_runs.due(self.conn, destination.id, policy.category):
+                    continue
+                listing = _listing_for(self.conn, settings, destination, policy)
+                transfer_run.run_policy(
+                    self.conn, settings, policy, destination, listing
+                )
+        except Exception:
+            LOGGER.exception("policy backup failed")
 
     def _metrics_rollup(self) -> None:
         """Write today's row, if today's row has gone stale.
@@ -663,6 +696,17 @@ def _seconds_between(earlier: str, later: str) -> float:
         ).total_seconds()
     except ValueError:
         return float("inf")
+
+
+def _listing_for(conn, settings, destination, policy):  # noqa: ANN001, ANN202
+    """What is already at the destination, or `None` if nobody could look.
+
+    `None` and an empty list are different answers and the difference is the
+    whole of "a drive in a drawer must not render as a healthy backup".
+    """
+    from librairy import transfer_listing
+
+    return transfer_listing.listing(conn, settings, destination, policy)
 
 
 def next_sleep(previous: float, work_found: bool, mode: ProcessingMode | None = None) -> float:

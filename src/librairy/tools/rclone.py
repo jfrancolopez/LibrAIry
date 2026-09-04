@@ -104,10 +104,17 @@ def copy_command(
     source: Path,
     remote: str,
     bandwidth_limit: str = "",
+    *,
+    stats: bool = False,
 ) -> list[str]:
     command = ["rclone", "copy", str(source), remote, "--config", str(config_path)]
     if bandwidth_limit:
         command.extend(["--bwlimit", bandwidth_limit])
+    if stats:
+        #  Make rclone report what it moved. A run that fails halfway otherwise
+        #  leaves no evidence of how far it got, and the alternative to evidence
+        #  is a guess. See `transfer_run._moved`.
+        command.extend(["--stats-one-line", "--stats", "1m"])
     return _assert_safe(command)
 
 

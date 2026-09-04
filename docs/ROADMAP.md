@@ -1256,11 +1256,18 @@ do not disagree.
 ## M3-03 · Backup, Mirror, Offline Backup
 
 **P1 · XL · High risk · IN PROGRESS** — semantics, the destination and policy
-model, path safety, planning and the execution adapter are done
+model, path safety, planning, the execution adapter and online Backup are done
 (`librairy/destinations.py`, `librairy/transfer_paths.py`,
 `librairy/volumes.py`, `librairy/transfer_plan.py`, `librairy/transfer_run.py`,
-schema 57). Presence detection, the Browse action, the surfaces and the scale
-gate are open.
+`librairy/backup_runs.py`, `librairy/transfer_listing.py`, schema 58). Mirror
+reporting, offline presence detection, the Browse action, the surfaces and the
+scale gate are open.
+
+> **Gate item, not a permanent skip.** Two integration tests run rclone for
+> real against temporary directories — a Mirror leaving a destination-only file
+> alone, and a rerun after an interrupted copy converging. They skip cleanly
+> and **have not executed on the author's machine**, where rclone is not
+> installed. They must pass somewhere it is before M3-03 closes.
 
 > **The semantics were written down before anything could run them**, because
 > `rclone sync` is one word longer than `rclone copy` and removes files.
@@ -1337,6 +1344,41 @@ gate are open.
 > full, interrupted, unavailable, refused, missing tool — because a full disk
 > and a dropped connection want different things from a person, and "backup
 > failed" wants nothing from them but worry.
+>
+> **There is no "this destination is up to date" column, and that absence is
+> the design.** A stored flag has to be right about every way a transfer can
+> end — killed, disconnected, disk full, a file that vanished halfway — and it
+> only has to be wrong once for a backup to sit there saying it is fine.
+> Whether a destination is current is answered by *comparing*, every time it is
+> asked. A test reads the schema for the words `current`, `synced`, `in_sync`
+> and their friends, because the guarantee is the absence.
+>
+> A run that copied 73 of 100 files and died records **73**, taken from
+> rclone's own summary rather than from arithmetic — that is true whatever
+> happened next, and it is not permission to call anything current. The next
+> comparison finds the 27 that are still missing, because they are still
+> missing. No resume protocol: convergence comes from the comparison.
+>
+> **A run row is opened before anything moves**, so a killed process leaves a
+> row saying it was running rather than leaving nothing at all — an absence
+> cannot be told from a run that never started.
+>
+> **"Last attempted" and "last succeeded" are separate questions**, and a
+> destination attempted hourly and last successful in March is exactly the
+> state one number cannot express. The cadence guard is keyed on the *attempt*:
+> keying it on success would retry a failing destination continuously for as
+> long as it kept failing.
+>
+> **Reduced verification is visible.** A drive registered with a volume id and
+> later checked on a runtime that cannot read one is still allowed — that
+> fallback is deliberate — but it is recorded as `marker-only` rather than as
+> the full check, because a status that showed them identically would be hiding
+> a reduction rather than making a decision.
+>
+> **Backups run after every piece of inbox work**, on any cycle rather than
+> only idle ones, guarded to at most hourly per policy. An offline drive is
+> never polled on a schedule: being told hourly that a drawer is still a drawer
+> is the retry storm this feature exists to avoid.
 
 **Problem.** One remote, the whole library, copy-only. Three different
 intentions collapsed into one.

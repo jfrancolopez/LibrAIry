@@ -129,13 +129,18 @@ def test_there_is_no_way_to_ask_it_to_run_something_else() -> None:
         #  function that happens to be reachable through this namespace.
         and value.__module__ == transfer_run.__name__
     }
-    assert set(public) == {"send", "redact", "redacted"}
-    parameters = inspect.signature(public["send"]).parameters
-    assert set(parameters) == {"conn", "settings", "plan", "runner"}
-    #  And `runner` is not a way in: whatever it receives has already been
-    #  built and checked by `tools/rclone.py`.
-    assert "command" not in parameters
-    assert "verb" not in parameters
+    assert set(public) == {"send", "run_policy", "redact", "redacted"}
+    #  Neither entry point takes a command, a verb or options. `send` takes a
+    #  plan; `run_policy` takes a policy and makes one.
+    for name in ("send", "run_policy"):
+        parameters = set(inspect.signature(public[name]).parameters)
+        assert not parameters & {"command", "verb", "flags", "options", "args"}
+    assert set(inspect.signature(public["send"]).parameters) == {
+        "conn",
+        "settings",
+        "plan",
+        "runner",
+    }
 
 
 def test_a_plan_with_nothing_to_do_runs_nothing(tmp_path: Path) -> None:
