@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block content %}
+  <h1>Only at {{ destination.name }}</h1>
+  {# The whole set, not a sample. Somebody reading this is usually about to go
+     and look at the files, and a count with a thousand paths under it cannot
+     be worked through. #}
+  <p class="big">{{ summary.sentence }}</p>
+  <p class="muted">
+    Files this destination holds that your library no longer has. LibrAIry keeps them,
+    reports them, and will never remove them — that is what a backup is for. If you want
+    them gone, they are yours to delete on the destination itself.
+  </p>
+  {% if summary.unverified %}
+    {# A partial observation must not present itself as a whole one. #}
+    <p class="muted">The last comparison did not finish, so this set is not fully
+      verified. Last complete comparison: {{ summary.verified_at[:10] or 'never' }}.</p>
+  {% else %}
+    <p class="muted">Last complete comparison: {{ summary.verified_at[:10] or 'never' }}.</p>
+  {% endif %}
+
+  {% if page.rows %}
+    <div class="table-scroll">
+      <table class="divergence-table">
+        <thead><tr><th>Path</th><th>Size</th><th>First seen</th></tr></thead>
+        <tbody>
+          {% for row in page.rows %}
+            <tr>
+              <td><code>{{ row.relpath }}</code></td>
+              <td>{{ row.size | filesizeformat }}</td>
+              <td>{{ row.first_seen_at[:10] }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if page.more %}
+      {# Keyset, so the eight thousandth page costs what the first one does. #}
+      <p><a href="/backups/{{ destination.id }}/only-here?after={{ page.next | urlencode }}">Next page</a></p>
+    {% endif %}
+  {% else %}
+    <p class="muted">Nothing here that your library does not have.</p>
+  {% endif %}
+  <p><a href="/backups">Back to Backups</a></p>
+{% endblock %}

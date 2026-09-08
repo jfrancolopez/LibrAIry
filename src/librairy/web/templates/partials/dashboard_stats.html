@@ -195,8 +195,34 @@
       {% endif %}
     </article>
 
+    {# Where library content is copied *to*. Deliberately five short lines and
+       a link: a disconnected offline drive is a normal state and gets one
+       calm line, not a red panel — colouring where a backup drive lives would
+       teach somebody that a backup warning means nothing. #}
+    {% if backups.any %}
+      <article class="widget card">
+        <h3>Backups</h3>
+        <ul>
+          <li><span>destinations</span><strong>{{ backups.destinations }}</strong></li>
+          {% if backups.failing %}
+            <li><span>failing</span><strong>{{ backups.failing }}</strong></li>
+          {% endif %}
+          {% if backups.wrong_drive %}
+            <li><span>a different drive is connected</span><strong>{{ backups.wrong_drive }}</strong></li>
+          {% endif %}
+          {% if backups.disconnected %}
+            <li><span>offline drive not connected</span><strong>{{ backups.disconnected }}</strong></li>
+          {% endif %}
+          {% if backups.only_here %}
+            <li><span>only at a destination</span><strong>{{ "{:,}".format(backups.only_here) }}</strong></li>
+          {% endif %}
+        </ul>
+        <a href="/backups">Backups</a>
+      </article>
+    {% endif %}
+
     <article class="widget card">
-      <h3>Backup</h3>
+      <h3>Backup queue</h3>
       {% if backup_counts %}
         <ul>
           {% for state, count in backup_counts.items() %}

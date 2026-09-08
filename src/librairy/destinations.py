@@ -249,6 +249,18 @@ def add_destination(
         raise ValueError("a destination has to be usable in at least one mode")
     if not name.strip() or not target.strip():
         raise ValueError("a destination needs a name and a target")
+    #  One place, one destination. Two rows pointing at the same target is the
+    #  only way two enabled policies can cover the same files in two different
+    #  modes — `Photos → WD (Backup)` and `Photos → WD (Mirror)`, where one
+    #  reports what is only there and the other keeps quiet about it. Rather
+    #  than invent a precedence rule for which mode wins, the ambiguity is
+    #  refused before it can exist. A simple refusal is safer than a clever
+    #  answer, and there is no reason anybody needs the same place twice.
+    if any(
+        found.target.strip() == target.strip()
+        for found in destinations(conn)
+    ):
+        raise ValueError("that place is already a destination")
     cursor = conn.execute(
         """
         INSERT INTO backup_destinations(name, kind, target, modes, identity, volume,

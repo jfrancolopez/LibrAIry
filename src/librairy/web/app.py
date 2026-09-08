@@ -520,6 +520,210 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             },
         )
 
+    # --- destinations, policies and the drive in the drawer -------------------
+    #
+    #  Configuration only. Nothing in this block transfers, compares or removes
+    #  anything: every one of them writes a row and returns to the page, and
+    #  the worker does the work — which is also why none of them can hold a
+    #  request open while a drive is enumerated.
+    #
+    #  There is deliberately no control here that could remove anything at a
+    #  destination. `destinations.ACTIONS` has no such verb, so there is
+    #  nothing for a button to post.
+
+    def _destinations_redirect(error: str = "") -> RedirectResponse:
+        """Back to the destinations block, with the refusal if there was one."""
+        where = "/settings#destinations"
+        if error:
+            where = f"/settings?destination_error={quote(error)}#destinations"
+        return RedirectResponse(where, status_code=303)
+
+    @app.post("/settings/destinations/add", include_in_schema=False)
+    def destination_add(
+        request: Request,  # noqa: ARG001
+        name: Annotated[str, Form()] = "",
+        target: Annotated[str, Form()] = "",
+        mode: Annotated[str, Form()] = "",
+    ) -> RedirectResponse:
+        """Register an rclone remote as somewhere library content may go.
+
+        The remote's *name* is what LibrAIry stores. Credentials live in
+        rclone's own config file and there is no field on the page to type one
+        into, which is why there is nothing here to redact on the way in.
+        """
+        from librairy import destinations as destinations_module
+        from librairy.destinations import BACKUP, MIRROR, REMOTE
+        from librairy.transfer_paths import TransferRefused, remote_destination
+
+        try:
+            checked = remote_destination(target)
+            destinations_module.add_destination(
+                conn,
+                name=name,
+                kind=REMOTE,
+                target=checked,
+                modes=[mode if mode in (BACKUP, MIRROR) else BACKUP],
+            )
+        except (TransferRefused, ValueError) as refusal:
+            return _destinations_redirect(str(refusal))
+        return _destinations_redirect()
+
+    @app.post("/settings/destinations/register-drive", include_in_schema=False)
+    def destination_register_drive(
+        request: Request,  # noqa: ARG001
+        name: Annotated[str, Form()] = "",
+        path: Annotated[str, Form()] = "",
+    ) -> RedirectResponse:
+        """Register a connected removable drive as an Offline Backup."""
+        from librairy import offline_drives
+        from librairy.transfer_paths import TransferRefused
+
+        try:
+            offline_drives.register(conn, settings, name=name, path=path)
+        except (TransferRefused, ValueError) as refusal:
+            return _destinations_redirect(str(refusal))
+        return _destinations_redirect()
+
+    @app.post("/settings/destinations/{destination_id}/verify", include_in_schema=False)
+    def destination_verify(
+        request: Request,  # noqa: ARG001
+        destination_id: int,
+    ) -> RedirectResponse:
+        """Look at a destination and write down what was found. **Reads only.**
+
+        For a drive that is presence and identity — is it here, does it carry
+        our marker, is it the same filesystem. For a remote it is rclone's own
+        availability. It never uploads a probe file, never removes one, and
+        never touches the Library: a check that wrote something to prove it
+        could write would be a check that changed the thing it was checking.
+        """
+        from librairy import destinations as destinations_module
+        from librairy import offline_drives
+        from librairy.destinations import OFFLINE
+
+        found = destinations_module.destination(conn, destination_id)
+        if found is None:
+            return _destinations_redirect("that destination is not there")
+        if OFFLINE in found.modes:
+            offline_drives.look(conn, settings, found)
+        return _destinations_redirect()
+
+    @app.post("/settings/destinations/{destination_id}/enabled", include_in_schema=False)
+    def destination_enabled(
+        request: Request,  # noqa: ARG001
+        destination_id: int,
+        enabled: Annotated[str, Form()] = "true",
+    ) -> RedirectResponse:
+        """Switch a destination off. Work stops; nothing is removed anywhere."""
+        from librairy import destinations as destinations_module
+
+        destinations_module.set_enabled(conn, destination_id, enabled == "true")
+        return _destinations_redirect()
+
+    @app.post("/settings/destinations/{destination_id}/forget", include_in_schema=False)
+    def destination_forget(
+        request: Request,  # noqa: ARG001
+        destination_id: int,
+    ) -> RedirectResponse:
+        """Forget what LibrAIry knows about a place. **Its files are not touched.**
+
+        Not even an offline drive's marker file, which is on their drive and
+        therefore not ours to remove.
+        """
+        from librairy import divergence, offline_drives
+
+        divergence.forget(conn, destination_id)
+        offline_drives.forget(conn, destination_id)
+        return _destinations_redirect()
+
+    @app.post("/settings/policies", include_in_schema=False)
+    def policy_set(
+        request: Request,  # noqa: ARG001
+        category: Annotated[str, Form()] = "",
+        destination_id: Annotated[int, Form()] = 0,
+        mode: Annotated[str, Form()] = "",
+    ) -> RedirectResponse:
+        """`Photos → NAS Backup → Backup`. Three fields and nothing else.
+
+        No rclone options reach this: a policy is a category, a destination and
+        a mode, and the adapter's allowlist is the only place options are
+        decided. There is nothing to type here that could become one.
+        """
+        from librairy import destinations as destinations_module
+
+        try:
+            destinations_module.set_policy(
+                conn, category=category, destination_id=destination_id, mode=mode
+            )
+        except ValueError as refusal:
+            return _destinations_redirect(str(refusal))
+        return _destinations_redirect()
+
+    @app.post("/settings/policies/clear", include_in_schema=False)
+    def policy_clear(
+        request: Request,  # noqa: ARG001
+        category: Annotated[str, Form()] = "",
+        destination_id: Annotated[int, Form()] = 0,
+    ) -> RedirectResponse:
+        """Stop sending a category to a destination. Nothing already copied moves."""
+        from librairy import destinations as destinations_module
+
+        destinations_module.clear_policy(
+            conn, category=category, destination_id=destination_id
+        )
+        return _destinations_redirect()
+
+    @app.get("/backups", response_class=HTMLResponse)
+    def backups_screen(request: Request) -> HTMLResponse:
+        """Every destination and what its runs did. Not Library history.
+
+        A backup run saying "312 copied" is not a claim that 312 things
+        happened to the library — nothing in the library changed. Keeping this
+        on its own page, in its own words, is what stops a failed backup
+        reading like a failed Commit.
+        """
+        from librairy import transfer_status
+
+        return TEMPLATES.TemplateResponse(
+            request,
+            "backups.html",
+            {
+                "title": "Backups",
+                "destination_views": transfer_status.destination_views(
+                    conn, settings, runs=True
+                ),
+                "overview": transfer_status.overview(conn, settings),
+            },
+        )
+
+    @app.get("/backups/{destination_id}/only-here", response_class=HTMLResponse)
+    def backup_divergence_screen(
+        request: Request, destination_id: int, after: str = ""
+    ) -> HTMLResponse:
+        """Every file that is only at this destination, a page at a time.
+
+        The whole set, not a sample: somebody asking which files are only on
+        their backup is usually asking in order to go and look at them. Paged
+        by cursor, so the last page costs what the first one does.
+        """
+        from librairy import destinations as destinations_module
+        from librairy import divergence
+
+        found = destinations_module.destination(conn, destination_id)
+        if found is None:
+            raise HTTPException(status_code=404, detail="no such destination")
+        summary = divergence.summary(conn, destination_id)
+        return TEMPLATES.TemplateResponse(
+            request,
+            "backup_divergence.html",
+            {
+                "title": "Only at the destination",
+                "destination": found,
+                "summary": summary,
+                "page": divergence.page(conn, destination_id, after=after),
+            },
+        )
+
     def _format_policy_page(request: Request, error: str = "") -> HTMLResponse:
         from librairy.web.format_policy_page import page_data
 

@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block content %}
+  {# Not Library history, and on its own page for that reason. A run saying
+     "312 copied" is not a claim that 312 things happened to your library —
+     nothing in the library changed. #}
+  <h1>Backups</h1>
+  <p class="muted">What was copied outward, and when. Your library is not changed by
+    anything on this page, and nothing here has ever removed a file from a destination.</p>
+
+  {% for view in destination_views %}
+    <section class="metric wide destination-runs">
+      <h2>{{ view.name }}</h2>
+      <p class="muted">{{ view.kind_label }} · {{ view.mode_labels | join(', ') }}
+        {% if not view.enabled %}· switched off{% endif %}</p>
+      {% if view.offline %}<p class="muted">{{ view.presence_note }}</p>{% endif %}
+      <dl class="destination-facts">
+        <dt>Last attempted</dt><dd>{{ view.last_attempted_ago or 'never' }}</dd>
+        <dt>Last succeeded</dt><dd>{{ view.last_succeeded_ago or 'never' }}</dd>
+      </dl>
+      {% if view.only_here %}
+        <p><a href="/backups/{{ view.destination.id }}/only-here">{{ view.only_here_sentence }}</a></p>
+      {% endif %}
+
+      {% if view.runs %}
+        <div class="table-scroll">
+          <table class="run-table">
+            <thead>
+              <tr><th>When</th><th>What asked</th><th>Scope</th><th>Result</th><th>Moved</th></tr>
+            </thead>
+            <tbody>
+              {% for run in view.runs %}
+                <tr>
+                  <td>{{ run.started_ago }}</td>
+                  {# The one word that tells a schedule from somebody pressing a
+                     button. One history, two origins. #}
+                  <td>{{ run.origin_label }}</td>
+                  <td>{{ run.scope }} · {{ run.mode_label }}</td>
+                  <td>{{ run.result }}{% if run.detail %}<br><span class="muted">{{ run.detail }}</span>{% endif %}</td>
+                  <td>{{ run.summary }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="muted">Nothing has run yet.</p>
+      {% endif %}
+    </section>
+  {% else %}
+    <p class="muted">No destinations are configured. <a href="/settings#destinations">Set one up in Settings.</a></p>
+  {% endfor %}
+{% endblock %}

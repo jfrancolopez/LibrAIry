@@ -65,7 +65,6 @@ import logging
 import sqlite3
 import uuid
 from dataclasses import dataclass
-from pathlib import Path
 
 from librairy import destinations as destinations_module
 from librairy import transfer_paths, volumes
@@ -191,24 +190,30 @@ def register(
         raise TransferRefused(
             f"that drive is already registered{where}; nothing was changed"
         )
-    if _registered_at(conn, target.path):
-        raise TransferRefused("that path is already a destination")
 
     identity = f"{_PREFIX}:{uuid.uuid4().hex}"
     #  The marker first, then the row. A marker with no row is a stray file
     #  somebody can delete; a row with no marker is a destination that can
     #  never be recognised, and the failure would only appear at backup time.
-    transfer_paths.register(target.path, identity)
     volume = volumes.identity_for(target.path)
-    destination_id = destinations_module.add_destination(
-        conn,
-        name=name,
-        kind=LOCAL,
-        target=str(target.path),
-        modes=[OFFLINE],
-        identity=identity,
-        volume=volume,
-    )
+    try:
+        #  The row first, because it is the thing that can refuse — a place
+        #  that is already a destination, a name with nothing in it. Writing a
+        #  marker onto somebody's drive and *then* discovering the destination
+        #  could not be saved would leave a stray file on their disk with
+        #  nothing to explain it.
+        destination_id = destinations_module.add_destination(
+            conn,
+            name=name,
+            kind=LOCAL,
+            target=str(target.path),
+            modes=[OFFLINE],
+            identity=identity,
+            volume=volume,
+        )
+    except ValueError as refusal:
+        raise TransferRefused(str(refusal)) from refusal
+    transfer_paths.register(target.path, identity)
     look(conn, settings, _destination(conn, destination_id))
     return _destination(conn, destination_id)
 
@@ -407,7 +412,3 @@ def _by_identity(conn: sqlite3.Connection, identity: str) -> Destination | None:
     return None
 
 
-def _registered_at(conn: sqlite3.Connection, path: Path) -> bool:
-    return any(
-        str(found.target) == str(path) for found in destinations_module.destinations(conn)
-    )

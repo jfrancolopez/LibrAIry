@@ -1261,8 +1261,8 @@ model, path safety, planning, the execution adapter and online Backup are done
 `librairy/volumes.py`, `librairy/transfer_plan.py`, `librairy/transfer_run.py`,
 `librairy/backup_runs.py`, `librairy/transfer_listing.py`,
 `librairy/divergence.py`, `librairy/offline_drives.py`,
-`librairy/transfer_requests.py`, schema 62). The surfaces — Settings, Health,
-the Dashboard — and the scale gate are open.
+`librairy/transfer_requests.py`, `librairy/transfer_status.py`, schema 62).
+The safety gate is the only thing open.
 
 > **One gate item before this closes.**
 >
@@ -1466,6 +1466,39 @@ the Dashboard — and the scale gate are open.
 > it sat there connected, and by eleven it is usually back in the drawer. So an
 > appearance compares immediately and a drive left plugged in falls back to the
 > ordinary cadence.
+>
+> **Drawing a decision can undo it.** The whole risk of the surfaces pass was
+> that a template quietly re-invents what the model deliberately does not
+> store. Two absences are now defended at the page: nothing anywhere says *up
+> to date*, *synced* or *in sync* — a test reads all four pages for those words
+> and the read model's syntax tree for a field of that name — and a divergence
+> count from a comparison that did not finish is never shown alone, only beside
+> the date of the last one that did. `complete=False` has become a real safety
+> primitive rather than a parameter: **a partial observation may not present
+> itself as a whole one**, in the data and now in the words.
+>
+> **A run nobody finished is not relabelled.** A process killed mid-transfer
+> leaves a row saying `running` for ever, and both *succeeded* and *failed*
+> would be outcomes nobody observed. It is reported as **Interrupted — outcome
+> unknown**, derived from age rather than written by the process that died.
+> `last_finished` was added alongside `last_run` for the same reason: a run
+> still in flight must not erase what the previous one found.
+>
+> **The 375px Settings overflow is closed, and it was never about Settings.**
+> A `<select>`'s min-content width is its longest `<option>`, and a flex item
+> cannot shrink below min-content — so one option reading *"only ones the rest
+> of the scan was unsure about"* set the minimum width of the page at 459px.
+> The same shape appeared twice more in the same hour: a grid whose `auto-fit`
+> minimum was a hard 24rem, and `.button-row > * { flex: 0 0 auto }` holding a
+> button-plus-sentence at 586px. All three are one rule — *no piece of content
+> decides how wide the page is* — and Settings, Backups and the divergence
+> listing are permanent members of the harness now, because a page nobody
+> measures is a page that spends a milestone broken.
+>
+> **Ambiguity refused rather than ranked.** Two enabled policies can only cover
+> the same files in two modes if two destination rows point at the same place,
+> so a destination target may not be registered twice. A precedence rule would
+> have been a clever answer to a question nobody needs asked.
 >
 > **A one-off send is not a policy, and may not quietly become one.** *Send to
 > Offline Backup → WD-8TB* on a folder is a thing somebody asked for once;

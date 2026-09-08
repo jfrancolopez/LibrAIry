@@ -119,6 +119,31 @@ def settings_page_data(conn: sqlite3.Connection, settings: Settings) -> dict[str
         #  machine may this take — and the answer is bounded by the same axis.
         "ocr_enabled": ocr_enabled(conn),
         "ocr_available": ocr_available(),
+        #  Where library content is copied to, and how each place is going.
+        #  Read from what the worker recorded — a settings render never stats a
+        #  mount point and never starts a subprocess. See
+        #  `librairy/transfer_status.py`.
+        **destination_page_data(conn, settings),
+    }
+
+
+def destination_page_data(
+    conn: sqlite3.Connection, settings: Settings
+) -> dict[str, object]:
+    """The destinations, their policies, and what may still be configured."""
+    from librairy import transfer_status
+    from librairy.destinations import MODE_LABEL, MODE_MEANING, MODES
+    from librairy.taxonomy import CATEGORIES as ALL_CATEGORIES
+
+    views = transfer_status.destination_views(conn, settings)
+    return {
+        "destination_views": views,
+        "destination_modes": [
+            {"value": mode, "label": MODE_LABEL[mode], "meaning": MODE_MEANING[mode]}
+            for mode in MODES
+        ],
+        "policy_categories": list(ALL_CATEGORIES),
+        "destination_overview": transfer_status.overview(conn, settings),
     }
 
 

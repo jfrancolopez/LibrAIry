@@ -191,7 +191,14 @@
   </div>
 
   <div class="tab-panel" data-tab-panel="system">
-  <h2 id="backup">One-Way Backup</h2>
+  <h2 id="backup">Copy after Commit</h2>
+  <p class="muted">
+    The older, simpler arrangement, and still the right one if all you want is
+    "send new files somewhere else": one remote, everything committed, no policies.
+    <a href="#destinations">Destinations</a> above is the newer model — a place per
+    purpose, and a category at a time. Both copy outward and neither ever deletes;
+    if you configure both they will both run.
+  </p>
   <p class="muted">
     After each commit, LibrAIry copies newly filed files to a remote you have already
     configured in rclone, verifies each copy, and stops there. <strong>One-way</strong> means
@@ -536,6 +543,165 @@
 </section>
 <script src="/static/path-helper.js" defer></script>
 
+</div>
+
+<div class="tab-panel" data-tab-panel="system">
+<section class="metric wide" id="destinations">
+  <h2>Where your library is copied to</h2>
+  <p class="muted">
+    A <strong>destination</strong> is a place — a NAS, an rclone remote, a drive in a
+    drawer. A <strong>policy</strong> says which category goes to which destination, and
+    in which mode. Nothing here ever deletes anything, anywhere: there is no verb for
+    it in the program, which is why there is no control for it on this page.
+  </p>
+
+  <dl class="mode-key">
+    {% for mode in destination_modes %}
+      <dt>{{ mode.label }}</dt><dd>{{ mode.meaning }}</dd>
+    {% endfor %}
+  </dl>
+
+  {% for view in destination_views %}
+    <section class="card destination-card{% if not view.enabled %} is-off{% endif %}">
+      <div class="destination-head">
+        <h3>{{ view.name }}</h3>
+        <span class="muted">{{ view.kind_label }}</span>
+        {% if not view.enabled %}<span class="badge">switched off</span>{% endif %}
+      </div>
+      <p class="muted destination-target"><code>{{ view.target }}</code></p>
+      <p class="muted">{{ view.mode_labels | join(', ') }}</p>
+
+      {% if view.offline %}
+        {# Three states, and only one of them is a problem. A drive in a drawer
+           is where a backup drive lives, so it is said plainly and coloured
+           like any other fact. #}
+        <p class="destination-presence
+                  {%- if view.wrong_drive %} is-refused{% elif view.presence == 'present' %} is-here{% endif %}">
+          {{ view.presence_note or 'Not connected' }}
+        </p>
+        {% if view.reduced %}
+          <p class="muted">Your system could not say which filesystem this is, so only
+            half the identity check ran. A cloned drive would not be caught.</p>
+        {% endif %}
+      {% endif %}
+
+      {# Two dates, because they are two questions. There is deliberately no
+         "up to date" here: nothing stores one, and a page that invented one
+         would undo the reason nothing does. #}
+      <dl class="destination-facts">
+        <dt>Last attempted</dt>
+        <dd>{{ view.last_attempted_ago or 'never' }}</dd>
+        <dt>Last succeeded</dt>
+        <dd>{{ view.last_succeeded_ago or 'never' }}</dd>
+      </dl>
+      {% if view.interrupted %}
+        <p class="muted">A run was interrupted and never recorded how it ended.
+          The next comparison finds whatever is still missing.</p>
+      {% endif %}
+
+      {% if view.only_here %}
+        <p><a href="/backups/{{ view.destination.id }}/only-here">{{ view.only_here_sentence }}</a></p>
+      {% endif %}
+
+      <h4>Policies</h4>
+      {% if view.policies %}
+        <ul class="policy-list">
+          {% for policy in view.policies %}
+            <li>
+              <span>{{ policy.category_label }} &rarr; {{ view.name }} &rarr; {{ policy.mode_label }}</span>
+              <form method="post" action="/settings/policies/clear" class="inline-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input type="hidden" name="category" value="{{ policy.category }}">
+                <input type="hidden" name="destination_id" value="{{ view.destination.id }}">
+                {# "Stop sending", not "Remove": nothing is removed anywhere
+                   by this, and "Remove" already belongs to an Ollama machine.
+                   Files already copied stay exactly where they are. #}
+                <button type="submit">Stop sending</button>
+              </form>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="muted">Nothing is sent here yet.</p>
+      {% endif %}
+
+      <form method="post" action="/settings/policies" class="field-row">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="destination_id" value="{{ view.destination.id }}">
+        <label class="field">Category
+          <select name="category">
+            {% for category in policy_categories %}<option value="{{ category }}">{{ category }}</option>{% endfor %}
+          </select>
+        </label>
+        <label class="field">Mode
+          <select name="mode">
+            {% for mode in destination_modes %}
+              {% if mode.value in view.modes %}<option value="{{ mode.value }}">{{ mode.label }}</option>{% endif %}
+            {% endfor %}
+          </select>
+        </label>
+        <button type="submit">Add policy</button>
+      </form>
+
+      <div class="button-row">
+        <form method="post" action="/settings/destinations/{{ view.destination.id }}/verify" class="inline-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          {# Reads. It looks, checks the marker and the filesystem id, and
+             writes down what it found. It does not upload a probe file and it
+             cannot remove anything. #}
+          <button type="submit">Check it</button>
+        </form>
+        <form method="post" action="/settings/destinations/{{ view.destination.id }}/enabled" class="inline-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="enabled" value="{{ 'false' if view.enabled else 'true' }}">
+          {# "Pause", not "Switch off": that label already belongs to an Ollama
+             machine, and one label meaning two actions is the thing
+             `docs/ui-vocabulary.md` exists to stop. It is also the more
+             accurate word — nothing is removed and nothing is forgotten, work
+             simply stops until it is resumed. #}
+          <button type="submit">{{ 'Pause' if view.enabled else 'Resume' }}</button>
+        </form>
+        <form method="post" action="/settings/destinations/{{ view.destination.id }}/forget" class="inline-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button type="submit">Forget</button>
+          <span class="muted">Removes what LibrAIry knows. Nothing on the destination is touched.</span>
+        </form>
+      </div>
+    </section>
+  {% else %}
+    <p class="muted">No destinations yet.</p>
+  {% endfor %}
+
+  <h3>Add an rclone remote</h3>
+  <form method="post" action="/settings/destinations/add" class="field-row">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label class="field">Name <input name="name" placeholder="NAS Backup"></label>
+    <label class="field field-wide">Remote <input name="target" placeholder="nas:/mnt/backup/librairy" list="backup-remotes"></label>
+    <label class="field">Mode
+      <select name="mode">
+        {% for mode in destination_modes %}
+          {% if mode.value != 'offline' %}<option value="{{ mode.value }}">{{ mode.label }}</option>{% endif %}
+        {% endfor %}
+      </select>
+    </label>
+    <button type="submit">Add destination</button>
+  </form>
+  <p class="muted">Credentials live in rclone's own config file and never in LibrAIry —
+    there is no field on this page to type one into.</p>
+
+  <h3>Register an offline backup drive</h3>
+  <p class="muted">Plug it in first. LibrAIry writes a small marker file to it and
+    records what your system calls the filesystem, so it can tell that drive from
+    another one mounted at the same place later.</p>
+  <form method="post" action="/settings/destinations/register-drive" class="field-row">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label class="field">Name <input name="name" placeholder="WD-8TB"></label>
+    <label class="field field-wide">Where it is mounted <input name="path" placeholder="/Volumes/WD-8TB"></label>
+    <button type="submit">Register this drive</button>
+  </form>
+
+  <p><a href="/backups">Transfer history</a></p>
+</section>
 </div>
 
 <div class="tab-panel" data-tab-panel="ai">

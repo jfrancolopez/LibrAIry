@@ -368,3 +368,35 @@ def test_the_fixture_server_takes_its_library_with_it() -> None:
         time.sleep(0.2)
 
     assert libraries() - before == set(), "a fixture library outlived the server"
+
+
+def test_every_page_the_backups_feature_added_is_in_the_harness(harness) -> None:
+    """Carried out of M2 as "Settings overflows at 375px" and closed in M3-03.
+
+    A page that is not in `PAGES` is a page nobody measures, and Settings spent
+    a whole milestone in that state — known to be broken and never checked
+    again. Adding it permanently is half the fix; the other half was the
+    responsive field layout, which is in `pipboy.css`.
+    """
+    assert "settings" in harness.PAGES
+    assert "backups" in harness.PAGES
+    assert "divergence" in harness.PAGES
+    #  And the widths it has to hold, which is what "fixed" means here.
+    assert harness.MOBILE_WIDTH == 375  # noqa: PLR2004
+    assert harness.DESKTOP_WIDTH >= 1280  # noqa: PLR2004
+
+
+def test_the_responsive_field_rule_is_still_there() -> None:
+    """The specific fix, pinned, because it is one line and invisible.
+
+    A `<select>`'s min-content width is its longest `<option>`, and a flex item
+    cannot shrink below min-content — so one option set the minimum width of
+    the whole Settings page at 459px on a 375px screen. Both halves are needed:
+    the column may shrink, and the control follows the column.
+    """
+    css = (ROOT / "src/librairy/web/static/pipboy.css").read_text(encoding="utf-8")
+
+    assert ".field { min-width: 0; }" in css
+    assert ".field > input, .field > select, .field > textarea" in css
+    #  And the grid minimum that put a 24rem card on a 375px screen.
+    assert "minmax(min(24rem, 100%), 1fr)" in css

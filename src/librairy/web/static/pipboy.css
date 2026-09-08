@@ -631,6 +631,20 @@ tbody tr:hover { background: var(--bg-metric); }
 /* .field carries a 12px block margin for stacked forms; inside a one-line bar
    that is 24px of nothing, and it set the height of the whole toolbar. */
 .review-toolbar .field { margin: 0; }
+
+/* A control must not decide how wide its column is.
+   Carried out of M2 as "Settings overflows at 375px" and fixed here rather
+   than special-cased, because it was never about Settings. `flex: 1 1 10rem`
+   cannot shrink a flex item below its *min-content* width, and a <select>'s
+   min-content is its longest <option> — so one option reading "only ones the
+   rest of the scan was unsure about" set the minimum width of the entire page,
+   at 459px on a 375px screen.
+   Both halves are needed. `min-width: 0` lets the column shrink past its
+   content; `width: 100%` makes the control follow the column instead of
+   leading it. A narrow select then truncates its display text, which is what
+   a select is supposed to do. */
+.field { min-width: 0; }
+.field > input, .field > select, .field > textarea { width: 100%; min-width: 0; }
 .field-inline { display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-sm); }
 .filter-more summary {
   cursor: pointer;
@@ -1535,9 +1549,18 @@ tr.is-idle { opacity: 0.55; }
 /* Two cards side by side rather than a run of h3s, and each configured machine
    is a row with its actions on it. It was a bare <table> with three separate
    one-button forms crammed into the last cell. */
-.local-ai { display: grid; grid-template-columns: repeat(auto-fit, minmax(24rem, 1fr)); gap: var(--space-4); }
+/* `min(24rem, 100%)` and not a bare `24rem`: `auto-fit` never places a column
+   narrower than its minimum, so 24rem is a 384px floor on a 375px screen — the
+   card sticks out and the page scrolls sideways. Wrapping the minimum in
+   `min()` says "24rem, or the width we actually have". The same shape as the
+   `.field` fix above: a piece of content deciding the page's width. */
+.local-ai {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(24rem, 100%), 1fr));
+  gap: var(--space-4);
+}
 .field-row { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: flex-end; }
-.field-row .field { flex: 1 1 10rem; margin: var(--space-2) 0; }
+.field-row .field { flex: 1 1 10rem; margin: var(--space-2) 0; min-width: 0; }
 .field-row .field-wide { flex: 2 1 16rem; }
 
 .endpoint-list { list-style: none; margin: var(--space-3) 0; padding: 0; display: grid; gap: var(--space-2); }
@@ -1779,7 +1802,10 @@ summary.timeline-head::-webkit-details-marker { display: none; }
   font-size: var(--text-sm);
   color: var(--text-dim);
 }
-.edit-form .field input, .edit-form .field select { width: 14rem; }
+/* `max-width` and not `width`: a fixed 14rem is 224px of a 375px screen once
+   the form's own padding is counted, and it is the same mistake `.field` above
+   was carrying. */
+.edit-form .field input, .edit-form .field select { width: 100%; max-width: 14rem; }
 .edit-form .field-wide { flex: 1 1 22rem; }
 .edit-form .field-wide input { width: 100%; }
 .edit-actions { display: flex; gap: var(--space-2); }
@@ -3874,3 +3900,82 @@ summary.timeline-head::-webkit-details-marker { display: none; }
   .chart { height: 4.5rem; }
   .band-head { flex-direction: column; align-items: stretch; }
 }
+
+
+/* --- destinations, and what each one is doing ---------------------------- */
+
+/* One card per place library content is copied to. Everything here follows the
+   same rule the `.field` fix above does: no piece of content decides the width
+   of the page. A destination target is a path somebody typed and can be any
+   length at all, so it wraps rather than pushing the card sideways. */
+.destination-card { margin: var(--space-3) 0; }
+.destination-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2); }
+.destination-head > h3 { margin: 0; }
+.destination-target > code { overflow-wrap: anywhere; }
+
+/* A drive in a drawer is a normal state and is coloured like one — the default.
+   Only the two ends get a colour: connected, and something-is-wrong. Painting
+   "not connected" red would teach somebody that a backup warning means
+   nothing, which is the opposite of what a warning is for. */
+.destination-presence { margin: var(--space-2) 0; }
+.destination-presence.is-here { color: var(--ok); }
+.destination-presence.is-refused { color: var(--fail); font-weight: 600; }
+
+/* Two dates side by side, because they are two questions. There is no third
+   term here on purpose: nothing stores "up to date". */
+.destination-facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--space-1) var(--space-3);
+  margin: var(--space-2) 0;
+  font-size: var(--text-sm);
+}
+.destination-facts > dt { color: var(--text-dim); }
+.destination-facts > dd { margin: 0; }
+
+.mode-key { display: grid; gap: var(--space-1) var(--space-3); margin: var(--space-3) 0; }
+.mode-key > dt { font-weight: 600; }
+.mode-key > dd { margin: 0 0 var(--space-2); color: var(--text-dim); font-size: var(--text-sm); }
+@media (min-width: 40rem) {
+  .mode-key { grid-template-columns: max-content minmax(0, 1fr); }
+  .mode-key > dd { margin: 0; }
+}
+
+.policy-list { list-style: none; padding: 0; margin: var(--space-2) 0; display: grid; gap: var(--space-1); }
+.policy-list > li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  justify-content: space-between;
+}
+
+/* A one-button form that sits in a row with others. It wraps, and so does the
+   sentence beside it: a fixed row of button-plus-explanation was 582px wide on
+   a 375px screen, which is the same mistake as the select above wearing
+   different clothes. */
+.inline-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  min-width: 0;
+}
+.inline-form > .muted { flex: 1 1 12rem; min-width: 0; font-size: var(--text-sm); }
+/* `.button-row > *` is `flex: 0 0 auto` on purpose, so a bare button never
+   stretches. A form carrying a button *and* a sentence is a different thing:
+   at `flex-shrink: 0` it held its natural 586px on a 375px screen, which is
+   the third face of the same bug — content deciding the width of the page. */
+.button-row > .inline-form { flex: 1 1 auto; min-width: 0; }
+
+.destination-runs { margin-bottom: var(--space-4); }
+.run-table, .divergence-table { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
+.run-table th, .run-table td,
+.divergence-table th, .divergence-table td {
+  text-align: left;
+  padding: var(--space-1) var(--space-2);
+  border-bottom: var(--border-thin) solid var(--border);
+  vertical-align: top;
+}
+.divergence-table code { overflow-wrap: anywhere; }

@@ -650,21 +650,152 @@ def build_app(root: Path):  # noqa: ANN201
     return create_app(settings, conn)
 
 
-def _an_attached_backup_drive(conn, settings, root: Path) -> None:  # noqa: ANN001
-    """A registered Offline Backup that is here right now.
+def _days_ago(days: int) -> str:
+    from datetime import UTC, datetime, timedelta  # noqa: PLC0415
 
-    Deliberately *only* registered: no policy, because the send action is a
-    one-off and a fixture that configured a recurring backup to photograph a
-    button would be showing the wrong thing.
+    return (datetime.now(UTC) - timedelta(days=days)).isoformat(timespec="seconds")
+
+
+def _an_attached_backup_drive(conn, settings, root: Path) -> None:  # noqa: ANN001
+    """Every backup state worth photographing, on one machine.
+
+    Six of them, because each is a different thing the pages have to say and
+    three of them are ways to get it wrong:
+
+        a Backup that worked                     a date, and nothing else
+        a Backup that failed                     needs a decision
+        a Mirror holding files the library lost  information, never a queue
+        an offline drive in a drawer             normal, and never red
+        an offline drive plugged in              connected, identity confirmed
+        a folder somebody sent from Browse       a run with a different origin
+
+    The Browse quick action needs the last drive attached to render at all, so
+    the fixture is a machine with one plugged in. No policy is configured for
+    it: a send is a one-off, and a fixture that set up a recurring backup in
+    order to photograph a button would be showing the wrong thing.
     """
-    from librairy import offline_drives  # noqa: PLC0415
+    from librairy import backup_runs, destinations, divergence, offline_drives  # noqa: PLC0415
+    from librairy.transfer_plan import MANUAL, POLICY, Entry  # noqa: PLC0415
+
+    try:
+        nas = destinations.add_destination(
+            conn,
+            name="NAS Backup",
+            kind=destinations.REMOTE,
+            target="nas:/mnt/backup/librairy",
+            modes=[destinations.BACKUP],
+        )
+        studio = destinations.add_destination(
+            conn,
+            name="Studio Mirror",
+            kind=destinations.REMOTE,
+            target="studio:/volume1/library",
+            modes=[destinations.MIRROR],
+        )
+        destinations.set_policy(
+            conn, category="photos", destination_id=nas, mode=destinations.BACKUP
+        )
+        destinations.set_policy(
+            conn, category="documents", destination_id=nas, mode=destinations.BACKUP
+        )
+        destinations.set_policy(
+            conn, category="music", destination_id=studio, mode=destinations.MIRROR
+        )
+    except ValueError:
+        return
+
+    #  One that worked.
+    run = backup_runs.begin(
+        conn, destination_id=nas, category="photos", mode=destinations.BACKUP,
+        origin=POLICY, planned_copies=312,
+    )
+    backup_runs.finish(conn, run, succeeded=True, transferred=312, bytes_sent=4_812_004_112)
+    #  Backdated, so the page has to show "last attempted" and "last succeeded"
+    #  as genuinely different dates rather than two copies of "just now". That
+    #  distinction is the whole reason there is no "up to date" anywhere.
+    conn.execute(
+        "UPDATE backup_runs SET started_at=?, finished_at=? WHERE id=?",
+        (_days_ago(3), _days_ago(3), run),
+    )
+    #  And one that did not, on the same destination — so the page has to show
+    #  "last attempted" and "last succeeded" as two different dates.
+    failed = backup_runs.begin(
+        conn, destination_id=nas, category="documents", mode=destinations.BACKUP,
+        origin=POLICY, planned_copies=9,
+    )
+    backup_runs.finish(
+        conn, failed, succeeded=False, transferred=4, bytes_sent=1_204_112,
+        outcome="full", detail="Failed to copy: no space left on device",
+    )
+
+    #  And one nobody ever finished: a process killed mid-transfer leaves a row
+    #  saying `running`, for ever. It is reported as interrupted rather than
+    #  relabelled, because succeeded and failed are both outcomes nobody saw.
+    stopped = backup_runs.begin(
+        conn, destination_id=nas, category="movies", mode=destinations.BACKUP,
+        origin=POLICY, planned_copies=40,
+    )
+    conn.execute(
+        "UPDATE backup_runs SET started_at=? WHERE id=?", (_days_ago(1), stopped)
+    )
+
+    #  A Mirror holding files the library no longer has. Information, and the
+    #  page has to link to all of them rather than a sample.
+    mirror = backup_runs.begin(
+        conn, destination_id=studio, category="music", mode=destinations.MIRROR,
+        origin=POLICY, destination_only=1_284,
+    )
+    backup_runs.finish(conn, mirror, succeeded=True, transferred=18, bytes_sent=204_112_004)
+    divergence.record(
+        conn,
+        destination_id=studio,
+        category="music",
+        entries=[
+            Entry(
+                relpath=f"Music/Archive/{index // 40:02d}/track-{index:04d}.flac",
+                difference=destinations.EXTRA,
+                action=destinations.REPORT,
+                destination_size=28_000_000 + index,
+            )
+            for index in range(1_284)
+        ],
+        complete=True,
+    )
+
+    #  A drive that is in a drawer, and one that is plugged in.
+    drawer = root / "lacie-4tb"
+    drawer.mkdir(parents=True, exist_ok=True)
+    try:
+        away = offline_drives.register(conn, settings, name="LaCie-4TB", path=str(drawer))
+        (drawer / ".librairy-destination").unlink()
+        offline_drives.look(conn, settings, away)
+    except Exception:  # noqa: BLE001 - a fixture must build without a drive
+        pass
+
+    #  And the state that has to be unmistakable: something is mounted where a
+    #  registered drive should be, and it is not that drive.
+    borrowed = root / "someone-elses"
+    borrowed.mkdir(parents=True, exist_ok=True)
+    try:
+        other = offline_drives.register(conn, settings, name="Spare-2TB", path=str(borrowed))
+        (borrowed / ".librairy-destination").write_text("librairy:not-ours\n", encoding="utf-8")
+        offline_drives.look(conn, settings, other)
+    except Exception:  # noqa: BLE001 - a fixture must build without a drive
+        pass
 
     mount = root / "wd-8tb"
     mount.mkdir(parents=True, exist_ok=True)
     try:
-        offline_drives.register(conn, settings, name="WD-8TB", path=str(mount))
+        drive = offline_drives.register(conn, settings, name="WD-8TB", path=str(mount))
     except Exception:  # noqa: BLE001 - a fixture must build without a drive
+        conn.commit()
         return
+    #  Something somebody sent by hand, so the history has both origins in it.
+    sent = backup_runs.begin(
+        conn, destination_id=drive.id, category="Photos/2024/Backyard",
+        mode=destinations.OFFLINE, origin=MANUAL, planned_copies=29,
+    )
+    backup_runs.finish(conn, sent, succeeded=True, transferred=29, bytes_sent=8_812)
     conn.commit()
 
 

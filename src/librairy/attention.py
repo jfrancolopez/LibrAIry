@@ -173,6 +173,7 @@ def report(conn: sqlite3.Connection, settings=None, counts=None) -> Report:  # n
         _blocked_undo,
         _policy,
         _learned,
+        _transfers,
     )
     found: list[Concern] = []
     for probe in probes:
@@ -883,3 +884,258 @@ def _learned(conn: sqlite3.Connection, settings=None, counts=None) -> list[Conce
             count=found,
         )
     ]
+
+
+# --- backups, mirrors and the drive in the drawer ------------------------------
+
+#  How many failures in a row stop being bad luck. One is a network hiccup; the
+#  third in a row is a thing that is not going to fix itself.
+REPEATED = 3
+
+
+def _transfers(conn: sqlite3.Connection, settings=None, counts=None) -> list[Concern]:  # noqa: ANN001, ARG001
+    """What is wrong with a backup, what is worth knowing, and what is normal.
+
+    The three levels do real work here, and the hardest one to get right is the
+    third: **a registered drive in a drawer is where a backup drive lives.** It
+    is not late, not missing and not unavailable, and colouring it would teach
+    somebody that a warning about their backups means nothing. What it gets is
+    a line under Information with a date on it.
+
+    What does need a decision is a destination that is configured, switched on,
+    and cannot do its job: a NAS that has stopped answering, a run failing over
+    and over, rclone gone from a machine that needs it, and — the sharp one — a
+    *different drive* mounted where the registered one should be, which is a
+    refusal that will keep happening until somebody looks.
+    """
+    from librairy.transfer_status import destination_views
+
+    if settings is None:  # pragma: no cover - every caller passes settings
+        return []
+    try:
+        views = destination_views(conn, settings)
+    except Exception:  # noqa: BLE001 - Health must render without a backup drive
+        return []
+    if not views:
+        return []
+    found: list[Concern] = []
+    found.extend(_wrong_drives(views))
+    found.extend(_failing(conn, views))
+    found.extend(_missing_rclone(settings, views))
+    found.extend(_interrupted(views))
+    found.extend(_disconnected(views))
+    found.extend(_only_at_destination(views))
+    found.extend(_marker_only(views))
+    return found
+
+
+def _wrong_drives(views: list) -> list[Concern]:
+    wrong = [view for view in views if view.wrong_drive]
+    if not wrong:
+        return []
+    return [
+        Concern(
+            code="backup-wrong-drive",
+            level=ACTION,
+            headline=(
+                f"A different drive is mounted where {_names(wrong)} should be"
+            ),
+            detail="Nothing has been copied to it, and nothing will be until the "
+                   "registered drive is back. This is the check working: a drive "
+                   "that carries our marker on a different filesystem is a copy, "
+                   "not the one that was registered.",
+            examples=tuple(Example(view.name, view.presence_note) for view in wrong[:SHOWN]),
+            more=max(0, len(wrong) - SHOWN),
+            href="/settings#destinations",
+            action="Settings",
+            count=len(wrong),
+        )
+    ]
+
+
+def _failing(conn: sqlite3.Connection, views: list) -> list[Concern]:
+    from librairy import backup_runs
+
+    failing = [view for view in views if view.enabled and view.last_failed]
+    if not failing:
+        return []
+    repeated = [
+        view
+        for view in failing
+        if sum(
+            1
+            for run in backup_runs.recent(conn, view.destination.id, limit=REPEATED)
+            if run.state == backup_runs.FAILED
+        )
+        >= REPEATED
+    ]
+    level = ACTION if repeated else ATTENTION
+    return [
+        Concern(
+            code="backup-failing",
+            level=level,
+            headline=(
+                f"{_names(repeated or failing)} "
+                f"{'has been failing' if repeated else 'last failed'}"
+            ),
+            detail=(
+                "Three runs in a row have failed, which is no longer bad luck."
+                if repeated
+                else "One run failed. The next comparison finds whatever is still "
+                     "missing and copies it, so this often clears itself."
+            ),
+            examples=tuple(
+                Example(view.name, view.last_attempted_ago) for view in failing[:SHOWN]
+            ),
+            more=max(0, len(failing) - SHOWN),
+            href="/backups",
+            action="Backups",
+            count=len(failing),
+        )
+    ]
+
+
+def _missing_rclone(settings, views: list) -> list[Concern]:  # noqa: ANN001
+    """rclone gone from a machine with an enabled remote policy.
+
+    Only when something actually needs it. A library backed up to a drive in a
+    drawer does not care whether rclone is installed, and telling somebody
+    their backups are broken because a tool they do not use is absent is how a
+    Health page gets ignored.
+    """
+    from librairy.tools import rclone
+
+    wanting = [
+        view
+        for view in views
+        if view.enabled and view.kind != "local" and view.policies
+    ]
+    if not wanting:
+        return []
+    status = rclone.rclone_status(settings.appdata_dir / "rclone" / "rclone.conf")
+    if status.available:
+        return []
+    return [
+        Concern(
+            code="backup-no-rclone",
+            level=ACTION,
+            headline="rclone is not available, and a remote destination needs it",
+            detail=f"{_names(wanting)} cannot be reached until it is installed. "
+                   "Local and offline destinations are unaffected.",
+            href="/health#tools",
+            action="Tools",
+            count=len(wanting),
+        )
+    ]
+
+
+def _interrupted(views: list) -> list[Concern]:
+    left = [view for view in views if view.interrupted]
+    if not left:
+        return []
+    return [
+        Concern(
+            code="backup-interrupted",
+            level=ATTENTION,
+            headline=f"A run to {_names(left)} was interrupted",
+            detail="The process stopped before the run could record how it ended, "
+                   "so the outcome is genuinely unknown rather than assumed. "
+                   "Nothing was lost: the next comparison finds whatever is still "
+                   "missing and copies it.",
+            href="/backups",
+            action="Backups",
+            count=len(left),
+        )
+    ]
+
+
+def _disconnected(views: list) -> list[Concern]:
+    """Information, and never anything else.
+
+    A registered drive is *supposed* to be in a drawer most of the time. The
+    useful thing to say about one is when it was last here.
+    """
+    away = [
+        view
+        for view in views
+        if view.offline and view.enabled and not view.wrong_drive
+        and view.presence != "present"
+    ]
+    if not away:
+        return []
+    return [
+        Concern(
+            code="backup-drive-away",
+            level=INFORMATION,
+            headline=(
+                f"{len(away)} offline backup drive{'' if len(away) == 1 else 's'} "
+                "not connected"
+            ),
+            detail="Normal. Each one updates when you plug it in.",
+            examples=tuple(Example(view.name, view.presence_note) for view in away[:SHOWN]),
+            more=max(0, len(away) - SHOWN),
+            href="/settings#destinations",
+            action="Settings",
+            count=len(away),
+        )
+    ]
+
+
+def _only_at_destination(views: list) -> list[Concern]:
+    """Information that is worth acting on, and never a queue of things to remove."""
+    holding = [view for view in views if view.only_here]
+    if not holding:
+        return []
+    total = sum(view.only_here for view in holding)
+    return [
+        Concern(
+            code="backup-only-at-destination",
+            level=INFORMATION,
+            headline=f"{total:,} files are only at a destination",
+            detail="Files your library no longer has, still held where they were "
+                   "copied. Nothing removes them and nothing here suggests you "
+                   "should — this is what a backup is for.",
+            examples=tuple(
+                Example(view.name, view.only_here_sentence) for view in holding[:SHOWN]
+            ),
+            more=max(0, len(holding) - SHOWN),
+            href=f"/backups/{holding[0].destination.id}/only-here",
+            action="See which",
+            count=total,
+        )
+    ]
+
+
+def _marker_only(views: list) -> list[Concern]:
+    """Reduced verification, said rather than hidden.
+
+    A drive registered with a volume id and later checked where none can be
+    read is still allowed — that fallback is deliberate — but it is *less*
+    checking than happened at registration, and showing it identically to a
+    full check would be hiding a reduction rather than making a decision.
+    """
+    reduced = [view for view in views if view.reduced]
+    if not reduced:
+        return []
+    return [
+        Concern(
+            code="backup-marker-only",
+            level=INFORMATION,
+            headline=f"{_names(reduced)} was identified by its marker file only",
+            detail="Your system could not say which filesystem it is, so only "
+                   "half the identity check ran. Backups still work; a cloned "
+                   "drive would not be caught.",
+            href="/settings#destinations",
+            action="Settings",
+            count=len(reduced),
+        )
+    ]
+
+
+def _names(views: list) -> str:
+    names = [view.name for view in views]
+    if len(names) == 1:
+        return names[0]
+    if len(names) == 2:  # noqa: PLR2004
+        return f"{names[0]} and {names[1]}"
+    return f"{names[0]} and {len(names) - 1} others"

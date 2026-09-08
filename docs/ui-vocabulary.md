@@ -51,6 +51,12 @@ and `Dismiss suggestion` change no file at all.
 | **Not connected** | a registered offline drive that is not here. A normal state and never an error: not *unavailable*, *missing*, *offline* or *overdue*, and never coloured like a fault. Shown with the date it was last seen, which is the useful half |
 | **Connected** | a registered offline drive that is here, and is the drive that was registered |
 | **A different drive is at that path** | something is mounted where the drive should be and it is not that drive. Said plainly, because "not connected" would be a lie told while a drive is plugged in |
+| **Pause** / **Resume** | stop sending anything to a destination, and start again. Nothing is removed, nothing is forgotten, and nothing already copied moves. Not *Switch off*, which an AI machine already uses |
+| **Stop sending** | end a `Category → Destination → Mode` policy. Nothing already copied moves, and nothing at the destination is removed — only the standing instruction ends |
+| **Forget** | remove what LibrAIry knows about a destination. **Its files are not touched** — not even an offline drive's marker file, which is on their drive |
+| **Check it** | look at a destination and write down what was found: is the drive here, is it the one that was registered, does rclone answer. Reads only — it never uploads a probe file, and there is nothing it could delete |
+| **Last attempted** / **Last succeeded** | two dates, because they are two questions. A destination attempted hourly and last successful in March is exactly what somebody needs to see, and neither *Synced* nor *Up to date* is ever shown, because nothing stores one |
+| **Interrupted — outcome unknown** | a run whose process stopped before it could record how it ended. Never relabelled *succeeded* or *failed*: both would be outcomes nobody observed |
 | **Send to Offline Backup → &lt;drive&gt;** | copy this folder or file to an attached drive, **once**. Not *Back up*, which sounds recurring, and not *Sync*, which sounds two-way and destructive. Shown only where it can work, and it never configures a recurring backup — that is Settings, on purpose |
 | **Identified by its marker file only** | the drive was recognised, and the operating system could not say what filesystem it is. Less checking than happened at registration, so it is said rather than shown as a full check |
 | **Project** | files that belong together, wherever they live — a view, never a place |

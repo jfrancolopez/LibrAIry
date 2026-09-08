@@ -83,6 +83,10 @@ def dashboard_data(
     }
     disks = _disk_stats(settings)
     return {
+        #  Small on purpose. A dashboard that grows a backup administration
+        #  console stops being a dashboard, and every number here has a page
+        #  that says it better. See `librairy/transfer_status.py`.
+        "backups": _backup_overview(conn, settings),
         "worker_state": worker_state,
         "current_phase": worker_state.get("current_phase", "unknown"),
         "counts": counts,
@@ -446,3 +450,17 @@ def _existing_path(path: Path) -> Path:
     while not current.exists() and current != current.parent:
         current = current.parent
     return current if current.exists() else Path("/")
+
+
+def _backup_overview(conn: sqlite3.Connection, settings: Settings):  # noqa: ANN202
+    """Counts for one small block, or nothing at all if there are no backups.
+
+    Wrapped, because a dashboard that fails to render because a drive is odd
+    would be a worse outcome than a dashboard with one fewer block on it.
+    """
+    from librairy import transfer_status
+
+    try:
+        return transfer_status.overview(conn, settings)
+    except Exception:  # noqa: BLE001 - the page must render regardless
+        return transfer_status.Overview()

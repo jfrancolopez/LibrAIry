@@ -351,6 +351,14 @@ def overflow(browser: Chrome, page: Path, width: int, height: int) -> dict:
 PAGES = {
     "review": "/review",
     "browse": "/browse",
+    # Carried out of M2 as a known 375px overflow and fixed in M3-03: it is a
+    # permanent member of the harness now, at both widths, because a settings
+    # page is where somebody configures a backup on the phone in their hand.
+    "settings": "/settings",
+    # The pages that explain the transfer system. Both hold long paths and wide
+    # tables, which is exactly what a 375px screen is bad at.
+    "backups": "/backups",
+    "divergence": "/backups/2/only-here",
     "commit": "/commit",
     "dashboard": "/",
     # The filter panel folds away when nothing is filtered, and a collapsed

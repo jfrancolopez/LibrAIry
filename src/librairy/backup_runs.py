@@ -70,6 +70,18 @@ MIN_INTERVAL = 3600
 #  a year is 8,760 rows nobody will read past the first twenty of.
 KEEP_RUNS = 200
 
+#  When a row still saying `running` stops being believable.
+#
+#  A process killed mid-transfer leaves one, for ever. The honest handling is
+#  not to relabel it — succeeded and failed are both outcomes nobody observed —
+#  but to notice that no transfer can still be going: `transfer_run.TIMEOUT`
+#  abandons one after six hours, so anything older than that plus a margin was
+#  left behind by a process that is gone.
+#
+#  Derived, never written. A stored "abandoned" flag would need something to
+#  set it, and the thing that would have set it is the process that died.
+ABANDONED_AFTER = 6 * 60 * 60 + 600
+
 
 @dataclass(frozen=True)
 class Run:
@@ -94,6 +106,17 @@ class Run:
     @property
     def complete(self) -> bool:
         return self.state == SUCCEEDED
+
+    @property
+    def unresolved(self) -> bool:
+        """Left `running` by a process that is not coming back to finish it.
+
+        "We do not know how that ended" is a real answer and the only true one
+        here. See `ABANDONED_AFTER`.
+        """
+        if self.state not in (RUNNING, PLANNED):
+            return False
+        return _seconds_since(self.started_at) >= ABANDONED_AFTER
 
     @property
     def partial(self) -> bool:
@@ -217,6 +240,25 @@ def last_success(
         sql += " AND category=?"
         args.append(category)
     row = conn.execute(f"{sql} ORDER BY id DESC LIMIT 1", args).fetchone()  # noqa: S608
+    return _run(row) if row is not None else None
+
+
+def last_finished(
+    conn: sqlite3.Connection, destination_id: int, category: str = ""
+) -> Run | None:
+    """The most recent run that actually reached an outcome.
+
+    Not the same as `last_run`, and the difference matters: a run still in
+    flight — or one a killed process left saying `running` for ever — must not
+    erase what the last finished one found. A destination whose last completed
+    run failed is a destination that failed, whatever started afterwards.
+    """
+    row = conn.execute(
+        "SELECT * FROM backup_runs WHERE destination_id=? AND state IN (?, ?)"
+        + (" AND category=?" if category else "")
+        + " ORDER BY id DESC LIMIT 1",
+        (destination_id, SUCCEEDED, FAILED, *((category,) if category else ())),
+    ).fetchone()
     return _run(row) if row is not None else None
 
 
