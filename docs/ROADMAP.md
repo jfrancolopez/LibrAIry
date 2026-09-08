@@ -1098,6 +1098,80 @@ group's base is two aggregated rows rather than a scan of its members.
 
 # M3 — Visibility and distribution
 
+## M3 at close — 2026-09-08
+
+| | |
+|---|---|
+| **M3-01** A small durable metrics model | COMPLETE |
+| **M3-02** Dashboard as command centre | COMPLETE |
+| **M3-03** Backup, Mirror, Offline Backup | COMPLETE — nine increments, and the gate found three bugs no stub could |
+| **M3-04** Projects on the Dashboard | COMPLETE |
+
+### The gate
+
+M3-03's safety gate is the one worth writing down, because **installing rclone
+was the whole point**. Two integration tests had been skipping since increment
+3. They ran for the first time on 2026-09-08 and failed immediately, and so did
+the assumption behind them: a stub records an argv and moves no bytes, so
+everything about *where the bytes land* had never been exercised.
+
+Three defects, all of which had passed every test in the suite:
+
+1. **Every file was landing in the wrong place** — the destination was the
+   backup root rather than `<root>/<Library path>`, so a first real copy
+   flattened `Photos/` into the drive's root, and the listing's fallback hid it
+   for a drive holding one category.
+2. **`diskutil info` exits non-zero for an ordinary directory** — a destination
+   at `/Volumes/WD-8TB/librairy` read no volume id at all and fell back to the
+   marker alone, silently, for the check that exists to catch a cloned drive.
+3. **A drive registered where no volume id could be read was called "identity
+   confirmed"** — nothing was recorded to compare against, so nothing ever
+   will be.
+
+`tests/test_m3_safety_gate.py` now asks the four questions that only make sense
+about the whole feature — can any path produce a destructive command, can any
+path write outside where it may, can a transfer change the Library, does an
+interrupted transfer converge — and five of its drills run the real binary
+against real directories.
+
+**Real-runtime drills are permanent coverage from here on.** A skipped rclone
+test is a regression, not a normal state.
+
+### The four absences this milestone is built on
+
+Each is a thing the code deliberately cannot say, and each is now defended at
+the page as well as in the model:
+
+* **no "this destination is up to date"** — comparing answers it, every time it
+  is asked
+* **no delete verb** anywhere in the policy vocabulary, the plan, the adapter or
+  the argv
+* **no partial observation presenting itself as a whole one** — `complete` has
+  no default, and a count from an unfinished comparison is never shown alone
+* **no green tick on a Project** spanning categories with different destinations
+
+### Carried out of M3
+
+* **M1-06 PARTIAL** — Health at 1.8 s at a million, against "well under a
+  second". Still the residual FTS counting, still a measurement pass of its
+  own. Unchanged by M3.
+* **NAS responsiveness under load** — production validation, not reachable
+  from the test rig.
+* **An organization on a financial document** — M2-06's `document_set` still
+  needs one.
+* **The destination listing holds the whole listing in memory** — 201 MB at a
+  million files, measured and documented. Reducing it means not materialising
+  it, which means a stored manifest; recorded, not built.
+
+### Closed in M3
+
+* ~~**The Settings page at 375px**~~ — closed in M3-03 increment 8, and it was
+  never about Settings: a `<select>`'s min-content width, an `auto-fit` grid
+  minimum and `flex-shrink: 0` on a button row, all one rule. Settings, Backups
+  and the divergence listing are permanent harness pages now.
+* ~~**The two real-rclone tests skip**~~ — rclone 1.75.1 installed; they run.
+* ~~**The destination listing has not been measured**~~ — measured.
+
 ## M3-01 · A small durable metrics model
 
 **P1 · M · Low risk · DONE 2026-09-04** — `librairy/metrics.py`, schema 55,
