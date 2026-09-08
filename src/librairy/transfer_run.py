@@ -61,7 +61,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from librairy import divergence, transfer_paths
+from librairy import divergence, transfer_paths, transfer_plan
 from librairy.config import Settings
 from librairy.destinations import LOCAL, OFFLINE, REPORTING
 from librairy.planner import utc_now
@@ -230,7 +230,29 @@ def run_policy(
     *,
     runner: Callable[[list[str], int], subprocess.CompletedProcess[str]] | None = None,
 ) -> tuple[Plan, Result]:
-    """Compare, record, transfer, record. The whole of one backup.
+    """One scheduled backup: what a standing policy covers, compared and sent."""
+    from librairy.transfer_plan import Scope
+
+    return run_scope(
+        conn, settings, Scope.of(policy), destination, listing, runner=runner
+    )
+
+
+def run_scope(
+    conn,  # noqa: ANN001 - sqlite3.Connection
+    settings: Settings,
+    scope,  # noqa: ANN001 - transfer_plan.Scope
+    destination,  # noqa: ANN001 - destinations.Destination
+    listing: list | None,
+    *,
+    runner: Callable[[list[str], int], subprocess.CompletedProcess[str]] | None = None,
+) -> tuple[Plan, Result]:
+    """Compare, record, transfer, record. The whole of one transfer.
+
+    The same function whether a schedule asked or a person did, because moving
+    bytes should not depend on who asked — and because two of these would be
+    two places to get deletion wrong. What differs is one word in the history
+    row, and `scope.origin` carries it without anything here branching on it.
 
     The order matters and it is the point: the run row is opened **before**
     anything moves, so a process killed mid-transfer leaves a row saying it was
@@ -241,7 +263,7 @@ def run_policy(
     from librairy import backup_runs
     from librairy.transfer_plan import destination_only, plan_for
 
-    plan = plan_for(conn, policy, destination, listing)
+    plan = plan_for(conn, scope, destination, listing)
     if plan.unavailable:
         #  Nobody could look. Not a run, because nothing was attempted — and
         #  recording it as a failed one would fill the history of a drive that
@@ -252,7 +274,7 @@ def run_policy(
             finished_at=utc_now(),
             detail=plan.unavailable,
         )
-    if policy.mode in REPORTING:
+    if scope.mode in REPORTING and scope.category:
         #  The whole of what Mirror adds, and the only place the modes differ:
         #  what is only at the destination is written down so it can be read.
         #  Recorded before the transfer rather than after, because it is a fact
@@ -268,18 +290,25 @@ def run_policy(
         #  was obtained, and `transfer_listing` returns `None` rather than a
         #  partial one. A half-read destination never gets this far, and if it
         #  ever could, it would have to say so here.
+        #  `complete` is the honest half of this call, and it is why a send of
+        #  one subtree cannot quietly empty a category's record. A policy
+        #  compares the whole category folder and may reconcile; a send looked
+        #  at `Books/Programming/Rust` and saw nothing whatever about the rest
+        #  of `Books`, so it refreshes what it saw and removes nothing. Half a
+        #  listing is not evidence that the other half is gone.
         divergence.record(
             conn,
             destination_id=destination.id,
-            category=policy.category,
-            entries=destination_only(conn, policy, listing),
-            complete=True,
+            category=scope.category,
+            entries=destination_only(conn, scope, listing),
+            complete=scope.origin == transfer_plan.POLICY and not scope.exact,
         )
     run_id = backup_runs.begin(
         conn,
         destination_id=destination.id,
-        category=policy.category,
-        mode=policy.mode,
+        category=scope.category or scope.prefix,
+        mode=scope.mode,
+        origin=scope.origin,
         planned_copies=plan.to_copy,
         planned_updates=plan.to_update,
         destination_only=plan.destination_only,
@@ -304,10 +333,11 @@ def _checked(settings: Settings, plan: Plan) -> tuple[Path, str]:
     offline case is the sharp one: a drive pulled between planning and copying
     leaves a mount point behind, and a mount point is a directory.
     """
-    source = transfer_paths.library_source(settings, _folder_of(plan))
+    source = transfer_paths.library_source(settings, plan.scope.prefix)
     destination = plan.destination
+    folder = plan.scope.directory
     if destination.kind == LOCAL:
-        if plan.policy.mode == OFFLINE:
+        if plan.scope.mode == OFFLINE:
             checked = transfer_paths.checked_offline(
                 settings, destination.target, destination.identity, destination.volume
             )
@@ -315,14 +345,13 @@ def _checked(settings: Settings, plan: Plan) -> tuple[Path, str]:
             checked = transfer_paths.local_destination(settings, destination.target)
             if not checked.path.is_dir():
                 raise TransferRefused(f"{destination.name} is not there")
-        return source, str(checked.path)
-    return source, transfer_paths.remote_destination(destination.target)
-
-
-def _folder_of(plan: Plan) -> str:
-    from librairy.transfer_plan import _folder  # noqa: PLC2701, PLC0415
-
-    return _folder(plan.policy.category)
+        #  Beneath the root, at the path the file has in the Library. One rule,
+        #  so a one-off send of `Books/Programming/Rust` and a scheduled backup
+        #  of `Books` put the same file in the same place and the next
+        #  comparison agrees with both.
+        return source, str(checked.path / folder if folder else checked.path)
+    remote = transfer_paths.remote_destination(destination.target)
+    return source, f"{remote.rstrip('/')}/{folder}" if folder else remote
 
 
 def redact(text: str) -> str:

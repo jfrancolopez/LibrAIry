@@ -74,6 +74,106 @@ from librairy.taxonomy import TEMPLATES
 #  in this program makes. See `docs/performance.md` on the bounded-page rule.
 PAGE = 50
 
+#  Who asked for a transfer. Carried into history and **never** into behaviour:
+#  nothing below this line branches on it, because a standing instruction and a
+#  one-off request should move bytes in exactly the same way. What differs is
+#  what they *are*, and that difference lives above the planner.
+POLICY = "policy"
+MANUAL = "manual"
+
+ORIGINS = (POLICY, MANUAL)
+
+
+@dataclass(frozen=True)
+class Scope:
+    """What one transfer covers. The only thing the planner needs to know.
+
+    A standing policy makes one of these, and so does somebody pressing *Send
+    to Offline Backup* on a folder. **That is the whole of what they share.**
+    Below this line the machinery is identical — the same comparison, the same
+    four answers, the same adapter, the same argv — and above it the intent is
+    not: a policy is a standing instruction and a send is a thing somebody
+    asked for once. Neither may become the other by accident, and the way that
+    stays true is that a send has no way to write a policy row and a policy has
+    no way to be created by pressing a button on a folder.
+
+    `origin` rides along so that history can say which it was. Nothing reads it
+    to decide anything.
+    """
+
+    #  Library-relative: a folder like `Photos` or `Books/Programming/Rust`, or
+    #  one file's path when `exact`.
+    prefix: str
+    mode: str
+    origin: str = POLICY
+    exact: bool = False
+    #  Which policy category this sits under, where one applies. Used to scope
+    #  a divergence record and to label history — never to select files, which
+    #  is what `prefix` is for.
+    category: str = ""
+
+    @property
+    def directory(self) -> str:
+        """The Library-relative directory this transfer's source is.
+
+        The prefix itself for a subtree; the containing folder for one file.
+        It is also the destination path beneath the backup root, which is what
+        keeps a one-off send comparable with the scheduled backup that covers
+        the same files.
+        """
+        if not self.exact:
+            return self.prefix
+        head, _, _tail = self.prefix.rpartition("/")
+        return head
+
+    @property
+    def label(self) -> str:
+        """What to call this scope where somebody reads it."""
+        return self.prefix.rstrip("/").rpartition("/")[2] or self.prefix
+
+    @classmethod
+    def of(cls, policy: Policy) -> Scope:
+        """The scope a standing policy covers: one whole category folder."""
+        return cls(
+            prefix=_folder(policy.category),
+            mode=policy.mode,
+            origin=POLICY,
+            category=policy.category,
+        )
+
+    @classmethod
+    def folder(cls, relpath: str, mode: str, origin: str = POLICY) -> Scope:
+        return cls(
+            prefix=relpath.strip("/"),
+            mode=mode,
+            origin=origin,
+            category=category_of(relpath),
+        )
+
+    @classmethod
+    def file(cls, relpath: str, mode: str, origin: str = POLICY) -> Scope:
+        return cls(
+            prefix=relpath.strip("/"),
+            mode=mode,
+            origin=origin,
+            exact=True,
+            category=category_of(relpath),
+        )
+
+
+def category_of(relpath: str) -> str:
+    """Which policy category a Library path belongs to, or "".
+
+    Read backwards out of the taxonomy's own templates, the same way `_folder`
+    reads them forwards, so there is one answer to "where do photos go" rather
+    than two that are free to disagree.
+    """
+    top = relpath.strip("/").split("/", 1)[0]
+    for category in TEMPLATES:
+        if _folder(category) == top:
+            return category
+    return ""
+
 
 @dataclass(frozen=True)
 class Entry:
@@ -89,9 +189,9 @@ class Entry:
 
 @dataclass(frozen=True)
 class Plan:
-    """What one policy would do, and what it would leave alone."""
+    """What one transfer would do, and what it would leave alone."""
 
-    policy: Policy
+    scope: Scope
     destination: Destination
     counts: dict[str, int] = field(default_factory=dict)
     entries: tuple[Entry, ...] = ()
@@ -163,30 +263,74 @@ class DestinationFile:
 
 
 def library_files(
-    conn: sqlite3.Connection, category: str, *, limit: int = 0
+    conn: sqlite3.Connection, scope: Scope, *, limit: int = 0
 ) -> Iterator[LibraryFile]:
-    """The library files one policy covers, from the index and never from disk.
+    """The library files one scope covers, from the index and never from disk.
 
-    A category is a top-level folder — the taxonomy files into `Photos/`,
-    `Music/` and so on — so the covered set is a prefix match on an indexed
-    column rather than a walk. At a million files this is the difference
-    between a query and an afternoon.
+    A scope is a path prefix — a whole category folder for a policy, an
+    explicitly chosen subtree or one file for a send — so the covered set is a
+    prefix match on an indexed column rather than a walk. At a million files
+    this is the difference between a query and an afternoon, and it is why
+    pressing a button on a folder of a hundred thousand photographs does not
+    have to enumerate them anywhere.
+
+    **Authoritative rows only.** `root='library'` and `LIVE`: something in the
+    inbox with a proposed destination is not Library content, and a transfer
+    that copied one out would be acting on a decision nobody made.
 
     **Yields.** Three hundred thousand photographs are three hundred thousand
     rows, and building a list of them to work out that four need copying is a
     Python object per file for no reason. `compare` consumes this one row at a
     time and keeps only counts and a page.
     """
-    prefix = f"{_folder(category)}/"
     sql = (
         "SELECT relpath, size FROM items"  # noqa: S608 - `LIVE` is a module constant
-        f" WHERE root='library' AND {LIVE} AND relpath LIKE ? ESCAPE '\\'"
-        " ORDER BY relpath"
+        f" WHERE root='library' AND {LIVE} AND "
     )
+    if scope.exact:
+        sql += "relpath = ? ORDER BY relpath"
+        args: tuple[str, ...] = (scope.prefix,)
+    else:
+        sql += "relpath LIKE ? ESCAPE '\\' ORDER BY relpath"
+        args = (f"{_escaped(scope.prefix.rstrip('/'))}/%",)
     if limit:
         sql += f" LIMIT {int(limit)}"
-    for row in conn.execute(sql, (f"{_escaped(prefix)}%",)):
+    for row in conn.execute(sql, args):
         yield LibraryFile(relpath=str(row["relpath"]), size=int(row["size"] or 0))
+
+
+@dataclass(frozen=True)
+class Extent:
+    """How much a scope covers, without listing any of it.
+
+    Two aggregates over an indexed prefix, which is what a confirmation needs
+    and the whole of what it needs. A folder of a hundred thousand files
+    produces two numbers here and nowhere produces a hundred thousand of
+    anything.
+    """
+
+    files: int = 0
+    bytes: int = 0
+
+    @property
+    def any(self) -> bool:
+        return self.files > 0
+
+
+def extent(conn: sqlite3.Connection, scope: Scope) -> Extent:
+    """`842 files · 11.6 GB`, from the index, in one statement."""
+    where = "relpath = ?" if scope.exact else "relpath LIKE ? ESCAPE '\\'"
+    args = (
+        (scope.prefix,)
+        if scope.exact
+        else (f"{_escaped(scope.prefix.rstrip('/'))}/%",)
+    )
+    row = conn.execute(
+        "SELECT COUNT(*) AS files, COALESCE(SUM(size), 0) AS bytes FROM items"  # noqa: S608
+        f" WHERE root='library' AND {LIVE} AND {where}",
+        args,
+    ).fetchone()
+    return Extent(files=int(row["files"] or 0), bytes=int(row["bytes"] or 0))
 
 
 def compare(
@@ -263,7 +407,7 @@ def compare(
 
 def destination_only(
     conn: sqlite3.Connection,
-    policy: Policy,
+    scope: Scope,
     listing: list[DestinationFile],
 ) -> Iterator[Entry]:
     """Every file that is at the destination and not in the library. All of them.
@@ -288,7 +432,7 @@ def destination_only(
     that agreement; `tests/test_divergence.py` pins it with paths that would
     expose a disagreement.
     """
-    ours = iter(library_files(conn, policy.category))
+    ours = iter(library_files(conn, scope))
     mine = next(ours, None)
     for there in sorted(listing, key=lambda found: found.relpath):
         while mine is not None and mine.relpath < there.relpath:
@@ -301,7 +445,7 @@ def destination_only(
             #  Whatever the mode says, which for every mode is `keep` or
             #  `report`. There is no third possibility to yield here, because
             #  `destinations.ACTIONS` has no fourth answer to this question.
-            action=action_for(policy.mode, EXTRA),
+            action=action_for(scope.mode, EXTRA),
             size=0,
             destination_size=there.size,
         )
@@ -309,11 +453,15 @@ def destination_only(
 
 def plan_for(
     conn: sqlite3.Connection,
-    policy: Policy,
+    scope: Scope,
     destination: Destination,
     listing: list[DestinationFile] | None,
 ) -> Plan:
-    """One policy's intention, given what is at the destination.
+    """One transfer's intention, given what is at the destination.
+
+    The same function for a scheduled policy and for an explicit send, because
+    a plan is a statement about files and does not care who asked. What asked
+    is in `scope.origin`, and nothing here reads it.
 
     `listing` of `None` means nobody could look — a drive in a drawer, a remote
     that did not answer. That is not an empty plan and must never render as
@@ -322,17 +470,17 @@ def plan_for(
     """
     if listing is None:
         return Plan(
-            policy=policy,
+            scope=scope,
             destination=destination,
             unavailable=f"{destination.name} could not be reached",
         )
     counts, entries = compare(
-        library_files(conn, policy.category),
+        library_files(conn, scope),
         listing,
-        policy.mode,
+        scope.mode,
     )
     return Plan(
-        policy=policy,
+        scope=scope,
         destination=destination,
         counts=counts,
         entries=tuple(entries),

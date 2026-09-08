@@ -129,6 +129,9 @@ def test_fresh_db_migrates_to_current_schema(tmp_path: Path) -> None:
         "idx_history_op",
         # Which comparison last saw a file that is only at a destination.
         "idx_divergence_scope",
+        # What somebody explicitly asked to send, and what is still waiting.
+        "idx_transfer_requests_pending",
+        "idx_transfer_requests_state",
     }
 
     #  The identity column migration 046 added, so a rebuild and a fresh
@@ -191,6 +194,9 @@ def test_migration_011_closes_proposals_for_files_already_filed(tmp_path: Path) 
     # so anything a later migration creates has to be put back first.
     conn.executescript(
         """
+        DROP INDEX IF EXISTS idx_transfer_requests_state;
+        DROP INDEX IF EXISTS idx_transfer_requests_pending;
+        DROP TABLE IF EXISTS transfer_requests;
         DROP TABLE IF EXISTS offline_presence;
         DROP TABLE IF EXISTS backup_divergence_scans;
         DROP INDEX IF EXISTS idx_divergence_scope;

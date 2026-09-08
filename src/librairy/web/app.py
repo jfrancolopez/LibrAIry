@@ -5,7 +5,7 @@ import sqlite3
 from html import escape
 from pathlib import Path, PurePosixPath
 from typing import Annotated
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import (
@@ -2352,6 +2352,63 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             return RedirectResponse("/browse", status_code=303)
         enqueue(conn, clean)
         return RedirectResponse("/review#library-audit", status_code=303)
+
+    @app.post("/browse/send-to-drive", response_class=HTMLResponse, include_in_schema=False)
+    def browse_send_to_drive(
+        request: Request,
+        scope: Annotated[str, Form()] = "",
+        destination_id: Annotated[int, Form()] = 0,
+        exact: Annotated[bool, Form()] = False,
+        confirm: Annotated[bool, Form()] = False,
+    ):  # noqa: ANN202
+        """Ask for this folder or file to be copied to an attached drive, once.
+
+        **This is not a policy.** It writes one request row saying what somebody
+        asked for; it does not create, alter or read
+        `Category → Destination → Mode`, and there is no path from here that
+        could. A standing instruction is configured in Settings, on purpose,
+        and pressing a button on a folder is not configuring one.
+
+        Nothing is copied inside the request. The worker picks the row up, and
+        checks the drive again before it does — a page offered this because a
+        drive was here when it rendered, and a page is not evidence about now.
+        """
+        from librairy import transfer_requests
+        from librairy.web import offline_send
+
+        try:
+            clean = sanitize_scope(scope, settings.library_dir)
+        except PathValidationError:
+            return RedirectResponse("/browse", status_code=303)
+        offer = offline_send.offer_for(conn, clean, destination_id, exact=exact)
+        if offer is None:
+            #  The drive left, or was never eligible. Back to the folder, where
+            #  the action is simply not there any more — which is the honest
+            #  thing for the page to say.
+            return RedirectResponse(_folder_link(clean, exact), status_code=303)
+        if not confirm and not exact:
+            #  A folder is worth an informed yes. Counts come from the Library
+            #  index, so this never waits on the drive being enumerated.
+            return TEMPLATES.TemplateResponse(
+                request,
+                "send_confirm.html",
+                {"title": "Send to Offline Backup", "offer": offer},
+            )
+        transfer_requests.ask(
+            conn,
+            destination_id=offer.destination_id,
+            relpath=offer.relpath,
+            exact=offer.exact,
+        )
+        return RedirectResponse(_folder_link(clean, exact), status_code=303)
+
+    def _folder_link(relpath: str, exact: bool) -> str:
+        """Back where they were. A file returns to its folder."""
+        path = relpath.rpartition("/")[0] if exact else relpath
+        top, _, rest = path.partition("/")
+        if not top:
+            return "/browse"
+        return f"/browse/{quote(top)}?folder={quote(rest)}" if rest else f"/browse/{quote(top)}"
 
     @app.post("/review/action", response_class=HTMLResponse)
     def review_action(

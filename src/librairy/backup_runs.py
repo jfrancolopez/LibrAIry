@@ -77,6 +77,9 @@ class Run:
     destination_id: int
     category: str
     mode: str
+    #  Whether a schedule asked or a person did. Recorded so history can say
+    #  so, and read by nothing that decides anything.
+    origin: str
     state: str
     started_at: str
     finished_at: str
@@ -115,6 +118,7 @@ def begin(
     destination_id: int,
     category: str,
     mode: str,
+    origin: str = "policy",
     planned_copies: int = 0,
     planned_updates: int = 0,
     destination_only: int = 0,
@@ -128,14 +132,16 @@ def begin(
     """
     cursor = conn.execute(
         """
-        INSERT INTO backup_runs(destination_id, category, mode, state, started_at,
-                                planned_copies, planned_updates, destination_only)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO backup_runs(destination_id, category, mode, origin, state,
+                                started_at, planned_copies, planned_updates,
+                                destination_only)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             destination_id,
             category,
             mode,
+            origin,
             RUNNING,
             utc_now(),
             planned_copies,
@@ -272,6 +278,7 @@ def _run(row: sqlite3.Row) -> Run:
         destination_id=int(row["destination_id"]),
         category=str(row["category"]),
         mode=str(row["mode"]),
+        origin=str(row["origin"] or "policy"),
         state=str(row["state"]),
         started_at=str(row["started_at"] or ""),
         finished_at=str(row["finished_at"] or ""),

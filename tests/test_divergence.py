@@ -242,15 +242,19 @@ def test_the_page_order_matches_sqlites_so_the_merge_is_sound(tmp_path: Path) ->
         "Photos/日本.jpg",
     ]
     library(conn, *awkward)
-    ours = [row.relpath for row in __import__(
-        "librairy.transfer_plan", fromlist=["library_files"]
-    ).library_files(conn, "photos")]
+    from librairy.transfer_plan import Scope, library_files
+
+    ours = [
+        row.relpath
+        for row in library_files(conn, Scope.folder("Photos", dest.OFFLINE))
+    ]
     assert ours == sorted(awkward), "SQLite and Python disagree about order"
 
     #  Every library file is present at the destination, so a sound merge finds
     #  nothing divergent. A broken one would report the ones it walked past.
     listing = [DestinationFile(path, 100) for path in awkward]
-    assert list(destination_only(conn, policy, listing)) == []
+    scope = Scope.of(policy)
+    assert list(destination_only(conn, scope, listing)) == []
 
     run(conn, settings, policy, destination, listing)
     assert divergence.summary(conn, destination.id).count == 0

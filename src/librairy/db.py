@@ -9,7 +9,7 @@ from pathlib import Path
 from librairy.config import Settings
 
 LOGGER = logging.getLogger(__name__)
-SCHEMA_VERSION = 61
+SCHEMA_VERSION = 62
 
 
 class DatabaseVersionError(RuntimeError):
@@ -1868,6 +1868,48 @@ CREATE TABLE offline_presence (
 """
 
 
+#  A transfer somebody asked for, and the word that tells it apart afterwards.
+#
+#  A one-off *Send to Offline Backup* and a standing `Category → Destination →
+#  Mode` policy share every dangerous piece of machinery — the same comparison,
+#  the same adapter, the same argv — and share none of the intent. So a send is
+#  its own row, with its own life, and pressing the button writes here and
+#  never into `backup_policies`. One is a thing somebody asked for once; the
+#  other is a standing instruction, and neither may become the other by
+#  accident.
+#
+#  A request is one row whatever it covers. A folder of a hundred thousand
+#  files is a path and a flag, expanded by an indexed query when the worker
+#  reaches it — never a hundred thousand rows, form fields or Python objects
+#  because somebody pressed a button.
+MIGRATION_062 = """
+CREATE TABLE transfer_requests (
+  id             INTEGER PRIMARY KEY,
+  destination_id INTEGER NOT NULL REFERENCES backup_destinations(id),
+  -- Library-relative. A folder, or one file when `exact`.
+  relpath        TEXT NOT NULL,
+  exact          INTEGER NOT NULL DEFAULT 0,
+  state          TEXT NOT NULL,
+  requested_at   TEXT NOT NULL,
+  started_at     TEXT NOT NULL DEFAULT '',
+  finished_at    TEXT NOT NULL DEFAULT '',
+  outcome        TEXT NOT NULL DEFAULT '',
+  detail         TEXT NOT NULL DEFAULT '',
+  run_id         INTEGER
+);
+-- Pressing the button twice is one request, not two. Partial, so the history
+-- of finished ones is unconstrained.
+CREATE UNIQUE INDEX idx_transfer_requests_pending
+  ON transfer_requests(destination_id, relpath) WHERE state = 'requested';
+CREATE INDEX idx_transfer_requests_state ON transfer_requests(state, id);
+
+-- Which kind of thing asked for a run. One history, two origins: a second
+-- history system for manual sends would be a second place to be wrong about
+-- what reached a destination.
+ALTER TABLE backup_runs ADD COLUMN origin TEXT NOT NULL DEFAULT 'policy';
+"""
+
+
 MIGRATIONS = {
     1: MIGRATION_001,
     2: MIGRATION_002,
@@ -1930,6 +1972,7 @@ MIGRATIONS = {
     59: MIGRATION_059,
     60: MIGRATION_060,
     61: MIGRATION_061,
+    62: MIGRATION_062,
 }
 
 

@@ -16,7 +16,20 @@ report a backup that is perfectly up to date with zero files.
 For a remote that is `rclone lsjson`, which reads. For a local destination it
 is a directory walk, which reads. There is no branch here that writes, moves or
 removes, and there is nothing to pass in that could make one — the only inputs
-are a destination and a policy.
+are a destination and a scope.
+
+## Where a destination keeps things
+
+Beneath the backup root, at the same path the file has in the Library:
+
+    Library      Books/Programming/Rust/book.pdf
+    destination  <root>/Books/Programming/Rust/book.pdf
+
+One rule, no special trees, and it is what makes a one-off send of
+`Books/Programming/Rust` and a scheduled backup of `Books` describe the same
+files in the same places. Anything else — a `manual-exports/` folder, a
+flattened category root — would make the two incomparable, and the second
+comparison would propose copying everything again.
 """
 
 from __future__ import annotations
@@ -28,10 +41,10 @@ from pathlib import Path
 
 from librairy import transfer_paths
 from librairy.config import Settings
-from librairy.destinations import LOCAL, OFFLINE, Destination, Policy
+from librairy.destinations import LOCAL, OFFLINE, Destination
 from librairy.tools import rclone
 from librairy.transfer_paths import MARKER, TransferRefused
-from librairy.transfer_plan import DestinationFile
+from librairy.transfer_plan import DestinationFile, Scope
 
 LOGGER = logging.getLogger(__name__)
 
@@ -44,11 +57,11 @@ def listing(
     conn: sqlite3.Connection,
     settings: Settings,
     destination: Destination,
-    policy: Policy,
+    scope: Scope,
 ) -> list[DestinationFile] | None:
-    """Everything at the destination under this policy's folder, or None."""
+    """Everything at the destination under this scope's folder, or None."""
     del conn
-    folder = _folder(policy.category)
+    folder = scope.directory
     try:
         if destination.kind == LOCAL:
             return _local(settings, destination, folder)
@@ -72,14 +85,22 @@ def _local(
         target = transfer_paths.local_destination(settings, destination.target).path
         if not target.is_dir():
             return None
-    root = target / folder if (target / folder).is_dir() else target
+    #  Exactly `<root>/<folder>`, with no fallback to the root itself. An
+    #  earlier version fell back, which read the first category's files as
+    #  every category's — fine while a drive held one, and silently wrong the
+    #  moment it held two. A folder that is not there yet is an empty listing,
+    #  which is true: nothing has been copied there.
+    root = target / folder if folder else target
+    if not root.is_dir():
+        return []
     found: list[DestinationFile] = []
     for path in sorted(root.rglob("*")):
         if not path.is_file() or path.name == MARKER:
             continue
+        here = path.relative_to(root).as_posix()
         found.append(
             DestinationFile(
-                relpath=f"{folder}/{path.relative_to(root).as_posix()}",
+                relpath=f"{folder}/{here}" if folder else here,
                 size=path.stat().st_size,
             )
         )
@@ -107,12 +128,6 @@ def _remote(
         for entry in json.loads(completed.stdout or "[]")
         if not entry.get("IsDir")
     ]
-
-
-def _folder(category: str) -> str:
-    from librairy.transfer_plan import _folder as taxonomy_folder  # noqa: PLC2701
-
-    return taxonomy_folder(category)
 
 
 def sample(root: Path, limit: int = 5) -> list[str]:

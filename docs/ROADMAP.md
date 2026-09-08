@@ -1260,8 +1260,9 @@ model, path safety, planning, the execution adapter and online Backup are done
 (`librairy/destinations.py`, `librairy/transfer_paths.py`,
 `librairy/volumes.py`, `librairy/transfer_plan.py`, `librairy/transfer_run.py`,
 `librairy/backup_runs.py`, `librairy/transfer_listing.py`,
-`librairy/divergence.py`, `librairy/offline_drives.py`, schema 61). The Browse
-action and the surfaces are open.
+`librairy/divergence.py`, `librairy/offline_drives.py`,
+`librairy/transfer_requests.py`, schema 62). The surfaces — Settings, Health,
+the Dashboard — and the scale gate are open.
 
 > **One gate item before this closes.**
 >
@@ -1465,6 +1466,30 @@ action and the surfaces are open.
 > it sat there connected, and by eleven it is usually back in the drawer. So an
 > appearance compares immediately and a drive left plugged in falls back to the
 > ordinary cadence.
+>
+> **A one-off send is not a policy, and may not quietly become one.** *Send to
+> Offline Backup → WD-8TB* on a folder is a thing somebody asked for once;
+> `Category → Destination → Mode` is a standing instruction. They share every
+> dangerous piece of machinery — one `Scope`, one comparison, one adapter, one
+> argv, one history — and none of the intent. The separation is structural:
+> `transfer_requests` has no import of `set_policy` and no statement naming
+> `backup_policies`, and a test reads the syntax tree for both absences. Two
+> transfer systems would have been two places to get deletion wrong; two
+> intents in one system is one place, with a word in the history row.
+>
+> **A latent bug the destination-path rule exposed.** The listing fell back to
+> the destination root when the category folder was not there yet, so a drive
+> holding one category worked and a drive holding two read the second
+> category's files as the first's. Now everything lands beneath the root at the
+> path it has in the Library — `Books/Programming/Rust/book.pdf` at
+> `<root>/Books/Programming/Rust/book.pdf` — with no fallback, which is also
+> what makes a one-off send of a subtree comparable with the scheduled backup
+> that covers it.
+>
+> **A send of one subtree is not a comparison of a category**, so it records
+> divergence with `complete=False` and reconciles nothing. Sending
+> `Photos/2024` says nothing whatever about `Photos/2019`, and the parameter
+> that exists to say so is the one that stops it claiming otherwise.
 >
 > **A second bug worth recording, found by measuring.** Writing a million divergent rows took
 > **57 seconds** — every connection here is opened `isolation_level=None`, so

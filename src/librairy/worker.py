@@ -262,6 +262,10 @@ class Worker:
             #  scheduled, because "it is plugged in" is the trigger and it is
             #  not something a clock knows about.
             self._offline_drives(settings)
+            #  And anything somebody explicitly asked to send. After the
+            #  scheduled work, because a schedule is what keeps a backup
+            #  current and a send is what somebody wants *as well*.
+            self._transfer_requests(settings)
             #  Today's measurement — **offered** every cycle, **taken** at most
             #  once an hour. Those are two different things and the second is
             #  the one that matters: `metrics.due` is the guard, and without it
@@ -350,7 +354,7 @@ class Worker:
         drawer every hour to be told it is still a drawer is the retry storm
         this feature exists to avoid.
         """
-        from librairy import backup_runs, destinations, transfer_run
+        from librairy import backup_runs, destinations, transfer_plan, transfer_run
         from librairy.destinations import OFFLINE
 
         try:
@@ -359,9 +363,10 @@ class Worker:
                     continue
                 if not backup_runs.due(self.conn, destination.id, policy.category):
                     continue
-                listing = _listing_for(self.conn, settings, destination, policy)
-                transfer_run.run_policy(
-                    self.conn, settings, policy, destination, listing
+                scope = transfer_plan.Scope.of(policy)
+                listing = _listing_for(self.conn, settings, destination, scope)
+                transfer_run.run_scope(
+                    self.conn, settings, scope, destination, listing
                 )
         except Exception:
             LOGGER.exception("policy backup failed")
@@ -380,7 +385,13 @@ class Worker:
         recorded, and nothing anywhere turns red. A drive in a drawer is where
         a backup drive is supposed to be.
         """
-        from librairy import backup_runs, destinations, offline_drives, transfer_run
+        from librairy import (
+            backup_runs,
+            destinations,
+            offline_drives,
+            transfer_plan,
+            transfer_run,
+        )
 
         #  Monotonic, not the wall clock: this is an interval and a clock that
         #  jumps backwards over a daylight-saving change should not stop a
@@ -409,12 +420,42 @@ class Worker:
                         self.conn, destination.id, policy.category
                     ):
                         continue
-                    listing = _listing_for(self.conn, settings, destination, policy)
-                    transfer_run.run_policy(
-                        self.conn, settings, policy, destination, listing
+                    scope = transfer_plan.Scope.of(policy)
+                    listing = _listing_for(self.conn, settings, destination, scope)
+                    transfer_run.run_scope(
+                        self.conn, settings, scope, destination, listing
                     )
         except Exception:
             LOGGER.exception("offline drive check failed")
+
+    def _transfer_requests(self, settings: Settings) -> None:
+        """Do one thing somebody explicitly asked to send.
+
+        One per cycle. A send of a hundred thousand photographs is hours of
+        rclone, and taking two at once would mean two drives, two rclones and a
+        worker doing nothing else — while the person who pressed the button
+        gets neither of them sooner.
+
+        The drive is checked again here, and again inside the transfer. The
+        page offered the action because the drive was present when it rendered,
+        and a page is not evidence about now.
+        """
+        from librairy import destinations, transfer_requests
+
+        try:
+            asked = transfer_requests.next_request(self.conn)
+            if asked is None:
+                return
+            destination = destinations.destination(self.conn, asked.destination_id)
+            if destination is None:
+                transfer_requests._finish(  # noqa: SLF001
+                    self.conn, asked.id, transfer_requests.FAILED, "gone",
+                    "that destination is no longer configured",
+                )
+                return
+            transfer_requests.send(self.conn, settings, asked, destination)
+        except Exception:
+            LOGGER.exception("transfer request failed")
 
     def _metrics_rollup(self) -> None:
         """Write today's row, if today's row has gone stale.
@@ -756,7 +797,7 @@ def _seconds_between(earlier: str, later: str) -> float:
         return float("inf")
 
 
-def _listing_for(conn, settings, destination, policy):  # noqa: ANN001, ANN202
+def _listing_for(conn, settings, destination, scope):  # noqa: ANN001, ANN202
     """What is already at the destination, or `None` if nobody could look.
 
     `None` and an empty list are different answers and the difference is the
@@ -764,7 +805,7 @@ def _listing_for(conn, settings, destination, policy):  # noqa: ANN001, ANN202
     """
     from librairy import transfer_listing
 
-    return transfer_listing.listing(conn, settings, destination, policy)
+    return transfer_listing.listing(conn, settings, destination, scope)
 
 
 def next_sleep(previous: float, work_found: bool, mode: ProcessingMode | None = None) -> float:

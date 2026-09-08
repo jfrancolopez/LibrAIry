@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block content %}
+  {# An informed yes. Every number here comes from the Library index, so this
+     page never waits on a drive being enumerated to ask a question about it. #}
+  <h1>Send &ldquo;{{ offer.label }}&rdquo; to {{ offer.drive }}?</h1>
+  <p class="big">{{ offer.summary }}</p>
+  <ul class="send-facts">
+    <li>Files already on {{ offer.drive }} will be updated.</li>
+    {# Said before, not discovered after. The whole product promise in a line. #}
+    <li>Files only on {{ offer.drive }} will not be deleted.</li>
+    <li>Nothing in your library moves, is renamed, or changes.</li>
+    <li>This sends it once. It does not set up a recurring backup.</li>
+    {% if offer.reduced %}
+      <li class="muted">This drive was identified by its marker file only —
+        your system could not confirm which filesystem it is.</li>
+    {% endif %}
+  </ul>
+  <form method="post" action="/browse/send-to-drive" class="button-row">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="scope" value="{{ offer.relpath }}">
+    <input type="hidden" name="destination_id" value="{{ offer.destination_id }}">
+    <input type="hidden" name="confirm" value="true">
+    <button type="submit">Send to {{ offer.drive }}</button>
+    <a href="/browse">Cancel</a>
+  </form>
+{% endblock %}

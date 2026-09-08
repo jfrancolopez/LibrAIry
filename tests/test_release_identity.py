@@ -82,11 +82,15 @@ def test_this_release_is_1_3_1_and_the_schema_moved_twelve_times_since() -> None
       Presence now is a probe; "not seen since the twelfth of June" cannot be
       probed once the drive is gone, and it is the more useful half.
 
+    * **62** separates a one-off *send this* from a standing policy. They
+      share every dangerous piece of machinery and none of the intent, so a
+      send is its own row and pressing a button can never write a policy.
+
     The number is written down here so that changing it is a deliberate act
     with a sentence attached, rather than something noticed at upgrade time.
     """
     assert __version__ == "1.3.1"
-    assert SCHEMA_VERSION == 61  # noqa: PLR2004
+    assert SCHEMA_VERSION == 62  # noqa: PLR2004
 
 
 def test_the_changelog_records_this_version_as_the_newest_release() -> None:

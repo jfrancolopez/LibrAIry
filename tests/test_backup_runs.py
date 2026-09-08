@@ -426,6 +426,13 @@ def test_an_offline_drive_is_not_polled_on_a_schedule() -> None:
     assert "continue" in source
 
 
+
+def scope_of(policy):  # noqa: ANN001, ANN201
+    from librairy.transfer_plan import Scope
+
+    return Scope.of(policy)
+
+
 # --- listing --------------------------------------------------------------------------
 
 
@@ -434,10 +441,10 @@ def test_nobody_could_look_is_not_an_empty_destination(tmp_path: Path) -> None:
     copying an entire library to somewhere that is not answering."""
     conn, settings, policy, destination, target = scene(tmp_path)
 
-    assert transfer_listing.listing(conn, settings, destination, policy) == []
+    assert transfer_listing.listing(conn, settings, destination, scope_of(policy)) == []
 
     target.rmdir()
-    assert transfer_listing.listing(conn, settings, destination, policy) is None
+    assert transfer_listing.listing(conn, settings, destination, scope_of(policy)) is None
 
 
 def test_a_listing_reads_what_is_there(tmp_path: Path) -> None:
@@ -445,6 +452,6 @@ def test_a_listing_reads_what_is_there(tmp_path: Path) -> None:
     (target / "Photos").mkdir()
     (target / "Photos" / "a.jpg").write_bytes(b"x" * 40)
 
-    found = transfer_listing.listing(conn, settings, destination, policy)
+    found = transfer_listing.listing(conn, settings, destination, scope_of(policy))
 
     assert found == [DestinationFile("Photos/a.jpg", 40)]

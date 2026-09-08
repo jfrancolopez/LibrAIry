@@ -96,7 +96,7 @@ def test_the_fourth_number_is_never_something_to_act_on() -> None:
         extra = next(entry for entry in entries if entry.difference == dest.EXTRA)
         assert extra.action in (dest.KEEP, dest.REPORT), (mode, extra.action)
         assert extra not in plan.transfers(
-            plan.Plan(policy=None, destination=None, entries=tuple(entries))  # type: ignore[arg-type]
+            plan.Plan(scope=None, destination=None, entries=tuple(entries))  # type: ignore[arg-type]
         )
 
 
@@ -123,7 +123,7 @@ def test_an_identical_catalogue_is_no_work_at_all() -> None:
 
     assert counts[dest.CURRENT] == 1
     assert plan.transfers(
-        plan.Plan(policy=None, destination=None, counts=counts, entries=tuple(entries))  # type: ignore[arg-type]
+        plan.Plan(scope=None, destination=None, counts=counts, entries=tuple(entries))  # type: ignore[arg-type]
     ) == ()
 
 
@@ -148,7 +148,7 @@ def test_a_destination_nobody_could_reach_is_not_an_empty_plan(tmp_path: Path) -
     conn, policy, destination = scene(tmp_path)
     library(conn, "Photos/a.jpg")
 
-    found = plan.plan_for(conn, policy, destination, None)
+    found = plan.plan_for(conn, plan.Scope.of(policy), destination, None)
 
     assert found.unavailable
     assert found.empty
@@ -160,11 +160,21 @@ def test_a_reachable_destination_with_nothing_to_do_says_so(tmp_path: Path) -> N
     conn, policy, destination = scene(tmp_path)
     library(conn, "Photos/a.jpg")
 
-    found = plan.plan_for(conn, policy, destination, [DestinationFile("Photos/a.jpg", 100)])
+    found = plan.plan_for(
+        conn, plan.Scope.of(policy), destination, [DestinationFile("Photos/a.jpg", 100)]
+    )
 
     assert not found.unavailable
     assert found.empty
     assert found.current == 1
+
+
+
+def policy_for(category: str):  # noqa: ANN201
+    """A policy object that is never stored — this is about what a scope covers."""
+    return dest.Policy(
+        id=0, category=category, destination_id=0, mode=dest.BACKUP, enabled=True
+    )
 
 
 # --- what a policy covers -----------------------------------------------------------
@@ -177,16 +187,18 @@ def test_a_policy_covers_its_own_folder_and_no_other(tmp_path: Path) -> None:
     library(conn, "Photos/2026/a.jpg", "Photos/2025/b.jpg")
     library(conn, "Music/x.flac", "Documents/y.pdf")
 
-    covered = plan.library_files(conn, "photos")
+    covered = plan.library_files(conn, plan.Scope.of(policy_for("photos")))
 
     assert [found.relpath for found in covered] == [
         "Photos/2025/b.jpg",
         "Photos/2026/a.jpg",
     ]
-    assert [found.relpath for found in plan.library_files(conn, "music")] == ["Music/x.flac"]
+    music = plan.library_files(conn, plan.Scope.of(policy_for("music")))
+    assert [found.relpath for found in music] == ["Music/x.flac"]
     #  And the folder comes from the taxonomy, so a category whose template
     #  changes cannot leave this backing up a folder nothing is in.
-    assert [found.relpath for found in plan.library_files(conn, "music_videos")] == []
+    videos = plan.library_files(conn, plan.Scope.of(policy_for("music_videos")))
+    assert [found.relpath for found in videos] == []
 
 
 def test_a_folder_with_a_similar_name_is_not_swept_in(tmp_path: Path) -> None:
@@ -195,7 +207,7 @@ def test_a_folder_with_a_similar_name_is_not_swept_in(tmp_path: Path) -> None:
     conn, _policy, _destination = scene(tmp_path)
     library(conn, "Photos/a.jpg", "Photos Archive/b.jpg", "PhotosOld/c.jpg")
 
-    covered = plan.library_files(conn, "photos")
+    covered = plan.library_files(conn, plan.Scope.of(policy_for("photos")))
 
     assert [found.relpath for found in covered] == ["Photos/a.jpg"]
 
@@ -207,9 +219,8 @@ def test_a_missing_file_is_not_offered_for_copying(tmp_path: Path) -> None:
     library(conn, "Photos/a.jpg", "Photos/gone.jpg")
     conn.execute("UPDATE items SET missing_since='now' WHERE relpath='Photos/gone.jpg'")
 
-    assert [found.relpath for found in plan.library_files(conn, "photos")] == [
-        "Photos/a.jpg"
-    ]
+    live = plan.library_files(conn, plan.Scope.of(policy_for("photos")))
+    assert [found.relpath for found in live] == ["Photos/a.jpg"]
 
 
 # --- bounded --------------------------------------------------------------------------
@@ -245,7 +256,7 @@ def test_the_summary_names_the_destination_only_files_for_what_they_are() -> Non
     counts, entries = plan.compare(ours, theirs, dest.MIRROR)
 
     summary = plan.Plan(
-        policy=None,  # type: ignore[arg-type]
+        scope=None,  # type: ignore[arg-type]
         destination=None,  # type: ignore[arg-type]
         counts=counts,
         entries=tuple(entries),
@@ -261,7 +272,7 @@ def test_a_plan_can_say_how_much_it_would_send() -> None:
     counts, entries = plan.compare(ours, [], dest.BACKUP)
 
     found = plan.Plan(
-        policy=None,  # type: ignore[arg-type]
+        scope=None,  # type: ignore[arg-type]
         destination=None,  # type: ignore[arg-type]
         counts=counts,
         entries=tuple(entries),

@@ -642,7 +642,30 @@ def build_app(root: Path):  # noqa: ANN201
         (f'"{_now()}"',),
     )
 
+    #  A backup drive, plugged in. Without one the Browse send action does not
+    #  render at all — which is correct, and makes it unphotographable, so the
+    #  fixture is a machine with the drive attached.
+    _an_attached_backup_drive(conn, settings, root)
+
     return create_app(settings, conn)
+
+
+def _an_attached_backup_drive(conn, settings, root: Path) -> None:  # noqa: ANN001
+    """A registered Offline Backup that is here right now.
+
+    Deliberately *only* registered: no policy, because the send action is a
+    one-off and a fixture that configured a recurring backup to photograph a
+    button would be showing the wrong thing.
+    """
+    from librairy import offline_drives  # noqa: PLC0415
+
+    mount = root / "wd-8tb"
+    mount.mkdir(parents=True, exist_ok=True)
+    try:
+        offline_drives.register(conn, settings, name="WD-8TB", path=str(mount))
+    except Exception:  # noqa: BLE001 - a fixture must build without a drive
+        return
+    conn.commit()
 
 
 def _a_measured_history(conn) -> None:  # noqa: ANN001

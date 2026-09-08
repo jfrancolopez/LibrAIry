@@ -95,7 +95,9 @@ def library(conn, *paths: str, size: int = 100) -> None:  # noqa: ANN001
 
 
 def plan_for(conn, policy, destination, there=()):  # noqa: ANN001, ANN201
-    return transfer_plan.plan_for(conn, policy, destination, list(there))
+    return transfer_plan.plan_for(
+        conn, transfer_plan.Scope.of(policy), destination, list(there)
+    )
 
 
 # --- only copies, only from a plan --------------------------------------------------
@@ -129,10 +131,13 @@ def test_there_is_no_way_to_ask_it_to_run_something_else() -> None:
         #  function that happens to be reachable through this namespace.
         and value.__module__ == transfer_run.__name__
     }
-    assert set(public) == {"send", "run_policy", "redact", "redacted"}
-    #  Neither entry point takes a command, a verb or options. `send` takes a
-    #  plan; `run_policy` takes a policy and makes one.
-    for name in ("send", "run_policy"):
+    assert set(public) == {"send", "run_policy", "run_scope", "redact", "redacted"}
+    #  No entry point takes a command, a verb or options. `send` takes a plan;
+    #  `run_scope` takes what a transfer covers and makes one; `run_policy` is
+    #  a standing instruction turned into a scope. A one-off send goes through
+    #  `run_scope` too, which is the point — one execution path, two intents,
+    #  and no second place to get deletion wrong.
+    for name in ("send", "run_policy", "run_scope"):
         parameters = set(inspect.signature(public[name]).parameters)
         assert not parameters & {"command", "verb", "flags", "options", "args"}
     assert set(inspect.signature(public["send"]).parameters) == {
@@ -238,7 +243,7 @@ def test_a_destination_that_vanished_is_refused(tmp_path: Path) -> None:
 def test_an_unreachable_destination_is_not_an_empty_success(tmp_path: Path) -> None:
     conn, settings, policy, destination, _target = scene(tmp_path)
     library(conn, "Photos/a.jpg")
-    plan = transfer_plan.plan_for(conn, policy, destination, None)
+    plan = transfer_plan.plan_for(conn, transfer_plan.Scope.of(policy), destination, None)
     stub = Stub()
 
     result = transfer_run.send(conn, settings, plan, runner=stub)

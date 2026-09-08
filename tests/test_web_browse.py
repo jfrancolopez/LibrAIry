@@ -183,12 +183,21 @@ def test_browse_performs_no_library_filesystem_mutation(tmp_path: Path) -> None:
     #                          the answer. Named here because it was passing
     #                          only by fixture: this test seeds a document, and
     #                          that form renders for audio.
+    #   /browse/send-to-drive  copies files *outward* to a registered drive
+    #                          that is attached. It writes one request row and
+    #                          nothing else — no Library file moves, is renamed
+    #                          or is queued, and nothing at the destination is
+    #                          ever removed. It is also not rendered at all
+    #                          unless a drive is here, so this fixture does not
+    #                          exercise it; named because it is a Browse write
+    #                          form the moment somebody plugs a drive in.
     #
     # Every other write verb stays banned, including a second POST anywhere
     # else. What this test defends is that Browse changes no file on disk — not
     # that it has no controls.
     allowed = {
         "/browse/audit",
+        "/browse/send-to-drive",
         f"/items/{item_id}/tags",
         f"/items/{item_id}/identify",
     }
@@ -480,3 +489,148 @@ def test_blank_filter_fields_do_not_break_search(tmp_path: Path) -> None:
     assert page.status_code == 200
     assert body.status_code == 200
     assert "Bohemian.flac" in body.text
+
+
+# --- Send to Offline Backup ----------------------------------------------------------
+
+
+def _drive_for(tmp_path: Path, conn, settings):  # noqa: ANN001, ANN202
+    from librairy import offline_drives
+
+    mount = tmp_path / "wd"
+    mount.mkdir()
+    return offline_drives.register(conn, settings, name="WD-8TB", path=str(mount)), mount
+
+
+def test_the_send_action_is_absent_when_no_drive_is_attached(tmp_path: Path) -> None:
+    """Not rendered, rather than rendered and disabled. A greyed-out button for
+    a drive in a drawer is furniture explaining a thing that is not wrong."""
+    client, conn, settings = client_for(tmp_path)
+    seed_item(conn, settings, "Photos/2026/Italy/img.jpg", "photos")
+
+    page = client.get("/browse/Photos?folder=2026")
+
+    assert "Send to Offline Backup" not in page.text
+
+
+def test_the_send_action_appears_once_a_registered_drive_is_here(
+    tmp_path: Path,
+) -> None:
+    client, conn, settings = client_for(tmp_path)
+    seed_item(conn, settings, "Photos/2026/Italy/img.jpg", "photos")
+    _drive_for(tmp_path, conn, settings)
+
+    page = client.get("/browse/Photos?folder=2026")
+
+    assert "Send to Offline Backup &rarr; WD-8TB" in page.text or (
+        "Send to Offline Backup → WD-8TB" in page.text
+    )
+    assert "Nothing there is ever deleted." in page.text
+
+
+def test_the_send_action_goes_when_the_drive_does(tmp_path: Path) -> None:
+    from librairy import offline_drives
+    from librairy.transfer_paths import MARKER
+
+    client, conn, settings = client_for(tmp_path)
+    seed_item(conn, settings, "Photos/2026/Italy/img.jpg", "photos")
+    drive, mount = _drive_for(tmp_path, conn, settings)
+    assert "Send to Offline Backup" in client.get("/browse/Photos?folder=2026").text
+
+    (mount / MARKER).unlink()
+    mount.rmdir()
+    offline_drives.look(conn, settings, drive)
+
+    assert "Send to Offline Backup" not in client.get("/browse/Photos?folder=2026").text
+
+
+def test_a_folder_send_asks_before_it_starts(tmp_path: Path) -> None:
+    """An informed yes, in the words that state what will and will not happen."""
+    client, conn, settings = client_for(tmp_path)
+    seed_item(conn, settings, "Photos/2026/Italy/img.jpg", "photos")
+    drive, _mount = _drive_for(tmp_path, conn, settings)
+
+    asked = client.post(
+        "/browse/send-to-drive",
+        data={
+            "csrf_token": client.cookies["csrf_token"],
+            "scope": "Photos/2026",
+            "destination_id": drive.id,
+        },
+    )
+
+    assert "Send &ldquo;2026&rdquo; to WD-8TB?" in asked.text
+    assert "will not be deleted" in asked.text
+    assert "does not set up a recurring backup" in asked.text
+    #  Nothing has been asked for yet.
+    assert conn.execute("SELECT COUNT(*) FROM transfer_requests").fetchone()[0] == 0
+
+
+def test_confirming_records_a_request_and_not_a_policy(tmp_path: Path) -> None:
+    client, conn, settings = client_for(tmp_path)
+    seed_item(conn, settings, "Photos/2026/Italy/img.jpg", "photos")
+    drive, _mount = _drive_for(tmp_path, conn, settings)
+
+    done = client.post(
+        "/browse/send-to-drive",
+        data={
+            "csrf_token": client.cookies["csrf_token"],
+            "scope": "Photos/2026",
+            "destination_id": drive.id,
+            "confirm": "true",
+        },
+        follow_redirects=False,
+    )
+
+    assert done.status_code == 303  # noqa: PLR2004
+    assert conn.execute("SELECT COUNT(*) FROM transfer_requests").fetchone()[0] == 1
+    assert conn.execute("SELECT COUNT(*) FROM backup_policies").fetchone()[0] == 0
+
+
+def test_a_send_of_somewhere_outside_the_library_goes_nowhere(tmp_path: Path) -> None:
+    client, conn, settings = client_for(tmp_path)
+    seed_item(conn, settings, "Photos/2026/Italy/img.jpg", "photos")
+    drive, _mount = _drive_for(tmp_path, conn, settings)
+
+    for scope in ("../../etc", "/etc", "~/secrets", "Photos/../../etc"):
+        client.post(
+            "/browse/send-to-drive",
+            data={
+                "csrf_token": client.cookies["csrf_token"],
+                "scope": scope,
+                "destination_id": drive.id,
+                "confirm": "true",
+            },
+            follow_redirects=False,
+        )
+
+    assert conn.execute("SELECT COUNT(*) FROM transfer_requests").fetchone()[0] == 0
+
+
+def test_a_drive_that_left_between_render_and_submit_records_nothing(
+    tmp_path: Path,
+) -> None:
+    """The form is somebody's browser telling us what a page said some time
+    ago. Every condition is asked again here."""
+    from librairy import offline_drives
+    from librairy.transfer_paths import MARKER
+
+    client, conn, settings = client_for(tmp_path)
+    seed_item(conn, settings, "Photos/2026/Italy/img.jpg", "photos")
+    drive, mount = _drive_for(tmp_path, conn, settings)
+    (mount / MARKER).unlink()
+    mount.rmdir()
+    offline_drives.look(conn, settings, drive)
+
+    client.post(
+        "/browse/send-to-drive",
+        data={
+            "csrf_token": client.cookies["csrf_token"],
+            "scope": "Photos/2026",
+            "destination_id": drive.id,
+            "confirm": "true",
+        },
+        follow_redirects=False,
+    )
+
+    assert conn.execute("SELECT COUNT(*) FROM transfer_requests").fetchone()[0] == 0

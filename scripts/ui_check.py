@@ -414,6 +414,18 @@ PAGES = {
     # A folder whose files explain each other: a RAW with its render, a Live
     # Photo's two halves, and the unrelated same-stem pair that stays unpaired.
     "browse-related": "/browse/Photos?folder=2024%2FBackyard",
+    # The Offline Backup quick action, which only renders when a registered
+    # drive is attached — so the fixture attaches one. Photographed on a real
+    # folder rather than a category root, because that is where somebody
+    # actually presses it.
+    "browse-send": "/browse/Photos?folder=2024%2FBackyard",
+    # And the informed yes it asks for. POST because it is not a page anybody
+    # can arrive at — it is what pressing the button shows you before anything
+    # is copied.
+    "browse-send-confirm": (
+        "/browse/send-to-drive",
+        {"scope": "Photos/2024/Backyard", "destination_id": "1"},
+    ),
     # The same context in a result list.
     "search-related": "/browse?q=IMG_5200&root=library",
     # Everything decision memory has picked up: the rules somebody promoted,

@@ -51,6 +51,7 @@ and `Dismiss suggestion` change no file at all.
 | **Not connected** | a registered offline drive that is not here. A normal state and never an error: not *unavailable*, *missing*, *offline* or *overdue*, and never coloured like a fault. Shown with the date it was last seen, which is the useful half |
 | **Connected** | a registered offline drive that is here, and is the drive that was registered |
 | **A different drive is at that path** | something is mounted where the drive should be and it is not that drive. Said plainly, because "not connected" would be a lie told while a drive is plugged in |
+| **Send to Offline Backup → &lt;drive&gt;** | copy this folder or file to an attached drive, **once**. Not *Back up*, which sounds recurring, and not *Sync*, which sounds two-way and destructive. Shown only where it can work, and it never configures a recurring backup — that is Settings, on purpose |
 | **Identified by its marker file only** | the drive was recognised, and the operating system could not say what filesystem it is. Less checking than happened at registration, so it is said rather than shown as a full check |
 | **Project** | files that belong together, wherever they live — a view, never a place |
 | **Project folder** | `Projects/{project}/` — a filing destination on disk |

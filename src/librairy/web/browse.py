@@ -181,6 +181,11 @@ def browse_folder(
         "crumbs": _crumbs(top, folder),
         "parent_href": _parent_href(top, folder),
         "files_url": f"{top_href(top)}/files",
+        # Where this folder could be sent right now — usually nowhere, because
+        # the drives are in a drawer. Read from what the worker last recorded,
+        # so a render never stats a mount or runs `diskutil`. See
+        # `librairy/web/offline_send.py`.
+        "send_offers": _send_offers(conn, prefix),
         # Pane 1 of the explorer: every top-level folder, so you can switch
         # without bouncing through /browse.
         **library_panes(conn, settings),
@@ -596,3 +601,17 @@ def _siblings(conn: sqlite3.Connection, item: sqlite3.Row, proposal: sqlite3.Row
     ).fetchall()
 
 
+
+
+def _send_offers(conn: sqlite3.Connection, prefix: str) -> list:
+    """Offline drives this folder can be sent to, or an empty list.
+
+    Wrapped, because an offer is a convenience and a convenience that broke
+    Browse would cost far more than it saves.
+    """
+    from librairy.web.offline_send import offers
+
+    try:
+        return offers(conn, prefix)
+    except Exception:  # noqa: BLE001 - a page must render without a backup drive
+        return []

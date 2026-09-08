@@ -14,6 +14,21 @@
         <button type="submit">Audit this folder</button>
         <span class="muted">Reads your files and reports what looks out of place. Changes nothing.</span>
       </form>
+      {# Offered only where it can actually work: a registered drive, enabled,
+         here the last time anybody looked, and identified. Absent, and the
+         action is not rendered at all rather than rendered and disabled — a
+         greyed-out button for a drive in a drawer explains a thing that is not
+         wrong. Sends once; does not configure a recurring backup. #}
+      {% for offer in send_offers %}
+      <form method="post" action="/browse/send-to-drive" class="audit-trigger">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="scope" value="{{ offer.relpath }}">
+        <input type="hidden" name="destination_id" value="{{ offer.destination_id }}">
+        <button type="submit">Send to Offline Backup &rarr; {{ offer.drive }}</button>
+        <span class="muted">Copies this folder to {{ offer.drive }} once.
+          {{ offer.summary }}. Nothing there is ever deleted.</span>
+      </form>
+      {% endfor %}
       {# Music only, and asked for. New files are named the current way; this is
          how somebody says they want the old ones brought into line too. It
          shows exactly what would change before anything is approved. #}
