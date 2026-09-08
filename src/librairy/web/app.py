@@ -2899,16 +2899,22 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         the `Projects/` folder, which is a filing destination on disk; see
         `docs/ui-vocabulary.md` for why the two keep different words.
         """
+        from librairy import project_status
         from librairy.tags import counts, projects
 
-        promoted = projects(conn)
-        known = {str(project["tag"]) for project in promoted}
+        #  Ranked the same way the Dashboard ranks, so the two pages cannot
+        #  disagree about which Project is asking for something.
+        wanted = request.query_params.get("q", "")
+        cards = project_status.listed(conn, wanted)
+        known = {str(project["tag"]) for project in projects(conn)}
         return TEMPLATES.TemplateResponse(
             request,
             "projects.html",
             {
                 "title": "Projects",
-                "projects": promoted,
+                "project_cards": cards,
+                "project_total": project_status.counted(conn),
+                "query": wanted,
                 "tags": [tag for tag in counts(conn) if tag["tag"] not in known],
             },
         )

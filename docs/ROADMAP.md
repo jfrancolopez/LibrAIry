@@ -1610,7 +1610,42 @@ files.
 
 ## M3-04 · Projects on the Dashboard
 
-**P3 · S · Low risk**
+**P3 · S · Low risk · DONE** — `librairy/project_status.py`, a band on the
+Dashboard and a ranked, searchable Projects page.
+
+> **Which Projects matter, not which Projects exist.** A card answers three
+> questions — what is this, has anything changed, does it need me — and the
+> third decides the order. A Project that gained forty photographs is being
+> *used*; one with a file nobody has answered for is *asking*, and asking wins.
+> Ordinary activity is never coloured, for the same reason a drive in a drawer
+> is not an error.
+>
+> **Ranked in SQL, four statements at any population.** Rank every Project and
+> take six, break those six down by category, read the policies, read the runs
+> — measured at 100k / 300k / 1M with two thousand Projects and one of forty
+> thousand members: 20, 63 and 72 ms, and **4 statements every time**. A
+> thousand Projects never become a thousand Python objects sorted afterwards.
+>
+> **A bug worth recording, and the nastiest kind.** The ranking was first
+> written as an `ORDER BY` on the select that defines its aliases. SQLite
+> resolves names inside a compound `ORDER BY` expression against the FROM
+> clause, and those names exist there too — on the derived tables, NULL for a
+> Project with no proposals. `NULL > 0` is NULL, and NULL sorts **first** under
+> DESC, so every quiet Project ranked above every one asking for a person. The
+> exact opposite of the feature's purpose, at full speed, with no error.
+> Ranking now happens in an outer query where the names are real columns.
+>
+> **Backup coverage is a claim about policy, never about bytes.** A Project
+> spans categories that can have different destinations or none, so the card
+> says *"1 destination · covers 1 of 2 kinds of file here · 1 failed"* rather
+> than a green tick. A test reads the Dashboard and the Projects page for
+> *synced*, *up to date* and *protected* and fails on any of them — the same
+> discipline M3-03 established, defended where it is easiest to lose.
+>
+> **A `Projects/` folder on disk is still not a Project.** The vocabulary from
+> M2-05 holds: a Project is a promoted tag, a view over files that stay where
+> they are. The fixture keeps a real `Projects/Kitchen/plan.pdf` precisely so a
+> test can assert it produces no card.
 
 A promoted Project earns a card: files, categories, recent activity, storage,
 unresolved items, backup status. Only after M2-05 has been used enough to know

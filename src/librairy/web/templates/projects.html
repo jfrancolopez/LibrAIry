@@ -16,13 +16,39 @@
     the <span class="mono">Projects/</span> folder in your library, which is a
     filing destination like any other.</p>
 
-  {% if projects %}
+  {% if project_total > 1 %}
+    <form class="project-search" method="get" action="/projects" role="search">
+      <label class="field">Find a project
+        <input type="search" name="q" value="{{ query }}" placeholder="house, taxes, 2026">
+      </label>
+      <button type="submit">Search</button>
+      {% if query %}<a href="/projects">Clear</a>{% endif %}
+    </form>
+  {% endif %}
+
+  {% if project_cards %}
+    {# The same order the Dashboard uses: anything asking for a person first,
+       then what moved recently. The two pages cannot disagree about which
+       Project wants you, because they ask the same function. #}
     <ul class="project-list">
-      {% for project in projects %}
-        <li class="project-card">
-          <h2><a href="/projects/{{ project.id }}">{{ project.name }}</a></h2>
+      {% for project in project_cards %}
+        <li class="project-card{% if project.needs_attention %} is-asking{% endif %}">
+          <h2><a href="{{ project.href }}">{{ project.name }}</a></h2>
           <p class="muted"><span class="mono">#{{ project.tag }}</span> ·
-            {{ project.files }} file{{ 's' if project.files != 1 else '' }}</p>
+            {{ project.files }} file{{ 's' if project.files != 1 else '' }} ·
+            {{ project.size }}{% if project.made_of %} · {{ project.made_of }}{% endif %}</p>
+          {% if project.asks %}
+            <ul class="project-asks">
+              {% for ask in project.asks %}<li>{{ ask }}</li>{% endfor %}
+            </ul>
+          {% elif project.activity %}
+            <p class="muted">{{ project.activity }}</p>
+          {% elif project.changed %}
+            <p class="muted">Last change {{ project.changed }}</p>
+          {% endif %}
+          {% if project.coverage.any %}
+            <p class="muted">Backup coverage: {{ project.coverage.sentence }}</p>
+          {% endif %}
           <div class="button-row">
             <form method="post" action="/projects/{{ project.id }}">
               <input type="hidden" name="csrf_token" value="{{ request.state.session.csrf_token }}">
@@ -41,9 +67,13 @@
         </li>
       {% endfor %}
     </ul>
+  {% elif query %}
+    <p class="muted">No project matches &ldquo;{{ query }}&rdquo;.
+      <a href="/projects">Show them all.</a></p>
   {% else %}
     <p class="muted">None yet. Tag some files — a <span class="mono">#hashtag</span>
-      anywhere in a filename or a folder name — and promote one below.</p>
+      anywhere in a filename or a folder name — and promote one below. Nothing
+      is promoted for you: a tag stays a tag until you say otherwise.</p>
   {% endif %}
 
   <h2 id="tags">Your tags</h2>

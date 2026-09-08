@@ -3979,3 +3979,36 @@ summary.timeline-head::-webkit-details-marker { display: none; }
   vertical-align: top;
 }
 .divergence-table code { overflow-wrap: anywhere; }
+
+
+/* --- Projects, where they are pointed at rather than listed -------------- */
+
+/* A strip of small cards, not a fourth dashboard. `min(20rem, 100%)` for the
+   reason the AI cards learned: `auto-fit` never places a column narrower than
+   its minimum, so a bare 20rem is a 320px floor that survives 375px and
+   nothing narrower. */
+.project-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(20rem, 100%), 1fr));
+  gap: var(--space-3);
+}
+.project-tile > h3 { margin: 0 0 var(--space-1); }
+.project-tile > p { margin: 0 0 var(--space-1); }
+
+/* The only colour on a Project, and only for the one thing that means
+   something: somebody has to answer for a file in here. A Project gaining
+   forty photographs gets no colour at all, because being used is not a
+   problem — the same rule that keeps a drive in a drawer black. */
+.project-tile.is-asking, .project-card.is-asking { border-color: var(--accent); }
+.project-asks { list-style: none; margin: var(--space-1) 0; padding: 0; font-size: var(--text-sm); }
+.project-asks > li { margin: 0 0 var(--space-1); }
+.project-coverage { font-size: var(--text-sm); }
+
+.project-search {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-2);
+  margin: var(--space-3) 0;
+}
+.project-search > .field { flex: 1 1 14rem; margin: 0; }

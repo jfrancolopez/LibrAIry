@@ -364,6 +364,39 @@ cheaper it is by the recorded-verdict pattern `search_health` already uses:
 measure on an idle cycle, show the verdict and its age. That is M1-06's work
 and it stays there.
 
+## M3-04, 2026-09-08 — Projects, ranked in SQL
+
+Roughly two thousand Projects and one with forty thousand members, at three
+library sizes. The number that says whether the architecture is right is the
+second one, and it does not move:
+
+| library | Dashboard projects | Projects page | statements |
+|---|---|---|---|
+| 100,000 | 20 ms | 25 ms | **4** |
+| 300,000 | 63 ms | 57 ms | **4** |
+| 1,000,000 | **72 ms** | 72 ms | **4** |
+
+Four statements whatever the population and however many Projects exist: rank
+every Project and take six, break those six down by category, read the
+policies, read the runs. A thousand Projects do not become a thousand Python
+objects that are sorted afterwards, and a Project of forty thousand members
+produces the number forty thousand and nothing else.
+
+The latency grows with *tagged* files rather than with the library, because
+ranking has to read every Project's aggregate to decide which six matter. It
+flattens between 300k and 1M for the same reason: the tag population stops
+growing at the same rate as the library.
+
+**A bug this measurement did not find, and a test does.** The ranking was first
+written as an `ORDER BY` on the select that defines its aliases. SQLite resolves
+names inside a compound `ORDER BY` expression against the FROM clause, and
+those names exist there too — on the derived tables, where they are NULL for a
+Project with no proposals. `NULL + 0` is NULL, `NULL > 0` is NULL, and NULL
+sorts **first** under DESC. Every quiet Project ranked above every Project
+asking for a person: the exact opposite of the feature's purpose, at full speed,
+with no error. Ranking now happens in an outer query where the names are real
+columns.
+
 ## M3-03, 2026-09-04 — storing the whole divergence set
 
 The first version of `divergence.py` kept a complete count and a thousand

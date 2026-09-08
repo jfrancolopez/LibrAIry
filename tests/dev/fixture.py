@@ -949,6 +949,91 @@ def _a_tagged_project(conn, settings: Settings) -> None:  # noqa: ANN001
     if filed is not None:
         tags.add(conn, int(filed["id"]), "ProjectHouse")
     tags.promote(conn, "projecthouse", "House renovation")
+    _more_projects(conn, settings)
+
+
+def _more_projects(conn, settings: Settings) -> None:  # noqa: ANN001
+    """Three more, each a different answer to "does this need me?".
+
+    The Dashboard ranks by that question, so a fixture with one Project cannot
+    photograph the ranking at all:
+
+        House renovation   spans categories, has unresolved work — asking
+        Taxes 2026         documents, one file held for a provider — asking
+        Vacation 2026      photographs and a clip, recent, quiet — active
+        (Projects/ folder) a real directory on disk, and **not** a Project
+
+    The last is the trap. A folder called `Projects/` is a filing destination
+    like any other, and a Project is a view over files that stay where they
+    are. One of them must never produce the other, so the fixture holds both
+    and the Dashboard shows three cards.
+    """
+    from librairy import tags  # noqa: PLC0415
+
+    def filed(relpath: str, size: int, seen: str) -> int:
+        path = settings.library_dir / relpath
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(JPEG if relpath.endswith((".jpg", ".JPG")) else b"x" * 64)
+        cursor = conn.execute(
+            "INSERT INTO items(root, relpath, size, mtime_ns, state, first_seen_at,"
+            " last_seen_at) VALUES ('library', ?, ?, 0, 'committed', ?, ?)",
+            (relpath, size, seen, seen),
+        )
+        return int(cursor.lastrowid)
+
+    #  Quiet and healthy: photographs and a clip that arrived this week.
+    recent = _days_ago(2)
+    for index in range(14):
+        item = filed(f"Photos/2026/Lisbon/IMG_{7000 + index}.jpg", 4_100_000, recent)
+        tags.add(conn, item, "Vacation2026")
+        conn.execute(
+            "INSERT INTO proposals(item_id, category, clean_name, dest_relpath,"
+            " confidence, status, action, dest_root, evidence, created_at, updated_at)"
+            " VALUES (?, 'photos', ?, ?, 0.94, 'committed', 'move', 'library', '[]', ?, ?)",
+            (item, f"IMG_{7000 + index}.jpg", f"Photos/2026/Lisbon/IMG_{7000+index}.jpg",
+             recent, recent),
+        )
+    clip = filed("Movies/2026/lisbon-walk.mp4", 240_000_000, recent)
+    tags.add(conn, clip, "Vacation2026")
+    conn.execute(
+        "INSERT INTO proposals(item_id, category, clean_name, dest_relpath, confidence,"
+        " status, action, dest_root, evidence, created_at, updated_at)"
+        " VALUES (?, 'movies', 'lisbon-walk.mp4', 'Movies/2026/lisbon-walk.mp4', 0.9,"
+        " 'committed', 'move', 'library', '[]', ?, ?)",
+        (clip, recent, recent),
+    )
+    tags.promote(conn, "vacation2026", "Vacation 2026")
+
+    #  Asking: documents, and one file a provider never answered for.
+    older = _days_ago(40)
+    for index, name in enumerate(("p60.pdf", "self-assessment.pdf", "receipts.pdf")):
+        item = filed(f"Documents/2026/{name}", 180_000, older)
+        tags.add(conn, item, "Taxes2026")
+        conn.execute(
+            "INSERT INTO proposals(item_id, category, clean_name, dest_relpath,"
+            " confidence, status, action, dest_root, evidence, created_at, updated_at)"
+            " VALUES (?, 'documents', ?, ?, 0.88, 'committed', 'move', 'library', '[]', ?, ?)",
+            (item, name, f"Documents/2026/{name}", older, older),
+        )
+        del index
+    held = settings.inbox_dir / "bank statement #Taxes2026.pdf"
+    held.write_bytes(b"%PDF-1.7" + b"x" * 400)
+    scan_root(conn, "inbox", settings.inbox_dir, settings)
+    waiting = conn.execute(
+        "SELECT id FROM items WHERE root='inbox' AND relpath=?",
+        ("bank statement #Taxes2026.pdf",),
+    ).fetchone()
+    if waiting is not None:
+        tags.record(conn, int(waiting["id"]), "bank statement #Taxes2026.pdf")
+        conn.execute(
+            "UPDATE items SET state='waiting' WHERE id=?", (int(waiting["id"]),)
+        )
+    tags.promote(conn, "taxes2026", "Taxes 2026")
+
+    #  And the trap: a real `Projects/` folder with a real file in it, which is
+    #  a filing destination and must not become a card.
+    filed("Projects/Kitchen/plan.pdf", 90_000, older)
+    conn.commit()
 
 
 def _similar_representations(conn) -> None:  # noqa: ANN001

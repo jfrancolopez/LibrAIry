@@ -385,6 +385,43 @@ def synthesize(
     )
     conn.commit()
 
+    def tag_rows() -> Iterator[tuple]:
+        """Thousands of Projects, and one enormous one.
+
+        The shape that matters is lopsided: a long tail of small Projects
+        somebody made once, plus a single tag on tens of thousands of files.
+        A uniform spread would flatter the ranking, which has to read every
+        Project's aggregate to decide which six to show.
+        """
+        for index in range(1, library + 1):
+            if index % 500 == 0:
+                which = index // 500
+                yield (index, f"project{which}", f"Project{which}", "user", NOW)
+            elif index % 7 == 0 and index <= 40_000 * 7:
+                yield (index, "huge", "Huge", "user", NOW)
+
+    # --- tags and Projects ----------------------------------------------------
+    #  A Project is a promoted tag, so both have to exist for the ranking to
+    #  have anything to rank.
+    _insert(
+        conn,
+        "INSERT OR IGNORE INTO item_tags(item_id, tag, label, source, added_at)"
+        " VALUES (?, ?, ?, ?, ?)",
+        tag_rows(),
+    )
+    _insert(
+        conn,
+        "INSERT OR IGNORE INTO projects(tag, name, created_at) VALUES (?, ?, ?)",
+        (
+            (f"project{which}", f"Project {which}", NOW)
+            for which in range(1, library // 500 + 1)
+        ),
+    )
+    conn.execute(
+        "INSERT OR IGNORE INTO projects(tag, name, created_at) VALUES ('huge','Huge',?)",
+        (NOW,),
+    )
+
     # --- the search index ----------------------------------------------------
     #  Written directly rather than through `rebuild_search_index`, which is one
     #  statement per item and is measured separately as throughput.
@@ -488,7 +525,7 @@ def _repeated(queries: list[str]) -> str:
 def measure(
     conn: sqlite3.Connection, settings: Settings, *, budget: float = 60.0
 ) -> list[Measurement]:
-    from librairy import attention, metrics
+    from librairy import attention, metrics, project_status
     from librairy.search import SearchFilters, search_data
     from librairy.web.browse import browse_home
     from librairy.web.commit_queue import queue_rows, queue_summary
@@ -522,6 +559,11 @@ def measure(
         lambda: review_data(counting, ReviewFilters(sort="name"), settings),
     )
     record("Dashboard", lambda: dashboard_data(counting, settings))
+    #  The Projects band on its own, because the Dashboard number hides it: a
+    #  section that ranks thousands of Projects in SQL and builds six cards
+    #  must not grow with the library, and this is where that is checked.
+    record("Dashboard projects", lambda: project_status.cards(counting))
+    record("Projects page", lambda: project_status.listed(counting))
     #  The two halves of M3-01, measured together because they are the whole
     #  bargain: the rollup is allowed to be expensive precisely because it runs
     #  once an hour, and the read that pays for it has to be flat.

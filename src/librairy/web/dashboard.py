@@ -87,6 +87,11 @@ def dashboard_data(
         #  console stops being a dashboard, and every number here has a page
         #  that says it better. See `librairy/transfer_status.py`.
         "backups": _backup_overview(conn, settings),
+        #  Which Projects are asking for a person, and which are simply being
+        #  used. Ranked in SQL and bounded to a handful — this is a pointer at
+        #  the ones that matter, not a list of everything. See
+        #  `librairy/project_status.py`.
+        **_projects(conn),
         "worker_state": worker_state,
         "current_phase": worker_state.get("current_phase", "unknown"),
         "counts": counts,
@@ -464,3 +469,16 @@ def _backup_overview(conn: sqlite3.Connection, settings: Settings):  # noqa: ANN
         return transfer_status.overview(conn, settings)
     except Exception:  # noqa: BLE001 - the page must render regardless
         return transfer_status.Overview()
+
+
+def _projects(conn: sqlite3.Connection) -> dict[str, object]:
+    """The Projects worth a glance, and how many there are altogether."""
+    from librairy import project_status
+
+    try:
+        return {
+            "project_cards": project_status.cards(conn),
+            "project_total": project_status.counted(conn),
+        }
+    except Exception:  # noqa: BLE001 - the page must render regardless
+        return {"project_cards": [], "project_total": 0}

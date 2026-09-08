@@ -237,5 +237,42 @@
   </div>
   </section>
 
+  {# Between what LibrAIry is doing and how the library is changing, because a
+     Project is both: a thing being worked on, and a thing that changed. It is
+     a *pointer* — the ones asking for a person first, then the ones that moved
+     — and the full list is one click away. A Project is a view over files that
+     stay where they are, never the `Projects/` folder on disk. #}
+  {% if project_cards %}
+  <section class="band band-projects" aria-labelledby="projects-heading">
+    <div class="band-head">
+      <h2 id="projects-heading">Projects</h2>
+      <a href="/projects">All {{ project_total }} project{{ 's' if project_total != 1 else '' }}</a>
+    </div>
+    <div class="project-strip">
+      {% for card in project_cards %}
+        <article class="widget card project-tile{% if card.needs_attention %} is-asking{% endif %}">
+          <h3><a href="{{ card.href }}">{{ card.name }}</a></h3>
+          <p class="muted">{{ card.files }} file{{ 's' if card.files != 1 else '' }} ·
+            {{ card.size }}{% if card.made_of %} · {{ card.made_of }}{% endif %}</p>
+          {% if card.asks %}
+            <ul class="project-asks">
+              {% for ask in card.asks %}<li>{{ ask }}</li>{% endfor %}
+            </ul>
+          {% elif card.activity %}
+            {# Activity, and deliberately not coloured: a Project gaining files
+               is a Project being used. #}
+            <p class="muted">{{ card.activity }}</p>
+          {% elif card.changed %}
+            <p class="muted">Last change {{ card.changed }}</p>
+          {% endif %}
+          {% if card.coverage.any %}
+            <p class="muted project-coverage">Backup coverage: {{ card.coverage.sentence }}</p>
+          {% endif %}
+        </article>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+
   {% include "partials/dashboard_history.html" %}
 </div>
