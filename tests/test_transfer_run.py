@@ -394,21 +394,29 @@ def test_a_real_copy_converges_and_leaves_the_extra_file_alone(tmp_path: Path) -
     (photos / "a.jpg").write_bytes(b"a" * 100)
     (photos / "b.jpg").write_bytes(b"b" * 100)
     library(conn, "Photos/a.jpg", "Photos/b.jpg")
-    #  Something at the destination that the library no longer has.
-    (target / "gone.jpg").write_bytes(b"still here")
+    #  Something at the destination that the library no longer has, in the
+    #  place the destination actually keeps things.
+    there_dir = target / "Photos"
+    there_dir.mkdir()
+    (there_dir / "gone.jpg").write_bytes(b"still here")
 
     first = transfer_run.send(conn, settings, plan_for(conn, policy, destination))
 
     assert first.ok, first.detail
-    assert (target / "a.jpg").read_bytes() == b"a" * 100
-    assert (target / "gone.jpg").read_bytes() == b"still here", (
+    #  **Beneath the root, at the path the file has in the Library.** The stub
+    #  tests could never have caught this: they record an argv and move
+    #  nothing, and an argv that is right about the command can still be wrong
+    #  about where the bytes land.
+    assert (there_dir / "a.jpg").read_bytes() == b"a" * 100
+    assert not (target / "a.jpg").exists(), "the category folder was flattened away"
+    assert (there_dir / "gone.jpg").read_bytes() == b"still here", (
         "a mirror removed a file the library no longer has"
     )
 
     #  And again: the second run finds everything current and does nothing.
     there = [
         DestinationFile(f"Photos/{path.name}", path.stat().st_size)
-        for path in target.iterdir()
+        for path in there_dir.iterdir()
         if path.is_file() and path.name != transfer_paths.MARKER
     ]
     second = plan_for(conn, policy, destination, there)
@@ -416,7 +424,7 @@ def test_a_real_copy_converges_and_leaves_the_extra_file_alone(tmp_path: Path) -
     assert second.to_copy == 0
     assert second.destination_only == 1
     assert transfer_run.send(conn, settings, second).ok
-    assert (target / "gone.jpg").exists()
+    assert (there_dir / "gone.jpg").exists()
 
 
 @rclone_installed
@@ -429,7 +437,9 @@ def test_a_rerun_after_an_interrupted_copy_finishes_the_job(tmp_path: Path) -> N
         (photos / name).write_bytes(name.encode() * 50)
     library(conn, "Photos/a.jpg", "Photos/b.jpg", "Photos/c.jpg", size=150)
     #  What an interrupted run leaves: some of the files, none of the rest.
-    (target / "a.jpg").write_bytes(b"a" * 150)
+    there_dir = target / "Photos"
+    there_dir.mkdir()
+    (there_dir / "a.jpg").write_bytes(b"a" * 150)
 
     there = [DestinationFile("Photos/a.jpg", 150)]
     resumed = plan_for(conn, policy, destination, there)
@@ -437,8 +447,15 @@ def test_a_rerun_after_an_interrupted_copy_finishes_the_job(tmp_path: Path) -> N
 
     assert transfer_run.send(conn, settings, resumed).ok
 
-    assert {path.name for path in target.iterdir() if path.is_file()} >= {
+    assert {path.name for path in there_dir.iterdir() if path.is_file()} >= {
         "a.jpg",
         "b.jpg",
         "c.jpg",
     }
+    #  And what was already there is the Library's copy afterwards, whichever
+    #  way round it started. Worth pinning because it is a real difference
+    #  between the two comparisons and the stub could not show it: LibrAIry's
+    #  plan calls a same-size file *current*, and rclone's own check also looks
+    #  at modification time and updated it anyway. Both are outward copies and
+    #  the Library wins either way, which is the only direction there is.
+    assert (there_dir / "a.jpg").read_bytes() == (photos / "a.jpg").read_bytes()

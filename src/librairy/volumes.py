@@ -40,6 +40,7 @@ there are for it to work on the author's machine and not on somebody's NAS.
 
 from __future__ import annotations
 
+import os
 import plistlib
 import subprocess
 import sys
@@ -97,9 +98,20 @@ def matches(recorded: str, found: str) -> bool:
 
 
 def _macos(path: Path) -> str:
-    """`diskutil info -plist`, which is how macOS says what a volume is."""
+    """`diskutil info -plist`, which is how macOS says what a volume is.
+
+    Asked about the **mount point**, not the path itself. `diskutil info` exits
+    non-zero for an ordinary directory — it wants a volume or a device — so
+    asking it about `/Volumes/WD-8TB/librairy` returns nothing at all, and a
+    destination configured as a folder *on* a drive rather than the drive's
+    root would have lost half its identity check without saying so. It would
+    have fallen back to marker-only, silently, for the most ordinary way there
+    is to set one of these up.
+
+    Found by the M3-03 safety gate, which is what a gate is for.
+    """
     result = subprocess.run(  # noqa: S603
-        ["/usr/sbin/diskutil", "info", "-plist", str(path)],
+        ["/usr/sbin/diskutil", "info", "-plist", str(_mount_point(path))],
         capture_output=True,
         timeout=TIMEOUT,
         check=False,
@@ -109,6 +121,18 @@ def _macos(path: Path) -> str:
     found = plistlib.loads(result.stdout)
     uuid = str(found.get("VolumeUUID") or "")
     return f"uuid:{uuid}" if uuid else ""
+
+
+def _mount_point(path: Path) -> Path:
+    """The filesystem this path is on, as a path.
+
+    Walks up until the operating system says "this is where a filesystem is
+    mounted". `/` always is, so this terminates.
+    """
+    here = path.resolve()
+    while not os.path.ismount(here) and here != here.parent:
+        here = here.parent
+    return here
 
 
 def _linux(path: Path) -> str:

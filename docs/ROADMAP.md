@@ -1255,14 +1255,43 @@ do not disagree.
 
 ## M3-03 · Backup, Mirror, Offline Backup
 
-**P1 · XL · High risk · IN PROGRESS** — semantics, the destination and policy
-model, path safety, planning, the execution adapter and online Backup are done
+**P1 · XL · High risk · DONE** — semantics, the destination and policy model,
+path safety, planning, the execution adapter, Backup, Mirror, Offline Backup,
+the Browse quick action, the surfaces and the safety gate
 (`librairy/destinations.py`, `librairy/transfer_paths.py`,
 `librairy/volumes.py`, `librairy/transfer_plan.py`, `librairy/transfer_run.py`,
 `librairy/backup_runs.py`, `librairy/transfer_listing.py`,
 `librairy/divergence.py`, `librairy/offline_drives.py`,
 `librairy/transfer_requests.py`, `librairy/transfer_status.py`, schema 62).
-The safety gate is the only thing open.
+
+> **The gate is closed.** Both items are settled and the two real-rclone tests
+> now run: rclone 1.75.1 is installed on the author's machine, five drills
+> drive the actual binary against real directories, and the suite reports two
+> skips, neither of them here.
+>
+> **The gate found three things a stub could not.** All three had passed every
+> test in the suite, because a stub records an argv and moves no bytes:
+>
+> 1. **Every file was landing in the wrong place.** The destination was the
+>    backup root rather than `<root>/<Library path>`, so a first real copy
+>    flattened `Photos/` into the drive's root — and the listing's fallback
+>    hid it for a drive holding one category. Found in increment 7 by
+>    reasoning; *confirmed* the moment rclone ran.
+> 2. **`diskutil info` exits non-zero for an ordinary directory.** A
+>    destination at `/Volumes/WD-8TB/librairy` — the most ordinary way there
+>    is to set one up — read no volume id at all and fell back to the marker
+>    alone, silently, for the check that exists to catch a cloned drive. It
+>    asks about the mount point now.
+> 3. **A drive registered where no volume id could be read was called
+>    "identity confirmed".** Nothing was recorded to compare a filesystem
+>    against, so nothing ever will be: that is marker-only, permanently, and
+>    saying otherwise claimed a check that cannot run.
+>
+> And one difference between the two comparisons, worth knowing rather than
+> fixing: LibrAIry's plan calls a same-size file *current* and rclone's own
+> check also looks at modification time and updates it. Both are outward
+> copies and the Library wins either way, which is the only direction there
+> is.
 
 > **One gate item before this closes.**
 >

@@ -396,6 +396,33 @@ already required for a different reason: the upserts and the reconciling DELETE
 are one statement about the destination, and a process killed between them
 would leave a set that was never true.
 
+### The surfaces, at 1.3 million divergent rows — M3-03 gate
+
+The Dashboard polls every five seconds. Drawing *412,338 only at a destination*
+on it was three per-destination `COUNT`s, and the number can only change when a
+comparison runs — hourly at most. Seven hundred and twenty recomputations an
+hour of a figure that changes once.
+
+| | before | after |
+|---|---|---|
+| Dashboard poll (every 5 s) | 104 ms | **16 ms** |
+| Settings, all destinations | 118 ms | **40 ms** |
+| divergence page 1 or 8,000 | 0.1 ms | 0.1 ms |
+
+**Neither fix stores a count**, which was the temptation and would have been a
+second source of truth for a number whose whole point is that the rows *are*
+the answer. They are both about asking better:
+
+    a `MIN(first_seen_at)` in `summary()` cost the covering index
+        `first_seen_at` is not in `idx_divergence_scope`, so asking for it
+        turned a narrow index scan into a walk of the table proper. It was
+        never rendered anywhere — the per-row dates are on the page that
+        lists the rows, which is where somebody wants them.
+
+    the Dashboard asked once per destination
+        and does not break the number down. One `COUNT(*)` over the index
+        answers it.
+
 ### The listing is the remaining memory-bound half
 
 Carried out of increment 5 and now measured. `transfer_listing` has to hold the

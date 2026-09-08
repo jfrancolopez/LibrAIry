@@ -260,7 +260,15 @@ def verification(identity: str, recorded: str, found: str) -> str:
     """
     if not identity and not recorded:
         return UNVERIFIED
-    if recorded and not found:
+    if not recorded:
+        #  A drive registered where the platform could not name the filesystem.
+        #  Nothing was recorded to compare one against, so nothing ever will
+        #  be — the marker is the whole check, permanently, and saying
+        #  "identity confirmed" would be claiming a check that cannot run.
+        return MARKER_ONLY
+    if not found:
+        #  Recorded once and unreadable now. Still allowed, and still less
+        #  checking than happened at registration.
         return MARKER_ONLY
     return FULLY_VERIFIED
 

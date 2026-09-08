@@ -138,7 +138,6 @@ class Summary:
     #  and a page that showed only one of them would be lying by omission.
     checked_at: str = ""
     verified_at: str = ""
-    since: str = ""
     complete: bool = True
 
     @property
@@ -297,9 +296,13 @@ def forget(conn: sqlite3.Connection, destination_id: int, category: str = "") ->
 
 def summary(conn: sqlite3.Connection, destination_id: int) -> Summary:
     """How much is only at this destination, across every scope it holds."""
+    #  Count only. A `MIN(first_seen_at)` alongside it cost the covering index
+    #  — `first_seen_at` is not in `idx_divergence_scope`, so adding it turned
+    #  a narrow index scan into a walk of the whole table, and the oldest date
+    #  was never shown anywhere. The per-row dates are on the page that lists
+    #  the rows, which is where somebody actually wants them.
     row = conn.execute(
-        "SELECT COUNT(*) AS total, MIN(first_seen_at) AS since"
-        " FROM backup_divergence WHERE destination_id=?",
+        "SELECT COUNT(*) AS total FROM backup_divergence WHERE destination_id=?",
         (destination_id,),
     ).fetchone()
     scan = conn.execute(
@@ -310,7 +313,6 @@ def summary(conn: sqlite3.Connection, destination_id: int) -> Summary:
     return Summary(
         destination_id=destination_id,
         count=int(row["total"] or 0) if row else 0,
-        since=str(row["since"] or "") if row else "",
         checked_at=str(scan["checked"] or "") if scan else "",
         verified_at=str(scan["verified"] or "") if scan else "",
         #  One scope that could not be finished makes the whole destination's
@@ -359,6 +361,18 @@ def page(
         rows=tuple(rows[:size]),
         after=after,
         next=rows[size - 1].relpath if len(rows) > size else "",
+    )
+
+
+def count_all(conn: sqlite3.Connection) -> int:
+    """How much is only at *any* destination, in one covering-index scan.
+
+    What a five-second dashboard poll asks. A count per destination is three
+    searches of the table proper; this is one narrow scan of the index, and the
+    Dashboard does not break the number down anyway.
+    """
+    return int(
+        conn.execute("SELECT COUNT(*) FROM backup_divergence").fetchone()[0] or 0
     )
 
 
