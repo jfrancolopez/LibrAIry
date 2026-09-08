@@ -235,15 +235,12 @@ FORWARD_ACTIONS = ("move", "quarantine")
 #
 #  The reversal check pairs an undo row with its forward row by `op_id` where
 #  there is one, and by the path it came back from where there is not.
-_EXECUTED = """
-  SELECT h.id AS ordinal, h.plan_id AS plan_id, h.op_id AS op_id,
-         o.item_id AS item_id,
-         h.src_root AS src_root, h.src_relpath AS src_relpath,
-         h.dest_root AS dest_root, h.dest_relpath AS dest_relpath
-  FROM history h
-  LEFT JOIN plan_ops o ON o.id = h.op_id
-  WHERE h.outcome='ok' AND h.action IN ({forward}) {only}
-    AND NOT EXISTS (
+#  Whether the forward row `h` has been reversed. Written once because two
+#  questions need it: which operations still stand, and — after an interrupted
+#  reversal — whether this one has already been put back. Two spellings of
+#  "already undone" would be two things to keep in agreement.
+_REVERSAL_EXISTS = """
+    EXISTS (
       SELECT 1 FROM history u
       WHERE u.outcome='ok' AND u.action IN ({undone}) AND u.id > h.id
         AND ((u.op_id IS NOT NULL AND u.op_id = h.op_id)
@@ -254,10 +251,39 @@ _EXECUTED = """
     )
 """
 
+_EXECUTED = """
+  SELECT h.id AS ordinal, h.plan_id AS plan_id, h.op_id AS op_id,
+         o.item_id AS item_id,
+         h.src_root AS src_root, h.src_relpath AS src_relpath,
+         h.dest_root AS dest_root, h.dest_relpath AS dest_relpath
+  FROM history h
+  LEFT JOIN plan_ops o ON o.id = h.op_id
+  WHERE h.outcome='ok' AND h.action IN ({forward}) {only}
+    AND NOT""" + _REVERSAL_EXISTS
+
 _FORWARD_IN = ",".join("?" * len(FORWARD_ACTIONS))
 _UNDONE_IN = ",".join("?" * len(UNDO_ACTIONS))
 _EXECUTED_SQL = _EXECUTED.format(forward=_FORWARD_IN, undone=_UNDONE_IN, only="")
+_REVERSAL_SQL = _REVERSAL_EXISTS.format(undone=_UNDONE_IN)
 _EXECUTED_PARAMS = (*FORWARD_ACTIONS, *UNDO_ACTIONS)
+
+
+def reversed_already(conn: sqlite3.Connection, history_id: int) -> bool:
+    """Has this one forward operation already been put back?
+
+    Asked by `history._already_put_back`, which finds a file gone from where
+    LibrAIry left it and the exact bytes back at its old address. That is what a
+    reversal killed before it could journal itself looks like — and it is also
+    what a plan reversed yesterday looks like, so this is the question that
+    tells them apart.
+    """
+    return (
+        conn.execute(
+            f"SELECT 1 FROM history h WHERE h.id=? AND {_REVERSAL_SQL} LIMIT 1",  # noqa: S608
+            (history_id, *UNDO_ACTIONS),
+        ).fetchone()
+        is not None
+    )
 
 
 def _executed_after(bound: str) -> str:

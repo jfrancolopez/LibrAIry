@@ -10,6 +10,7 @@ from pathlib import Path
 from librairy.config import Settings
 from librairy.fingerprint import blake2b_file
 from librairy.lifecycle import should_reset_for_fingerprint_change
+from librairy.paths import is_in_flight
 from librairy.proposals import supersede_proposal
 from librairy.reserved import is_reserved
 from librairy.search import sync_search_item
@@ -30,6 +31,9 @@ class ScanSummary:
     #  bookkeeping. Never indexed, never overwritten, and reported by the
     #  Browse consistency panel rather than swallowed here.
     reserved_skipped: int = 0
+    #  Half-written files left by a move that was interrupted. Not drift and
+    #  not media: Health reports them under the commit that has not finished.
+    in_flight_skipped: int = 0
 
 
 def utc_now() -> str:
@@ -52,7 +56,7 @@ def scan_root(
     now_ns = datetime.now(UTC).timestamp() * 1_000_000_000
     seen: set[str] = set()
     discovered = hashed = skipped_unchanged = unstable = symlinks_skipped = 0
-    reserved_skipped = 0
+    reserved_skipped = in_flight_skipped = 0
 
     for dirpath, dirnames, filenames in os.walk(root_path, followlinks=False):
         current_dir = Path(dirpath)
@@ -67,6 +71,13 @@ def scan_root(
             path = current_dir / name
             relpath = _posix_rel(path, root_path)
             if _is_hidden(name) or _ignored(relpath, settings.ignore_patterns):
+                continue
+            if is_in_flight(name):
+                #  Never an `items` row: a file wearing this name is mid-move or
+                #  was abandoned mid-move by a killed run, and the commit that
+                #  owns it clears it when it runs again. Counted so that a scan
+                #  can say it saw something rather than silently seeing nothing.
+                in_flight_skipped += 1
                 continue
             if is_reserved(relpath):
                 # LibrAIry keeps this name for its own bookkeeping, and one
@@ -159,6 +170,7 @@ def scan_root(
         missing,
         symlinks_skipped,
         reserved_skipped,
+        in_flight_skipped,
     )
 
 
@@ -223,7 +235,17 @@ def _visible(name: str, relpath: str, patterns: list[str], is_symlink: bool) -> 
     Locally that halves the cost of a listing; over a network share, where the
     stat is the expensive part, it matters considerably more.
     """
-    return not _is_hidden(name) and not _ignored(relpath, patterns) and not is_symlink
+    return (
+        not _is_hidden(name)
+        and not _ignored(relpath, patterns)
+        and not is_symlink
+        #  A move that is still happening, or one that was interrupted while it
+        #  happened. These bytes are half of somebody's file under a name
+        #  LibrAIry itself wrote, and indexing them would put a truncated copy
+        #  in Browse, in Search, in the counts and in the backup queue as though
+        #  a person had put it there. See `paths.IN_FLIGHT`.
+        and not is_in_flight(name)
+    )
 
 
 def visible_files(base: Path | str, patterns: list[str], prefix: str = "") -> list[str]:

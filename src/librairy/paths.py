@@ -7,6 +7,40 @@ from librairy.reserved import refuse_reserved
 
 CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
 
+#  The name a file wears for the seconds between being copied across a
+#  filesystem boundary and being renamed into place. `executor._move_verified`
+#  writes it, verifies the bytes against the fingerprint the plan recorded, and
+#  renames it over the destination; the temporary name is what makes that
+#  sequence safe to interrupt, because a half-written file never wears the real
+#  one.
+#
+#  It is also the one thing a crash can leave behind in the library, so the
+#  spelling lives here rather than inside the executor: the scanner has to
+#  recognise it in order to *not* index it. An `items` row for a half-written
+#  file would make it browsable, countable, searchable and eligible for backup,
+#  as if somebody had put it there deliberately.
+#
+#  Deliberately narrow. `.part-` alone is a suffix somebody might plausibly own;
+#  `.part-` followed by the plan that is writing it is not.
+IN_FLIGHT = re.compile(
+    r"\.part-(?:undo-\d+|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}"
+    r"-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$"
+)
+
+
+def in_flight_name(dest: Path, token: str) -> Path:
+    """Where `dest` is written before it is `dest`."""
+    return dest.with_name(f"{dest.name}.part-{token}")
+
+
+def is_in_flight(name: str) -> bool:
+    """Is this the temporary name of a move, rather than a file somebody owns?
+
+    Asked of every file in every scan, so the substring comes first: a million
+    names that do not contain `.part-` never reach the expression.
+    """
+    return ".part-" in name and IN_FLIGHT.search(name) is not None
+
 
 class PathValidationError(ValueError):
     pass

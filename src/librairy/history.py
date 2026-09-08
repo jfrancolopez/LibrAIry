@@ -325,6 +325,9 @@ def _undo_op_unlocked(
         kind="source",
     )
     if not src.exists():
+        put_back = _already_put_back(conn, entry, settings)
+        if put_back is not None:
+            return put_back
         return _record_refused(conn, entry, "undo_refused_missing")
     current_fingerprint = blake2b_file(src)
     if entry["fingerprint"] and current_fingerprint != entry["fingerprint"]:
@@ -348,6 +351,93 @@ def _undo_op_unlocked(
     _settle_quarantine_after_undo(conn, entry)
     _unsettle_quarantine_after_undo(conn, entry, final_relpath)
     return UndoResult(history_id, "ok", final_relpath)
+
+
+def _already_put_back(
+    conn: sqlite3.Connection, entry: sqlite3.Row, settings: Settings
+) -> UndoResult | None:
+    """Was this reversal already carried out by a run that was killed?
+
+    The file is not where LibrAIry left it, and `undo_refused_missing` says so
+    in as many words: *not put back — the file is no longer where LibrAIry left
+    it*. After a crash between the rename and the journal that is the opposite
+    of the truth. The file is exactly where the reversal put it, and the person
+    reading the sentence is being told their file is lost.
+
+    So the same question the executor asks, mirrored: are the bytes at the place
+    this reversal was going to put them? Three things have to hold, and they are
+    narrow on purpose.
+
+    * The origin path holds a file whose fingerprint is the one this journal row
+      recorded. Same bytes, same address, and no guessing about renumbered
+      names — a reversal that had to renumber landed somewhere only the dead run
+      knew.
+    * Nothing has already reversed this operation. Without that, undoing an
+      already-undone plan would find the file back in the inbox and record a
+      second reversal of the same move.
+    * The journal row is a forward operation, which is what `undo_plan` reads.
+
+    It cannot tell a crashed reversal from somebody moving the file back by
+    hand, and does not try to: in both cases the file is at its old address with
+    its old bytes, the reversal is a fact about the library, and the index
+    should say so. What it must never do is claim it twice.
+    """
+    from librairy.undo_sequence import reversed_already
+
+    if not entry["fingerprint"]:
+        return None
+    if reversed_already(conn, int(entry["id"])):
+        #  Already reversed — by an earlier press, or by the run that died in
+        #  the *other* window: after journalling the reversal and before
+        #  telling the index about it. Nothing moves here and the outcome does
+        #  not change; the index is brought up to what the journal already
+        #  says, because the two disagreeing is the whole failure this pair of
+        #  functions exists to prevent.
+        _catch_up_after_undo(conn, entry, settings)
+        return None
+    origin = validate_relpath(
+        _root_path(settings, entry["src_root"]),
+        entry["src_relpath"],
+        kind="source",
+    )
+    if not origin.is_file() or blake2b_file(origin) != entry["fingerprint"]:
+        return None
+    _record_undo(conn, entry, entry["src_relpath"], entry["fingerprint"], "ok")
+    _update_item_after_undo(conn, entry, entry["src_relpath"], origin)
+    _settle_quarantine_after_undo(conn, entry)
+    _unsettle_quarantine_after_undo(conn, entry, entry["src_relpath"])
+    return UndoResult(int(entry["id"]), "ok", entry["src_relpath"])
+
+
+def _catch_up_after_undo(
+    conn: sqlite3.Connection, entry: sqlite3.Row, settings: Settings
+) -> None:
+    """Point the item row at the file, when the journal already knows.
+
+    Only when the bytes say so, and only into an address nothing else holds:
+    `items` has UNIQUE (root, relpath), and a scan between the crash and this
+    moment will have discovered the file at its old address and given it a row
+    of its own. Two rows for one file is not resolved by writing a third answer
+    over one of them.
+    """
+    item = conn.execute(
+        "SELECT id FROM items WHERE root=? AND relpath=?",
+        (entry["dest_root"], entry["dest_relpath"]),
+    ).fetchone()
+    if item is None:
+        return
+    taken = conn.execute(
+        "SELECT 1 FROM items WHERE root=? AND relpath=? AND id<>? LIMIT 1",
+        (entry["src_root"], entry["src_relpath"], item["id"]),
+    ).fetchone()
+    if taken is not None:
+        return
+    origin = validate_relpath(
+        _root_path(settings, entry["src_root"]), entry["src_relpath"], kind="source"
+    )
+    if not origin.is_file() or blake2b_file(origin) != entry["fingerprint"]:
+        return
+    _update_item_after_undo(conn, entry, entry["src_relpath"], origin)
 
 
 def _undo_adoption(

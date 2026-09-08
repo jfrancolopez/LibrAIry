@@ -6,6 +6,7 @@ import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 
+from librairy import commit_state
 from librairy.config import Settings
 from librairy.humanize import human_bytes
 from librairy.lifecycle import state_counts, vanished_count
@@ -180,6 +181,15 @@ def operations_overview(
         conn, "SELECT COUNT(*) FROM proposals WHERE status='proposed'"
     )
 
+    #  Asked once and answered for both bands below. `executing` is a plan
+    #  status, not a running process: the count is what the row says, and
+    #  `commit_state.unfinished` is what is actually true — see there for why
+    #  the lock is the evidence. A library with no commit in flight pays for
+    #  this count alone, which the activity band was already asking for.
+    executing = _count(conn, "SELECT COUNT(*) FROM plans WHERE status='executing'")
+    stopped = commit_state.unfinished(conn, settings) if executing else []
+    running = executing - len(stopped)
+
     surfaces = [
         {"label": "Inbox", "count": inbox_waiting, "note": "waiting for review",
          "href": "/review"},
@@ -194,15 +204,15 @@ def operations_overview(
     ]
     return {
         "surfaces": surfaces,
-        "needs_attention": _needs_attention(conn, queue, findings, quarantine),
-        "activity": _activity(conn),
+        "needs_attention": _needs_attention(conn, queue, findings, quarantine, stopped),
+        "activity": _activity(conn, running),
         "recent": _recent(conn),
         "delete_queue_count": int(quarantine["delete_queue"] or 0),
     }
 
 
 def _needs_attention(
-    conn: sqlite3.Connection, queue, findings, quarantine
+    conn: sqlite3.Connection, queue, findings, quarantine, stopped=()  # noqa: ANN001
 ) -> list[dict[str, str]]:
     """Only things a person has to do something about.
 
@@ -251,6 +261,16 @@ def _needs_attention(
                     "could work out",
             "href": "/review#review-waiting",
         })
+    #  A commit whose process stopped. It is here rather than under "what
+    #  LibrAIry is doing now" because it is not doing it: the run is gone, the
+    #  files it had not reached are untouched, and committing again finishes the
+    #  job. See `librairy/commit_state.py` for why the lock is the evidence.
+    for interrupted in stopped:
+        items.append({
+            "text": f"A commit was interrupted — {interrupted.sentence}",
+            "href": "/commit",
+        })
+
     from librairy.search_health import recorded_health
 
     # Read, not checked: the dashboard polls every five seconds and rendering
@@ -296,7 +316,7 @@ def _held(conn: sqlite3.Connection) -> dict[str, int]:
     return {str(row["reason"]): int(row["n"]) for row in rows}
 
 
-def _activity(conn: sqlite3.Connection) -> list[dict[str, str]]:
+def _activity(conn: sqlite3.Connection, running: int = 0) -> list[dict[str, str]]:
     """What LibrAIry is doing now, from state it already keeps."""
     from librairy.audit_job import progress as audit_progress
     from librairy.waiting import RESUMABLE
@@ -320,10 +340,13 @@ def _activity(conn: sqlite3.Connection) -> list[dict[str, str]]:
             "what": "Library audit",
             "detail": f"{audit.get('phase') or 'working'} · {done}/{total}",
         })
-    running = conn.execute(
-        "SELECT COUNT(*) AS n FROM plans WHERE status='executing'"
-    ).fetchone()["n"]
-    if running:
+    #  Counted by the caller, and deliberately not the number of plans that say
+    #  `executing`: that status is written before the first file moves and
+    #  rewritten when the run ends, so a killed process leaves it behind for
+    #  ever, and this line said "1 running" about a process that had not existed
+    #  for a week. An interrupted commit belongs under the things that need a
+    #  person, not under what LibrAIry is doing now.
+    if running > 0:
         rows.append({"what": "Commit", "detail": f"{running} running"})
     return rows
 

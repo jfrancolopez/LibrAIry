@@ -162,6 +162,7 @@ feature notes; they are the shape of the program.
 | [Restore reconciliation](architecture/restore-reconciliation.md) | only exact bytes may say a file moved |
 | [Withdrawn decisions](architecture/withdrawn-decisions.md) | a withdrawal moved nothing, so it is not History |
 | [Adoption](architecture/adoption-architecture.md) | what a representation change inherits, and what it must not |
+| [Crash recovery](architecture/crash-recovery.md) | a crash may lose work; it may never lose a file, or leave a record of something that did not happen |
 
 Shared vocabulary lives in [ui-vocabulary.md](ui-vocabulary.md). The current
 plan of work is [ROADMAP.md](ROADMAP.md). Superseded planning material is

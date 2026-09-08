@@ -1744,6 +1744,19 @@ Not a feature milestone. This is where "it works" becomes "it is finished".
 **Exit.** The major version is declared when this milestone's list is done and
 LibrAIry has been *used* rather than worked on.
 
+## M4 in progress
+
+| | |
+|---|---|
+| **Migration from every released schema** | DONE 2026-09-08 — schemas 4, 10 and 47 built by running the real migrations, populated, migrated to head, then *opened and rendered*. `tests/test_migration_paths.py` |
+| **Crash recovery drills** | DONE 2026-09-08 — commit and Undo killed with `SIGKILL` at four seams inside a single operation. Four defects, all of them the same shape: the record disagreeing with the library. `tests/test_recovery_drills.py`, [architecture/crash-recovery.md](architecture/crash-recovery.md) |
+
+The standard both are measured against, and the one the rest of M4 inherits:
+
+> An upgrade — or a recovery — is successful only when the installation
+> **behaves correctly** afterwards. Not when `user_version` reaches the latest
+> schema, and not when the process exits without a traceback.
+
 ---
 
 # Build order

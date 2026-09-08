@@ -171,6 +171,7 @@ def report(conn: sqlite3.Connection, settings=None, counts=None) -> Report:  # n
         _photos,
         _format_impact,
         _blocked_undo,
+        _unfinished_commit,
         _policy,
         _learned,
         _transfers,
@@ -818,6 +819,47 @@ def _blocked_undo(conn: sqlite3.Connection, settings=None, counts=None) -> list[
 
 
 # --- what the owner has configured --------------------------------------------
+
+
+def _unfinished_commit(conn: sqlite3.Connection, settings=None, counts=None) -> list[Concern]:  # noqa: ANN001, ARG001
+    """A commit whose process stopped before it finished.
+
+    ACTION rather than ATTENTION, and the distinction is the whole point of the
+    concern: files somebody approved are still sitting where they were, and
+    nothing will move them until a person asks again. Nothing is lost and
+    nothing is at risk — every operation that ran recorded its own result, and
+    committing the plan again picks up exactly where the dead run stopped,
+    including the file whose bytes had moved a moment before the process died.
+
+    Silent while anything holds the lock, which is what keeps a commit that is
+    genuinely running from being described as a dead one.
+    """
+    from librairy.commit_state import unfinished
+
+    if settings is None:
+        return []
+    stopped = unfinished(conn, settings)
+    if not stopped:
+        return []
+    return [
+        Concern(
+            code="commit-interrupted",
+            level=ACTION,
+            headline=f"A commit was interrupted"
+                     f"{'' if len(stopped) == 1 else f' — {len(stopped)} of them'}",
+            detail="The process stopped part way through. Nothing was lost and "
+                   "nothing is half-moved: each file was verified before it was "
+                   "recorded, and committing again carries on from where it "
+                   "stopped.",
+            examples=tuple(
+                Example(text=stopped_one.sentence) for stopped_one in stopped[:SHOWN]
+            ),
+            more=max(0, len(stopped) - SHOWN),
+            href="/commit",
+            action="View in Commit",
+            count=len(stopped),
+        )
+    ]
 
 
 def _policy(conn: sqlite3.Connection, settings=None, counts=None) -> list[Concern]:  # noqa: ANN001, ARG001

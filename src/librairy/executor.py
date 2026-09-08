@@ -25,7 +25,12 @@ from librairy.optimization_source import (
     is_optimization_source,
     resolve_optimization_source,
 )
-from librairy.paths import resolve_collision, validate_dest, validate_relpath
+from librairy.paths import (
+    in_flight_name,
+    resolve_collision,
+    validate_dest,
+    validate_relpath,
+)
 from librairy.planner import compute_plan_hash, utc_now
 from librairy.quarantine import record_quarantine_entry
 from librairy.relationship_impact import drift as relationship_drift
@@ -117,6 +122,12 @@ def _execute_plan_unlocked(
     if not plan["plan_hash"] or compute_plan_hash(conn, plan_id) != plan["plan_hash"]:
         raise ExecutionError("plan hash mismatch; refusing to touch files")
 
+    #  Asked before it is overwritten, and it is evidence rather than
+    #  bookkeeping. This process holds the lock, so nothing else is running this
+    #  plan; a plan that still says `executing` is therefore a run that started
+    #  and was killed before it could finish. That is the one condition under
+    #  which the recovery below is allowed to conclude anything.
+    resuming = plan["status"] == "executing"
     conn.execute("UPDATE plans SET status='executing' WHERE id=?", (plan_id,))
     counts = {
         "done": 0,
@@ -136,6 +147,15 @@ def _execute_plan_unlocked(
         "SELECT * FROM plan_ops WHERE plan_id=? ORDER BY seq",
         (plan_id,),
     ).fetchall()
+    if resuming:
+        #  Before anything else runs: an operation whose *result* was written
+        #  has moved its bytes, and the rows that describe that move may not
+        #  all have been written before the process died.
+        _finish_records(conn, rows, settings)
+        rows = conn.execute(
+            "SELECT * FROM plan_ops WHERE plan_id=? ORDER BY seq",
+            (plan_id,),
+        ).fetchall()
     #  What this decision was explained in terms of, re-read.
     #
     #  Every operation's own source is verified byte for byte before it moves.
@@ -211,7 +231,7 @@ def _execute_plan_unlocked(
         if row["result"] in TERMINAL_RESULTS:
             continue
         try:
-            result = _execute_op(conn, row, settings)
+            result = _execute_op(conn, row, settings, resuming=resuming)
         except Exception as exc:
             result = "failed"
             _finish_op(conn, row["id"], result, None)
@@ -493,11 +513,20 @@ def _comparison_expired(
     return {}
 
 
-def _execute_op(conn: sqlite3.Connection, row: sqlite3.Row, settings: Settings) -> str:
+def _execute_op(
+    conn: sqlite3.Connection,
+    row: sqlite3.Row,
+    settings: Settings,
+    *,
+    resuming: bool = False,
+) -> str:
     if is_optimization_source(row["src_root"]):
         return _execute_adoption_op(conn, row, settings)
     src = validate_relpath(_root_path(settings, row["src_root"]), row["src_relpath"], kind="source")
     if not src.exists():
+        recovered = _already_moved(conn, row, settings, resuming=resuming)
+        if recovered is not None:
+            return recovered
         _finish_op(conn, row["id"], "skipped_missing", None)
         _journal(conn, row, row["dest_relpath"], row["src_fingerprint"], "skipped_missing")
         return "skipped_missing"
@@ -542,9 +571,34 @@ def _execute_op(conn: sqlite3.Connection, row: sqlite3.Row, settings: Settings) 
     dest_root = _root_path(settings, row["dest_root"]).resolve()
     final_relpath = final_dest.relative_to(dest_root).as_posix()
     result = "renamed_collision" if final_dest != dest else "done"
-    _finish_op(conn, row["id"], result, final_relpath)
-    _journal(conn, row, final_relpath, row["src_fingerprint"], "ok")
-    _move_item_row(conn, row, final_relpath, final_dest)
+    return _record_move(conn, row, settings, final_relpath, final_dest, result)
+
+
+def _record_move(
+    conn: sqlite3.Connection,
+    row: sqlite3.Row,
+    settings: Settings,
+    final_relpath: str,
+    final_dest: Path,
+    result: str,
+    *,
+    recovering: bool = False,
+) -> str:
+    """Everything that is true once the bytes are at the destination.
+
+    Six statements, and a crash can land between any two of them: this is the
+    window `_already_moved` exists to close, and the reason it is one function
+    rather than a tail. `recovering` says the bytes moved in an earlier run, so
+    the two writes that are not naturally idempotent ask first.
+    """
+    if not recovering or row["result"] not in TERMINAL_RESULTS:
+        _finish_op(conn, row["id"], result, final_relpath)
+    if not (recovering and _journalled(conn, row)):
+        _journal(conn, row, final_relpath, row["src_fingerprint"], "ok")
+    if not recovering or (
+        final_dest.is_file() and _address_free(conn, row, final_relpath)
+    ):
+        _move_item_row(conn, row, final_relpath, final_dest)
     _mark_proposal_committed(conn, row["item_id"])
     #  The other half of a learned decision: the file actually moved. Stamped
     #  here, per operation, after the bytes are verified — a plan that half ran
@@ -559,9 +613,147 @@ def _execute_op(conn: sqlite3.Connection, row: sqlite3.Row, settings: Settings) 
             relpath=final_relpath,
             fingerprint=row["src_fingerprint"],
         )
-    if row["op_type"] == "quarantine":
+    if row["op_type"] == "quarantine" and not (recovering and _quarantined(conn, row)):
         record_quarantine_entry(conn, row)
     return result
+
+
+def _finish_records(
+    conn: sqlite3.Connection, rows: list[sqlite3.Row], settings: Settings
+) -> None:
+    """Finish saying what an interrupted run already did.
+
+    `plan_ops.result` is written after the bytes are verified at the
+    destination, so a row that says `done` is itself the record that the move
+    happened — which makes this pass relational rather than physical. It asks
+    the database whether the journal and the index agree with that result, and
+    writes only what is missing. Nothing is re-hashed and nothing is re-moved: a
+    plan of ten thousand files resumed after a crash costs two index lookups per
+    finished operation, not ten thousand hashes.
+
+    The narrow window this closes is three statements wide — `plan_ops`, then
+    `history`, then `items` — and landing in it left a file that History could
+    not show and Undo could not reverse, or an index still naming the inbox.
+    """
+    for row in rows:
+        if row["result"] not in {"done", "renamed_collision"} or not row["final_relpath"]:
+            continue
+        if is_optimization_source(row["src_root"]):
+            #  An adoption reverses through `_compensate_adoption`, which reads
+            #  the same journal this would be writing into. Left alone.
+            continue
+        if _journalled(conn, row) and not _index_behind(conn, row):
+            continue
+        final_dest = _root_path(settings, row["dest_root"]) / row["final_relpath"]
+        LOGGER.info(
+            "plan=%s op=%s recovered records: %s/%s",
+            row["plan_id"],
+            row["id"],
+            row["dest_root"],
+            row["final_relpath"],
+        )
+        _record_move(
+            conn, row, settings, row["final_relpath"], final_dest,
+            str(row["result"]), recovering=True,
+        )
+
+
+def _index_behind(conn: sqlite3.Connection, row: sqlite3.Row) -> bool:
+    """Does the item row still name where this operation moved the file from?"""
+    if row["item_id"] is None:
+        return False
+    item = conn.execute(
+        "SELECT root, relpath FROM items WHERE id=?", (row["item_id"],)
+    ).fetchone()
+    return item is not None and (
+        item["root"] != row["dest_root"] or item["relpath"] != row["final_relpath"]
+    )
+
+
+def _already_moved(
+    conn: sqlite3.Connection,
+    row: sqlite3.Row,
+    settings: Settings,
+    *,
+    resuming: bool,
+) -> str | None:
+    """Did this operation already happen, in a run that did not live to say so?
+
+    The source is gone, and there are two reasons for that. Somebody deleted
+    the file — or LibrAIry moved it and was killed in the moment between the
+    rename and the rows that record it. Calling the second one `skipped_missing`
+    is untrue, and expensively so: the journal is what Undo reverses, so a file
+    filed by a run that died a millisecond too early could never be put back,
+    and the `items` row still named the inbox, so the next scan reported the
+    file as vanished and then discovered LibrAIry's own copy of it as something
+    new. One interruption, three wrong answers.
+
+    The bytes decide, as they do everywhere else here: if the destination this
+    operation was approved to write holds exactly the fingerprint the plan
+    recorded, this operation happened. A destination holding *different* bytes
+    is not this move and is left to be reported as missing.
+
+    `resuming` is the other half of the evidence and the reason this cannot fire
+    on a first run: it means the plan still said `executing` when this process
+    took the lock, which is a run that started and never finished.
+
+    Only the plain destination is asked about. A move that renumbered around a
+    collision landed at a name only the dead run knew, and guessing at
+    `photo (2).jpg` would be inventing the thing this function exists to avoid.
+    """
+    if not resuming or not row["src_fingerprint"]:
+        return None
+    dest = validate_dest(_root_path(settings, row["dest_root"]), row["dest_relpath"])
+    if not dest.is_file() or blake2b_file(dest) != row["src_fingerprint"]:
+        return None
+    LOGGER.info(
+        "plan=%s op=%s recovered: %s/%s was already moved by an interrupted run",
+        row["plan_id"],
+        row["id"],
+        row["dest_root"],
+        row["dest_relpath"],
+    )
+    return _record_move(
+        conn, row, settings, row["dest_relpath"], dest, "done", recovering=True
+    )
+
+
+def _journalled(conn: sqlite3.Connection, row: sqlite3.Row) -> bool:
+    """Is this operation already in the journal? Asked only when recovering."""
+    return (
+        conn.execute(
+            "SELECT 1 FROM history WHERE op_id=? AND outcome='ok'"
+            " AND action NOT LIKE 'undo\\_%' ESCAPE '\\' LIMIT 1",
+            (row["id"],),
+        ).fetchone()
+        is not None
+    )
+
+
+def _address_free(conn: sqlite3.Connection, row: sqlite3.Row, final_relpath: str) -> bool:
+    """May this item's row be moved to the destination address?
+
+    `items` has UNIQUE (root, relpath), and a library scan between the crash and
+    the recovery will have discovered the moved file and given it a row of its
+    own. Two rows for one file is not something to resolve by writing a third
+    answer over one of them: the index says the inbox copy is missing, which is
+    reported by the workflow that owns it.
+    """
+    clash = conn.execute(
+        "SELECT 1 FROM items WHERE root=? AND relpath=? AND id IS NOT ? LIMIT 1",
+        (row["dest_root"], final_relpath, row["item_id"]),
+    ).fetchone()
+    return clash is None
+
+
+def _quarantined(conn: sqlite3.Connection, row: sqlite3.Row) -> bool:
+    return (
+        conn.execute(
+            "SELECT 1 FROM quarantine_entries WHERE plan_id=? AND item_id=? LIMIT 1",
+            (row["plan_id"], row["item_id"]),
+        ).fetchone()
+        is not None
+    )
 
 
 # --- adoption: the one source that is not a root -----------------------------------
@@ -653,14 +845,18 @@ def _execute_adoption_op(
 
 
 def _move_verified(src: Path, dest: Path, fingerprint: str, plan_id: str) -> None:
+    #  Cleared before the move and not only on the copying path. A crash during
+    #  a cross-filesystem copy leaves this behind, and the run that finishes the
+    #  job usually renames straight across — which never looked here, so an
+    #  interrupted commit left a half-written file in the library for good.
+    #  Only ever this operation's own temporary name, under this plan's id.
+    temp = in_flight_name(dest, plan_id)
+    temp.unlink(missing_ok=True)
     try:
         os.rename(src, dest)
     except OSError as exc:
         if exc.errno != errno.EXDEV:
             raise
-        temp = dest.with_name(f"{dest.name}.part-{plan_id}")
-        if temp.exists():
-            temp.unlink()
         shutil.copy2(src, temp)
         if blake2b_file(temp) != fingerprint:
             temp.unlink(missing_ok=True)
