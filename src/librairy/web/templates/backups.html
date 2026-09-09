@@ -29,14 +29,20 @@
             </thead>
             <tbody>
               {% for run in view.runs %}
+                {# `data-label` is what the row is headed by on a narrow
+                   screen, where the table stacks and the header row is gone.
+                   Five columns of prose do not fit in 327px: they wrapped to
+                   four lines each and put "18 files · 194 MB" — the column
+                   somebody came to read — off the right-hand edge, behind a
+                   sideways scroll nobody discovers. #}
                 <tr>
-                  <td>{{ run.started_ago }}</td>
+                  <td data-label="When">{{ run.started_ago }}</td>
                   {# The one word that tells a schedule from somebody pressing a
                      button. One history, two origins. #}
-                  <td>{{ run.origin_label }}</td>
-                  <td>{{ run.scope }} · {{ run.mode_label }}</td>
-                  <td>{{ run.result }}{% if run.detail %}<br><span class="muted">{{ run.detail }}</span>{% endif %}</td>
-                  <td>{{ run.summary }}</td>
+                  <td data-label="What asked">{{ run.origin_label }}</td>
+                  <td data-label="Scope">{{ run.scope }} · {{ run.mode_label }}</td>
+                  <td data-label="Result">{{ run.result }}{% if run.detail %}<br><span class="muted">{{ run.detail }}</span>{% endif %}</td>
+                  <td data-label="Moved">{{ run.summary }}</td>
                 </tr>
               {% endfor %}
             </tbody>

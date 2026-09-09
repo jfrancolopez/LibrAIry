@@ -31,6 +31,7 @@ from librairy.db import connect
 from librairy.transfer_paths import MARKER
 from librairy.transfer_plan import MANUAL, POLICY, Entry
 from librairy.web.app import create_app
+from tests.support.pages import words
 
 
 def settings_for(tmp_path: Path) -> Settings:
@@ -263,7 +264,10 @@ def test_the_divergence_page_reaches_every_file_not_a_sample(tmp_path: Path) -> 
     where = f"/backups/{destination_id}/only-here"
     for _ in range(20):
         html = client.get(where).text
-        seen.extend(re.findall(r"<code>(Music/[^<]+)</code>", html))
+        #  `words` takes out the `<wbr>` a path is printed with: the page
+        #  breaks a path at its folders on a narrow screen, and this test is
+        #  about which paths were reached.
+        seen.extend(re.findall(r"<code>(Music/[^<]+)</code>", words(html)))
         found = re.search(r'href="([^"]*only-here\?after=[^"]+)"', html)
         if not found:
             break

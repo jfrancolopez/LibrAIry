@@ -17,6 +17,7 @@ from fastapi.responses import (
 )
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from markupsafe import Markup
 
 from librairy import __version__, waiting
 from librairy.ai.lmstudio import diagnose as lmstudio_diagnose
@@ -209,6 +210,25 @@ def _csrf_context(request: Request) -> dict[str, str]:
 
 
 TEMPLATES = Jinja2Templates(directory=PACKAGE_DIR / "templates", context_processors=[_csrf_context])
+
+
+def _wrappable(value: object) -> Markup:
+    """A path that breaks at its folders rather than in the middle of a name.
+
+    On a 375px screen `library/Photos/2026/August/IMG_5150.jpeg` has to break
+    somewhere, and CSS will do it anywhere it likes — which produced `IM /
+    G_5150.j / peg`, three lines of a filename nobody can read. A path has
+    obvious places to break and they are its separators, so this puts a
+    zero-width opportunity after each one and lets the browser prefer them.
+
+    `<wbr>` and not a soft hyphen: a hyphen appearing in a path is a character
+    somebody may try to type.
+    """
+    escaped = str(escape(str(value)))
+    return Markup(escaped.replace("/", "/<wbr>"))
+
+
+TEMPLATES.env.filters["wrappable"] = _wrappable
 
 
 class RevalidatedStatics(StaticFiles):

@@ -129,11 +129,11 @@
               {% if row.optimization %}
               {% set opt = row.optimization %}
               <dl class="correction-shape">
-                <div><dt>Current</dt><dd class="mono">{{ row.current }}</dd></div>
+                <div><dt>Current</dt><dd class="mono">{{ row.current | wrappable }}</dd></div>
                 {# "Into" for a merge: the folder is already there and probably
                    already has files in it, which "After Commit" would not
                    suggest. Every other decision creates its destination. #}
-                <div><dt>{{ row.after_label or 'After Commit' }}</dt><dd class="mono">{{ row.after }}</dd></div>
+                <div><dt>{{ row.after_label or 'After Commit' }}</dt><dd class="mono">{{ row.after | wrappable }}</dd></div>
                 {# The path is the same for an HEVC re-encode of an MP4, so the
                    two lines above would read as "nothing changes". What changed
                    is the encoding, and it is named right here rather than left
@@ -185,14 +185,14 @@
                 <div><dt>What this is</dt>
                      <dd>the preserved original of an optimized file</dd></div>
                 {% endif %}
-                <div><dt>Current</dt><dd class="mono">{{ row.current }}</dd></div>
+                <div><dt>Current</dt><dd class="mono">{{ row.current | wrappable }}</dd></div>
                 {# "Into" for a merge: the folder is already there and probably
                    already has files in it, which "After Commit" would not
                    suggest. Every other decision creates its destination. #}
-                <div><dt>{{ row.after_label or 'After Commit' }}</dt><dd class="mono">{{ row.after }}</dd></div>
+                <div><dt>{{ row.after_label or 'After Commit' }}</dt><dd class="mono">{{ row.after | wrappable }}</dd></div>
                 {% if row.preserved and row.preserved.active_relpath %}
                 <div><dt>Active optimized version</dt>
-                     <dd class="mono">library/{{ row.preserved.active_relpath }}</dd></div>
+                     <dd class="mono">{{ ("library/" ~ row.preserved.active_relpath) | wrappable }}</dd></div>
                 {% endif %}
                 <div><dt>Affects</dt><dd>{{ row.op_count }} file{{ '' if row.op_count == 1 else 's' }} · {{ row.size }}</dd></div>
                 <div><dt>Reason</dt><dd>{{ row.reason }}</dd></div>

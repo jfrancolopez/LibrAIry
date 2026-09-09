@@ -1227,6 +1227,23 @@ def _documents_in_the_inbox(conn, settings: Settings) -> None:  # noqa: ANN001
     #  No text on any page: this is what a photocopy looks like when nothing
     #  has read the pixels, and the row has to say so rather than guess.
     (settings.inbox_dir / "IMG_20240612_0001.pdf").write_bytes(build_pdf(pages=2))
+    #  A name nobody would choose and everybody has: a scanner's date stamp, a
+    #  meeting, three people and a version, in one 118-character filename. It
+    #  is here so that every page drawn from this fixture is drawn with one on
+    #  it — a layout that only holds for `dune.epub` holds for nothing, and a
+    #  375px check against friendly names is a check against the fixture.
+    (
+        settings.inbox_dir
+        / (
+            "2026-03-14 Quarterly planning meeting — minutes, actions and "
+            "attachments (Franco, Marta, Ines) v3 FINAL.pdf"
+        )
+    ).write_bytes(
+        build_pdf(
+            title="Quarterly planning meeting - minutes",
+            lines=("Quarterly planning meeting", "14 March 2026", "Actions and owners"),
+        )
+    )
     #  The `CRACKING` case, found in real use and the reason M2-02 exists: a
     #  PDF whose embedded title is nothing like what its own title page says.
     #  Three sources name one work and one names something else, so it reaches

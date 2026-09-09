@@ -310,8 +310,14 @@ def test_the_panel_is_constrained_so_it_cannot_widen_the_page() -> None:
     assert "max-width" in block
     assert "100vw" in block, "bounded by the viewport, not by the text"
     assert "white-space: normal" in block, "long paths wrap"
-    mobile = css.split("@media (max-width: 40rem) {", 2)[-1]
-    mobile_panel = mobile.split(".ext-info-panel[popover] {", 1)[1].split("}", 1)[0]
+    #  The last of the two rules for this panel is the narrow one. Found that
+    #  way rather than by slicing at a breakpoint, so that moving the rule
+    #  between media blocks cannot make this test read a different rule and
+    #  pass.
+    mobile_panel = css.rsplit(".ext-info-panel[popover] {", 1)[1].split("}", 1)[0]
+    assert mobile_panel != block, "there is no narrow rule for the panel any more"
+    before = css.rsplit(".ext-info-panel[popover] {", 1)[0]
+    assert "max-width: 639px" in before.rsplit("@media", 1)[-1], "not a narrow rule"
     # Found on a real phone-sized page, not here: the mobile rule switched to
     # position:fixed while the desktop `top: calc(100% + ...)` still applied,
     # and a percentage top on a fixed element resolves against the viewport.

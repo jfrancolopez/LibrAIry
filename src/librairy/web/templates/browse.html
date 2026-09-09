@@ -59,29 +59,44 @@
     <label class="field field-wide">Find a file
       <input type="search" name="q" value="{{ query }}" placeholder="queen night opera">
     </label>
-    {# The old page defaulted to every root at once, which is why searching
-       turned up inbox files you had not filed yet. #}
-    <label class="field">Where
-      <select name="root">
-        {% for value, label in scopes %}
-          <option value="{{ value }}"{% if value == scope %} selected{% endif %}>{{ label }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <label class="field field-narrow">Category
-      <input name="category" value="{{ filters.category or '' }}" placeholder="any">
-    </label>
-    <label class="field field-narrow">Year
-      <input name="year" type="number" value="{{ filters.year or '' }}" placeholder="any">
-    </label>
-    <label class="field field-narrow">Genre
-      <input name="genre" value="{{ filters.genre or '' }}" placeholder="any">
-    </label>
-    <label class="field checkbox-field">
-      <input name="content" type="checkbox" value="true" {% if filters.content %}checked{% endif %}>
-      search inside documents
-    </label>
     <button type="submit">Search</button>
+    {# The four ways to narrow, folded away — the same disclosure Review uses,
+       for the same reason. Stacked, they were five fields between the search
+       box and the first result, which on a phone is the whole screen; and the
+       one that matters most is the box you have already typed in. Open
+       whenever any of them is set, so a narrowed search never looks like a
+       whole-library one.
+
+       The old page defaulted to every root at once, which is why searching
+       turned up inbox files you had not filed yet — so `Where` is in here and
+       not left out. #}
+    {% set narrowed = filters.category or filters.year or filters.genre or filters.content
+                      or (scope and scope != 'library') %}
+    <details class="filter-more"{% if narrowed %} open{% endif %}>
+      <summary>Narrow it{% if narrowed %} <span class="badge badge-info">on</span>{% endif %}</summary>
+      <div class="filter-grid">
+        <label class="field">Where
+          <select name="root">
+            {% for value, label in scopes %}
+              <option value="{{ value }}"{% if value == scope %} selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="field field-narrow">Category
+          <input name="category" value="{{ filters.category or '' }}" placeholder="any">
+        </label>
+        <label class="field field-narrow">Year
+          <input name="year" type="number" value="{{ filters.year or '' }}" placeholder="any">
+        </label>
+        <label class="field field-narrow">Genre
+          <input name="genre" value="{{ filters.genre or '' }}" placeholder="any">
+        </label>
+        <label class="field checkbox-field">
+          <input name="content" type="checkbox" value="true" {% if filters.content %}checked{% endif %}>
+          search inside documents
+        </label>
+      </div>
+    </details>
   </form>
 
   {% include "partials/browse_body.html" %}

@@ -2079,6 +2079,36 @@ summary.timeline-head::-webkit-details-marker { display: none; }
   .app-nav { order: 3; width: 100%; }
 }
 
+/* ---- Made for a thumb ------------------------------------------------- */
+/* A 17px checkbox is a 17px target, and the ones that matter most here are the
+   ones that decide what a bulk action covers — "select the 5 shown" beside an
+   album, a row's own tick in a queue of forty. Bigger, and wrapped in a label
+   tall enough to press without aiming: the label is the target, and it always
+   was, but 20px of it is not something anybody can hit while walking. */
+@media (max-width: 639px) {
+  input[type="checkbox"], input[type="radio"] { width: 1.35rem; height: 1.35rem; }
+  label:has(> input[type="checkbox"]), label:has(> input[type="radio"]) {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-height: 2.75rem;
+  }
+  label:has(> input[type="checkbox"]) > input,
+  label:has(> input[type="radio"]) > input { margin-top: 0; }
+
+  /* The bulk actions name the count they would act on — deliberately, since a
+     bulk decision on a number you cannot see is not informed — which makes
+     them the widest labels on the page, and one per row cost a third of the
+     first screen before a single decision was visible. Smaller type pairs them
+     up. The words do not change: they are the safety-relevant part. */
+  .page-head .button-row button, .page-head .button-row .btn {
+    font-size: var(--text-sm);
+    /* Narrower, not shorter: the height is what a thumb aims at. */
+    padding-left: var(--space-3);
+    padding-right: var(--space-3);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.001ms !important;
@@ -2858,7 +2888,22 @@ summary.timeline-head::-webkit-details-marker { display: none; }
 }
 .correction-shape > div { display: contents; }
 .correction-shape dt { color: var(--text-dim); text-transform: uppercase; font-size: 0.8em; }
-.correction-shape dd { margin: 0; word-break: break-all; }
+/* `break-all` broke a filename wherever the line happened to end — `IM /
+   G_5150.j / peg`, which is three lines of something nobody can read. The
+   paths carry `<wbr>` after each separator (see `_wrappable`), so the browser
+   has somewhere sensible to break — and `break-word` rather than `anywhere`
+   is what makes it prefer those: `anywhere` fills each line to the last
+   character it can fit, which is a mid-filename break every time. */
+.correction-shape dd { margin: 0; overflow-wrap: break-word; }
+
+/* At 375px a label column and a value column leave the value about 200px, and
+   a library path does not fit in 200px however it breaks. The label goes above
+   the value instead: the same facts, the full width for the one that needs it. */
+@media (max-width: 639px) {
+  .correction-shape { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .correction-shape > div { display: block; margin-bottom: var(--space-2); }
+  .correction-shape dt { margin-bottom: 2px; }
+}
 
 /* Execution, read as a result rather than a debug print. The line it replaces
    was six counters, four of them permanently zero. */
@@ -3137,10 +3182,14 @@ summary.timeline-head::-webkit-details-marker { display: none; }
 .ext-info-head { display: flex; gap: var(--space-2); flex-wrap: wrap; align-items: baseline; }
 .ext-info-caution { color: var(--warn); }
 
-@media (max-width: 40rem) {
+@media (max-width: 639px) {
   /* On a phone there is no room to float beside anything, so it becomes a
      small sheet at the bottom of the screen. Wins over the anchored rule
-     above, which is why it repeats the properties that rule sets. */
+     above, which is why it repeats the properties that rule sets.
+
+     639px and not 40rem: one breakpoint spelled two ways is two places to keep
+     in step, and 40rem is 640px — a single pixel of disagreement about what a
+     phone is. */
   .ext-info-panel[popover] {
     position: fixed;
     inset: auto var(--space-2) var(--space-2);
@@ -3985,7 +4034,31 @@ summary.timeline-head::-webkit-details-marker { display: none; }
   border-bottom: var(--border-thin) solid var(--border);
   vertical-align: top;
 }
-.divergence-table code { overflow-wrap: anywhere; }
+/* The paths carry `<wbr>` after each separator, so `break-word` breaks at a
+   folder rather than in the middle of a track name. See `_wrappable`. */
+.divergence-table code { overflow-wrap: break-word; }
+
+/* A run is five facts, and at 375px five columns of prose is four lines per
+   cell with the last column off the edge — technically scrollable sideways,
+   which is not the same as readable. Stacked, each run is a small card headed
+   by the column names it came from. The divergence table is left alone on
+   purpose: three narrow columns fit, and a path is easier to scan in a list. */
+@media (max-width: 639px) {
+  .run-table thead { display: none; }
+  .run-table, .run-table tbody, .run-table tr, .run-table td { display: block; width: 100%; }
+  .run-table tr {
+    padding: var(--space-2) 0;
+    border-bottom: var(--border-thin) solid var(--border);
+  }
+  .run-table td { border: 0; padding: 0 0 var(--space-1); }
+  .run-table td::before {
+    content: attr(data-label);
+    display: block;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    font-size: 0.8em;
+  }
+}
 
 
 /* --- Projects, where they are pointed at rather than listed -------------- */

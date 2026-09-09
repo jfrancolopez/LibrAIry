@@ -13,6 +13,7 @@ from librairy.scanner import scan_root
 from librairy.web import commit as commit_module
 from librairy.web.app import create_app
 from librairy.web.commit import CommitState, start_execution
+from tests.support.pages import words
 
 
 def client_for(tmp_path: Path) -> tuple[TestClient, object, Settings]:
@@ -213,7 +214,7 @@ def test_commit_page_shows_what_would_move_before_anything_moves(tmp_path: Path)
     seed_approved(conn, settings, "a.txt", "Documents/2026/a.txt")
     seed_approved(conn, settings, "b.txt", "Documents/2026/b.txt")
 
-    page = client.get("/commit").text
+    page = words(client.get("/commit").text)
 
     #  One card per approved file, each naming where it is and where it goes.
     #  There used to be a second rendering of the same rows underneath — a
@@ -241,7 +242,7 @@ def test_a_new_file_appears_exactly_once(tmp_path: Path) -> None:
     client, conn, settings = client_for(tmp_path)
     seed_approved(conn, settings, "solo.txt", "Documents/2026/solo.txt")
 
-    page = client.get("/commit").text
+    page = words(client.get("/commit").text)
 
     assert page.count("Documents/2026/solo.txt") == 1
     assert page.count('action="/commit/create"') == 1
@@ -254,7 +255,7 @@ def test_commit_page_with_nothing_approved_points_at_review(tmp_path: Path) -> N
     client, conn, settings = client_for(tmp_path)
     seed_proposal_only(conn, settings, "c.txt", "Documents/2026/c.txt", status="proposed")
 
-    page = client.get("/commit").text
+    page = words(client.get("/commit").text)
 
     assert "Nothing waiting to commit" in page
     assert "Approved changes appear here before LibrAIry moves anything" in page
@@ -268,7 +269,7 @@ def test_commit_page_with_nothing_approved_points_at_review(tmp_path: Path) -> N
 def test_commit_page_with_an_empty_system_does_not_send_you_to_review(tmp_path: Path) -> None:
     client, _, _ = client_for(tmp_path)
 
-    page = client.get("/commit").text
+    page = words(client.get("/commit").text)
 
     assert "Nothing waiting to commit" in page
     assert "Approved changes appear here before LibrAIry moves anything" in page
@@ -287,7 +288,7 @@ def test_unexecuted_plans_are_surfaced_instead_of_vanishing(tmp_path: Path) -> N
     seed_approved(conn, settings, "d.txt", "Documents/2026/d.txt")
     client.post("/commit/create", data={"csrf_token": client.cookies["csrf_token"]})
 
-    page = client.get("/commit").text
+    page = words(client.get("/commit").text)
 
     assert page.count('<li class="correction">') == 1
     assert "Documents/2026/d.txt" in page
@@ -329,7 +330,7 @@ def test_the_headline_equals_the_sum_of_its_categories(tmp_path: Path) -> None:
     )
     assert {group["type"] for group in summary["all_groups"]} == set(TYPE_ORDER)
     #  And the page prints that same number rather than counting again.
-    page = client.get("/commit").text
+    page = words(client.get("/commit").text)
     assert f"<strong>{summary['decisions']}</strong> decision" in page
 
 
@@ -346,7 +347,7 @@ def test_one_summary_feeds_the_page_the_nav_badge_and_the_dashboard(tmp_path: Pa
     seed_approved(conn, settings, "a.txt", "Documents/2026/a.txt")
 
     decisions = queue_summary(conn)["decisions"]
-    page = client.get("/commit").text
+    page = words(client.get("/commit").text)
     dashboard = operations_overview(conn, settings)
 
     assert f'>All <span class="view-count">{decisions}</span>' in page
@@ -383,7 +384,7 @@ def test_a_filter_whose_category_emptied_says_so(tmp_path: Path) -> None:
     client, conn, settings = client_for(tmp_path)
     seed_approved(conn, settings, "a.txt", "Documents/2026/a.txt")
 
-    page = client.get("/commit?type=restore").text
+    page = words(client.get("/commit?type=restore").text)
 
     assert "Nothing of that kind is waiting any more" in page
     #  And it shows what *is* waiting rather than a headline above a blank:
@@ -435,7 +436,7 @@ def test_the_plan_behind_the_new_files_is_not_also_an_orphan(tmp_path: Path) -> 
     seed_approved(conn, settings, "b.txt", "Documents/2026/b.txt")
 
     client.post("/commit/create", headers=csrf(client))
-    page = client.get("/commit").text
+    page = words(client.get("/commit").text)
 
     assert page.count('<li class="correction">') == 2
     assert "Started but never run" not in page
@@ -451,7 +452,7 @@ def test_a_plan_nothing_speaks_for_is_still_shown(tmp_path: Path) -> None:
     #  Sent back to Review afterwards: the plan is still approved and runnable,
     #  and now nothing else on the page mentions it.
     conn.execute("UPDATE proposals SET status='proposed'")
-    page = client.get("/commit").text
+    page = words(client.get("/commit").text)
 
     assert "Started but never run" in page
 
@@ -467,7 +468,7 @@ def test_a_plan_with_no_operations_is_not_called_started(tmp_path: Path) -> None
         (utc_now(),),
     )
 
-    page = client.get("/commit").text
+    page = words(client.get("/commit").text)
 
     assert "Started but never run" not in page
     assert "empty-plan" not in page

@@ -20,6 +20,7 @@ from librairy.fingerprint import blake2b_file
 from librairy.planner import utc_now
 from librairy.scanner import scan_root
 from librairy.web.app import create_app
+from tests.support.pages import words
 
 ORIGINAL = "Music/Live/concert.wav"
 TARGET = "Music/Live/concert.flac"
@@ -319,8 +320,8 @@ def test_the_card_shows_current_after_and_where_the_original_goes(ready) -> None
 
     body = client.get("/commit?type=optimization").text
 
-    assert f"library/{relpath}" in body
-    assert f"library/{target}" in body
+    assert f"library/{relpath}" in words(body)
+    assert f"library/{target}" in words(body)
     assert f"quarantine/{relpath}" in body
     assert "Original preserved" in body
 
@@ -805,7 +806,7 @@ def test_the_commit_card_says_which_optimization_it_belongs_to(ready) -> None:
     body = client.get("/commit?type=delete-queue").text
 
     assert "the preserved original of an optimized file" in body
-    assert f"library/{target}" in body
+    assert f"library/{target}" in words(body)
     assert "until you empty it yourself" in body
 
 

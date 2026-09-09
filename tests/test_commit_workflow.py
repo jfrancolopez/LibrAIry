@@ -33,6 +33,7 @@ from librairy.models import EvidenceEntry
 from librairy.proposals import upsert_proposal
 from librairy.scanner import scan_root
 from librairy.web.app import create_app
+from tests.support.pages import words
 
 TRACK = "Music/Pop/Queen/05 - Song.flac"
 DEST = "Music/Rock/Queen/A Night at the Opera/05 - Song.flac"
@@ -292,8 +293,8 @@ def test_a_correction_shows_current_and_proposed_before_the_button(
 
     assert "Current" in body
     assert "After Commit" in body
-    assert TRACK in body
-    assert DEST in body
+    assert TRACK in words(body)
+    assert DEST in words(body)
     assert "Affects" in body
 
 

@@ -26,6 +26,7 @@ from librairy.planner import OperationSpec, approve_plan, create_plan
 from librairy.quarantine_requests import request_delete_queue
 from librairy.scanner import scan_root
 from librairy.web.app import create_app
+from tests.support.pages import words
 
 
 def settings_for(tmp_path: Path) -> Settings:
@@ -267,7 +268,7 @@ def test_restoring_moves_no_files_and_becomes_a_commit_decision(
     assert not (settings.library_dir / "Photos/Trip/IMG_1.jpg").exists()
     #  One approved, unexecuted plan — a card in Commit like every other
     #  decision LibrAIry takes.
-    assert "Photos/Trip/IMG_1.jpg" in flat(client.get("/commit").text)
+    assert "Photos/Trip/IMG_1.jpg" in flat(words(client.get("/commit").text))
 
 
 def test_a_committed_restore_takes_the_file_out_of_the_queue(

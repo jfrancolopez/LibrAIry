@@ -25,7 +25,7 @@
         <tbody>
           {% for row in page.rows %}
             <tr>
-              <td><code>{{ row.relpath }}</code></td>
+              <td><code>{{ row.relpath | wrappable }}</code></td>
               <td>{{ row.size | filesizeformat }}</td>
               <td>{{ row.first_seen_at[:10] }}</td>
             </tr>
