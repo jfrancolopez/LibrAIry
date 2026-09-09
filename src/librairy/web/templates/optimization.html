@@ -21,7 +21,7 @@
     </p>
   </header>
 
-  {% if notice %}<p class="status">{{ notice }}</p>{% endif %}
+  {% if notice %}<p class="status" role="status" data-announce>{{ notice }}</p>{% endif %}
 
   {% if outcomes.adopted %}
     {# What has come of the optimizations already decided. Counts first,

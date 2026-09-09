@@ -309,6 +309,22 @@ window.addEventListener('load', function () {
         ? el.checkVisibility({checkVisibilityCSS: true, contentVisibilityAuto: true})
         : el.offsetParent !== null;
       if (!shown) return;
+      // Inside a box that scrolls sideways on purpose. A wide table in a
+      // `.table-scroll` is the *fix* for a narrow screen, not the fault: the
+      // page does not move, the table does. Reporting those made the tool cry
+      // wolf on every page that holds a table of paths — and the real overflows
+      // then got the same shrug. The container itself still has to fit.
+      var box = el.parentElement;
+      var scrolls = false;
+      while (box && box !== d.body) {
+        var overflow = d.defaultView.getComputedStyle(box).overflowX;
+        if (overflow === 'auto' || overflow === 'scroll') {
+          scrolls = box.getBoundingClientRect().right <= w + 1;
+          break;
+        }
+        box = box.parentElement;
+      }
+      if (scrolls) return;
       out.push({
         el: el.tagName.toLowerCase() + '.' + String(el.className || '').split(' ')[0],
         right: Math.round(r.right),

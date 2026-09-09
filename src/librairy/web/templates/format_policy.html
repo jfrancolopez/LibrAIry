@@ -11,7 +11,7 @@
     <a class="btn-ghost" href="/settings">Back to Settings</a>
   </header>
 
-  {% if error %}<p class="error-note">{{ error }}</p>{% endif %}
+  {% if error %}<p class="error-note" role="alert" data-announce>{{ error }}</p>{% endif %}
 
   {% for section in sections %}
     <section class="metric wide policy-section">

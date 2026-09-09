@@ -14,7 +14,7 @@
 </nav>
 
 {% if saved %}<p id="settings-result"><span class="badge badge-ok">Saved</span> Your settings have been applied.</p>{% endif %}
-{% if error %}<p class="status warn" id="settings-error">{{ error }}</p>{% endif %}
+{% if error %}<p class="status warn" id="settings-error" role="alert" data-announce>{{ error }}</p>{% endif %}
 
 <div class="tab-panel" data-tab-panel="system">
 <section class="metric wide" id="portal-security">
@@ -149,11 +149,14 @@
 
   <label for="optimization_window_start">Window</label>
   <span class="field-row">
+    {# Two fields under one visible label. The dash between them is the only
+       thing that said which was which, and a dash is not a name — so each one
+       says it, in words that still contain the label a person can see. #}
     <input id="optimization_window_start" name="optimization_window_start" type="time"
-           value="{{ settings_view.optimization.window_start }}">
+           aria-label="Window starts" value="{{ settings_view.optimization.window_start }}">
     <span aria-hidden="true">–</span>
     <input id="optimization_window_end" name="optimization_window_end" type="time"
-           value="{{ settings_view.optimization.window_end }}">
+           aria-label="Window ends" value="{{ settings_view.optimization.window_end }}">
   </span>
   <p class="muted">
     A window that ends before it begins spans midnight, which is usually what

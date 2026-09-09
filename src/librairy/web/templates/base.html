@@ -7,6 +7,7 @@
     <title>{{ title }} - LibrAIry</title>
     <link rel="stylesheet" href="/static/pipboy.css">
     <script src="/static/htmx.min.js" defer></script>
+    <script src="/static/announce.js" defer></script>
   </head>
   <body>
     <div class="scanlines" aria-hidden="true"></div>
@@ -74,6 +75,11 @@
         {% endif %}
       </div>
     </header>
+    {# Present before anything is announced into it, and empty. A live region
+       created *with* its message in it is a region most screen readers never
+       read: they announce what changes, and an element that arrives already
+       full has not changed. See `/static/announce.js`. #}
+    <p id="announcer" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></p>
     <main class="shell">
       {% if request.url.path == '/dashboard' and welcome_banner_visible(request) %}
         <section id="welcome-banner" class="panel">

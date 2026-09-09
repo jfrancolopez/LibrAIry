@@ -16,7 +16,12 @@
      architecture of this page: a record of the past must not become the source
      of truth for the present. #}
   <section class="band band-attention" aria-labelledby="attention-heading">
-  <h2 class="visually-hidden" id="attention-heading">What needs your attention</h2>
+  {# The page's heading, and it is not visible: the nav already says which page
+     this is, and the hero below says the thing somebody came to find out. What
+     it must not be is *below* the hero in the outline — a heading level is
+     structure, and the hero used to be an h1 inside a section labelled by an
+     h2, which reads to a screen reader as the page beginning half way down. #}
+  <h1 class="visually-hidden" id="attention-heading">What needs your attention</h1>
 
   {# One focal point. Seven equally-weighted cards make you read all seven to
      find out whether anything wants you; this answers that before you read
@@ -25,7 +30,7 @@
     <section class="hero hero-act">
       <p class="hero-figure">{{ proposal_count }}</p>
       <div class="hero-copy">
-        <h1>waiting for your review</h1>
+        <h2>waiting for your review</h2>
         <p class="muted">Nothing moves until you approve it and commit.</p>
         <a class="btn btn-primary btn-lg" href="/review">Review them</a>
         {% if approved_count %}
@@ -40,7 +45,7 @@
     <section class="hero hero-act">
       <p class="hero-figure">{{ approved_count }}</p>
       <div class="hero-copy">
-        <h1>approved, ready to commit</h1>
+        <h2>approved, ready to commit</h2>
         <p class="muted">Committing moves them into your library. It is undoable.</p>
         <a class="btn btn-primary btn-lg" href="/commit">View in Commit</a>
       </div>
@@ -49,7 +54,7 @@
     <section class="hero hero-calm">
       <p class="hero-figure">✓</p>
       <div class="hero-copy">
-        <h1>Nothing needs you</h1>
+        <h2>Nothing needs you</h2>
         <p class="muted">
           Drop files at <span class="mono">{{ host_inbox_dir }}</span> and they show up here
           within a few seconds.

@@ -14,7 +14,7 @@
     </div>
   </header>
 
-  {% if notice %}<p class="status ok" role="status">{{ notice }}</p>{% endif %}
+  {% if notice %}<p class="status ok" role="status" data-announce>{{ notice }}</p>{% endif %}
 
   {% if summary.decisions %}
     {# The batch before the rows. With a thousand things waiting, "1,842 rows"

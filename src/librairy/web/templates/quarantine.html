@@ -19,7 +19,7 @@
 
   {# What just happened, at the top, where the eye already is — not appended to
      a <div> at the foot of the page under an unchanged row. #}
-  {% if notice %}<p class="status ok" role="status">{{ notice }}</p>{% endif %}
+  {% if notice %}<p class="status ok" role="status" data-announce>{{ notice }}</p>{% endif %}
 
   <section class="card notice-row">
     <p>

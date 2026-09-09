@@ -5,6 +5,10 @@
       {% if not loop.last %}<a href="{{ crumb.href }}">{{ crumb.label }}</a><span aria-hidden="true">/</span>{% else %}<span aria-current="page">{{ crumb.label }}</span>{% endif %}
     {% endfor %}
   </nav>
+  {# The page's heading. The breadcrumb above says where this folder is and the
+     crumb is not a heading — so without this the page had none at all, and
+     jumping by headings skipped it entirely. #}
+  <h1 class="folder-heading">{{ folder.rsplit('/', 1)[-1] if folder else top }}</h1>
   <p class="muted">Read-only. <kbd>↑</kbd><kbd>↓</kbd> move · <kbd>←</kbd><kbd>→</kbd> change column · <kbd>Enter</kbd> open · <kbd>Backspace</kbd> up</p>
       {# Manual only. Nothing audits on a timer, and an audit never moves,
          renames or deletes anything — it writes findings to Review and stops. #}
@@ -44,7 +48,7 @@
 
   <div class="explorer" id="explorer">
     <section class="explorer-pane" data-pane="0" aria-label="Categories">
-      <h3>Library</h3>
+      <h2>Library</h2>
       <div class="pane-list">
         {% for root in roots %}
           <a class="browse-row{% if root.name == top %} is-current{% endif %}" href="{{ root.href }}">
@@ -57,7 +61,7 @@
     {# A leaf folder has nothing to put here; the pane would just be an empty
        third of the screen, so it collapses and files/details take the room. #}
     <section class="explorer-pane{% if not folders and not folder %} is-empty{% endif %}" data-pane="1" aria-label="Folders">
-      <h3>Folders</h3>
+      <h2>Folders</h2>
       <div class="pane-list" data-parent="{{ parent_href }}">
         {% if folder %}<a class="browse-row is-folder" href="{{ parent_href }}"><span>..</span></a>{% endif %}
         {% for entry in folders %}
@@ -71,7 +75,7 @@
     </section>
 
     <section class="explorer-pane" data-pane="2" aria-label="Files">
-      <h3>Files</h3>
+      <h2>Files</h2>
       <div class="pane-list">
         {% include "partials/browse_files.html" %}
       </div>
@@ -79,7 +83,7 @@
 
     <aside id="browse-panel" class="browse-panel card explorer-pane" aria-label="Details"
            {% if first_item_id %}hx-get="/browse/items/{{ first_item_id }}/panel" hx-trigger="load" hx-swap="outerHTML"{% endif %}>
-      <h3>Details</h3>
+      <h2>Details</h2>
       <p class="muted">{% if first_item_id %}Loading…{% else %}Select a file to see it here.{% endif %}</p>
     </aside>
   </div>

@@ -8,7 +8,7 @@
       {# The match count lives in the pager, inside the swapped fragment.
          Repeating it here would go stale the moment you filter. #}
       <p class="muted">Nothing moves until you approve it and commit.
-        <button type="button" class="btn-link" data-panel-toggle="review-help">What these do</button>
+        <button type="button" class="btn-link" data-panel-toggle="review-help" aria-controls="review-help" aria-expanded="false">What these do</button>
       </p>
     </div>
     <div class="button-row">
@@ -103,6 +103,10 @@
   {# Four buttons whose names cannot carry their whole meaning. "Not this" in
      particular takes a file out of the queue, which nothing on the row says. #}
   <div id="review-help" class="review-help" hidden>
+    {# A heading, because the panel had a subhead and nothing above it: an h3
+       under the page's h1 reads as a level that was skipped, and somebody
+       moving by heading lands in the middle of an explanation. #}
+    <h2>What these buttons do</h2>
     <ol class="flow-steps">
       <li><strong>You drop files in the inbox.</strong> LibrAIry reads them, asks the
         catalogs and tools, and proposes a name and a place. It never asks you anything

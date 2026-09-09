@@ -189,6 +189,10 @@
     var panel = document.getElementById(trigger.dataset.panelToggle);
     if (!panel) return;
     panel.hidden = !panel.hidden;
+    // Said, not implied. The button is the only thing on the row that knows
+    // whether the panel below it is open, and a screen reader reads that from
+    // aria-expanded or not at all.
+    trigger.setAttribute("aria-expanded", panel.hidden ? "false" : "true");
     if (panel.hidden) return;
     // data-panel-focus names the field this particular trigger is about, so
     // clicking a destination path lands the cursor in the destination box

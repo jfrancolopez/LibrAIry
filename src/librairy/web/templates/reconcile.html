@@ -13,8 +13,8 @@
     </div>
   </header>
 
-  {% if error %}<p class="error-note">{{ error }}</p>{% endif %}
-  {% if done %}<p class="notice-ok">{{ done }}</p>{% endif %}
+  {% if error %}<p class="error-note" role="alert" data-announce>{{ error }}</p>{% endif %}
+  {% if done %}<p class="notice-ok" role="status" data-announce>{{ done }}</p>{% endif %}
 
   {% if report.scan_needed %}
     <section class="card attention attention-attention">

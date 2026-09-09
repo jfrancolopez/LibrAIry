@@ -5,7 +5,7 @@
    next. See `ReviewFilters.form`. #}
 {% set qs = filters.query %}
 <div id="review-list" class="review-list">
-  {% if toast %}<p><span class="badge badge-ok">{{ toast }}</span></p>{% endif %}
+  {% if toast %}<p data-announce><span class="badge badge-ok">{{ toast }}</span></p>{% endif %}
   {% if notice %}<p class="status ok">{{ notice }}</p>{% endif %}
 
   {# Sits inside the swapped fragment, so it appears the moment there is

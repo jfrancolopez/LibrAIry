@@ -518,7 +518,14 @@ button, .btn { justify-self: start; }
 .hero-calm .hero-figure { color: var(--ok); }
 .hero-copy { flex: 1 1 20rem; min-width: 0; }
 /* The page's h1 lives here, so it needs the h1's own bottom margin removed. */
-.hero-copy h1 { margin: 0 0 var(--space-1); font-size: var(--text-xl); }
+/* An h2 by level and a headline by weight: the hero is a card inside the
+   attention band, so it sits under that band's heading in the outline —
+   and it must not pick up the rule that draws a line under a section
+   heading, because it is not one. */
+.hero-copy h2 {
+  margin: 0 0 var(--space-1); font-size: var(--text-xl);
+  padding-bottom: 0; border-bottom: 0;
+}
 .hero-copy p { margin: 0 0 var(--space-3); max-width: var(--measure); }
 .hero-copy .btn + .btn { margin-left: var(--space-2); }
 /* Fitts's law: the action you take most often is the easiest to hit. */
@@ -1418,7 +1425,7 @@ details.review-group > summary .muted { font-size: var(--text-sm); }
   border-radius: var(--radius-ui);
   padding: var(--space-3);
 }
-.explorer-pane h3 {
+.explorer-pane h2 {
   margin: 0 0 var(--space-2);
   font-size: var(--text-sm);
   text-transform: uppercase;

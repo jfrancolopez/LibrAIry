@@ -156,10 +156,10 @@
           aria-expanded="false"
           title="The file as it is now, where it is now">Preview</button>
         {% endif %}
-        <button type="button" class="btn-ghost" data-panel-toggle="audit-why-{{ finding.id }}">Evidence</button>
+        <button type="button" class="btn-ghost" data-panel-toggle="audit-why-{{ finding.id }}" aria-controls="audit-why-{{ finding.id }}" aria-expanded="false">Evidence</button>
         {% set has_more = finding.browse_href or finding.item_id or finding.can_approve %}
         {% if has_more %}
-        <button type="button" class="btn-ghost btn-more" data-panel-toggle="audit-more-{{ finding.id }}"
+        <button type="button" class="btn-ghost btn-more" data-panel-toggle="audit-more-{{ finding.id }}" aria-controls="audit-more-{{ finding.id }}" aria-expanded="false"
                 aria-label="More actions for {{ finding.current }}" title="More actions">⋯</button>
         {% endif %}
       </div>

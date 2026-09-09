@@ -142,11 +142,11 @@
         {% if proposal.dest_relpath %}
           {# The full path in the title, because the visible one is clamped to
              two lines and a long one is exactly when you want to read it. #}
-          <button type="button" class="mono dest-path" data-panel-toggle="edit-{{ proposal.id }}"
+          <button type="button" class="mono dest-path" data-panel-toggle="edit-{{ proposal.id }}" aria-controls="edit-{{ proposal.id }}" aria-expanded="false"
                   data-panel-focus="dest_relpath"
                   title="{{ proposal.dest_root }}/{{ proposal.dest_relpath }} — click to change">{{ proposal.dest_root }}/{{ proposal.dest_relpath }}</button>
         {% else %}
-          <button type="button" class="badge badge-warn dest-path" data-panel-toggle="edit-{{ proposal.id }}"
+          <button type="button" class="badge badge-warn dest-path" data-panel-toggle="edit-{{ proposal.id }}" aria-controls="edit-{{ proposal.id }}" aria-expanded="false"
                   data-panel-focus="dest_relpath"
                   title="Click to set a destination">no destination yet</button>
         {% endif %}
@@ -291,7 +291,7 @@
             data-preview-target="preview-{{ proposal.id }}"
             aria-expanded="false">Preview</button>
         {% endif %}
-        <button type="button" class="btn-ghost" data-panel-toggle="why-{{ proposal.id }}">Evidence</button>
+        <button type="button" class="btn-ghost" data-panel-toggle="why-{{ proposal.id }}" aria-controls="why-{{ proposal.id }}" aria-expanded="false">Evidence</button>
 
         <span class="action-gap"></span>
 
@@ -326,7 +326,7 @@
           hx-headers='{"x-csrf-token":"{{ csrf }}"}'>Quarantine</button>
         {# Two more answers exist, and neither is worth a permanent button on
            every row: one is "not now" and the other you use once per clear-out. #}
-        <button type="button" class="btn-ghost btn-more" data-panel-toggle="more-{{ proposal.id }}"
+        <button type="button" class="btn-ghost btn-more" data-panel-toggle="more-{{ proposal.id }}" aria-controls="more-{{ proposal.id }}" aria-expanded="false"
                 aria-label="More for {{ proposal.item_relpath }}" title="Later, or mark for deletion">⋯</button>
       </div>
     </div>
