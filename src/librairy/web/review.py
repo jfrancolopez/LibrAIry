@@ -19,6 +19,7 @@ from librairy.confidence_tiers import (
     TIER_NOTE,
     TIERS,
     settled_now,
+    tier_for,
     why_settled,
 )
 from librairy.config import Settings
@@ -385,10 +386,33 @@ def apply_review_action(
         return 0
     status = {"approve": "approved", "reject": "rejected", "postpone": "postponed"}[action]
     item_state = {"approve": "approved", "reject": "pending", "postpone": "postponed"}[action]
+    #  A proposal with nowhere to go is not approvable, and this is where that
+    #  is decided — not in the template branch that draws the button. The same
+    #  request arrives from a page left open since yesterday, from a second tab,
+    #  and from `Approve matching`, which resolves over the whole filtered set
+    #  on the server and cannot see which rows a person was looking at.
+    #
+    #  It was reachable, and it was a System Fault page: a file that waited for
+    #  an AI that never came, then released with *Decide without AI*, has a
+    #  proposal and no destination, and its item stays `pending` — the state
+    #  that means the machine could not place it. `pending -> approved` is not a
+    #  legal transition, deliberately, so pressing Approve matching raised
+    #  LifecycleError half way through the batch, leaving the files before it
+    #  approved and the ones after it untouched.
+    #
+    #  Rejecting and postponing such a proposal are ordinary answers and stay
+    #  possible: "no" and "later" mean something about a file nobody can place.
+    #  "Yes" does not — there is nothing to agree to, and `create_commit_plan`
+    #  would skip it for ever while the queue counted it as waiting.
+    placeable = (
+        " AND dest_relpath IS NOT NULL AND dest_relpath <> ''"
+        if action == "approve"
+        else ""
+    )
     sql = f"""
         SELECT id, item_id
         FROM proposals
-        WHERE status='proposed' AND id IN ({_placeholders(targets)})
+        WHERE status='proposed'{placeable} AND id IN ({_placeholders(targets)})
         """
     rows = conn.execute(
         sql,
@@ -641,14 +665,20 @@ def edit_proposal(
         safe_name,
         dest_relpath,
     )
+    #  Recomputed, because the tier is a fact about the evidence *and* the
+    #  destination: a proposal that had nowhere to go and now has somewhere is
+    #  no longer `uncertain` for that reason, and one whose destination was just
+    #  cleared must stop claiming it was a good guess.
+    tier = tier_for(row["evidence"], row["confidence"], destination)
     conn.execute(
         """
         UPDATE proposals
-        SET category=?, clean_name=?, dest_relpath=?, updated_at=?
+        SET category=?, clean_name=?, dest_relpath=?, tier=?, updated_at=?
         WHERE id=?
         """,
-        (category, safe_name, destination, utc_now(), proposal_id),
+        (category, safe_name, destination, tier, utc_now(), proposal_id),
     )
+    _restate(conn, int(row["item_id"]), destination)
     sync_search_item(conn, row["item_id"])
     updated = _proposal_rows(
         conn,
@@ -657,6 +687,28 @@ def edit_proposal(
     )[0]
     warning = "collision suffix applied" if destination != (dest_relpath or destination) else None
     return updated, warning
+
+
+def _restate(conn: sqlite3.Connection, item_id: int, destination: str | None) -> None:
+    """Keep the item's state in step with what its proposal now says.
+
+    `pending` means *there is a proposal and nowhere to put the file*, and until
+    now only analysis ever set or cleared it. A person who took a held file,
+    chose Decide without AI and then typed a destination had answered the only
+    question `pending` was recording — and the row went on saying the machine
+    could not place it, which is the state Approve is not allowed to leave.
+
+    Only between the three undecided states. An approved or committed row is
+    somebody's answer, and editing a proposal is not how it gets taken back.
+    """
+    row = conn.execute("SELECT state FROM items WHERE id=?", (item_id,)).fetchone()
+    if row is None:
+        return
+    state = str(row["state"])
+    if destination and state in {"pending", "postponed"}:
+        transition_item(conn, item_id, "proposed")
+    elif not destination and state == "proposed":
+        transition_item(conn, item_id, "pending")
 
 
 def proposal_row(

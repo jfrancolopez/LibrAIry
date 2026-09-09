@@ -17,16 +17,27 @@ installation at every step of every story, whatever the story was about.
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 
-from librairy import commit_state, tags
+import pytest
+
+from librairy import commit_state, tags, waiting
 from librairy.attention import report
 from librairy.web.commit import create_commit_plan
 from librairy.web.dashboard import dashboard_data
 from librairy.web.health import health_data
+from tests.support.documents import build_pdf
 from tests.support.scenario import assert_sound, install
 
 TAG = "projecthouse"
+
+poppler = pytest.mark.skipif(
+    shutil.which("pdfinfo") is None, reason="poppler is not installed"
+)
+rclone_installed = pytest.mark.skipif(
+    shutil.which("rclone") is None, reason="rclone is not installed"
+)
 
 
 #  A camera folder dropped in the inbox, named the way somebody names one.
@@ -284,3 +295,286 @@ def test_nothing_repairs_the_index_except_the_workflow_that_owns_it(
 
     assert_sound(inst)
     assert len(inst.live("library")) == 1
+
+
+# --- scenario 1 --------------------------------------------------------------
+
+
+@poppler
+def test_a_document_from_the_inbox_to_a_backup_drive(tmp_path: Path) -> None:
+    """The long way round, for the kind of file that has the least to go on.
+
+        two tagged documents arrive
+        -> one is read: real pdfinfo, real text, and the sources disagree
+        -> the other has nothing to go on and no AI to ask, so it waits
+        -> the person chooses Decide without AI
+        -> the weak proposal appears, with nowhere to go, and they say where
+        -> approve -> Commit -> History
+        -> the Project still holds both
+        -> one of them is sent to an attached drive
+
+    Five things have to survive that, and each one belongs to a different part
+    of the program: the tag, the Project, the refusal to guess, what Decision
+    Memory is allowed to learn, and which path the backup reads.
+    """
+    inst = install(tmp_path)
+    inst.write(
+        "inbox",
+        "roof quote #ProjectHouse.pdf",
+        build_pdf(
+            title="Untitled document 1",
+            lines=("Quotation for roof replacement", "14 Ash Grove", "Total 8400 EUR"),
+        ),
+    )
+    inst.write("inbox", "site notes #ProjectHouse.txt", b"notes from the site visit")
+    inst.scan("inbox")
+    inst.analyze()
+    assert_sound(inst)
+
+    #  The tag is legible exactly once — in the name it arrived under — and it
+    #  is read at analysis time for both, whatever else could be worked out.
+    ids = {str(row["relpath"]): int(row["id"]) for row in inst.live("inbox")}
+    assert all(TAG in inst.tags_of(item) for item in ids.values())
+    project = tags.promote(inst.conn, TAG, "House renovation")
+
+    #  The PDF: its embedded title and its filename name different things, and
+    #  a disagreement is a question rather than an answer. It may be suggested,
+    #  never settled, and no bulk action may take it.
+    pdf_id = ids["roof quote #ProjectHouse.pdf"]
+    pdf = inst.conn.execute(
+        "SELECT * FROM proposals WHERE item_id=?", (pdf_id,)
+    ).fetchone()
+    assert pdf["tier"] != "settled"
+
+    #  The text file: nothing identifies it and there is no provider to ask, so
+    #  it is held. No proposal at all — a weak guess published before the person
+    #  allowed it is the thing this state exists to prevent.
+    notes_id = ids["site notes #ProjectHouse.txt"]
+    assert waiting.counts(inst.conn)[waiting.UNAVAILABLE] == 1
+    assert inst.conn.execute(
+        "SELECT COUNT(*) FROM proposals WHERE item_id=?", (notes_id,)
+    ).fetchone()[0] == 0
+
+    #  Decide without AI: the same weak answer, now that it was asked for.
+    inst.post("/review/waiting", action="release", item_id=notes_id)
+    inst.analyze()
+    notes = inst.conn.execute(
+        "SELECT * FROM proposals WHERE item_id=?", (notes_id,)
+    ).fetchone()
+    assert notes is not None
+    assert not notes["dest_relpath"], "a released file must not be given a destination"
+    assert notes["tier"] == "uncertain"
+
+    #  So the person says where it goes. Knowing what a file is has never been
+    #  the same as knowing where its owner keeps it.
+    inst.post(
+        f"/review/proposals/{notes['id']}/edit",
+        category="documents",
+        clean_name="site notes.txt",
+        dest_relpath="Documents/House/site notes.txt",
+    )
+    inst.post("/review/action", action="approve", all_matching="true", state="proposed")
+
+    #  Approved, not carried out. Decision Memory has written down what was
+    #  chosen and has not counted it yet: a decision that never completes
+    #  teaches nothing.
+    learned = list(inst.conn.execute("SELECT * FROM decision_events"))
+    assert learned, "nothing was recorded from an approval with a destination"
+    assert all(row["settled_at"] is None for row in learned)
+
+    plan_id = create_commit_plan(inst.conn, inst.settings)
+    inst.commit(plan_id)
+
+    assert_sound(inst)
+    assert all(
+        row["settled_at"] is not None
+        for row in inst.conn.execute("SELECT * FROM decision_events")
+    )
+    #  Both files are in the library, under the same identities, and the Project
+    #  holds both — the tag is on the item, so the move could not strand it.
+    filed = {int(row["id"]): str(row["relpath"]) for row in inst.live("library")}
+    assert set(filed) == set(ids.values())
+    assert {int(row["item_id"]) for row in tags.members(inst.conn, TAG)} == set(ids.values())
+    assert tags.project_for(inst.conn, project) is not None
+    assert inst.live("inbox") == []
+    #  And History says both moves happened, once each.
+    assert len(list(inst.conn.execute(
+        "SELECT 1 FROM history WHERE action='move' AND outcome='ok'"
+    ))) == len(ids)
+
+    #  The backup asks the Library where the file is. Not the inbox path it
+    #  arrived under, and not a destination some proposal once suggested: the
+    #  request is built from the item, and the plan is built from the index.
+    from librairy import destinations, offline_drives, transfer_requests
+
+    target = tmp_path / "wd"
+    target.mkdir()
+    drive = offline_drives.register(inst.conn, inst.settings, name="WD", path=str(target))
+    asked = transfer_requests.ask(
+        inst.conn, destination_id=drive.id, relpath=filed[notes_id], exact=True
+    )
+
+    assert asked.relpath == filed[notes_id]
+    #  A one-off send configures nothing that would run again.
+    assert destinations.policies(inst.conn) == []
+    assert inst.settings.inbox_dir.joinpath("site notes #ProjectHouse.txt").exists() is False
+
+
+# --- scenario 2 --------------------------------------------------------------
+
+
+def test_a_narrowed_review_approves_what_it_says_and_nothing_else(tmp_path: Path) -> None:
+    """One camera card, one odd photo in it, and a filter.
+
+        a dated folder of photographs, and two loose ones
+        -> one of them is not from that day, and the person retargets it
+        -> the Review is narrowed to what LibrAIry is confident about
+        -> Approve matching
+        -> Commit
+
+    `Approve matching` resolves on the server, over the whole filtered set
+    rather than the rendered page, because somebody with four thousand
+    decisions cannot select them by hand. That is exactly what makes it worth a
+    scenario: the set it approves must be the set the page described, and a
+    member of a group that did not match must not be carried along by one that
+    did.
+    """
+    from librairy.web.review import ReviewFilters, review_data, unit_proposal_ids
+
+    inst = install(tmp_path)
+    for index in range(4):
+        inst.write(
+            "inbox",
+            f"{ARRIVAL}/IMG_{7000 + index}.jpg",
+            b"jpeg" + bytes([index]) * 500,
+        )
+    inst.write("inbox", "loose/IMG_9999.jpg", b"jpeg-loose" * 60)
+    inst.write("inbox", "loose/scan 0473.jpg", b"jpeg-scan" * 60)
+    inst.scan("inbox")
+    inst.analyze()
+    assert_sound(inst)
+
+    by_name = {
+        str(row["relpath"]): int(row["id"])
+        for row in inst.conn.execute(
+            "SELECT p.id, i.relpath FROM proposals p JOIN items i ON i.id = p.item_id"
+        )
+    }
+    odd_one = by_name[f"{ARRIVAL}/IMG_7003.jpg"]
+    weakest = by_name["loose/scan 0473.jpg"]
+
+    #  "That one is not from Lisbon." A destination outside the folder the group
+    #  formed around is a statement that this file belongs somewhere else, so it
+    #  becomes its own decision rather than a doubt about this one.
+    assert inst.post(
+        f"/review/proposals/{odd_one}/edit",
+        category="photos",
+        clean_name="IMG_7003.jpg",
+        dest_relpath="Photos/2026/Garden/IMG_7003.jpg",
+    ).status_code == 200
+
+    everything = review_data(inst.conn, ReviewFilters(page=1), inst.settings)
+    units = {str(unit["unit"]): unit for unit in everything["groups"]}
+
+    #  Six files, three decisions, and the two numbers are never the same
+    #  number: a page of albums is not a page of files.
+    assert everything["total"] == 6  # noqa: PLR2004
+    assert everything["decisions"] == 3  # noqa: PLR2004
+    #  The outlier has left the group in every sense it could: its own heading,
+    #  its own count, and its own action.
+    assert units["g1"]["total"] == 3  # noqa: PLR2004
+    assert units["x1"]["outlier"] is True
+    assert unit_proposal_ids(inst.conn, ReviewFilters(page=1), "g1") == sorted(
+        by_name[f"{ARRIVAL}/IMG_{7000 + index}.jpg"] for index in range(3)
+    )
+    assert odd_one not in unit_proposal_ids(inst.conn, ReviewFilters(page=1), "g1")
+
+    #  Each file is one row, once. A member counted in two places is a member
+    #  somebody can approve twice or miss entirely.
+    page = inst.client().get("/review").text
+    for proposal_id in by_name.values():
+        assert page.count(f'value="{proposal_id}" name="proposal_id"') <= 1
+
+    #  Narrowed to what LibrAIry is sure about. One loose photo falls below it
+    #  and its sibling does not — the case that matters, because they are one
+    #  group and only one of them matches.
+    narrowed = review_data(
+        inst.conn, ReviewFilters(page=1, min_confidence=0.86), inst.settings
+    )
+    assert narrowed["total"] == 5  # noqa: PLR2004
+
+    inst.post(
+        "/review/action", action="approve", all_matching="true", state="proposed",
+        min_confidence=0.86,
+    )
+
+    approved = {
+        int(row["id"])
+        for row in inst.conn.execute("SELECT id FROM proposals WHERE status='approved'")
+    }
+    assert len(approved) == 5  # noqa: PLR2004
+    assert weakest not in approved, "a member that did not match was approved with its group"
+    assert odd_one in approved
+
+    plan_id = create_commit_plan(inst.conn, inst.settings)
+    inst.commit(plan_id)
+
+    assert_sound(inst)
+    #  Only what was approved moved, and the odd one went where it was sent.
+    assert len(inst.live("library")) == 5  # noqa: PLR2004
+    assert (inst.settings.library_dir / "Photos/2026/Garden/IMG_7003.jpg").is_file()
+    assert [str(row["relpath"]) for row in inst.live("inbox")] == ["loose/scan 0473.jpg"]
+    assert (inst.settings.inbox_dir / "loose/scan 0473.jpg").is_file()
+
+
+def test_a_group_action_covers_the_group_and_stops_there(tmp_path: Path) -> None:
+    """The same card, approved by its own heading rather than by a filter.
+
+    A unit action is the one control on the page that says "these, together",
+    so what "these" means has to be the same thing the heading counted. The
+    outlier is the test of it: it is drawn under the same label, and it is not
+    part of that decision.
+    """
+    from librairy.web.review import ReviewFilters, unit_proposal_ids
+
+    inst = install(tmp_path)
+    for index in range(4):
+        inst.write(
+            "inbox",
+            f"{ARRIVAL}/IMG_{7000 + index}.jpg",
+            b"jpeg" + bytes([index]) * 500,
+        )
+    inst.scan("inbox")
+    inst.analyze()
+    odd_one = int(
+        inst.conn.execute(
+            "SELECT p.id FROM proposals p JOIN items i ON i.id = p.item_id"
+            " WHERE i.relpath LIKE '%IMG_7003.jpg'"
+        ).fetchone()["id"]
+    )
+    inst.post(
+        f"/review/proposals/{odd_one}/edit",
+        category="photos",
+        clean_name="IMG_7003.jpg",
+        dest_relpath="Photos/2026/Garden/IMG_7003.jpg",
+    )
+
+    covered = set(unit_proposal_ids(inst.conn, ReviewFilters(page=1), "g1"))
+
+    inst.post("/review/action", action="approve", unit="g1", state="proposed")
+
+    approved = {
+        int(row["id"])
+        for row in inst.conn.execute("SELECT id FROM proposals WHERE status='approved'")
+    }
+    assert approved == covered
+    assert odd_one not in approved
+
+    plan_id = create_commit_plan(inst.conn, inst.settings)
+    inst.commit(plan_id)
+
+    assert_sound(inst)
+    assert len(inst.live("library")) == 3  # noqa: PLR2004
+    assert [str(row["relpath"]) for row in inst.live("inbox")] == [
+        f"{ARRIVAL}/IMG_7003.jpg"
+    ]
