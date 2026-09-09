@@ -373,6 +373,34 @@ _DERIVED = (
 )
 
 
+def duplicate_claim(conn: sqlite3.Connection, item_id: int) -> str:
+    """What this row carries that would be destroyed by merging it away, in words.
+
+    Public because two callers need the same answer and must not each have their
+    own idea of it: a person agreeing that a file moved, and the executor
+    finding that a scan discovered a file it had itself moved a moment earlier.
+    Empty means the row is a discovery and nothing else.
+    """
+    return _claimed(conn, item_id)
+
+
+def retire(conn: sqlite3.Connection, item_id: int) -> None:
+    """Remove a row that turned out to be a second record of one file.
+
+    Only ever the *younger* record, and only when `duplicate_claim` is empty:
+    everything removed here is derived from bytes that another row already
+    describes, and can be measured again. Ask first — this function does not,
+    because its callers have different reasons for being sure.
+    """
+    for table, column in _DERIVED:
+        conn.execute(
+            f"DELETE FROM {table} WHERE {column} = ?",  # noqa: S608 - constants
+            (item_id,),
+        )
+    conn.execute("DELETE FROM search_fts WHERE rowid=?", (item_id,))
+    conn.execute("DELETE FROM items WHERE id=?", (item_id,))
+
+
 def recognize(conn: sqlite3.Connection, item_id: int, *, batch: str = "") -> Candidate:
     """Agree that this file is at its current path. Moves zero bytes.
 
@@ -390,7 +418,7 @@ def recognize(conn: sqlite3.Connection, item_id: int, *, batch: str = "") -> Can
         raise ReconcileRefused(
             "the bytes for that file are not at exactly one other path any more"
         )
-    claimed = _claimed(conn, candidate.to_item_id)
+    claimed = duplicate_claim(conn, candidate.to_item_id)
     if claimed:
         raise ReconcileRefused(
             f"{candidate.name} at its new path already carries {claimed}, so "
@@ -403,13 +431,7 @@ def recognize(conn: sqlite3.Connection, item_id: int, *, batch: str = "") -> Can
     if found is None:  # pragma: no cover - the candidate query just read it
         raise ReconcileRefused("that file is no longer indexed at its new path")
     with transaction(conn):
-        for table, column in _DERIVED:
-            conn.execute(
-                f"DELETE FROM {table} WHERE {column} = ?",  # noqa: S608 - constants
-                (candidate.to_item_id,),
-            )
-        conn.execute("DELETE FROM search_fts WHERE rowid=?", (candidate.to_item_id,))
-        conn.execute("DELETE FROM items WHERE id=?", (candidate.to_item_id,))
+        retire(conn, candidate.to_item_id)
         conn.execute(
             "UPDATE items SET relpath=?, size=?, mtime_ns=?, last_seen_at=?,"
             " missing_since=NULL WHERE id=?",

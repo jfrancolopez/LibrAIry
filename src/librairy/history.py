@@ -403,10 +403,45 @@ def _already_put_back(
     if not origin.is_file() or blake2b_file(origin) != entry["fingerprint"]:
         return None
     _record_undo(conn, entry, entry["src_relpath"], entry["fingerprint"], "ok")
-    _update_item_after_undo(conn, entry, entry["src_relpath"], origin)
+    if _origin_free(conn, entry):
+        _update_item_after_undo(conn, entry, entry["src_relpath"], origin)
     _settle_quarantine_after_undo(conn, entry)
     _unsettle_quarantine_after_undo(conn, entry, entry["src_relpath"])
     return UndoResult(int(entry["id"]), "ok", entry["src_relpath"])
+
+
+def _origin_free(
+    conn: sqlite3.Connection, entry: sqlite3.Row, *, keeping: int = 0
+) -> bool:
+    """May this file's row go back to the address it came from?
+
+    `items` has UNIQUE (root, relpath), and a scan between a killed reversal and
+    the retry will have discovered the file back at its old address and given it
+    a row of its own. Without this the reversal raised an `IntegrityError` — a
+    System Fault page from the Undo button, on a file that was already safely
+    back where it belonged.
+
+    Two rows, and they are not equal: the younger one carries what a scan
+    measures, the older one carries this file's tags, its Project, its decisions
+    and every operation that ever named it. So the younger one is retired and
+    the identity keeps the address — `reconcile.duplicate_claim` is the same
+    question a person answers when they agree a file has moved, asked here
+    rather than answered twice. A row that carries a decision of its own is left
+    alone, and so is the index: the reversal is still journalled, because it
+    still happened.
+    """
+    from librairy.reconcile import duplicate_claim, retire
+
+    taken = conn.execute(
+        "SELECT id FROM items WHERE root=? AND relpath=? AND id IS NOT ? LIMIT 1",
+        (entry["src_root"], entry["src_relpath"], keeping or None),
+    ).fetchone()
+    if taken is None:
+        return True
+    if duplicate_claim(conn, int(taken["id"])):
+        return False
+    retire(conn, int(taken["id"]))
+    return True
 
 
 def _catch_up_after_undo(
@@ -424,13 +459,7 @@ def _catch_up_after_undo(
         "SELECT id FROM items WHERE root=? AND relpath=?",
         (entry["dest_root"], entry["dest_relpath"]),
     ).fetchone()
-    if item is None:
-        return
-    taken = conn.execute(
-        "SELECT 1 FROM items WHERE root=? AND relpath=? AND id<>? LIMIT 1",
-        (entry["src_root"], entry["src_relpath"], item["id"]),
-    ).fetchone()
-    if taken is not None:
+    if item is None or not _origin_free(conn, entry, keeping=int(item["id"])):
         return
     origin = validate_relpath(
         _root_path(settings, entry["src_root"]), entry["src_relpath"], kind="source"

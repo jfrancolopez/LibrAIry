@@ -41,9 +41,6 @@ unwinds, and unwinding is exactly what a power cut does not do.
 
 from __future__ import annotations
 
-import os
-import subprocess
-import sys
 from pathlib import Path
 
 import pytest
@@ -58,58 +55,7 @@ from librairy.paths import is_in_flight
 from librairy.planner import OperationSpec, approve_plan, create_plan
 from librairy.scanner import scan_root
 from librairy.undo_sequence import FORWARD_ACTIONS, reversed_already
-
-#  One commit or one reversal, killed at a named instant. Written to disk and
-#  run as its own process because the point is a process that stops existing.
-CHILD = '''
-import errno, os, shutil, signal, sys
-from librairy import executor, history
-from librairy.config import Settings
-from librairy.db import connect
-
-where, plan_id = sys.argv[1], sys.argv[2]
-
-
-def die(*_args, **_kwargs):
-    os.kill(os.getpid(), signal.SIGKILL)
-
-
-if where == "after_bytes":
-    #  The file is in the library; not one row says so yet.
-    executor._finish_op = die
-elif where == "after_journal":
-    #  The journal knows. The index does not.
-    executor._move_item_row = die
-elif where == "mid_copy":
-    #  A cross-filesystem move — inbox and library on different mounts, which
-    #  is the ordinary NAS arrangement — killed while the bytes are copying.
-    def no_rename(src, dst):
-        raise OSError(errno.EXDEV, "forced cross-device")
-
-    def half_copy(src, dst):
-        data = open(src, "rb").read()
-        with open(dst, "wb") as handle:
-            handle.write(data[: len(data) // 2])
-        die()
-
-    os.rename = no_rename
-    shutil.copy2 = half_copy
-elif where == "undo_after_bytes":
-    #  The file is back in the inbox; the reversal is not journalled.
-    history._record_undo = die
-elif where == "undo_after_journal":
-    #  The reversal is journalled; the index still names the library.
-    history._update_item_after_undo = die
-else:
-    raise SystemExit(f"unknown crash point: {where}")
-
-settings = Settings(_env_file=None)
-conn = connect(settings)
-if where.startswith("undo"):
-    history.undo_plan(conn, plan_id, settings)
-else:
-    executor.execute_plan(conn, plan_id, settings)
-'''
+from tests.support.scenario import Installation
 
 FILES = 2
 CONTENT = "x" * 3000
@@ -160,30 +106,9 @@ def prepare(tmp_path: Path, *, committed: bool = False) -> tuple[Settings, str]:
 
 
 def crash(tmp_path: Path, settings: Settings, plan_id: str, where: str) -> None:
-    """Run one commit or reversal in a real process, and kill it mid-operation."""
-    script = tmp_path / "crash_child.py"
-    script.write_text(CHILD, encoding="utf-8")
-    env = os.environ.copy()
-    env.update(
-        {
-            "APPDATA_DIR": str(settings.appdata_dir),
-            "INBOX_DIR": str(settings.inbox_dir),
-            "LIBRARY_DIR": str(settings.library_dir),
-            "QUARANTINE_DIR": str(settings.quarantine_dir),
-            "FILE_STABILITY_SECONDS": "0",
-        }
-    )
-    done = subprocess.run(  # noqa: S603 - our own interpreter, our own script
-        [sys.executable, str(script), where, plan_id],
-        env=env,
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=60,
-    )
-    assert done.returncode == -9, (
-        f"the {where} drill did not reach its crash point: {done.stderr[-800:]}"
-    )
+    """Kill a commit or a reversal at a named seam. The mechanism is shared with
+    the cross-feature scenarios, which crash the same installation mid-story."""
+    Installation(settings=settings, conn=None, tmp_path=tmp_path).crash(plan_id, where)
 
 
 def rows(conn, sql: str, *params: object) -> list:

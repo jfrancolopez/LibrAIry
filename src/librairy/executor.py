@@ -731,19 +731,39 @@ def _journalled(conn: sqlite3.Connection, row: sqlite3.Row) -> bool:
 
 
 def _address_free(conn: sqlite3.Connection, row: sqlite3.Row, final_relpath: str) -> bool:
-    """May this item's row be moved to the destination address?
+    """May this item's row be moved to the destination address, and if not, why?
 
     `items` has UNIQUE (root, relpath), and a library scan between the crash and
-    the recovery will have discovered the moved file and given it a row of its
-    own. Two rows for one file is not something to resolve by writing a third
-    answer over one of them: the index says the inbox copy is missing, which is
-    reported by the workflow that owns it.
+    the recovery will have discovered the file LibrAIry moved and given it a row
+    of its own. Two rows for one file, and they are not equal: the older one
+    carries the tags, the decisions, the proposals and every operation that ever
+    named this file, and the younger one is seconds old and carries what a scan
+    measures. So the younger one is retired and the identity keeps the address.
+
+    Retired only when it is genuinely a discovery — `reconcile.duplicate_claim`
+    is the same question a person answers when they agree a file moved, asked
+    here rather than answered twice. A row that has somehow acquired a decision
+    of its own is left alone, both rows stand, and the index goes on reporting
+    the older one as missing: something a person can see, which writing a third
+    answer over one of them would not be.
     """
+    from librairy.reconcile import duplicate_claim, retire
+
     clash = conn.execute(
-        "SELECT 1 FROM items WHERE root=? AND relpath=? AND id IS NOT ? LIMIT 1",
+        "SELECT id FROM items WHERE root=? AND relpath=? AND id IS NOT ? LIMIT 1",
         (row["dest_root"], final_relpath, row["item_id"]),
     ).fetchone()
-    return clash is None
+    if clash is None:
+        return True
+    claim = duplicate_claim(conn, int(clash["id"]))
+    if claim:
+        LOGGER.info(
+            "plan=%s op=%s: %s/%s is indexed twice and the second row carries %s",
+            row["plan_id"], row["id"], row["dest_root"], final_relpath, claim,
+        )
+        return False
+    retire(conn, int(clash["id"]))
+    return True
 
 
 def _quarantined(conn: sqlite3.Connection, row: sqlite3.Row) -> bool:
