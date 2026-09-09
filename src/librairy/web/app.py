@@ -584,6 +584,32 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             return _destinations_redirect(str(refusal))
         return _destinations_redirect()
 
+    @app.post("/settings/destinations/{destination_id}/relocate", include_in_schema=False)
+    def destination_relocate(
+        request: Request,  # noqa: ARG001
+        destination_id: int,
+        path: Annotated[str, Form()] = "",
+    ) -> RedirectResponse:
+        """Say where a registered drive is mounted *now*.
+
+        The one door through which an offline drive's location may change, and
+        it only opens after the drive at the new location proves it is the same
+        drive. Nothing else on this page can move one: an offline destination's
+        path is not an ordinary editable field, because editing it without the
+        marker and volume check is how a backup ends up pointed at somebody
+        else's disk.
+        """
+        from librairy import offline_drives
+        from librairy.transfer_paths import TransferRefused
+
+        try:
+            offline_drives.relocate(conn, settings, destination_id, path=path)
+        except (TransferRefused, ValueError) as refusal:
+            return _destinations_redirect(str(refusal))
+        #  No message on success: the card itself now says where the drive is
+        #  and that it is connected, which is the answer to the question.
+        return _destinations_redirect()
+
     @app.post("/settings/destinations/{destination_id}/verify", include_in_schema=False)
     def destination_verify(
         request: Request,  # noqa: ARG001

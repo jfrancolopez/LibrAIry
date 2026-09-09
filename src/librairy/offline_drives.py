@@ -218,6 +218,87 @@ def register(
     return _destination(conn, destination_id)
 
 
+def relocate(
+    conn: sqlite3.Connection, settings: Settings, destination_id: int, *, path: str
+) -> Destination:
+    """The same drive, mounted somewhere else. Say where, and prove it.
+
+    The identity of an offline drive is the marker LibrAIry wrote and the
+    filesystem the operating system named — never the path. That was the design
+    from the first line of this module, and it was only half true in practice:
+    a drive that came back as `/Volumes/WD-8TB 1` could be *recognised* at the
+    new path and could not be *pointed at* it. The only way through was to
+    forget the destination and register it again, which throws away the run
+    history, the divergence set and the destination the policies name — all of
+    which are about the drive, and none of which are about where it was plugged
+    in last week.
+
+    So: a location update, and nothing else. Same row, same id, same marker,
+    same volume, same policies, same history. What this function is, is the four
+    refusals in front of that update.
+
+    **The marker has to be ours.** No marker is a directory with nothing of ours
+    in it — an unplugged disk's empty mount point, or somebody else's drive. A
+    *different* marker is a different registered drive, and rebinding one
+    destination onto another drive's identity is exactly the mix-up the marker
+    exists to prevent.
+
+    **The volume has to agree, when both ends can say.** A marker can be copied;
+    cloning a backup drive produces a disk that claims to be the original, and
+    the volume id is the only thing that catches it. When the platform cannot
+    read one, the marker stands alone — the same fallback registration makes,
+    reported as reduced verification rather than hidden. `look` writes that
+    down, in the same words the Backups page already uses.
+
+    **The path has to be a place a backup may live**, which is every refusal
+    `local_destination` makes: not the Library, not inside it, not containing
+    it, not in the inbox, quarantine or LibrAIry's own data.
+
+    **The place must not already be a destination**, because one place is one
+    destination — otherwise two policies could cover the same files in two modes
+    and disagree about what may be reported.
+
+    Nothing is copied, moved or removed by any of it, on either the old location
+    or the new one. The old mount point is not touched at all: it may be a stale
+    directory, or it may be somebody else's disk, and neither is ours to tidy.
+    """
+    destination = _destination(conn, destination_id)
+    if not destination.identity:
+        raise TransferRefused(
+            f"{destination.name} is not a registered drive, so there is no"
+            " identity to check a new location against"
+        )
+    target = transfer_paths.local_destination(settings, path)
+    if not target.path.is_dir():
+        raise TransferRefused(
+            "there is nothing at that location — plug the drive in, then say where it is"
+        )
+    found = transfer_paths.identify(target.path)
+    if not found:
+        raise TransferRefused(
+            "that location holds no LibrAIry marker, so there is no way to tell"
+            f" whether it is {destination.name}"
+        )
+    if found != destination.identity:
+        known = _by_identity(conn, found)
+        whose = f" — that is {known.name}" if known else ""
+        raise TransferRefused(
+            f"the drive at that location is not {destination.name}{whose}"
+        )
+    here = volumes.identity_for(target.path)
+    if destination.volume and here and not volumes.matches(destination.volume, here):
+        raise TransferRefused(
+            "the drive at that location carries our marker but is a different"
+            " filesystem — it is a copy, not the drive that was registered"
+        )
+    try:
+        destinations_module.set_target(conn, destination_id, str(target.path))
+    except ValueError as refusal:
+        raise TransferRefused(str(refusal)) from refusal
+    look(conn, settings, _destination(conn, destination_id))
+    return _destination(conn, destination_id)
+
+
 def forget(conn: sqlite3.Connection, destination_id: int) -> None:
     """Stop treating a drive as a destination. **Nothing on it is touched.**
 

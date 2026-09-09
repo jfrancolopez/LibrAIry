@@ -656,3 +656,302 @@ def test_the_wrong_drive_plugged_in_transfers_nothing(tmp_path: Path) -> None:
     assert backup_runs.recent(conn, registered.id) == []
     assert offline_drives.presence(conn, registered.id).refused
     assert not list(mount.glob("*.jpg")), "something was written to the wrong drive"
+
+
+# --- the same drive, somewhere else -------------------------------------------
+#
+#  A drive's identity is the marker LibrAIry wrote and the filesystem the
+#  operating system named. Its mount point is where it happens to be plugged in
+#  today — `/Volumes/WD-8TB` on Monday and `/Volumes/WD-8TB 1` on Tuesday,
+#  because macOS suffixes a name that is already taken.
+#
+#  That was the design from the first line of this module and it was only half
+#  true in practice: the drive could be *recognised* at the new path and could
+#  not be *pointed at* it. The only way through was to forget the destination
+#  and register it again, which throws away the run history, the divergence set
+#  and the destination the policies name — none of which is about where the
+#  drive was plugged in last week.
+
+
+def a_registered_drive(tmp_path: Path, name: str = "WD 8TB"):  # noqa: ANN201
+    settings = settings_for(tmp_path)
+    conn = connect(settings)
+    mount = tmp_path / "volumes" / "WD-8TB"
+    mount.mkdir(parents=True)
+    drive = offline_drives.register(conn, settings, name=name, path=str(mount))
+    return conn, settings, drive, mount
+
+
+def test_a_drive_that_comes_back_elsewhere_keeps_everything_it_had(
+    tmp_path: Path,
+) -> None:
+    """The whole point: the destination survives the move, and so does its past."""
+    conn, settings, drive, mount = a_registered_drive(tmp_path)
+    dest.set_policy(conn, category="photos", destination_id=drive.id, mode=dest.OFFLINE)
+    from librairy import backup_runs
+
+    run = backup_runs.begin(
+        conn, destination_id=drive.id, category="photos", mode=dest.OFFLINE
+    )
+    backup_runs.finish(conn, run, succeeded=True, transferred=4)
+    from librairy.transfer_plan import Entry
+
+    divergence.record(
+        conn,
+        destination_id=drive.id,
+        category="photos",
+        entries=[
+            Entry(
+                relpath="Photos/2019/old.jpg",
+                difference=dest.EXTRA,
+                action=dest.REPORT,
+                destination_size=10,
+            )
+        ],
+        complete=True,
+    )
+
+    elsewhere = tmp_path / "volumes" / "WD-8TB 1"
+    mount.rename(elsewhere)
+    moved = offline_drives.relocate(conn, settings, drive.id, path=str(elsewhere))
+
+    assert moved.id == drive.id
+    assert moved.target == str(elsewhere)
+    assert moved.identity == drive.identity
+    assert moved.volume == drive.volume
+    assert offline_drives.presence(conn, drive.id).here
+    #  Everything that is about the drive rather than about its mount point.
+    assert [policy.category for policy in dest.policies(conn)] == ["photos"]
+    assert conn.execute(
+        "SELECT COUNT(*) FROM backup_runs WHERE destination_id=?", (drive.id,)
+    ).fetchone()[0] == 1
+    assert divergence.summary(conn, drive.id).count == 1
+    #  And the old mount point is never touched: it may be a stale directory or
+    #  it may be somebody else's disk, and neither is ours to tidy.
+    assert not mount.exists()
+
+
+def test_relocating_moves_no_files(tmp_path: Path) -> None:
+    conn, settings, drive, mount = a_registered_drive(tmp_path)
+    (mount / "Photos").mkdir()
+    (mount / "Photos" / "kept.jpg").write_bytes(b"already there")
+    before = {
+        path.relative_to(mount).as_posix(): path.read_bytes()
+        for path in mount.rglob("*")
+        if path.is_file()
+    }
+    elsewhere = tmp_path / "volumes" / "WD-8TB 1"
+    mount.rename(elsewhere)
+
+    offline_drives.relocate(conn, settings, drive.id, path=str(elsewhere))
+
+    assert {
+        path.relative_to(elsewhere).as_posix(): path.read_bytes()
+        for path in elsewhere.rglob("*")
+        if path.is_file()
+    } == before
+
+
+def test_the_next_transfer_uses_the_new_location(tmp_path: Path) -> None:
+    """Where the promise becomes a fact: the argv the transfer would run."""
+    conn, settings, drive, mount = a_registered_drive(tmp_path)
+    dest.set_policy(conn, category="photos", destination_id=drive.id, mode=dest.OFFLINE)
+    library(conn, "Photos/a.jpg")
+    (settings.library_dir / "Photos").mkdir(parents=True, exist_ok=True)
+    (settings.library_dir / "Photos" / "a.jpg").write_bytes(b"a photograph")
+    elsewhere = tmp_path / "volumes" / "WD-8TB 1"
+    mount.rename(elsewhere)
+
+    offline_drives.relocate(conn, settings, drive.id, path=str(elsewhere))
+    stub = Stub()
+    transfer_run.run_policy(
+        conn, settings, dest.policies(conn)[0], dest.destination(conn, drive.id),
+        [], runner=stub,
+    )
+
+    #  Compared exactly rather than by substring: macOS suffixes a name that is
+    #  already taken, so the new mount point *contains* the old one as a prefix
+    #  and "is the old path in this argument" would be true of the right answer.
+    written = [argument for command in stub.commands for argument in command]
+    assert any(argument.startswith(str(elsewhere)) for argument in written)
+    assert not any(
+        argument == str(mount) or argument.startswith(f"{mount}/")
+        for argument in written
+    ), "the transfer would have written to the old mount point"
+
+
+def test_a_different_drive_at_that_location_is_refused(tmp_path: Path) -> None:
+    """Somebody else's disk, or our own second drive. Both are not this one."""
+    conn, settings, drive, mount = a_registered_drive(tmp_path)
+    other = tmp_path / "volumes" / "Someone else"
+    other.mkdir(parents=True)
+    second = offline_drives.register(conn, settings, name="Spare", path=str(other))
+
+    try:
+        offline_drives.relocate(conn, settings, drive.id, path=str(other))
+        raise AssertionError("a different drive was accepted")
+    except TransferRefused as refusal:
+        assert "not WD 8TB" in str(refusal)
+        assert "Spare" in str(refusal)
+    assert dest.destination(conn, drive.id).target == str(mount)
+    assert dest.destination(conn, second.id).target == str(other)
+
+
+def test_a_location_with_no_marker_is_refused(tmp_path: Path) -> None:
+    """An unplugged drive's empty mount point looks exactly like this."""
+    conn, settings, drive, mount = a_registered_drive(tmp_path)
+    empty = tmp_path / "volumes" / "empty"
+    empty.mkdir(parents=True)
+
+    try:
+        offline_drives.relocate(conn, settings, drive.id, path=str(empty))
+        raise AssertionError("a location with nothing of ours in it was accepted")
+    except TransferRefused as refusal:
+        assert "no LibrAIry marker" in str(refusal)
+    assert dest.destination(conn, drive.id).target == str(mount)
+
+
+def test_a_clone_carrying_our_marker_is_refused(tmp_path: Path, monkeypatch) -> None:
+    """The one thing a marker cannot catch: a copy of the drive.
+
+    Same marker, different filesystem. The volume id is the only witness, and
+    this is the case it exists for.
+    """
+    conn, settings, drive, mount = a_registered_drive(tmp_path)
+    conn.execute(
+        "UPDATE backup_destinations SET volume=? WHERE id=?", ("uuid:original", drive.id)
+    )
+    clone = tmp_path / "volumes" / "clone"
+    clone.mkdir(parents=True)
+    (clone / MARKER).write_text(f"{drive.identity}\n", encoding="utf-8")
+    monkeypatch.setattr(volumes, "identity_for", lambda _path: "uuid:a-copy")
+
+    try:
+        offline_drives.relocate(conn, settings, drive.id, path=str(clone))
+        raise AssertionError("a clone was accepted")
+    except TransferRefused as refusal:
+        assert "copy" in str(refusal)
+    assert dest.destination(conn, drive.id).target == str(mount)
+
+
+def test_a_drive_whose_filesystem_cannot_be_read_still_relocates(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """The documented fallback, and it has to say that it happened.
+
+    A platform that cannot name a filesystem is not a reason to refuse a drive
+    whose marker matches — that is the same allowance registration makes — but
+    it is less checking than happened then, and the page says so rather than
+    showing it as a full check.
+    """
+    conn, settings, drive, mount = a_registered_drive(tmp_path)
+    conn.execute(
+        "UPDATE backup_destinations SET volume=? WHERE id=?", ("uuid:original", drive.id)
+    )
+    elsewhere = tmp_path / "volumes" / "WD-8TB 1"
+    mount.rename(elsewhere)
+    monkeypatch.setattr(volumes, "identity_for", lambda _path: "")
+
+    moved = offline_drives.relocate(conn, settings, drive.id, path=str(elsewhere))
+
+    assert moved.target == str(elsewhere)
+    assert moved.volume == "uuid:original", "the identity was rewritten around the path"
+    here = offline_drives.presence(conn, drive.id)
+    assert here.here
+    assert here.verification == transfer_paths.MARKER_ONLY
+
+
+def test_an_unsafe_location_is_refused(tmp_path: Path) -> None:
+    """Every refusal `local_destination` makes still applies."""
+    conn, settings, drive, mount = a_registered_drive(tmp_path)
+    inside = settings.library_dir / "Backup"
+    inside.mkdir(parents=True)
+    (inside / MARKER).write_text(f"{drive.identity}\n", encoding="utf-8")
+
+    try:
+        offline_drives.relocate(conn, settings, drive.id, path=str(inside))
+        raise AssertionError("a destination inside the library was accepted")
+    except TransferRefused as refusal:
+        assert "library" in str(refusal)
+    assert dest.destination(conn, drive.id).target == str(mount)
+
+
+def test_a_place_that_is_already_a_destination_is_refused(tmp_path: Path) -> None:
+    """One place, one destination — the rule that keeps two policies from
+    covering the same files in two modes."""
+    conn, settings, drive, mount = a_registered_drive(tmp_path)
+    taken = tmp_path / "nas"
+    taken.mkdir()
+    dest.add_destination(
+        conn, name="NAS", kind=dest.LOCAL, target=str(taken), modes=[dest.MIRROR]
+    )
+    (taken / MARKER).write_text(f"{drive.identity}\n", encoding="utf-8")
+
+    try:
+        offline_drives.relocate(conn, settings, drive.id, path=str(taken))
+        raise AssertionError("a place that is already a destination was accepted")
+    except TransferRefused as refusal:
+        assert "already a destination" in str(refusal)
+    assert dest.destination(conn, drive.id).target == str(mount)
+
+
+def test_a_destination_that_is_not_a_registered_drive_cannot_be_relocated(
+    tmp_path: Path,
+) -> None:
+    """An rclone remote has no marker to check, so this door does not open for
+    it — and there is no other door that moves an offline drive's path."""
+    settings = settings_for(tmp_path)
+    conn = connect(settings)
+    somewhere = tmp_path / "nas"
+    somewhere.mkdir()
+    remote = dest.add_destination(
+        conn, name="NAS", kind=dest.LOCAL, target=str(somewhere), modes=[dest.MIRROR]
+    )
+    elsewhere = tmp_path / "nas2"
+    elsewhere.mkdir()
+
+    try:
+        offline_drives.relocate(conn, settings, remote, path=str(elsewhere))
+        raise AssertionError("a destination with no identity was relocated")
+    except TransferRefused as refusal:
+        assert "not a registered drive" in str(refusal)
+    assert dest.destination(conn, remote).target == str(somewhere)
+
+
+def test_only_the_relocation_door_changes_where_a_destination_is() -> None:
+    """There is no ordinary edit that moves an offline drive's path.
+
+    Read from the syntax rather than from the prose, because a docstring saying
+    so is not an assertion. `set_target` is the only function that writes the
+    column, and `relocate` — which proves the drive at the new location is the
+    drive — is the only thing allowed to call it. A path field on the Settings
+    page that skipped that check is how a backup ends up pointed at somebody
+    else's disk while still claiming the history of the drive it used to be.
+    """
+    import ast
+
+    source = Path(__file__).resolve().parents[1] / "src" / "librairy"
+    callers: list[str] = []
+    for path in source.rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            called = node.func
+            name = (
+                called.attr if isinstance(called, ast.Attribute)
+                else called.id if isinstance(called, ast.Name)
+                else ""
+            )
+            if name == "set_target":
+                callers.append(f"{path.relative_to(source)}:{node.lineno}")
+
+    assert callers, "set_target is not called at all; has it been renamed?"
+    assert all(caller.startswith("offline_drives.py") for caller in callers), callers
+    #  And nothing writes the column behind its back.
+    writers = [
+        f"{path.relative_to(source)}"
+        for path in source.rglob("*.py")
+        if "backup_destinations SET target" in path.read_text(encoding="utf-8")
+    ]
+    assert writers == ["destinations.py"], writers

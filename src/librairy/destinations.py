@@ -281,6 +281,33 @@ def add_destination(
     return int(cursor.lastrowid)
 
 
+def set_target(conn: sqlite3.Connection, destination_id: int, target: str) -> None:
+    """Where this destination is *now*. Its identity is not touched.
+
+    A location and an identity are two different facts, and this writes only the
+    first: the marker LibrAIry wrote, the volume it recorded, the policies, the
+    runs and the divergence set all belong to the destination and not to the
+    path it happened to be mounted at. See `offline_drives.relocate`, which is
+    the only caller allowed to change an offline drive's location, and which
+    proves the drive is the same drive before it calls this.
+
+    The same one-place-one-destination rule `add_destination` applies, for the
+    same reason: two rows pointing at one place is how two enabled policies come
+    to cover the same files in two different modes.
+    """
+    wanted = target.strip()
+    if not wanted:
+        raise ValueError("a destination needs a target")
+    if any(
+        found.target.strip() == wanted and found.id != destination_id
+        for found in destinations(conn)
+    ):
+        raise ValueError("that place is already a destination")
+    conn.execute(
+        "UPDATE backup_destinations SET target=? WHERE id=?", (wanted, destination_id)
+    )
+
+
 def destinations(conn: sqlite3.Connection, *, enabled_only: bool = False) -> list[Destination]:
     where = " WHERE enabled = 1" if enabled_only else ""
     return [

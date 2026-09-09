@@ -758,8 +758,24 @@ def test_an_offline_drive_through_a_week_of_ordinary_use(tmp_path: Path) -> None
         assert "already registered" in str(refusal)
         assert "WD 8TB" in str(refusal)
 
-    unplugged.rename(mount)
+    #  And it comes back where a drive actually comes back: at the path the
+    #  operating system had free, which is not the one it was registered at.
+    #  macOS suffixes a name that is already taken, so this is the ordinary
+    #  case and not the exotic one.
+    elsewhere = tmp_path / "volumes" / "WD-8TB 1"
+    unplugged.rename(elsewhere)
     offline_drives.look(inst.conn, inst.settings, drive)
+    assert not offline_drives.presence(inst.conn, drive.id).here
+
+    moved = offline_drives.relocate(
+        inst.conn, inst.settings, drive.id, path=str(elsewhere)
+    )
+
+    #  The same destination, not a new one: same row, same marker, same
+    #  policies, and everything already recorded about it.
+    assert moved.id == drive.id
+    assert moved.identity == drive.identity
+    drive, mount = moved, elsewhere
     assert offline_drives.presence(inst.conn, drive.id).here
     assert [offer.drive for offer in offers(inst.conn, folder)] == ["WD 8TB"]
 
@@ -778,7 +794,7 @@ def test_an_offline_drive_through_a_week_of_ordinary_use(tmp_path: Path) -> None
 
     #  Away again. What LibrAIry last knew about the drive is still readable
     #  with the drive in a drawer, which is the point of storing it.
-    mount.rename(unplugged)
+    mount.rename(tmp_path / "volumes" / "in-the-drawer")
     offline_drives.look(inst.conn, inst.settings, drive)
 
     assert not offline_drives.presence(inst.conn, drive.id).here

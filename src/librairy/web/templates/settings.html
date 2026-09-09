@@ -667,6 +667,24 @@
           <span class="muted">Removes what LibrAIry knows. Nothing on the destination is touched.</span>
         </form>
       </div>
+
+      {% if view.offline %}
+        {# A drive's identity is its marker and its filesystem, never its path,
+           so a drive that comes back at a different mount point is the same
+           drive and keeps everything: this destination, its policies, its
+           history and its divergence set. Only the location changes, and only
+           after the drive at the new location proves it is this one. #}
+        <form method="post" action="/settings/destinations/{{ view.destination.id }}/relocate" class="field-row">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <label class="field field-wide">Where it is mounted now
+            <input name="path" placeholder="/Volumes/{{ view.name }} 1">
+          </label>
+          <button type="submit">Reattach drive</button>
+        </form>
+        <p class="muted">For when the same drive comes back at a different path.
+          Its history, its policies and everything LibrAIry knows about it stay
+          with it; nothing is copied, moved or removed at either location.</p>
+      {% endif %}
     </section>
   {% else %}
     <p class="muted">No destinations yet.</p>
