@@ -240,6 +240,12 @@ def render(page, root: Path, *, expand: tuple[str, ...] = ()) -> Path:  # noqa: 
     from tests.dev.fixture import build_fixture  # noqa: PLC0415
 
     client = build_fixture(root)
+    if callable(page):
+        #  A scene whose address is not knowable in advance. Plan ids are uuids,
+        #  so the page that shows a stopped commit has to be found in the
+        #  fixture rather than written down here — and a hard-coded id would
+        #  quietly start photographing a different page the day a scene moved.
+        page = page(client)
     if isinstance(page, tuple):
         #  A scene that only exists behind a POST. The filename cleanup pages
         #  are the reason: previewing reads every file in a folder, which is
@@ -364,6 +370,19 @@ def overflow(browser: Chrome, page: Path, width: int, height: int) -> dict:
 # --- driving ------------------------------------------------------------------
 
 
+
+def _stopped_commit(client) -> str:  # noqa: ANN001
+    """The plan whose commit was refused by a read-only Library.
+
+    Looked up rather than hard-coded: plan ids are uuids, and a fixture scene
+    that renumbered would silently start photographing a different page.
+    """
+    row = client.app.state.conn.execute(
+        "SELECT id FROM plans WHERE status='failed' ORDER BY finished_at DESC LIMIT 1"
+    ).fetchone()
+    return f"/history/plans/{row['id']}" if row else "/history"
+
+
 PAGES = {
     "review": "/review",
     "browse": "/browse",
@@ -429,6 +448,11 @@ PAGES = {
     "quarantine-delete": "/quarantine?view=delete-queue",
     # A journal with real plans in it, including an adoption and a disposal.
     "history": "/history",
+    #  Where "View in History" lands from a commit that stopped, and the one
+    #  page in the product whose whole job is to explain a failure. Its own
+    #  entry because the happy version of this page tells you nothing about the
+    #  block that carries three sentences and a closed `<details>`.
+    "stopped-commit": _stopped_commit,
     "search": "/browse?q=IMG_4021",
     "item": "/items/1",
     # Twenty-five photographs that look alike: the thumbnail grid, the facts
@@ -540,7 +564,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.list:
         for name, path in PAGES.items():
-            print(f"{name:<12} {path}")
+            print(f"{name:<12} {path if isinstance(path, str) else '(found in the fixture)'}")
         return 0
     if args.page not in PAGES:
         parser.error(f"unknown page {args.page!r}; try --list")

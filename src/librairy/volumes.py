@@ -75,6 +75,17 @@ def identity_for(path: Path) -> str:
     return ""
 
 
+def readable_cheaply() -> bool:
+    """Can this platform answer `identity_for` without running a program?
+
+    Linux reads two files. macOS runs `diskutil`, which is a subprocess with a
+    five-second timeout — fine when somebody registers a drive, and not fine on
+    a path that runs at every startup. `librairy/roots.py` asks this before it
+    records a volume id, and falls back to what it can observe without one.
+    """
+    return sys.platform.startswith("linux")
+
+
 def matches(recorded: str, found: str) -> bool:
     """Does the volume here match the one that was registered?
 

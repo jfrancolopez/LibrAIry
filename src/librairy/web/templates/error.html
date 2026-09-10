@@ -3,11 +3,25 @@
   <p class="status warn">[ERROR {{ status }}]</p>
   <h1>{{ title or 'Error' }}</h1>
   <p>{{ message }}</p>
+  {# What is true of the files. A refusal has already said it in its own words —
+     every one of them is a sentence about why nothing happened — but an
+     unexpected fault has not, and "Internal system fault" was the whole of what
+     somebody got after pressing a button that moves files. #}
+  {% if safety %}<p>{{ safety }}</p>{% endif %}
   {# The page the decision was on, first: nothing else on this page takes the
      reader back to the row they were acting on. #}
   <p class="button-row">
     {% if back %}<a class="btn btn-primary" href="{{ back }}">Back to {{ back_label }}</a>{% endif %}
+    {# Never a "try again" button on a fault that may have touched files. The
+       screen that owns the operation reads the journal and can say what
+       happened to each one; a repeat press cannot. #}
+    {% if recovery %}<a class="btn" href="{{ recovery }}">View in Commit</a>{% endif %}
     <a class="btn" href="/dashboard">Dashboard</a>
     <a class="btn" href="/history">History</a>
+    {% if fault %}<a class="btn" href="/health">Health</a>{% endif %}
   </p>
+  {% if reference %}
+    <p class="muted">Reference <span class="mono">{{ reference }}</span> — this is
+      in the log beside the details, if you are reporting it.</p>
+  {% endif %}
 {% endblock %}

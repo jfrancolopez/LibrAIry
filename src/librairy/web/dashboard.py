@@ -24,6 +24,9 @@ class DiskStat:
     # st_dev of the filesystem this root sits on. On a laptop all four roots are
     # usually one volume, and reporting it four times reads as four problems.
     device: int = 0
+    #  Whether there is a directory there at all. False means every number above
+    #  is zero because nothing was measured — not because the disk is empty.
+    present: bool = True
 
 
 @dataclass(frozen=True)
@@ -204,15 +207,33 @@ def operations_overview(
     ]
     return {
         "surfaces": surfaces,
-        "needs_attention": _needs_attention(conn, queue, findings, quarantine, stopped),
+        "needs_attention": _needs_attention(
+            conn, queue, findings, quarantine, stopped, away=_storage_away(conn, settings)
+        ),
         "activity": _activity(conn, running),
         "recent": _recent(conn),
         "delete_queue_count": int(quarantine["delete_queue"] or 0),
     }
 
 
+def _storage_away(conn: sqlite3.Connection, settings) -> list:  # noqa: ANN001
+    """Roots whose storage is not the storage LibrAIry started against.
+
+    A couple of `stat` calls per root and one row out of `worker_state`, on a
+    page that polls every five seconds — and worth it: a Library that is not
+    there is the first thing somebody needs to be told and the last thing any
+    other query on this page would reveal. Reads only, and the one statement it
+    costs is counted in `tests/test_dashboard_operations.py`.
+    """
+    from librairy import roots
+
+    if settings is None:
+        return []
+    return [row for row in roots.state(conn, settings) if not row.recognised]
+
+
 def _needs_attention(
-    conn: sqlite3.Connection, queue, findings, quarantine, stopped=()  # noqa: ANN001
+    conn: sqlite3.Connection, queue, findings, quarantine, stopped=(), away=()  # noqa: ANN001
 ) -> list[dict[str, str]]:
     """Only things a person has to do something about.
 
@@ -223,6 +244,19 @@ def _needs_attention(
     from librairy.web.quarantine import held_count
 
     items: list[dict[str, str]] = []
+    #  First, above everything. Every other line here is about work waiting for
+    #  a decision; this one is about the decisions being impossible to carry out,
+    #  and reading "12 changes waiting for Commit" above it would be reading them
+    #  in the wrong order.
+    for root in away:
+        #  The failure's own next step rather than a fixed clause: "reconnect
+        #  it" is right for storage that is gone and wrong for storage that is
+        #  present and is something else.
+        items.append({
+            "text": f"{root.detail} Nothing has been moved into it. "
+                    f"{root.failure.next if root.failure else ''}".strip(),
+            "href": "/health",
+        })
     if queue["decisions"]:
         items.append({
             "text": f"{queue['decisions']} change"
@@ -458,6 +492,14 @@ def _disk_stats(settings: Settings) -> list[DiskStat]:
     }
     stats: list[DiskStat] = []
     for name, path in roots.items():
+        if not path.is_dir():
+            #  Not the nearest existing parent's disk. `_existing_path` walks up
+            #  until something exists, so a Library whose share had unmounted was
+            #  reported as "library — 312GB free of 460GB": the container's own
+            #  disk, wearing the Library's name, on the panel somebody checks to
+            #  find out whether their storage is all right.
+            stats.append(DiskStat(name, 0.0, 0.0, 0, 0, present=False))
+            continue
         resolved = _existing_path(path)
         usage = shutil.disk_usage(resolved)
         free_gb = usage.free / 1024**3

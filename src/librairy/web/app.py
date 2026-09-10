@@ -51,6 +51,7 @@ from librairy.quarantine_requests import (
     request_restore,
 )
 from librairy.review_undo import undo_last
+from librairy.roots import observe
 from librairy.scanner import VALID_ROOTS
 from librairy.search import (
     DEFAULT_SEARCH_ROOT,
@@ -115,6 +116,7 @@ from librairy.web.evidence import humanize_evidence
 from librairy.web.health import health_data, test_provider
 from librairy.web.history import (
     history_data,
+    op_result_text,
     plan_detail_data,
     undo_history_entry,
     undo_history_plan,
@@ -255,6 +257,13 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
     settings = settings or Settings()
     conn = conn or connect(settings)
     configure_logging(settings, component="web", conn=conn)
+    #  Which filesystem each root is on, written down at startup so that every
+    #  later operation can ask whether it has changed. The supervisor does this
+    #  too, before either child starts; doing it here as well is what makes it
+    #  true for anything started on its own — `uvicorn` pointed straight at the
+    #  factory, and every test that builds an app. Reads only, and writes one
+    #  row to the database — nothing is written to the Library.
+    observe(conn, settings)
     limiter = LoginRateLimiter()
     commit_state = CommitState()
     app = FastAPI(title="LibrAIry", docs_url=None, redoc_url=None)
@@ -265,6 +274,7 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
     TEMPLATES.env.globals["provider_header"] = lambda: provider_header(conn, settings)
     TEMPLATES.env.globals["app_version"] = __version__
     TEMPLATES.env.globals["undo_outcome_text"] = undo_outcome_text
+    TEMPLATES.env.globals["op_result_text"] = op_result_text
     # One source for "what is a .VOB?", reachable from any template. Static
     # reference text: no file is read, nothing is looked up over the network,
     # and nothing it returns can change a classification.
@@ -3471,7 +3481,12 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         """
         started = start_execution(conn, settings, commit_state, plan_id)
         data = commit_progress_data(conn, plan_id)
-        context = {"started": started, "error": commit_state.error, **data}
+        context = {
+            "started": started,
+            "error": commit_state.error,
+            "refusal": commit_state.failure,
+            **data,
+        }
         if _is_htmx(request):
             return TEMPLATES.TemplateResponse(
                 request, "partials/commit_progress.html", context
@@ -3490,7 +3505,12 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
     @app.get("/commit/progress/{plan_id}", response_class=HTMLResponse)
     def commit_progress(request: Request, plan_id: str) -> HTMLResponse:
         data = commit_progress_data(conn, plan_id)
-        context = {"started": False, "error": commit_state.error, **data}
+        context = {
+            "started": False,
+            "error": commit_state.error,
+            "refusal": commit_state.failure,
+            **data,
+        }
         if _is_htmx(request):
             return TEMPLATES.TemplateResponse(
                 request, "partials/commit_progress.html", context
@@ -3619,7 +3639,11 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
             request,
             "undo_result.html",
             {
-                "title": "Undone",
+                #  Not "Undone". This page is reached just as often by a
+                #  reversal that put nothing back, and a browser tab asserting
+                #  the opposite of what the page says is the first thing
+                #  somebody reads.
+                "title": "Undo",
                 "csrf_token": request.state.session["csrf_token"],
                 "results": results,
             },
@@ -3954,20 +3978,74 @@ def create_app(settings: Settings | None = None, conn: sqlite3.Connection | None
         return {"back": path, "back_label": label} if label else {}
 
     @app.exception_handler(404)
-    async def not_found(request: Request, exc) -> HTMLResponse:  # noqa: ARG001
+    async def not_found(request: Request, exc) -> Response:
+        """A missing route, and a refusal that happens to be a 404, are not the
+        same thing — and this handler was answering both with the first.
+
+        Starlette prefers a status-code handler over a class handler, so every
+        `HTTPException(404, "that item no longer exists")` in the application
+        arrived here and was rendered as **Route not found**. Somebody pressing
+        Identify on a file that had been deleted was told the *route* did not
+        exist, and an htmx caller got a whole HTML document where the rest of
+        the application sends it JSON.
+        """
+        detail = str(getattr(exc, "detail", "") or "")
+        if detail and detail != "Not Found":
+            return await http_error(request, exc)
         return TEMPLATES.TemplateResponse(
             request,
             "error.html",
-            {"title": "Not Found", "status": 404, "message": "Route not found"},
+            {
+                "title": "Not Found",
+                "status": 404,
+                "message": "There is no page at that address.",
+                "safety": "No files were changed: this request does not move any.",
+            },
             status_code=404,
         )
 
+    #  Paths where an unexpected fault may have happened *around* files, so the
+    #  page must not tell somebody to press the button again. Everything in
+    #  LibrAIry that moves bytes goes through Commit or Undo, and both of those
+    #  can say what happened to each file — from the journal, per operation.
+    #  Sending a person back to the recovery-aware screen is the only safe
+    #  advice; "try again" is how a half-finished commit becomes two.
+    TOUCHED_FILES = ("/commit", "/history", "/quarantine", "/maintenance")
+
     @app.exception_handler(500)
     async def server_error(request: Request, exc) -> HTMLResponse:  # noqa: ARG001
+        """The page for something nobody anticipated.
+
+        No traceback, which was already true, and now three other things:
+        a reference somebody can quote that matches a line in the log, an
+        honest statement about whether the operation may have been interrupted,
+        and — where it was a file operation — no invitation to repeat it.
+        """
+        reference = f"{utc_now()}#{abs(hash(request.url.path)) % 10000:04d}"
+        moved = request.url.path.startswith(TOUCHED_FILES)
+        LOGGER.exception("unhandled fault ref=%s path=%s", reference, request.url.path)
         return TEMPLATES.TemplateResponse(
             request,
             "error.html",
-            {"title": "System Fault", "status": 500, "message": "Internal system fault"},
+            {
+                "title": "System Fault",
+                "status": 500,
+                "message": "LibrAIry hit a problem it does not recognise, and "
+                           "stopped rather than carry on.",
+                "fault": True,
+                "reference": reference,
+                "safety": (
+                    "This request may have been interrupted part way through. "
+                    "Nothing is deleted or overwritten by any operation in "
+                    "LibrAIry, and every file that moved was recorded before "
+                    "it was released — so the account of what happened is in "
+                    "History, per file."
+                    if moved
+                    else "No files were changed: this request does not move any."
+                ),
+                "recovery": "/commit" if moved else "",
+                **_came_from(request),
+            },
             status_code=500,
         )
 

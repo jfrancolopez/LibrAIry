@@ -10,11 +10,13 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from librairy import roots
 from librairy.attributes import normalize_placed_file, parse_mode
 from librairy.backup import enqueue_backup_item
 from librairy.config import Settings
 from librairy.decisions import settle as settle_decision
 from librairy.decisions import settle_plan as settle_decision_plan
+from librairy.failures import VERIFICATION_FAILED, Failure, classify
 from librairy.fingerprint import blake2b_file
 from librairy.lifecycle import assert_transition
 from librairy.locks import acquire_lock
@@ -53,6 +55,20 @@ LOGGER = logging.getLogger(__name__)
 
 class ExecutionError(RuntimeError):
     pass
+
+
+class StorageUnavailable(ExecutionError):
+    """The storage this plan writes to is not the storage LibrAIry knows.
+
+    Raised before the first operation, which is the whole point of it: this is
+    the one failure whose safety sentence needs no qualification, because
+    nothing has been attempted. The plan keeps its approval and can be
+    committed again when the storage comes back.
+    """
+
+    def __init__(self, failure: Failure) -> None:
+        super().__init__(failure.what)
+        self.failure = failure
 
 
 @dataclass(frozen=True)
@@ -121,6 +137,19 @@ def _execute_plan_unlocked(
         return ExecutionSummary(plan_id)
     if not plan["plan_hash"] or compute_plan_hash(conn, plan_id) != plan["plan_hash"]:
         raise ExecutionError("plan hash mismatch; refusing to touch files")
+
+    #  Before anything: is the storage this plan reads and writes the storage
+    #  LibrAIry was started against? A share that unmounts leaves a writable
+    #  empty directory at the mount point, and every other check in this
+    #  function passes against it — so a commit filed the person's library
+    #  inside the container and reported success. See `librairy/roots.py`.
+    #
+    #  Asked once per plan rather than once per operation: one row out of
+    #  `worker_state` and a `stat` per root. A mount does not come and go
+    #  between two files.
+    unavailable = roots.check(conn, settings, *_plan_roots(conn, plan_id))
+    if unavailable is not None:
+        raise StorageUnavailable(unavailable)
 
     #  Asked before it is overwritten, and it is evidence rather than
     #  bookkeeping. This process holds the lock, so nothing else is running this
@@ -233,9 +262,18 @@ def _execute_plan_unlocked(
         try:
             result = _execute_op(conn, row, settings, resuming=resuming)
         except Exception as exc:
+            #  The reason, in a form the Commit page can turn back into the three
+            #  sentences somebody needs. It used to be `str(exc)` — so a person
+            #  whose destination filled up was told "1 failed" on the page they
+            #  were looking at and `[Errno 28] No space left on device:
+            #  '/library/…part-…'` on the plan page, and neither said the disk
+            #  was full. See `librairy/failures.py`.
             result = "failed"
             _finish_op(conn, row["id"], result, None)
-            _journal(conn, row, row["dest_relpath"], row["src_fingerprint"], str(exc))
+            _journal(
+                conn, row, row["dest_relpath"], row["src_fingerprint"],
+                classify(exc).journalled(),
+            )
         LOGGER.info(
             "plan=%s op=%s type=%s src=%s/%s dest=%s/%s result=%s",
             plan_id,
@@ -864,6 +902,29 @@ def _execute_adoption_op(
     return "done"
 
 
+def _verification_failed() -> ExecutionError:
+    """The copy did not match. Carried as a `Failure` rather than as prose, so
+    the Commit page says the same thing about it that it says about a full disk."""
+    error = ExecutionError(VERIFICATION_FAILED.what)
+    error.failure = VERIFICATION_FAILED
+    return error
+
+
+def _plan_roots(conn: sqlite3.Connection, plan_id: str) -> list[str]:
+    """The storage roots this plan reads from and writes to.
+
+    Only the three LibrAIry owns: an adoption's source lives in the
+    `optimization` namespace under appdata, which is not a mount somebody can
+    unplug.
+    """
+    rows = conn.execute(
+        "SELECT DISTINCT src_root AS root FROM plan_ops WHERE plan_id=?"
+        " UNION SELECT DISTINCT dest_root FROM plan_ops WHERE plan_id=?",
+        (plan_id, plan_id),
+    ).fetchall()
+    return [str(row["root"]) for row in rows if str(row["root"]) in roots.ROOTS]
+
+
 def _move_verified(src: Path, dest: Path, fingerprint: str, plan_id: str) -> None:
     #  Cleared before the move and not only on the copying path. A crash during
     #  a cross-filesystem copy leaves this behind, and the run that finishes the
@@ -877,10 +938,23 @@ def _move_verified(src: Path, dest: Path, fingerprint: str, plan_id: str) -> Non
     except OSError as exc:
         if exc.errno != errno.EXDEV:
             raise
-        shutil.copy2(src, temp)
+        try:
+            shutil.copy2(src, temp)
+        except OSError:
+            #  A copy that ran out of room left its own half-written file behind
+            #  on the destination that had no room — 508 KB of nothing, on the
+            #  very disk whose fullness was the failure. It is ours, its bytes
+            #  are a prefix of a file still whole at the source, and nothing
+            #  reads it, so removing it is not a deletion of anybody's data.
+            #
+            #  Only here. A run that is *killed* cannot clean up, and must not:
+            #  `_move_verified` clears this name at the top of the next attempt,
+            #  which is what makes an interrupted commit resumable.
+            temp.unlink(missing_ok=True)
+            raise
         if blake2b_file(temp) != fingerprint:
             temp.unlink(missing_ok=True)
-            raise ExecutionError("destination fingerprint mismatch after copy") from None
+            raise _verification_failed() from None
         os.replace(temp, dest)
         os.remove(src)
 

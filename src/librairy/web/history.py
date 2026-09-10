@@ -26,9 +26,43 @@ UNDO_OUTCOMES = {
 }
 
 
+#  What a plan operation's stored result means, in the words the Commit page
+#  already uses for the same thing. The plan page printed the token — `done`,
+#  `skipped_changed`, `refused_collision` — which is the module's vocabulary and
+#  not anybody else's.
+OP_RESULTS = {
+    "done": "moved",
+    "renamed_collision": "moved, under a new name",
+    "skipped_changed": "not moved — it changed after approval",
+    "skipped_missing": "not moved — it is no longer on disk",
+    "refused_source": "not moved — what it depended on had changed",
+    "refused_collision": "not moved — something is already at its destination",
+    "failed": "not moved",
+}
+
+
+def op_result_text(result: object) -> str:
+    if not result:
+        return "not reached"
+    return OP_RESULTS.get(str(result), str(result))
+
+
 def undo_outcome_text(outcome: str) -> str:
-    """One sentence for a reversal's outcome, whatever diagnostics follow it."""
+    """One sentence for a reversal's outcome, whatever diagnostics follow it.
+
+    The refusals above are decisions about the *file* — it moved, it changed,
+    something is in its place. A reversal can also fail because of the storage
+    it was writing to, and those come back through `librairy/failures.py` so
+    that a read-only Library says the same thing in Undo that it says in Commit.
+    """
     code = str(outcome or "").split(" ", 1)[0]
+    if code == "undo_failed":
+        from librairy.failures import from_outcome
+
+        #  Not lower-cased: the sentence starts with "LibrAIry" often enough
+        #  that a mechanical downcasing renamed the program. The trailing stop
+        #  goes because the template supplies one.
+        return f"not put back — {from_outcome(outcome).what.rstrip('.')}"
     return UNDO_OUTCOMES.get(code, "not put back")
 
 
@@ -480,7 +514,20 @@ def plan_detail_data(conn: sqlite3.Connection, plan_id: str) -> dict[str, object
         raise ValueError("plan not found")
     ops = conn.execute("SELECT * FROM plan_ops WHERE plan_id=? ORDER BY seq", (plan_id,)).fetchall()
     entries = list_history(conn, plan_id=plan_id, limit=200)
-    return {"plan": plan, "ops": ops, "entries": entries}
+    from librairy.web.commit import failure_groups
+
+    #  The same grouping the Commit page shows, from the same journal rows. This
+    #  page is where "View in History" lands from a commit that stopped, and it
+    #  printed the stored outcome verbatim — so the account somebody got of a
+    #  read-only Library was `move [Errno 13] Permission denied: '/library/…'`,
+    #  wrapped around a hash, under a heading that said "Journal".
+    return {
+        "plan": plan,
+        "ops": ops,
+        "entries": entries,
+        "failures": failure_groups(conn, plan_id),
+        "moved": sum(1 for entry in entries if str(entry["outcome"]) == "ok"),
+    }
 
 
 def undo_history_entry(

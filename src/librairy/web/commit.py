@@ -8,7 +8,8 @@ from typing import Any
 
 from librairy.config import Settings
 from librairy.db import connect
-from librairy.executor import execute_plan
+from librairy.executor import StorageUnavailable, execute_plan
+from librairy.failures import Failure, classify, from_outcome
 from librairy.lifecycle import vanished_count
 from librairy.locks import BUSY, LockHeldError
 from librairy.planner import OperationSpec, approve_plan, create_plan
@@ -20,6 +21,11 @@ from librairy.web.evidence import humanize_evidence
 class CommitState:
     active_plan_id: str | None = None
     error: str | None = None
+    #  Set beside `error` when the reason is one this program can describe.
+    #  The string alone reached the page as a bare sentence with nothing to do
+    #  about it — and for anything raised out of the executor it was
+    #  `str(exc)`, which is how a traceback's first line becomes a UI.
+    failure: Failure | None = None
     lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
 
@@ -319,6 +325,7 @@ def start_execution(
             return False
         state.active_plan_id = plan_id
         state.error = None
+        state.failure = None
     thread = threading.Thread(
         target=_execute_background,
         args=(settings, state, plan_id),
@@ -359,7 +366,52 @@ def progress_data(conn: sqlite3.Connection, plan_id: str) -> dict[str, object]:
         # rather than by "1 of 1". Empty for an ordinary inbox commit, which
         # genuinely is a count of unrelated files.
         "subject": _plan_subject(conn, plan),
+        "failures": failure_groups(conn, plan_id),
     }
+
+
+@dataclass(frozen=True)
+class FailureGroup:
+    """One reason, and how many files met it.
+
+    Grouped, because the reason is a fact about the storage and not about the
+    file: forty files that would not fit on a full disk are one thing that
+    happened forty times, and forty red rows saying "failed" is the shape that
+    made people stop reading them.
+    """
+
+    failure: Failure
+    count: int
+    example: str = ""
+
+
+def failure_groups(conn: sqlite3.Connection, plan_id: str) -> list[FailureGroup]:
+    """Why this plan's operations failed, read back out of the journal.
+
+    The journal is where the reason has always been. Nothing showed it: the
+    Commit page said "3 failed." and the plan page printed `[Errno 13]
+    Permission denied: '/library/Documents'` beside a hash. So a person whose
+    Library had been remounted read-only was told a number, and the one word
+    that would have fixed it in ten seconds was in neither place.
+    """
+    rows = conn.execute(
+        """
+        SELECT outcome, dest_relpath, COUNT(*) AS count, MIN(dest_relpath) AS example
+        FROM history
+        WHERE plan_id=? AND outcome LIKE 'failed %'
+        GROUP BY outcome
+        """,
+        (plan_id,),
+    ).fetchall()
+    by_code: dict[str, FailureGroup] = {}
+    for row in rows:
+        failure = from_outcome(str(row["outcome"]))
+        seen = by_code.get(failure.code)
+        count = int(row["count"]) + (seen.count if seen else 0)
+        by_code[failure.code] = FailureGroup(
+            failure, count, seen.example if seen else str(row["example"] or "")
+        )
+    return sorted(by_code.values(), key=lambda group: -group.count)
 
 
 def _plan_subject(conn: sqlite3.Connection, plan: sqlite3.Row | None) -> str:
@@ -386,9 +438,17 @@ def _execute_background(
     except LockHeldError:
         with state.lock:
             state.error = BUSY
-    except Exception as exc:  # pragma: no cover - defensive result surfaced in UI
+    except StorageUnavailable as exc:
+        #  Refused before the first operation, so this is the one failure whose
+        #  safety sentence needs no qualification at all.
         with state.lock:
-            state.error = str(exc)
+            state.error = exc.failure.what
+            state.failure = exc.failure
+    except Exception as exc:  # pragma: no cover - defensive result surfaced in UI
+        failure = classify(exc)
+        with state.lock:
+            state.error = failure.what
+            state.failure = failure
     finally:
         conn.close()
         with state.lock:

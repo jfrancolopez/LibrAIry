@@ -7,7 +7,8 @@ import sys
 from pathlib import Path
 
 from librairy.config import Settings
-from librairy.db import connect
+from librairy.db import DatabaseVersionError, connect
+from librairy.roots import observe
 
 
 class BootValidationError(RuntimeError):
@@ -76,12 +77,48 @@ def _nesting_errors(roots: dict[str, Path]) -> list[str]:
 
 
 def _database_errors(settings: Settings) -> list[str]:
+    """Open the database, finish any upgrade it needs, and identify the storage.
+
+    Three things, and they are one function because they happen in one attempt:
+    `connect` migrates, so a failed upgrade and a failed open arrive here as the
+    same call and have to be told apart before either is described.
+
+    They used to be told apart by nothing at all. `DatabaseVersionError` is a
+    `RuntimeError`, so the one failure with the highest stakes in the whole
+    program — an image rolled back under a database a newer one had already
+    upgraded — walked straight past `except sqlite3.Error`, out of
+    `validate_boot_or_die`, and printed a Python traceback as the container's
+    only account of itself.
+    """
     try:
         conn = connect(settings)
-        conn.execute("SELECT 1").fetchone()
-        conn.close()
+    except DatabaseVersionError as exc:
+        #  The migration runs inside a transaction and rolls back, so this is
+        #  provable rather than reassuring: the database is still at the version
+        #  it was, and no file in the Library was moved by an upgrade that did
+        #  not happen. Nothing here claims a backup — LibrAIry does not take one.
+        return [
+            f"LibrAIry could not finish upgrading its database. {exc} "
+            "The upgrade was rolled back, so the database is unchanged and no "
+            "Library files were reorganized. Fix the cause, or start the "
+            "version this database was last used with."
+        ]
     except sqlite3.Error as exc:
-        return [f"SQLite database in {settings.appdata_dir} cannot be opened: {exc}"]
+        return [
+            f"SQLite database in {settings.appdata_dir} cannot be opened: {exc}. "
+            "No Library files were changed. Make the appdata folder available "
+            "and writable, then start LibrAIry again."
+        ]
+    try:
+        conn.execute("SELECT 1").fetchone()
+        #  Which filesystem each root is on, written down while LibrAIry is
+        #  starting so that a later operation can notice it changed. Reads only;
+        #  see `librairy/roots.py`.
+        observe(conn, settings)
+    except sqlite3.Error as exc:
+        return [f"SQLite database in {settings.appdata_dir} cannot be read: {exc}"]
+    finally:
+        conn.close()
     return []
 
 

@@ -613,6 +613,7 @@ def build_app(root: Path):  # noqa: ANN201
     #  the "measured, then the library moved on" state Health reports.
     _a_delete_queue(conn, settings)
     _two_arrivals_wanting_one_place(conn, settings)
+    _a_commit_that_stopped(conn, settings)
     #  Last, because it scans the inbox and every scene above it that seeds a
     #  proposal by hand expects to own the rows it made.
     _a_photo_event_in_the_inbox(conn, settings)
@@ -1526,6 +1527,55 @@ def _four_manuals_already_filed(conn, settings: Settings) -> None:  # noqa: ANN0
         ],
     )
 
+
+def _a_commit_that_stopped(conn, settings: Settings) -> None:  # noqa: ANN001
+    """Three files that did not move, because the Library was read-only.
+
+    A permanent member of the fixture for the same reason as the
+    118-character filename: a layout that only ever holds the happy outcome is
+    a layout nobody has checked. This is the state every screen in M4-06 is
+    about, and every future pass at 375px should meet it.
+
+    Made by making it happen — `chmod`, a real commit, a real refusal — so the
+    pages read the rows they read in production. A fixture that inserted
+    `outcome='failed permission-denied …'` would prove the template and not the
+    executor that writes it.
+    """
+    import os  # noqa: PLC0415
+
+    from librairy.executor import execute_plan  # noqa: PLC0415
+    from librairy.planner import OperationSpec, approve_plan, create_plan  # noqa: PLC0415
+
+    names = [
+        "2026-03-14 Quarterly planning meeting — minutes, actions and "
+        "attachments (Franco, Marta, Ines) v3 FINAL.pdf",
+        "boiler-service-invoice.pdf",
+        "tenancy-agreement-signed.pdf",
+    ]
+    for name in names:
+        path = settings.inbox_dir / name
+        if not path.exists():
+            path.write_bytes(b"%PDF-1.4\n" + name.encode("utf-8", "replace"))
+    scan_root(conn, "inbox", settings.inbox_dir, settings)
+    specs = [
+        OperationSpec("move", name, "library", f"Documents/2026/{name}")
+        for name in names
+        if conn.execute(
+            "SELECT 1 FROM items WHERE root='inbox' AND relpath=?", (name,)
+        ).fetchone()
+    ]
+    if not specs:
+        return
+    plan = create_plan(conn, specs, settings)
+    approve_plan(conn, plan, settings)
+    target = settings.library_dir / "Documents"
+    target.mkdir(parents=True, exist_ok=True)
+    mode = target.stat().st_mode
+    os.chmod(target, 0o555)
+    try:
+        execute_plan(conn, plan, settings)
+    finally:
+        os.chmod(target, mode)
 
 def _decisions_that_split_a_pair(conn, settings: Settings) -> None:  # noqa: ANN001
     """One split waiting for Commit, and one that already happened.

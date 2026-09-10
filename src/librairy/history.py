@@ -4,8 +4,10 @@ import sqlite3
 import time
 from dataclasses import dataclass
 
+from librairy import roots
 from librairy.config import Settings
 from librairy.executor import _move_verified, _root_path
+from librairy.failures import classify
 from librairy.fingerprint import blake2b_file
 from librairy.lifecycle import assert_transition
 from librairy.locks import WAIT_SECONDS, LockHeldError, acquire_lock
@@ -29,6 +31,11 @@ class UndoResult:
     history_id: int
     outcome: str
     dest_relpath: str | None = None
+    #  The file went back, and not to the name it left. Something else is at the
+    #  old path and was not touched — which is the right thing to do and the
+    #  wrong thing to do silently. The page said "put back" and left somebody to
+    #  notice the `(2)` for themselves.
+    renamed: bool = False
 
 
 #  Not journalled, unlike every other `undo_refused_*`: those record what
@@ -316,9 +323,48 @@ def _undo_op_unlocked(
     history_id: int,
     settings: Settings,
 ) -> UndoResult:
+    """One reversal, and never an exception about the filesystem.
+
+    A read-only Library turned Undo into a 500: the rename primitive raised
+    `PermissionError`, it travelled up through the route, and it reached the
+    person as *System Fault — Internal system fault*, on the button whose whole
+    purpose is to be the safe thing to press. Every other refusal here is an
+    outcome; a permission, a full disk and a share that went away are outcomes
+    too, and the file is exactly where it was in all three.
+    """
+    try:
+        return _reverse(conn, history_id, settings)
+    except OSError as exc:
+        failure = classify(exc)
+        entry = conn.execute("SELECT * FROM history WHERE id=?", (history_id,)).fetchone()
+        if entry is None:  # pragma: no cover - defensive
+            raise
+        return _record_refused(conn, entry, failure.journalled("undo_failed"))
+
+
+def _reverse(
+    conn: sqlite3.Connection,
+    history_id: int,
+    settings: Settings,
+) -> UndoResult:
     entry = conn.execute("SELECT * FROM history WHERE id=?", (history_id,)).fetchone()
     if entry is None:
         raise UndoError(f"history entry not found: {history_id}")
+    #  The same question the executor asks before it moves anything: are these
+    #  the roots LibrAIry was started against? Undo writes into the folder a file
+    #  came from, and putting a file back into an unmounted mount point is the
+    #  same loss as filing into one. See `librairy/roots.py`.
+    away = roots.check(
+        conn,
+        settings,
+        *[
+            str(entry[column])
+            for column in ("src_root", "dest_root")
+            if str(entry[column]) in roots.ROOTS
+        ],
+    )
+    if away is not None:
+        return _record_refused(conn, entry, away.journalled("undo_failed"))
     src = validate_relpath(
         _root_path(settings, entry["dest_root"]),
         entry["dest_relpath"],
@@ -350,7 +396,7 @@ def _undo_op_unlocked(
     _update_item_after_undo(conn, entry, final_relpath, final_dest)
     _settle_quarantine_after_undo(conn, entry)
     _unsettle_quarantine_after_undo(conn, entry, final_relpath)
-    return UndoResult(history_id, "ok", final_relpath)
+    return UndoResult(history_id, "ok", final_relpath, renamed=final_dest != dest)
 
 
 def _already_put_back(

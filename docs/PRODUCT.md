@@ -163,6 +163,7 @@ feature notes; they are the shape of the program.
 | [Withdrawn decisions](architecture/withdrawn-decisions.md) | a withdrawal moved nothing, so it is not History |
 | [Adoption](architecture/adoption-architecture.md) | what a representation change inherits, and what it must not |
 | [Crash recovery](architecture/crash-recovery.md) | a crash may lose work; it may never lose a file, or leave a record of something that did not happen |
+| [When something goes wrong](architecture/failures.md) | what happened, is my Library safe, what can I do next — and never a safety claim the state does not prove |
 
 Shared vocabulary lives in [ui-vocabulary.md](ui-vocabulary.md). The current
 plan of work is [ROADMAP.md](ROADMAP.md). Superseded planning material is

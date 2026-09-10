@@ -34,6 +34,9 @@ class ScanSummary:
     #  Half-written files left by a move that was interrupted. Not drift and
     #  not media: Health reports them under the commit that has not finished.
     in_flight_skipped: int = 0
+    #  The storage was not there, so nothing was walked and — the important
+    #  half — nothing was declared missing. See `librairy/roots.py`.
+    unavailable: bool = False
 
 
 def utc_now() -> str:
@@ -50,6 +53,21 @@ def scan_root(
         raise ValueError(f"unknown root: {root}")
     if settings is None:
         settings = Settings()
+
+    #  Before the walk. An unmounted share leaves an empty directory behind, and
+    #  walking it finds nothing — which is indistinguishable, from inside this
+    #  function, from somebody having deleted every file they own. It used to be
+    #  resolved the same way: `_mark_missing` marked the entire index missing,
+    #  so a NAS that dropped for one worker cycle emptied Browse, emptied
+    #  Search, and left twelve thousand rows saying the files were gone.
+    #
+    #  So the sweep is not a thing to do carefully — it is a thing not to do at
+    #  all when the storage is absent. Nothing is written, and the summary says
+    #  why it found nothing.
+    from librairy import roots
+
+    if roots.check(conn, settings, root, path=root_path) is not None:
+        return ScanSummary(root, unavailable=True)
 
     root_path = root_path.resolve()
     now = utc_now()

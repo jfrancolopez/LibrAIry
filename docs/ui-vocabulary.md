@@ -200,6 +200,64 @@ pages. A second reversal path is a second thing to get wrong.
 These open something. They never change state, so they are never styled as
 primary actions.
 
+## When something goes wrong
+
+Four kinds, and they are four because they want four different treatments —
+one of them is not an error at all. See `librairy/failures.py`, which is where
+the words live; nothing else may invent a fifth.
+
+| Kind | Means | Looks like |
+|---|---|---|
+| **unavailable** | an expected absent state: a drive in a drawer, a provider switched off, a share not mounted | never coloured like a fault |
+| **operational** | the operation failed and retrying converges once the condition changes: a full disk, a busy database | said plainly, with what to change |
+| **action** | only a person can clear it: a permission, a read-only mount, the wrong drive | the one kind that asks for a decision |
+| **fault** | LibrAIry did not anticipate it | the only kind that gets a reference number and a "report this" tone |
+
+**Every important failure answers three questions, in this order.**
+
+    What happened?      One sentence, in the person's terms. Never a status
+                        code, never a class name, never an errno.
+    Is my Library safe? What is true of the files — and only what is *proven*
+                        true. This one is never generated from the exception:
+                        the same ENOSPC means "nothing moved" from the first
+                        operation and "eleven moved, this one did not" from the
+                        twelfth, and only the caller knows which.
+    What next?          Something to do. A dead end is a failure twice.
+
+Technical details exist and are never the explanation. They live behind
+**Technical details**, a closed `<details>`, so that somebody debugging can
+reach an errno and a full path and nobody else has to read one.
+
+**Never a bare "Try again" after an operation that moves files.** The word is
+harmless after a listing and dangerous after a Commit or an Undo, where a repeat
+press cannot know what happened to the bytes.
+
+The distinction is the *precondition*, not the word:
+
+    Free space where the files are going, then commit again.     ✅
+    Make the storage writable, then try again.                   ✅
+    Something went wrong. Try again.                             ❌
+
+The first two name what has to change first, and they appear beside a panel
+that has already said how many files moved and where their originals are. The
+third is a guess dressed as advice. So a **fault** — the kind LibrAIry did not
+anticipate, and the only kind that cannot name a precondition — never offers a
+retry on a path that touches files: it offers **View in Commit**, which reads
+the journal per file. The generic htmx handler in `static/announce.js` covers
+every button in the product and therefore never says it at all.
+
+**Banned as the whole explanation:** *failed unexpectedly*, *something went
+wrong*, *invalid state*, *exception*, *lifecycle error*, *database is locked*,
+*Internal system fault*. Each of these was on a real screen. Say the concrete
+thing instead — *The destination is read-only. The file was not overwritten.
+Make the destination writable and retry.*
+
+**A commit that failed is not a commit that was interrupted.** The first ran
+and reported failures per file; the second's process stopped and its outcome is
+known only as far as it got. They have separate concerns in Health and separate
+sentences, for the same reason *Interrupted — outcome unknown* is reserved for
+a backup run.
+
 ## Structure
 
 **Expand** · **Collapse**

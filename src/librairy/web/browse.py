@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import logging
 import sqlite3
 from pathlib import Path, PurePosixPath
 from urllib.parse import quote, urlencode
 
 from librairy.config import Settings
 from librairy.consistency import consistency_panel, top_level
+from librairy.failures import classify
 from librairy.mediakind import IMAGE_EXTENSIONS, VIDEO_EXTENSIONS
 from librairy.paths import PathValidationError, validate_relpath
 from librairy.proposals import decode_evidence
@@ -14,6 +16,8 @@ from librairy.scanner import is_visible_entry, visible_files
 from librairy.search import host_path
 from librairy.tags import for_item as tags_for_item
 from librairy.web.thumbs import PreviewError, preview_for_item
+
+LOGGER = logging.getLogger(__name__)
 
 PAGE_SIZE = 50
 
@@ -440,13 +444,31 @@ def item_detail(conn: sqlite3.Connection, settings: Settings, item_id: int) -> d
         try:
             preview = preview_for_item(conn, settings, item_id)
         except (OSError, PreviewError) as exc:
-            preview_error = str(exc) or exc.__class__.__name__
+            #  An exception raised by the preview pipeline says something in its
+            #  own words — "that file is outside the library", "the thumbnail
+            #  cache is unavailable" — and nothing could say it better for it.
+            #
+            #  One raised by the *operating system* does not. `[Errno 13]
+            #  Permission denied: '/library/Photos/2026/a.jpg'`, printed where a
+            #  photograph should be, is the shape this pass is about, and an
+            #  errno is exactly what tells the two apart. See
+            #  `librairy/failures.py`.
+            errno = getattr(exc, "errno", None)
+            preview_error = (
+                classify(exc).what
+                if errno is not None
+                else str(exc) or exc.__class__.__name__
+            )
     evidence_error = None
     try:
         evidence = decode_evidence(proposal["evidence"]) if proposal else []
     except (TypeError, ValueError) as exc:
+        #  Stored JSON that will not parse. The message is a parser's — "Expecting
+        #  ',' delimiter: line 1 column 84" — and the reader is looking at a
+        #  photograph of their own file.
         evidence = []
-        evidence_error = str(exc) or exc.__class__.__name__
+        evidence_error = "the recorded evidence could not be read"
+        LOGGER.warning("unreadable evidence for item %s: %s", item_id, exc)
     return {
         "item": row,
         "proposal": proposal,

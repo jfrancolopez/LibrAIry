@@ -225,6 +225,10 @@
         : "Preview failed (" + event.detail.xhr.status + ").";
     target.innerHTML = '<p class="muted preview-failed"></p>';
     target.firstChild.textContent = reason;
+    // Shown here, so the general handler in `announce.js` does not put a second
+    // copy of it beside the button. It still says it aloud — writing into a
+    // panel is not a swap, and nothing else would.
+    event.detail.errorHandled = true;
   });
 
   document.body.addEventListener("htmx:afterSwap", refreshAll);

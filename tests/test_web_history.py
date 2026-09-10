@@ -11,6 +11,7 @@ from librairy.executor import execute_plan
 from librairy.planner import OperationSpec, approve_plan, create_plan
 from librairy.scanner import scan_root
 from librairy.web.app import create_app
+from tests.support.pages import words
 
 
 def client_for(tmp_path: Path) -> tuple[TestClient, object, Settings]:
@@ -42,8 +43,13 @@ def test_history_lists_commit_plan_detail_and_single_op_undo(tmp_path: Path) -> 
     undo = client.post(f"/history/undo/{history_id}", headers=csrf(client))
 
     assert plan_id in history_page.text
-    assert plan_hash in detail.text
-    assert "Documents/a.txt" in detail.text
+    #  The plan's identifiers are diagnostics and live with the other
+    #  diagnostics: this page used to be *headed* by a uuid and a 128-character
+    #  hash, above the account of what actually happened to somebody's files.
+    assert plan_hash in detail.text.split("Journal and hashes")[1]
+    #  `words` because a path is printed with a break opportunity after each
+    #  separator so a phone breaks it at a folder — see `web/app.py:_wrappable`.
+    assert "Documents/a.txt" in words(detail.text)
     assert undo.status_code == 200
     #  A sentence, not a journal id and a status token: the refusal codes
     #  carry two full hashes and were rendered verbatim.
@@ -324,8 +330,13 @@ def test_a_refused_reversal_does_not_print_two_hashes_at_a_person(tmp_path: Path
     For the commonest refusal that is
     `undo_refused_changed expected=<blake2b> actual=<blake2b>` — 130 characters
     of hex, on a page whose whole job is telling somebody what happened to
-    their file. The codes stay in the journal and in the title attribute; the
-    page says it in words.
+    their file. The codes stay in the journal; the page says it in words.
+
+    They used to be kept in a `title` attribute, which is a tooltip: unreachable
+    by keyboard, unreachable on a phone, and invisible to anybody who does not
+    happen to hover the right span. M4-06 moved every diagnostic in the product
+    to the same closed `<details>` labelled **Technical details** — so this
+    asserts what it always meant, which is that the hex is not in the sentence.
     """
     from librairy.web.history import undo_outcome_text
 
@@ -340,8 +351,10 @@ def test_a_refused_reversal_does_not_print_two_hashes_at_a_person(tmp_path: Path
     response = client.post(f"/history/undo/{history_id}", headers=csrf(client))
 
     assert response.status_code == 200
-    assert "expected=" not in response.text.split("title=")[0]
+    assert "expected=" not in response.text.split("Technical details")[0]
     assert "the file has been edited since" in response.text
+    #  Still there for whoever is debugging it, behind a summary that says so.
+    assert "expected=" in response.text
     assert undo_outcome_text("undo_refused_changed expected=aa actual=bb") == (
         "not put back — the file has been edited since"
     )

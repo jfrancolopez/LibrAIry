@@ -116,7 +116,10 @@ def test_health_summary_all_green_when_dependencies_ok(tmp_path: Path, monkeypat
     monkeypatch.setattr(
         health_module,
         "disk_statuses",
-        lambda settings: [health_module.HealthRow("inbox", "OK", "space ok")],
+        #  Two arguments now: the row says whether the storage is *there* and
+        #  whether it is the storage LibrAIry started against, and the second
+        #  question needs the database. See `librairy/roots.py`.
+        lambda settings, conn=None: [health_module.HealthRow("inbox", "OK", "space ok")],
     )
     monkeypatch.setattr(
         health_module,

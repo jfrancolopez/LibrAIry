@@ -1,12 +1,42 @@
 {# A sentence per file, not a journal id and a status token. The refusal codes
    carry diagnostics — two full hashes, in one case — and those belong in the
-   title attribute where somebody debugging can still reach them. #}
+   details somebody debugging can open, not in the sentence everybody reads. #}
 <div id="history-result">
+  {% set back = results | selectattr('outcome', 'equalto', 'ok') | list | length %}
+  {% set refused = results | length - back %}
+  {# The counts first, and only what they prove. The page this sits on used to
+     be headed "Every file below was put back where it came from" whatever was
+     below it — including a reversal that put nothing back at all. #}
+  <p data-announce>
+    {% if back and not refused %}
+      <strong>{{ back }} file{{ '' if back == 1 else 's' }} put back.</strong>
+      Verified by hash before anything was released. Nothing was deleted or overwritten.
+    {% elif back %}
+      <strong>{{ back }} of {{ results | length }} put back.</strong>
+      Nothing was deleted or overwritten: the {{ refused }} below
+      {{ 'is' if refused == 1 else 'are' }} still where the commit left
+      {{ 'it' if refused == 1 else 'them' }}.
+    {% else %}
+      <strong>Nothing was put back.</strong>
+      Nothing was deleted or overwritten either — every file is still where the
+      commit left it.
+    {% endif %}
+  </p>
   {% for result in results %}
-    <p title="{{ result.outcome }}">
+    <p>
       <span class="badge badge-{{ 'ok' if result.outcome == 'ok' else 'warn' }}">Undo</span>
-      {% if result.dest_relpath %}<span class="mono">{{ result.dest_relpath }}</span> — {% endif %}
-      {{ undo_outcome_text(result.outcome) }}
+      {% if result.dest_relpath %}<span class="mono">{{ result.dest_relpath | wrappable }}</span> — {% endif %}
+      {{ undo_outcome_text(result.outcome) }}{% if result.renamed %},
+      {# Said, not implied. The file went back beside something that was not
+         there when it left, and the reversal renamed rather than overwrite —
+         which is right, and was invisible: the row read "put back" and left
+         somebody to notice the (2) on their own. #}
+      under a new name — something else is at its old path, and it was not
+      touched{% endif %}.
+      {% if result.outcome != 'ok' %}
+        <details class="failure-detail"><summary>Technical details</summary>
+          <p class="mono">{{ result.outcome }}</p></details>
+      {% endif %}
     </p>
   {% endfor %}
 </div>

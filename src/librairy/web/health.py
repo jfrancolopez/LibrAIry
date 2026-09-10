@@ -118,10 +118,11 @@ def health_data(conn: sqlite3.Connection, settings: Settings) -> dict[str, objec
     tools = tool_statuses(settings)
     db = db_status(settings, conn)
     disk_stats = _disk_stats(settings)
-    disks = disk_statuses(settings)
+    disks = disk_statuses(settings, conn)
     worker = worker_status(conn)
     backup = backup_health(settings)
-    rows = [*tools, db, *disks, worker, backup]
+    reading = ocr_status(conn)
+    rows = [*tools, db, *disks, worker, backup, reading]
     status = "OK" if all(row.status == "OK" for row in rows) else "WARN"
     return {
         "summary_status": status,
@@ -131,6 +132,7 @@ def health_data(conn: sqlite3.Connection, settings: Settings) -> dict[str, objec
         "disk_statuses": disks,
         "worker_status": worker,
         "backup_status": backup,
+        "ocr_status": reading,
         "recommendations": recommendations(
             tools=tools,
             providers=providers,
@@ -356,6 +358,10 @@ def _disk_meters(settings: Settings) -> list[Bar]:
     seen: set[object] = set()
     meters = []
     for stat in _disk_stats(settings):
+        #  Nothing was measured, so there is no bar to draw. A zero-free meter
+        #  would read as a full disk, which is a different emergency.
+        if not stat.present:
+            continue
         # One bar per volume: four roots on one laptop disk is one bar.
         key = stat.device or stat.root
         if key in seen:
@@ -493,7 +499,7 @@ def _disk_recommendations(disks: list) -> list[Recommendation]:
     by_device: dict[object, list] = {}
     for disk in disks:
         percent = getattr(disk, "percent_free", None)
-        if percent is None or percent >= 10:
+        if percent is None or percent >= 10 or not getattr(disk, "present", True):
             continue
         by_device.setdefault(getattr(disk, "device", 0) or disk.root, []).append(disk)
 
@@ -624,9 +630,42 @@ def _ago(when: str) -> str:
     return elapsed(when) if when else "at an unknown time"
 
 
-def disk_statuses(settings: Settings) -> list[HealthRow]:
+def disk_statuses(settings: Settings, conn: sqlite3.Connection | None = None) -> list[HealthRow]:
+    """One row per root: is the storage there, is it ours, and how full is it.
+
+    The three questions in that order, because the second one used to have no
+    row at all. A Library whose share had unmounted reported free space —
+    `_disk_stats` walked up to the nearest existing directory, which is the
+    container's own disk — and the machinery panel said nothing was wrong on the
+    one page somebody opens to find out whether their storage is all right.
+    """
+    from librairy import roots as root_identity
+
+    known = {row.name: row for row in root_identity.state(conn, settings)} if conn else {}
     rows: list[HealthRow] = []
     for stat in _disk_stats(settings):
+        identity = known.get(stat.root)
+        if not stat.present:
+            rows.append(
+                HealthRow(
+                    stat.root,
+                    "FAIL",
+                    "the folder is not there",
+                    "mount the storage, then restart LibrAIry",
+                )
+            )
+            continue
+        if identity is not None and not identity.recognised:
+            #  Present, writable, and not the storage this installation has been
+            #  using. Nothing will be moved into it — see `librairy/roots.py` —
+            #  and this row is where somebody finds out why.
+            rows.append(
+                HealthRow(
+                    stat.root, "FAIL", identity.detail,
+                    "mount the storage LibrAIry was using",
+                )
+            )
+            continue
         status = "OK" if stat.percent_free >= 10 else "WARN"
         rows.append(
             HealthRow(
@@ -657,6 +696,31 @@ def worker_status(conn: sqlite3.Connection) -> HealthRow:
         f"phase={phase}; heartbeat {age}s ago",
         "worker may be stopped" if status == "WARN" else "",
     )
+
+
+def ocr_status(conn: sqlite3.Connection) -> HealthRow:
+    """Whether scans can be read, and — the part that was missing — whether the
+    answer is a choice or an absence.
+
+    Switching OCR on and having no tesseract is silent: every scanned document
+    goes on being read from a text layer it does not have, so it never resolves
+    and nothing says why. That is a *missing capability*, which is not the same
+    thing as a damaged file, and the difference is the whole reason this row
+    exists rather than a warning on each document.
+    """
+    from librairy import ocr
+
+    if not ocr.enabled(conn):
+        #  Off is the shipped state and a deliberate one. Never a warning.
+        return HealthRow("OCR", "OK", "switched off; documents are read from their text layer")
+    if not ocr.available():
+        return HealthRow(
+            "OCR",
+            "WARN",
+            "switched on, but tesseract is not installed — scanned pages cannot be read",
+            "install tesseract-ocr in the container image, or switch OCR off",
+        )
+    return HealthRow("OCR", "OK", "switched on")
 
 
 def backup_health(settings: Settings) -> HealthRow:

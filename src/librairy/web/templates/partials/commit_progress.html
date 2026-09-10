@@ -10,7 +10,21 @@
    has no `hx-trigger` once the plan is finished, so a completed commit costs
    nothing and does not sit there re-rendering forever. #}
 <div id="commit-progress" class="commit-progress"
-     {% if plan.status not in ('done', 'failed') %}hx-get="/commit/progress/{{ plan.id }}" hx-trigger="every 1s" hx-swap="outerHTML"{% endif %}>
+     {# Nothing to poll for once it has finished — and nothing to poll for when
+        it was refused before it began either. A plan the storage was away for
+        keeps its approval, so its status stays `approved`, and the panel sat
+        re-requesting "0 of 2 complete" beside the sentence explaining why it
+        would never be 1. #}
+     {% if plan.status not in ('done', 'failed') and not error %}hx-get="/commit/progress/{{ plan.id }}" hx-trigger="every 1s" hx-swap="outerHTML"{% endif %}>
+  {% set done = counts.get('done', 0) %}
+  {% set renamed = counts.get('renamed_collision', 0) %}
+  {% set changed = counts.get('skipped_changed', 0) %}
+  {% set missing = counts.get('skipped_missing', 0) %}
+  {% set failed = counts.get('failed', 0) %}
+  {% set pending = counts.get('pending', 0) %}
+  {% set moved = done + renamed %}
+  {% set total = moved + changed + missing + failed + pending %}
+
   {# The confirm screen asked a question and listed what *would* happen. Once
      it has happened both are stale — and worse, the question was still on
      screen with its button live, so a finished commit read as one that had not
@@ -22,24 +36,44 @@
     <header id="commit-question" class="page-head" hx-swap-oob="outerHTML">
       <div>
         <h1>{{ 'Commit finished' if plan.status == 'done' else 'Commit stopped' }}</h1>
+        {# What is true of the files, and only what is true of them. This
+           paragraph said "Every file below was copied and verified by hash
+           before the original was released" on *every* outcome — including a
+           commit where the Library had been remounted read-only and not one
+           byte had moved. A safety claim printed under the word "stopped" is
+           worse than no claim: it is the sentence somebody stops reading at. #}
         <p class="muted">
-          Every file below was copied and verified by hash before the original
-          was released, written to History, and undoable from there.
+          {% if moved %}
+            {{ moved }} file{{ '' if moved == 1 else 's' }} {{ 'was' if moved == 1 else 'were' }}
+            copied and verified by hash before the original was released,
+            written to History, and undoable from there.
+            {% if failed or changed or missing %}The rest were not moved, and their
+            originals are where they were.{% endif %}
+          {% else %}
+            No file was moved. Every original is where it was.
+          {% endif %}
         </p>
       </div>
     </header>
     <div id="commit-plan-preview" hx-swap-oob="delete"></div>
   {% endif %}
-  {% if error %}<p class="status warn">{{ error }}</p>{% endif %}
 
-  {% set done = counts.get('done', 0) %}
-  {% set renamed = counts.get('renamed_collision', 0) %}
-  {% set changed = counts.get('skipped_changed', 0) %}
-  {% set missing = counts.get('skipped_missing', 0) %}
-  {% set failed = counts.get('failed', 0) %}
-  {% set pending = counts.get('pending', 0) %}
-  {% set moved = done + renamed %}
-  {% set total = moved + changed + missing + failed + pending %}
+  {# A refusal that happened before the run started — the storage was not there,
+     or the lock was held. It has its own shape because it is the one failure
+     with nothing to qualify: nothing was attempted. #}
+  {% if error %}
+    <div class="failure-note" role="group" aria-label="Why the commit did not run">
+      <p class="status warn" data-announce>{{ error }}</p>
+      {% if refusal %}
+        <p>No files were changed.</p>
+        <p>{{ refusal.next }}</p>
+        {% if refusal.detail %}
+          <details class="failure-detail"><summary>Technical details</summary>
+            <p class="mono">{{ refusal.detail }}</p></details>
+        {% endif %}
+      {% endif %}
+    </div>
+  {% endif %}
 
   {% if subject %}<p class="commit-subject-line">{{ subject }}</p>{% endif %}
 
@@ -64,7 +98,7 @@
         Nothing failed.
       {% endif %}
     </p>
-  {% else %}
+  {% elif not error %}
     <p class="commit-headline">
       <strong>{{ moved }} of {{ total }} {{ 'files moved' if subject else 'complete' }}</strong>
       <span class="muted">— copied and verified by hash, one at a time.</span>
@@ -85,10 +119,28 @@
     {% if missing %}
     <li><strong>{{ missing }}</strong> not moved: the file is no longer on disk.</li>
     {% endif %}
-    {% if failed %}
-    <li class="is-fail"><strong>{{ failed }}</strong> failed.</li>
+    {% if failed and not failures %}
+    <li class="is-fail"><strong>{{ failed }}</strong> not moved.</li>
     {% endif %}
   </ul>
+
+  {# Why, grouped by reason rather than by file. Forty files that did not fit on
+     a full disk are one thing that happened forty times; forty rows saying
+     "failed" is what taught people to stop reading them. #}
+  {% for group in failures %}
+    <div class="failure-note{{ ' is-expected' if group.failure.expected else '' }}"
+         role="group" aria-label="Why {{ group.count }} file{{ '' if group.count == 1 else 's' }} did not move">
+      <p><strong>{{ group.count }} file{{ '' if group.count == 1 else 's' }} did not move.</strong>
+        {{ group.failure.what }}</p>
+      <p>Their originals are where they were, and nothing was overwritten.</p>
+      <p>{{ group.failure.next }}</p>
+      {% if group.failure.detail %}
+        <details class="failure-detail"><summary>Technical details</summary>
+          <p class="mono">{% if group.example %}{{ group.example | wrappable }} — {% endif %}{{ group.failure.detail }}</p>
+        </details>
+      {% endif %}
+    </div>
+  {% endfor %}
 
   {% if plan.status in ('done', 'failed') %}
   <div class="button-row commit-after">
@@ -97,10 +149,16 @@
        hash-verified reversal History uses — there is only one. #}
     <a class="btn" href="/browse">View in Browse</a>
     <a class="btn" href="/history/plans/{{ plan.id }}">View in History</a>
+    {# Only when something moved. A commit that failed before it touched
+       anything offered Undo anyway — a button whose only possible effect is to
+       tell somebody nothing could be put back, on the page that has just told
+       them nothing moved. #}
+    {% if moved %}
     <form method="post" action="/history/plans/{{ plan.id }}/undo">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <button type="submit" class="btn-ghost">Undo</button>
     </form>
+    {% endif %}
     <a class="btn" href="/commit">View in Commit</a>
   </div>
   {% endif %}
@@ -111,7 +169,7 @@
       <table>
         <thead><tr><th scope="col">#</th><th scope="col">Result</th><th scope="col">Where it went</th></tr></thead>
         <tbody>
-          {% for op in recent_ops %}<tr><td>{{ op.seq }}</td><td>{{ op.result }}</td><td class="mono">{{ op.final_relpath or op.dest_relpath }}</td></tr>{% endfor %}
+          {% for op in recent_ops %}<tr><td data-label="#">{{ op.seq }}</td><td data-label="Result">{{ op_result_text(op.result) }}</td><td data-label="Where it went" class="mono">{{ (op.final_relpath or op.dest_relpath) | wrappable }}</td></tr>{% endfor %}
         </tbody>
       </table>
     </details>

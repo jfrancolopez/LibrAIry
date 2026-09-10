@@ -2913,6 +2913,37 @@ summary.timeline-head::-webkit-details-marker { display: none; }
 .commit-outcomes li { color: var(--text-dim); }
 .commit-outcomes .is-fail { color: var(--fail); }
 .commit-after { margin-top: var(--space-4); align-items: center; }
+
+/* Why something did not happen: the three sentences, together, as one block a
+   reader cannot mistake for the outcome list above it. Left-ruled rather than
+   filled — this appears beside a headline that has already said how many files
+   moved, and a red panel would out-shout the count.
+
+   `.is-expected` is for the kind that is a *state* rather than a fault — a
+   drive that is not plugged in, a provider switched off. Those are never
+   coloured like a failure; see `docs/ui-vocabulary.md`. */
+.failure-note {
+  margin: var(--space-3) 0;
+  padding: var(--space-2) var(--space-3);
+  border-left: 3px solid var(--fail);
+  background: var(--bg-metric);
+}
+.failure-note.is-expected { border-left-color: var(--text-dim); }
+.failure-note p { margin: 0 0 var(--space-1); }
+.failure-note p:last-child { margin-bottom: 0; }
+.failure-detail { margin-top: var(--space-1); }
+.failure-detail summary { cursor: pointer; color: var(--text-dim); font-size: var(--text-sm); }
+/* The one thing on the block that can be long, and it is a path plus an errno.
+   It must wrap rather than push the sentences off a phone. */
+/* The note a failed action leaves beside the button that failed. htmx does not
+   swap an error response, so without this the row simply stayed as it was and
+   the press read as a no-op. See `/static/announce.js`. */
+.action-failed { margin: var(--space-1) 0 0; }
+.failure-detail .mono {
+  overflow-wrap: break-word;
+  font-size: var(--text-sm);
+  color: var(--text-dim);
+}
 .commit-recent { margin-top: var(--space-4); }
 .commit-recent summary { cursor: pointer; color: var(--text-dim); }
 /* What just happened, kept on the page after the pending count reaches zero. */

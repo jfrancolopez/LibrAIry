@@ -1,24 +1,90 @@
 {% extends "base.html" %}
 {% block content %}
-  
-  <h1>Plan {{ plan.id }}</h1>
-  <p>Status {{ plan.status }}</p>
-  <p>Hash {{ plan.plan_hash or 'no hash' }}</p>
-  <form hx-post="/history/plans/{{ plan.id }}/undo" hx-target="#history-result" hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>
-    <button type="submit">Undo plan</button>
-  </form>
+  {# One plan, in the order somebody reads it: what it did, why anything did not
+     happen, then the rows. It was a debug print — a plan id as a heading, a
+     status word, a hash, and the journal's stored outcome strings laid end to
+     end — and it is where "View in History" lands from a commit that stopped. #}
+  <header class="page-head">
+    <div>
+      <h1>{{ 'Commit finished' if plan.status == 'done' else 'Commit stopped' if plan.status == 'failed' else 'Commit' }}</h1>
+      <p class="muted">
+        {% if moved %}
+          {{ moved }} file{{ '' if moved == 1 else 's' }} moved, hash-verified before
+          the original was released.
+        {% else %}
+          No file moved. Every original is where it was.
+        {% endif %}
+      </p>
+    </div>
+    {% if moved %}
+    <div class="button-row">
+      <form hx-post="/history/plans/{{ plan.id }}/undo" hx-target="#history-result"
+            hx-headers='{"x-csrf-token":"{{ csrf_token }}"}'>
+        <button type="submit" class="btn">Undo plan</button>
+      </form>
+    </div>
+    {% endif %}
+  </header>
+
+  {% for group in failures %}
+    <div class="failure-note" role="group"
+         aria-label="Why {{ group.count }} file{{ '' if group.count == 1 else 's' }} did not move">
+      <p><strong>{{ group.count }} file{{ '' if group.count == 1 else 's' }} did not move.</strong>
+        {{ group.failure.what }}</p>
+      <p>Their originals are where they were, and nothing was overwritten.</p>
+      <p>{{ group.failure.next }}</p>
+      {% if group.failure.detail %}
+        <details class="failure-detail"><summary>Technical details</summary>
+          <p class="mono">{{ group.failure.detail }}</p></details>
+      {% endif %}
+    </div>
+  {% endfor %}
+
+  <div id="history-result"></div>
+
   <section class="metric wide">
-    <h2>Operations</h2>
-    <table>
-      <thead><tr><th scope="col">Seq</th><th scope="col">Type</th><th scope="col">Source</th><th scope="col">Destination</th><th scope="col">Result</th><th scope="col">Hash</th></tr></thead>
+    <h2>What it did, file by file</h2>
+    <table class="run-table">
+      <thead><tr>
+        <th scope="col">#</th><th scope="col">From</th>
+        <th scope="col">To</th><th scope="col">Result</th>
+      </tr></thead>
       <tbody>
-        {% for op in ops %}<tr><td>{{ op.seq }}</td><td>{{ op.op_type }}</td><td>{{ op.src_root }}/{{ op.src_relpath }}</td><td>{{ op.dest_root }}/{{ op.dest_relpath }}</td><td>{{ op.result or 'pending' }}</td><td>{{ op.src_fingerprint }}</td></tr>{% endfor %}
+        {% for op in ops %}
+          <tr>
+            <td data-label="#">{{ op.seq }}</td>
+            <td data-label="From" class="mono">{{ (op.src_root ~ '/' ~ op.src_relpath) | wrappable }}</td>
+            <td data-label="To" class="mono">{{ (op.dest_root ~ '/' ~ (op.final_relpath or op.dest_relpath)) | wrappable }}</td>
+            <td data-label="Result">{{ op_result_text(op.result) }}</td>
+          </tr>
+        {% endfor %}
       </tbody>
     </table>
   </section>
-  <section class="metric wide">
-    <h2>Journal</h2>
-    {% for entry in entries %}<span>{{ entry.action }} {{ entry.outcome }} {{ entry.src_root }}/{{ entry.src_relpath }} -> {{ entry.dest_root }}/{{ entry.dest_relpath }}</span>{% endfor %}
-  </section>
-  <div id="history-result"></div>
+
+  <details class="metric wide">
+    <summary>Journal and hashes</summary>
+    {# The plan's own identifiers. They were the heading of this page — a uuid
+       as a title and a 128-character hash under it — which is a debug print
+       wearing a page. They are still exactly what somebody quoting this plan
+       needs, so they are here, where diagnostics live. #}
+    <p class="mono">Plan {{ plan.id }}</p>
+    <p class="mono">Hash {{ plan.plan_hash or 'no hash' }}</p>
+    <table class="run-table">
+      <thead><tr>
+        <th scope="col">Action</th><th scope="col">Where it went</th>
+        <th scope="col">Outcome</th><th scope="col">Hash</th>
+      </tr></thead>
+      <tbody>
+        {% for entry in entries %}
+          <tr>
+            <td data-label="Action">{{ entry.action }}</td>
+            <td data-label="Where it went" class="mono">{{ (entry.dest_root ~ '/' ~ entry.dest_relpath) | wrappable }}</td>
+            <td data-label="Outcome" class="mono">{{ entry.outcome }}</td>
+            <td data-label="Hash" class="mono">{{ (entry.fingerprint or '')[:16] }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </details>
 {% endblock %}

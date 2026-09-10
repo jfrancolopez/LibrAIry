@@ -250,6 +250,14 @@
       {% if backup_status.hint %}<span>{{ backup_status.hint }}</span>{% endif %}
     </article>
     <article class="metric wide">
+      {# Reading scanned pages, and whether it is switched off or simply absent.
+         Switching OCR on with no tesseract installed was silent: every scan
+         went on being read from a text layer it does not have. #}
+      <span class="status">OCR <span class="badge badge-{{ 'ok' if ocr_status.status=='OK' else 'fail' if ocr_status.status=='FAIL' else 'warn' }}">{{ ocr_status.status }}</span></span>
+      <span>{{ ocr_status.detail }}</span>
+      {% if ocr_status.hint %}<span>{{ ocr_status.hint }}</span>{% endif %}
+    </article>
+    <article class="metric wide">
       <span class="status">Disk</span>
       {% for row in disk_statuses %}
         {% include "partials/health_row.html" %}

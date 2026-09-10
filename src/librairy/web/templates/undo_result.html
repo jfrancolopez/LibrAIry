@@ -6,13 +6,18 @@
      the screen a commit finishes on — and only one of them was ever an htmx
      swap. The other two rendered the bare fragment as the whole document:
      a line of badges, no header, no navigation, after an operation that had
-     just moved somebody's files back. #}
+     just moved somebody's files back.
+
+     The heading says what happened rather than asserting it went well. It read
+     "Undone", above a paragraph promising every file below had been put back,
+     on a page that is equally reachable when none of them could be. #}
   <header class="page-head">
     <div>
-      <h1>Undone</h1>
+      <h1>Undo</h1>
       <p class="muted">
-        Every file below was put back where it came from, verified by hash
-        before anything was released. Nothing was deleted or overwritten.
+        What the reversal did, file by file. Nothing here deletes or overwrites:
+        a file whose old path is occupied goes back beside what is there, and
+        one that has moved on since is left alone and said so.
       </p>
     </div>
   </header>

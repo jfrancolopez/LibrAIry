@@ -80,6 +80,11 @@ LEVEL_NOTE = {
 #  the owning page is where the full list lives.
 SHOWN = 3
 
+#  How many recent failed commits a concern is derived from. Bounded because the
+#  set only ever grows: a plan that failed in March is still a failed plan, and a
+#  page that reads all of them gets slower every month.
+RECENT_PLANS = 50
+
 
 @dataclass(frozen=True)
 class Example:
@@ -172,6 +177,8 @@ def report(conn: sqlite3.Connection, settings=None, counts=None) -> Report:  # n
         _format_impact,
         _blocked_undo,
         _unfinished_commit,
+        _failed_commit,
+        _storage,
         _policy,
         _learned,
         _transfers,
@@ -860,6 +867,129 @@ def _unfinished_commit(conn: sqlite3.Connection, settings=None, counts=None) -> 
             count=len(stopped),
         )
     ]
+
+
+def _storage(conn: sqlite3.Connection, settings=None, counts=None) -> list[Concern]:  # noqa: ANN001, ARG001
+    """A root LibrAIry cannot recognise, or cannot find.
+
+    One concern for all of them rather than one per root, because a NAS that
+    went away took the inbox, the library and the quarantine with it in the same
+    instant and three identical red cards is three times the alarm and none of
+    the information. See `librairy/roots.py` for what "recognise" means here.
+
+    ACTION, and it is the most literal use of that level in the module: nothing
+    LibrAIry can do will fix it, and until somebody mounts the storage every
+    commit and every reversal will refuse.
+    """
+    from librairy import roots
+
+    if settings is None:
+        return []
+    #  This one stats three directories, which the module's "no work" rule says
+    #  it should not. The rule is about not *measuring* what can be derived, and
+    #  whether a mount is present cannot be derived from any table — the database
+    #  is the thing that would be wrong about it. `_missing_rclone` bends it the
+    #  same way and much more expensively, for the same reason.
+    unknown = [row for row in roots.state(conn, settings) if not row.recognised]
+    if not unknown:
+        return []
+    #  Headed by what is actually wrong. "Library storage is not available" over
+    #  an example reading "a different filesystem is mounted as your library" is
+    #  two accounts of one thing, and the vaguer one is on top.
+    names = ", ".join(row.label for row in unknown)
+    first = unknown[0].failure
+    what = first.what if first and len(unknown) == 1 else f"{names} storage is not available."
+    return [
+        Concern(
+            code="storage-unavailable",
+            level=ACTION,
+            headline=what.rstrip("."),
+            detail="Nothing will be moved into it, and nothing has been: a "
+                   "commit or a reversal refuses before it touches a file when "
+                   "the storage is not the one LibrAIry started against. "
+                   + (first.next if first else "Reconnect it, then try again."),
+            examples=tuple(
+                Example(text=f"{row.label} — {row.detail}", detail=str(row.path))
+                for row in unknown[:SHOWN]
+            )
+            if len(unknown) > 1
+            else (),
+            more=max(0, len(unknown) - SHOWN) if len(unknown) > 1 else 0,
+            href="/health#machinery",
+            action="View in Health",
+            count=len(unknown),
+        )
+    ]
+
+
+def _failed_commit(conn: sqlite3.Connection, settings=None, counts=None) -> list[Concern]:  # noqa: ANN001, ARG001
+    """Files somebody committed that did not move, and the reason they did not.
+
+    Not the same thing as `_unfinished_commit`, which is a *process* that
+    stopped: this is a run that finished and reported failures. It had no
+    concern at all — a Library remounted read-only produced "3 failed" on one
+    screen, and Health went on saying nothing needed attention.
+
+    Grouped by reason. Four policies that failed because rclone is missing is
+    one missing binary, and the same is true here: forty files that would not
+    fit on a full disk are one full disk.
+    """
+    from librairy.failures import from_outcome
+
+    #  Anchored on `plans`, which has one row per commit, and never on a scan of
+    #  the journal — `outcome LIKE 'failed %'` across a million-row history is
+    #  one of the shapes that made this page take two seconds.
+    failed = [
+        str(row["id"])
+        for row in conn.execute(
+            "SELECT id FROM plans WHERE status='failed'"
+            " ORDER BY finished_at DESC LIMIT ?",
+            (RECENT_PLANS,),
+        )
+    ]
+    if not failed:
+        return []
+    #  And joined to the file, which is what makes this concern go away by
+    #  itself. A retry that succeeds moves the item to its destination, so the
+    #  row no longer matches its own source address and the count drops. Without
+    #  it, "3 files did not move" stayed on Health after the three files moved —
+    #  a red card about a problem somebody had already fixed, which is the
+    #  fastest way to teach a person that the red cards are furniture.
+    rows = conn.execute(
+        f"""
+        SELECT h.outcome AS outcome, COUNT(*) AS count
+        FROM history h
+        JOIN items i
+          ON i.root = h.src_root AND i.relpath = h.src_relpath
+         AND i.missing_since IS NULL
+        WHERE h.plan_id IN ({",".join("?" * len(failed))})
+          AND h.outcome LIKE 'failed %'
+        GROUP BY h.outcome
+        """,  # noqa: S608 - placeholders only
+        failed,
+    ).fetchall()
+    by_code: dict[str, tuple[object, int]] = {}
+    for row in rows:
+        failure = from_outcome(str(row["outcome"]))
+        seen = by_code.get(failure.code)
+        by_code[failure.code] = (failure, int(row["count"]) + (seen[1] if seen else 0))
+    concerns = []
+    for failure, count in sorted(by_code.values(), key=lambda pair: -pair[1]):
+        concerns.append(
+            Concern(
+                code=f"commit-failed-{failure.code}",
+                #  A failure nobody can act on is still worth knowing, and one
+                #  that waits on a person is not the same kind of thing.
+                level=ACTION if failure.needs_you else ATTENTION,
+                headline=f"{count} file{'' if count == 1 else 's'} did not move",
+                detail=f"{failure.what} Their originals are where they were, and "
+                       f"nothing was overwritten. {failure.next}",
+                href="/commit",
+                action="View in Commit",
+                count=count,
+            )
+        )
+    return concerns
 
 
 def _policy(conn: sqlite3.Connection, settings=None, counts=None) -> list[Concern]:  # noqa: ANN001, ARG001
