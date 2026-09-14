@@ -312,16 +312,19 @@
                  button, and the only way to see what the file *was* was to go
                  back to Review. Loaded on demand, one card at a time, so a
                  queue of two hundred still renders as a queue. #}
-              {% if row.item_id %}
+              {# One row for every control on the card, and the preview panel
+                 below all of them. It used to be two rows with the panel
+                 between, so Preview and Send back to Review stacked even
+                 though they fit side by side twice over — forty pixels a card
+                 that nothing was using, times a queue. The panel is addressed
+                 by id, so where it sits in the markup was never load-bearing. #}
               <div class="button-row">
+                {% if row.item_id %}
                 <button type="button" class="btn-ghost" data-preview-toggle
                         data-preview-url="/preview/items/{{ row.item_id }}"
                         data-preview-target="cpreview-{{ row.item_id }}-{{ loop.index }}"
                         aria-expanded="false">Preview</button>
-              </div>
-              <div id="cpreview-{{ row.item_id }}-{{ loop.index }}" class="commit-preview"></div>
-              {% endif %}
-              <div class="button-row">
+                {% endif %}
                 {# Nothing to press while two decisions contradict each other.
                    Withdrawing one is the answer, and the button for that is
                    the one already on both cards. #}
@@ -344,6 +347,9 @@
                   </form>
                 {% endif %}
               </div>
+              {% if row.item_id %}
+              <div id="cpreview-{{ row.item_id }}-{{ loop.index }}" class="commit-preview"></div>
+              {% endif %}
             </li>
           {% endfor %}
         </ul>

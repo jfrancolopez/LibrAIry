@@ -3589,7 +3589,12 @@ summary.timeline-head::-webkit-details-marker { display: none; }
 .attention-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-3); }
 .attention-item { display: grid; gap: var(--space-1); justify-items: start; }
 .attention-head { display: block; overflow-wrap: anywhere; }
-.attention-item > p { margin: 0; }
+/* The same reading measure the section's own note gets. `.card > p` caps prose
+   at 72ch and these are grandchildren, so they escaped it and ran to about
+   120ch — which made the note above them look like the odd one out when it was
+   the only paragraph on the card obeying the rule. Prose is prose wherever it
+   sits in the tree. */
+.attention-item > p { margin: 0; max-width: var(--measure); }
 .attention-examples {
   list-style: none; margin: 0; padding: 0 0 0 var(--space-2);
   border-left: 1px solid var(--border);
