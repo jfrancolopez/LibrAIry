@@ -364,6 +364,80 @@ cheaper it is by the recorded-verdict pattern `search_health` already uses:
 measure on an idle cycle, show the verdict and its age. That is M1-06's work
 and it stays there.
 
+## M4-08, 2026-09-14 — Health reads an observation instead of taking one
+
+M1-06 carried Health, and the section above says exactly what it was waiting
+for: *if they are to get cheaper it is by the recorded-verdict pattern
+`search_health` already uses.* That is what this is. Measured on schema 62,
+warm, three populations, before and after:
+
+| | 100k | 300k | 1M |
+|---|---|---|---|
+| Health, before | 139 ms | 343 ms | **1,099 ms** |
+| Health, after | **56 ms** | **110 ms** | **321 ms** |
+| statements | 47 → 45 | 47 → 45 | 47 → 45 |
+
+Two changes, and only one of them is the recorded verdict.
+
+**The index population is now measured on an idle cycle.** At a million it is
+570 ms of the page — 203 ms to count `search_fts`, 297 ms to join it to `items`
+for the rows whose file has gone, 64 ms for the live item count — and it answers
+a question that changes when files are indexed, not when somebody opens a page.
+The worker takes it every fifteen minutes and Health reports it with its age.
+
+The cadence came from the measurement rather than from taste:
+
+| verification | 100k | 300k | 1M |
+|---|---|---|---|
+| `search_health.counted` | 51 ms | 159 ms | 540 ms |
+
+540 ms once a quarter of an hour is 0.06% of a core, and it bounds how stale the
+numbers on the page can be at fifteen minutes. It is five times cheaper than the
+daily `PRAGMA quick_check`, which reads every page of the database rather than
+two tables.
+
+**The three counts are one observation, not three numbers.** They are arithmetic
+on each other — `unindexed` is `live_items - (total - missing_retained)` — so
+they are read inside one transaction and stored under one timestamp. Mixing a
+live item count with two recorded ones would let them disagree by a handful
+purely from timing, and a disagreement of a handful on the panel that reports
+index damage reads as index damage.
+
+The panel says what it is:
+
+    Search index
+    Counted 4 minutes ago.
+    Library items 1,015,000 · Indexed records 1,015,000 · Missing files, records kept 0
+
+Never *Current items*, which asserts the present tense about a past
+measurement. No observation at all — an upgraded installation, for its first
+worker cycle — shows **Not counted yet** and no numbers: zero would be a
+measurement nobody took, and "everything indexed" a reassurance nobody earned.
+
+**And one query was driven from the wrong side.** `backed-up-under-older-bytes`
+asked which library files have a `done` backup row under different bytes and
+nothing queued for the current ones, and it asked it starting at `items`:
+
+    SCAN i | CORRELATED SCALAR SUBQUERY 2 | SEARCH q ... | SEARCH q EXISTS ...
+
+180 ms at a million files **against an empty backup queue** — the scan happens
+whether or not there is anything to find. Nothing can be backed up under older
+bytes without a `done` row, so the rows that can possibly qualify are exactly
+the done rows; starting there makes the cost belong to the queue.
+
+| `backup_queue_issues` | before | after |
+|---|---|---|
+| empty queue, 1M library | 180 ms | **0.0 ms** |
+| 200,000 done rows | — | 152 ms |
+
+Same fault and the same fix as the quadratic `unindexed` count M1-01 found, and
+`tests/test_scale_surfaces.py` now holds both as query-plan assertions.
+
+What is left at a million is `health_metrics` at 223 ms — the growth, pipeline
+and confidence charts, which are aggregates over `items` and are bounded by what
+they display. Health is interactive at every population measured and the work
+stops here.
+
 ## M3-04, 2026-09-08 — Projects, ranked in SQL
 
 Roughly two thousand Projects and one with forty thousand members, at three

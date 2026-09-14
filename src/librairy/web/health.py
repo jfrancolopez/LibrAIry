@@ -19,7 +19,6 @@ from librairy.backup import backup_status
 from librairy.config import Settings
 from librairy.db import database_path
 from librairy.live import LIVE
-from librairy.search_health import IndexCounts
 from librairy.web.dashboard import _disk_stats, _worker_state
 
 PROBE_TTL_SECONDS = 60
@@ -105,15 +104,17 @@ def health_data(conn: sqlite3.Connection, settings: Settings) -> dict[str, objec
     "System Fault" on whatever you were reading. It happens when a provider is
     tested instead, which is when the set of providers can actually change.
     """
-    from librairy.search_health import counted
+    from librairy.search_health import recorded_counts
 
-    #  Counted once for the whole page. Two parts of it ask what the search
-    #  index holds — this panel and the attention report — and neither could
-    #  see the other, so a render ran the expensive FTS join twice and counted
-    #  the items twice. Measured at a million: 1,373 ms of one render spent
-    #  answering the same questions repeatedly. (`restore_check` asks too, but
-    #  it draws the Reconcile page, where a *live* comparison is the point.)
-    counts = counted(conn)
+    #  Read, not measured. Counting the index means reading it — 570 ms of a
+    #  1.1 s page at a million files — and the answer changes when files are
+    #  indexed, not when somebody opens a page. The worker takes the measurement
+    #  on an idle cycle and this reports it with its age. `None` is a legitimate
+    #  answer and means nobody has looked yet; it must never render as zero.
+    #
+    #  (`restore_check` still counts live, and should: it draws the Reconcile
+    #  page, where a comparison of this moment is the entire point.)
+    observation = recorded_counts(conn)
     providers = live_provider_status(conn, settings)
     tools = tool_statuses(settings)
     db = db_status(settings, conn)
@@ -140,12 +141,14 @@ def health_data(conn: sqlite3.Connection, settings: Settings) -> dict[str, objec
             worker=worker,
             backup=backup,
         ),
-        "search_index": search_index_panel(conn, counts),
+        "search_index": search_index_panel(conn, observation),
         "backup_queue": backup_queue_panel(conn),
         #  What needs a person, read from what is already recorded. See
         #  `librairy/attention.py` for why this is derived rather than stored
         #  and why it never repairs anything it finds.
-        "attention": attention_report(conn, settings, counts),
+        "attention": attention_report(
+            conn, settings, observation.counts if observation else None
+        ),
         "attention_levels": LEVELS,
         "attention_labels": LEVEL_LABEL,
         "attention_notes": LEVEL_NOTE,
@@ -183,24 +186,60 @@ def backup_queue_panel(conn: sqlite3.Connection) -> dict[str, object]:
 
 
 def search_index_panel(
-    conn: sqlite3.Connection, counts: IndexCounts | None = None
+    conn: sqlite3.Connection, observation=None  # noqa: ANN001 - IndexObservation
 ) -> dict[str, object]:
-    """What the index holds, read only.
+    """What the index held when it was last looked at, read only.
 
-    `recorded_health` rather than `check_search_index`: FTS5 expresses
-    `integrity-check` as an INSERT, and drawing a page must never write. The
-    verdict shown here is the one the last check recorded — on Health's own
-    rebuild button, `librairy db check`, or after a rebuild.
+    Two different kinds of claim live in this panel and they are kept apart on
+    purpose:
+
+        the integrity verdict   *is the index readable* — a verdict, which stays
+                                true until something damages it, and which
+                                `recorded_health` reports without checking,
+                                because FTS5 expresses `integrity-check` as an
+                                INSERT and drawing a page must never write
+        the population          *how many records are in it* — a measurement,
+                                true at a moment, carrying the moment with it
+
+    The three numbers are one observation with one timestamp, never three
+    values of mixed freshness. They are arithmetic on each other, so a live
+    item count beside two recorded ones can disagree by a handful purely from
+    timing — and on the panel that reports index damage, a disagreement of a
+    handful looks exactly like index damage.
     """
     from librairy.search_health import REMEDY, index_counts, recorded_health
 
     health = recorded_health(conn)
-    return {
-        **index_counts(conn, counts),
+    panel: dict[str, object] = {
         "integrity_ok": health.ok,
         "warning": health.warning,
         "remedy": "" if health.ok else REMEDY,
+        #  False means no numbers are shown at all. Not zero, not "all indexed":
+        #  nobody has counted, and inventing either would be inventing a
+        #  measurement.
+        "observed": observation is not None,
+        "observed_age": observation.age if observation else "",
+        "observed_stale": bool(observation) and _stale(observation.at),
     }
+    if observation is not None:
+        panel.update(index_counts(conn, observation.counts))
+    return panel
+
+
+#  When an observation stops being worth reading as "about now". Twice the
+#  interval the worker takes it at, so an installation whose worker is running
+#  never shows it and one whose worker has stopped says so quickly.
+STALE_AFTER_SECONDS = 2 * 15 * 60
+
+
+def _stale(at: str) -> bool:
+    if not at:
+        return True
+    try:
+        taken = datetime.fromisoformat(at)
+    except ValueError:  # pragma: no cover - defensive
+        return True
+    return (datetime.now(UTC) - taken).total_seconds() > STALE_AFTER_SECONDS
 
 
 @dataclass(frozen=True)

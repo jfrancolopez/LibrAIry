@@ -903,26 +903,35 @@ def test_a_page_of_search_results_costs_a_fixed_number_of_statements(tmp_path) -
     assert len(counting.queries) < 15, counting.queries
 
 
-def test_health_counts_the_search_index_once(tmp_path) -> None:  # noqa: ANN001
+def test_health_never_counts_the_search_index_while_drawing(tmp_path) -> None:  # noqa: ANN001
     """Counting an FTS5 table means reading it.
 
-    The panel and the attention report both ask, and neither could see the
-    other, so one render asked the expensive join twice and counted the items
-    twice.
+    This test used to assert *once*: the panel and the attention report both
+    asked, neither could see the other, and one render ran the expensive join
+    twice. Once was the right fix then and is the wrong number now — at a
+    million files a single pass is still 570 ms of a 1.1 s page, for an answer
+    that changes when files are indexed rather than when a page is opened.
+
+    So the assertion is none. The worker measures it on an idle cycle and Health
+    reports what was measured, with the moment it was measured at.
     """
+    from librairy.search_health import observe
     from librairy.web.health import health_data
 
     conn, settings = build(
         tmp_path, library=400, inbox=200, findings=20, quarantine=20, history=20
     )
+    observe(conn)
     counting = Counting(conn)
     health_data(counting, settings)
 
     joins = [q for q in counting.queries if "search_fts s JOIN items" in q]
-    assert len(joins) == 1, joins
+    assert joins == [], joins
+    totals = [q for q in counting.queries if "COUNT(*) FROM search_fts" in q]
+    assert totals == [], totals
     live = "SELECT COUNT(*) FROM items WHERE missing_since IS NULL"
     lives = [query for query in counting.queries if query.startswith(live)]
-    assert len(lives) == 1, lives
+    assert lives == [], lives
 
 
 def test_browse_does_not_read_the_whole_library_to_draw_a_page(tmp_path) -> None:  # noqa: ANN001
@@ -1000,3 +1009,76 @@ def test_the_held_list_costs_the_same_at_forty_thousand_as_at_forty(tmp_path) ->
     )
     assert small_rows == 10
     assert large_rows == waiting.PAGE_SIZE, "one page, however many are held"
+
+
+def test_the_backup_queue_issue_is_driven_by_the_queue_not_by_the_library(
+    small,  # noqa: ANN001
+) -> None:
+    """A question about the backup queue must cost what the queue costs.
+
+    `backed-up-under-older-bytes` started at `items` — every library file with a
+    `done` row under different bytes and nothing queued for the current ones —
+    and the planner answered `SCAN i` with two correlated subqueries per row.
+    At a million files that is 180 ms **against an empty queue**: the scan
+    happens whether or not there is anything to find, so the page paid for the
+    answer before knowing there was none.
+
+    Nothing can be backed up under older bytes without a `done` row, so the
+    rows that can possibly qualify are exactly the done rows. Same fault, and
+    the same fix, as the quadratic `unindexed` count above.
+    """
+    from librairy.backup import backup_queue_issues
+
+    conn, _ = small
+    statements: list[str] = []
+
+    class Watching:
+        def __init__(self, inner) -> None:  # noqa: ANN001
+            self._inner = inner
+
+        def execute(self, sql, *args, **kwargs):  # noqa: ANN001, ANN201
+            statements.append((str(sql), args[0] if args else ()))
+            return self._inner.execute(sql, *args, **kwargs)
+
+        def __getattr__(self, name):  # noqa: ANN001, ANN204
+            return getattr(self._inner, name)
+
+    backup_queue_issues(Watching(conn))
+    assert statements, "backup_queue_issues ran no queries at all"
+    for sql, params in statements:
+        plan = " | ".join(
+            str(row[-1]) for row in conn.execute("EXPLAIN QUERY PLAN " + sql, params)
+        )
+        assert "SCAN i" not in plan, f"driven by the library:\n{plan}\n{sql}"
+
+
+def test_drawing_health_does_not_count_the_search_index(tmp_path) -> None:  # noqa: ANN001
+    """Counting an FTS5 table means reading it — 570 ms at a million files — and
+    the answer changes when files are indexed, not when a page is opened.
+
+    Pinned as an absence on the render path rather than as a duration, because a
+    duration at two hundred rows proves nothing and the *shape* is the rule: the
+    page reads an observation somebody else took.
+    """
+    from librairy import search_health
+    from librairy.web.health import health_data
+
+    conn, settings = build(
+        tmp_path, library=200, inbox=0, findings=10, quarantine=10, history=10
+    )
+    search_health.observe(conn)
+
+    counted_calls = []
+    original = search_health.counted
+
+    def watched(*args, **kwargs):  # noqa: ANN002, ANN003, ANN202
+        counted_calls.append(1)
+        return original(*args, **kwargs)
+
+    search_health.counted = watched
+    try:
+        health_data(conn, settings)
+    finally:
+        search_health.counted = original
+
+    assert counted_calls == []

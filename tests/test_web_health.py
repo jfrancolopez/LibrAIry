@@ -241,3 +241,138 @@ def test_a_healthy_backup_queue_says_what_done_actually_means(tmp_path: Path) ->
     body = client.get("/health").text
 
     assert "records which bytes it copied" in body
+
+
+# --- the search index observation ----------------------------------------------------
+#
+#  "Healthy" is a verdict. "997,421 indexed" is a measurement. It is reasonable
+#  for a verdict nobody has contradicted to mean "no known problem"; it is not
+#  reasonable for a measurement nobody has taken to become a number.
+
+
+def test_an_uncounted_index_says_so_and_shows_no_numbers(tmp_path) -> None:
+    """No observation is not zero and is not health.
+
+    Rendering `0 indexed` would be a measurement nobody took; rendering
+    "everything indexed" would be a reassurance nobody earned.
+    """
+    from librairy.search_health import COUNTS_KEY
+    from librairy.web.health import search_index_panel
+
+    client, conn, settings = client_for(tmp_path)
+    #  The state an *upgraded* installation is in for its first worker cycle. A
+    #  fresh database is counted while it is created, because the migration that
+    #  builds the index counts it on the way out; one that already had an index
+    #  has nothing recorded until the worker takes its first measurement.
+    conn.execute("DELETE FROM worker_state WHERE key=?", (COUNTS_KEY,))
+    panel = search_index_panel(conn, None)
+
+    assert panel["observed"] is False
+    assert "total" not in panel
+    assert "unindexed" not in panel
+
+    page = client.get("/health")
+    assert "Not counted yet" in page.text
+
+
+def test_a_counted_index_is_reported_with_the_moment_it_was_counted(tmp_path) -> None:
+    """The numbers describe a moment, and the moment is printed beside them."""
+    from librairy.search_health import observe
+    from librairy.web.health import search_index_panel
+
+    client, conn, settings = client_for(tmp_path)
+    conn.execute(
+        "INSERT INTO items(id, root, relpath, size, mtime_ns, fingerprint, state,"
+        " first_seen_at, last_seen_at) VALUES (1,'library','a.txt',1,0,'fp',"
+        " 'discovered','2026-09-01T00:00:00+00:00','2026-09-01T00:00:00+00:00')"
+    )
+    observed = observe(conn)
+    panel = search_index_panel(conn, observed)
+
+    assert panel["observed"] is True
+    assert panel["observed_age"]
+    assert panel["live_items"] == 1
+
+    page = client.get("/health")
+    assert "Counted " in page.text
+    assert "Library items" in page.text
+    #  Never the present tense about a past measurement.
+    assert "Current items" not in page.text
+
+
+def test_the_three_counts_come_from_one_observation(tmp_path) -> None:
+    """They are arithmetic on each other, so they are read together.
+
+    `unindexed` is `live_items - (total - missing_retained)`. Three numbers
+    taken at three moments while the indexer works can fail to reconcile by a
+    handful — and on the panel that reports index damage, a disagreement of a
+    handful looks exactly like index damage.
+    """
+    from librairy import search_health
+
+    client, conn, settings = client_for(tmp_path)
+    inside: list[bool] = []
+    original = search_health.live_items
+
+    def watched(connection):  # noqa: ANN001, ANN202
+        inside.append(connection.in_transaction)
+        return original(connection)
+
+    search_health.live_items = watched
+    try:
+        search_health.counted(conn)
+    finally:
+        search_health.live_items = original
+
+    assert inside == [True], "the three counts were not read in one snapshot"
+
+
+def test_an_observation_nobody_has_refreshed_is_shown_as_old(tmp_path) -> None:
+    """Stale and unknown are different, and both are visible.
+
+    A worker that has stopped leaves a real observation that is simply old. It
+    stays on the page with its real age rather than disappearing or being
+    quietly refreshed by the render.
+    """
+    import json
+
+    from librairy.search_health import COUNTS_KEY, observe
+    from librairy.web.health import search_index_panel
+
+    client, conn, settings = client_for(tmp_path)
+    observe(conn)
+    row = conn.execute(
+        "SELECT value FROM worker_state WHERE key=?", (COUNTS_KEY,)
+    ).fetchone()
+    payload = json.loads(str(row["value"]))
+    payload["at"] = "2026-01-01T00:00:00+00:00"
+    conn.execute(
+        "UPDATE worker_state SET value=? WHERE key=?", (json.dumps(payload), COUNTS_KEY)
+    )
+
+    panel = search_index_panel(conn, __import__(
+        "librairy.search_health", fromlist=["recorded_counts"]
+    ).recorded_counts(conn))
+
+    assert panel["observed"] is True
+    assert panel["observed_stale"] is True
+
+
+def test_health_makes_no_unindexed_claim_before_anything_is_counted(tmp_path) -> None:
+    """The attention report reads; it does not measure.
+
+    `unindexed(conn, None)` used to fall back to counting the whole index —
+    570 ms at a million files — inside a report whose contract is that it opens
+    nothing and discovers nothing.
+    """
+    from librairy import attention
+
+    client, conn, settings = client_for(tmp_path)
+    conn.execute(
+        "INSERT INTO items(id, root, relpath, size, mtime_ns, fingerprint, state,"
+        " first_seen_at, last_seen_at) VALUES (1,'library','a.txt',1,0,'fp',"
+        " 'discovered','2026-09-01T00:00:00+00:00','2026-09-01T00:00:00+00:00')"
+    )
+
+    codes = {concern.code for concern in attention.report(conn, settings).concerns}
+    assert "search-unindexed" not in codes

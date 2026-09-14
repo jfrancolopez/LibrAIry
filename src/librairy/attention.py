@@ -558,6 +558,15 @@ def _audit(conn: sqlite3.Connection, settings=None, counts=None) -> list[Concern
 # --- the search index ---------------------------------------------------------
 
 
+class _NoCounts:
+    """Stands in for "nobody has looked", so the read above stays one line."""
+
+    counts = None
+
+
+_NO_COUNTS = _NoCounts()
+
+
 def _search(conn: sqlite3.Connection, settings=None, counts=None) -> list[Concern]:  # noqa: ANN001, ARG001
     """Only the two things the index can prove about itself cheaply.
 
@@ -567,7 +576,7 @@ def _search(conn: sqlite3.Connection, settings=None, counts=None) -> list[Concer
     would mean re-deriving every row's text on a page load, which is a search
     project rather than a health check, so it is not asked here.
     """
-    from librairy.search_health import recorded_health, unindexed
+    from librairy.search_health import recorded_counts, recorded_health
 
     concerns: list[Concern] = []
     health = recorded_health(conn)
@@ -582,7 +591,16 @@ def _search(conn: sqlite3.Connection, settings=None, counts=None) -> list[Concer
                        "Search index panel below rebuilds it.",
             )
         )
-    found = unindexed(conn, counts)
+    #  Read, never measured — which is what this module promises at the top of
+    #  the file and what `unindexed(conn, None)` quietly broke: its fallback
+    #  counted the whole FTS index, 570 ms at a million files, inside a report
+    #  whose contract is that it opens nothing and discovers nothing.
+    #
+    #  No observation means no claim. "N files are not in the index" is a
+    #  measurement, and one nobody has taken cannot be reported as zero or as
+    #  fine; the panel below says it has not been checked.
+    observed = counts or (recorded_counts(conn) or _NO_COUNTS).counts
+    found = observed.unindexed if observed is not None else 0
     if found:
         concerns.append(
             Concern(

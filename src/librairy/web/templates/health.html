@@ -134,24 +134,41 @@
          `235 items` looked like eight lost records, and the eight are retained
          on purpose so a share that comes back online is searchable at once. #}
       <h3>Search index</h3>
-      <dl class="queue-facts">
-        <div><dt>Current items</dt><dd>{{ search_index.current }}</dd></div>
-        <div>
-          <dt>Missing files, records kept</dt>
-          <dd>{{ search_index.missing_retained }}</dd>
-        </div>
-        <div><dt>Total indexed records</dt><dd>{{ search_index.total }}</dd></div>
-      </dl>
+      {# Two different kinds of claim, kept apart. The verdict — can this index
+         answer — stays true until something damages it. The numbers were true
+         at a moment, and that moment is printed beside them: they used to be
+         headed "Current items", which asserts the present tense about a
+         measurement taken when the page happened to be drawn.
+
+         No observation shows no numbers. Zero would be a measurement nobody
+         took, and "all indexed" would be a reassurance nobody earned. #}
+      {% if search_index.observed %}
+        <p class="muted observation-age">
+          Counted {{ search_index.observed_age }}{% if search_index.observed_stale %} — the worker
+          has not measured it since{% endif %}.
+        </p>
+        <dl class="queue-facts">
+          <div><dt>Library items</dt><dd>{{ search_index.live_items }}</dd></div>
+          <div><dt>Indexed records</dt><dd>{{ search_index.total }}</dd></div>
+          <div>
+            <dt>Missing files, records kept</dt>
+            <dd>{{ search_index.missing_retained }}</dd>
+          </div>
+        </dl>
+      {% else %}
+        <p class="muted">Not counted yet. The worker measures this on an idle
+          cycle; the numbers appear here once it has.</p>
+      {% endif %}
       {% if search_index.integrity_ok %}
         <p class="muted">
           Verified readable.
-          {% if search_index.missing_retained %}
+          {% if search_index.observed and search_index.missing_retained %}
             The {{ search_index.missing_retained }} kept record{{ 's' if search_index.missing_retained != 1 else '' }}
             belong{{ '' if search_index.missing_retained != 1 else 's' }} to
-            file{{ 's' if search_index.missing_retained != 1 else '' }} that are
-            not on disk right now — an unmounted share looks exactly like this,
-            and everything comes back searchable the moment it returns. They are
-            filtered out of results meanwhile.
+            file{{ 's' if search_index.missing_retained != 1 else '' }} that were
+            not on disk when this was counted — an unmounted share looks exactly
+            like this, and everything comes back searchable the moment it
+            returns. They are filtered out of results meanwhile.
           {% endif %}
         </p>
       {% else %}
@@ -159,11 +176,12 @@
           {{ search_index.warning }} {{ search_index.remedy }}
         </p>
       {% endif %}
-      {% if search_index.unindexed %}
+      {% if search_index.observed and search_index.unindexed %}
         {# The only one of these numbers that is ever a problem. #}
         <p class="notice-warn">
           {{ search_index.unindexed }} file{{ 's' if search_index.unindexed != 1 else '' }}
-          on disk with no index entry. Run <span class="mono">librairy scan</span>.
+          on disk with no index entry when this was counted. Run
+          <span class="mono">librairy scan</span>.
         </p>
       {% endif %}
     </section>

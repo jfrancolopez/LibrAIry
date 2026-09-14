@@ -695,17 +695,36 @@ def backup_queue_issues(conn: sqlite3.Connection) -> list[BackupIssue]:
             "backed-up-under-older-bytes",
             _count(
                 conn,
+                #  Driven from the queue, not from the library, and that is the
+                #  whole of it. The obvious spelling starts at `items` — every
+                #  library file that has a done row under different bytes and
+                #  nothing queued for the current ones — and the planner says
+                #  what that costs: `SCAN i`, a million rows, two correlated
+                #  subqueries each. 180 ms at a million files **against an empty
+                #  backup queue**, because the scan happens whether or not there
+                #  is anything to find.
+                #
+                #  Nothing can be backed up under older bytes without a `done`
+                #  row, so the rows that can possibly qualify are exactly the
+                #  done rows. Starting there makes the cost belong to the queue,
+                #  which is the small side and the side the question is about.
+                #  Same fault, and same fix, as the quadratic `unindexed` count
+                #  in `librairy/search_health.py`.
+                #
+                #  `DISTINCT` because the count is of *files*: one item with two
+                #  stale done rows is one file that needs backing up again.
                 f"""
-                SELECT COUNT(*) FROM items i
-                WHERE i.root = 'library' AND {live()}
-                  AND EXISTS (
-                    SELECT 1 FROM backup_queue q
-                    WHERE q.item_id = i.id AND q.relpath = i.relpath
-                      AND q.state = 'done' AND q.fingerprint != i.fingerprint)
-                  AND NOT EXISTS (
-                    SELECT 1 FROM backup_queue q
-                    WHERE q.item_id = i.id AND q.relpath = i.relpath
-                      AND q.fingerprint = i.fingerprint)
+                SELECT COUNT(*) FROM (
+                  SELECT DISTINCT q.item_id
+                  FROM backup_queue q JOIN items i ON i.id = q.item_id
+                  WHERE q.state = 'done' AND q.relpath = i.relpath
+                    AND q.fingerprint != i.fingerprint
+                    AND i.root = 'library' AND {live()}
+                    AND NOT EXISTS (
+                      SELECT 1 FROM backup_queue n
+                      WHERE n.item_id = i.id AND n.relpath = i.relpath
+                        AND n.fingerprint = i.fingerprint)
+                )
                 """,  # noqa: S608 - a module constant
             ),
             "changed since their backup, with nothing queued for the new bytes",

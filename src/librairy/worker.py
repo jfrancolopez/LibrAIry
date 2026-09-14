@@ -71,6 +71,13 @@ AI_PROBE_SECONDS = 60
 #  find the first time. See `Worker._database_check`.
 DB_CHECK_DUE_KEY = "database_check_at"
 DB_CHECK_SECONDS = 24 * 60 * 60
+#  When the search index population was last measured, and how often. Chosen
+#  from the measurement rather than from taste: 570 ms at a million files, which
+#  is 0.06% of a quarter hour — and a quarter hour bounds how stale the numbers
+#  on Health can be. Far cheaper than the daily database verification above,
+#  which reads every page rather than two tables.
+SEARCH_COUNTS_KEY = "search_counts_at"
+SEARCH_COUNTS_SECONDS = 15 * 60
 
 
 @dataclass(frozen=True)
@@ -321,6 +328,9 @@ class Worker:
                     #  Health reports what this last found. Same arrangement as
                     #  the FTS integrity check, for the same reason.
                     self._database_check(settings)
+                    #  How much the search index holds, measured away from the
+                    #  page that reports it. See `Worker._search_counts`.
+                    self._search_counts()
                     #  Off unless the owner turned it on, and on an idle cycle
                     #  either way: a decision nobody is being asked about is
                     #  not urgent. Nothing moves — it changes where a settled
@@ -601,6 +611,30 @@ class Worker:
             record_database_health(self.conn, result, at)
         except Exception:  # noqa: BLE001 - maintenance must never break the worker
             LOGGER.exception("database check failed")
+
+    def _search_counts(self) -> None:
+        """Measure what the search index holds, on an idle cycle.
+
+        Health used to ask this on every render: counting an FTS5 table means
+        reading it, and the join that relates its rows to `items` means reading
+        both — 570 ms of a 1.1 s page at a million files, for an answer that
+        changes when files are indexed and not when a page is opened.
+
+        Recorded with the moment it was taken, and Health shows that moment.
+        A number without its age is a cache; a number with its age is an
+        observation, and only the second one can be read honestly.
+
+        Wrapped like every other maintenance call: a measurement that cannot be
+        taken must not be the thing that stops files being filed.
+        """
+        from librairy.search_health import observe
+
+        if not self._due(SEARCH_COUNTS_KEY, SEARCH_COUNTS_SECONDS):
+            return
+        try:
+            observe(self.conn)
+        except Exception:  # noqa: BLE001 - maintenance must never break the worker
+            LOGGER.exception("search index count failed")
 
     def _optimization_poll(self, settings: Settings) -> str:
         """Advance a running encode by reading what it has reported. Never waits.

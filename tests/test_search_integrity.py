@@ -322,17 +322,25 @@ def test_a_present_file_with_no_index_row_is_the_one_real_problem(
 def test_health_explains_the_retained_records_rather_than_hiding_them(
     tmp_path: Path,
 ) -> None:
+    from librairy.search_health import observe
+
     client, conn, _settings = scene(tmp_path)
     item_id = conn.execute("SELECT id FROM items LIMIT 1").fetchone()[0]
     conn.execute("UPDATE items SET missing_since='now' WHERE id=?", (item_id,))
+    #  The panel reports the last measurement, not the database as it is this
+    #  instant — counting the index costs 570 ms at a million files, so the
+    #  worker takes it on an idle cycle. Standing in for that cycle here is the
+    #  honest way to test what the panel says, and the page prints the age of
+    #  whatever it is showing.
+    observe(conn)
 
     body = client.get("/health").text
 
     assert "Search index" in body
     assert "Missing files, records kept" in body
-    assert "Total indexed records" in body
+    assert "Indexed records" in body
     # Not faked into agreeing, and not presented as damage.
-    assert "not on disk right now" in body
+    assert "not on disk when this was counted" in body
 
 
 def test_the_health_panel_writes_nothing(tmp_path: Path) -> None:

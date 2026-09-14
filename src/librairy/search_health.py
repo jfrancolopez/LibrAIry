@@ -23,6 +23,7 @@ Two rules shape what this module does and does not do:
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from dataclasses import dataclass
 
@@ -130,22 +131,128 @@ class IndexCounts:
 
 
 def counted(conn: sqlite3.Connection) -> IndexCounts:
-    """The three primitives, in three statements.
+    """The three primitives, in three statements, **taken together**.
 
-    Callers that need more than one number ask for this once and read the rest
-    off it. Health used to reach the expensive join twice and the item count
-    twice on one render, through three modules that could not see each other.
+    Expensive on purpose and by necessity: 570 ms at a million files, because an
+    FTS5 table has no row count to look up and relating its rows to `items`
+    means joining it. This is the measurement; `recorded_counts` is what a page
+    reads. See `observe`.
+
+    The three are read inside one transaction so that they are one observation
+    rather than three. They are arithmetic on each other — `unindexed` is
+    `live_items - (total - missing_retained)` — and three numbers taken at three
+    moments while the indexer is working can fail to reconcile by a handful,
+    which on a page reporting index health reads as damage. A deferred
+    transaction costs nothing and makes them consistent by construction.
     """
-    total = int(conn.execute("SELECT COUNT(*) FROM search_fts").fetchone()[0])
-    missing = int(
-        conn.execute(
-            """
-            SELECT COUNT(*) FROM search_fts s JOIN items i ON i.id = s.item_id
-            WHERE i.missing_since IS NOT NULL
-            """
-        ).fetchone()[0]
+    #  Nested is possible — `rebuild_search_index` is already in one — and a
+    #  plain BEGIN inside a transaction is an error. Inside one, the snapshot is
+    #  already held, which is the property being asked for.
+    own = not conn.in_transaction
+    if own:
+        conn.execute("BEGIN")
+    try:
+        total = int(conn.execute("SELECT COUNT(*) FROM search_fts").fetchone()[0])
+        missing = int(
+            conn.execute(
+                """
+                SELECT COUNT(*) FROM search_fts s JOIN items i ON i.id = s.item_id
+                WHERE i.missing_since IS NOT NULL
+                """
+            ).fetchone()[0]
+        )
+        return IndexCounts(
+            total=total, missing_retained=missing, live_items=live_items(conn)
+        )
+    finally:
+        if own:
+            conn.execute("COMMIT")
+
+
+#  Where the last observation is kept, and what it is. Deliberately a *separate*
+#  record from the integrity verdict above, because they are different kinds of
+#  claim and go stale differently: "the index is readable" is a verdict that
+#  stays true until something damages it, and "997,421 records" is a measurement
+#  that was true at a moment.
+COUNTS_KEY = "search_index_counts"
+
+
+@dataclass(frozen=True)
+class IndexObservation:
+    """What the index held, and when that was looked at.
+
+    Never called *current*. The whole point of carrying `at` is that these
+    numbers describe a moment which is not now, and a panel that prints them
+    under a present-tense heading is asserting something nobody measured.
+    """
+
+    counts: IndexCounts
+    at: str
+
+    @property
+    def age(self) -> str:
+        from librairy.settings_service import _ago
+
+        return _ago(self.at) if self.at else "at an unknown time"
+
+
+def observe(conn: sqlite3.Connection) -> IndexObservation:
+    """Measure the index population and write down when it was measured.
+
+    The expensive half of Health, moved off the render. It used to run on every
+    request — 570 ms of a 1.1 s page at a million files — to answer a question
+    whose answer changes when files are indexed, not when somebody opens a page.
+    """
+    from librairy.planner import utc_now
+
+    counts = counted(conn)
+    at = utc_now()
+    conn.execute(
+        "INSERT INTO worker_state(key, value) VALUES (?, ?)"
+        " ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        (
+            COUNTS_KEY,
+            json.dumps(
+                {
+                    "total": counts.total,
+                    "missing_retained": counts.missing_retained,
+                    "live_items": counts.live_items,
+                    "at": at,
+                }
+            ),
+        ),
     )
-    return IndexCounts(total=total, missing_retained=missing, live_items=live_items(conn))
+    return IndexObservation(counts, at)
+
+
+def recorded_counts(conn: sqlite3.Connection) -> IndexObservation | None:
+    """The last observation, or `None` — which means *nobody has looked*.
+
+    `None` is not zero and is not health. A panel given nothing here must say
+    "not checked yet" and show no numbers: rendering `0 indexed` for an index
+    nobody has counted would be a fabricated measurement, and rendering
+    "everything indexed" would be a fabricated reassurance.
+    """
+    row = conn.execute(
+        "SELECT value FROM worker_state WHERE key=?", (COUNTS_KEY,)
+    ).fetchone()
+    if row is None:
+        return None
+    try:
+        payload = json.loads(str(row["value"]))
+    except (TypeError, ValueError):  # pragma: no cover - defensive
+        return None
+    if not isinstance(payload, dict):  # pragma: no cover - defensive
+        return None
+    try:
+        counts = IndexCounts(
+            total=int(payload["total"]),
+            missing_retained=int(payload["missing_retained"]),
+            live_items=int(payload["live_items"]),
+        )
+    except (KeyError, TypeError, ValueError):  # pragma: no cover - defensive
+        return None
+    return IndexObservation(counts, str(payload.get("at", "")))
 
 
 def index_counts(
@@ -169,6 +276,12 @@ def index_counts(
     """
     found = counts or counted(conn)
     return {
+        #  The number the other three are measured against, and now shown: the
+        #  panel reads "Library items / Indexed records / Missing files, records
+        #  kept", which is the subtraction written out. It used to lead with
+        #  `current` under the heading "Current items" — the present tense about
+        #  a measurement, and the one word this panel may not use.
+        "live_items": found.live_items,
         "current": found.current,
         "missing_retained": found.missing_retained,
         "total": found.total,

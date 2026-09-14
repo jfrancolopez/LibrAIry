@@ -180,9 +180,16 @@ def rebuild_search_index(conn: sqlite3.Connection) -> int:
         sync_search_item(conn, item_id)
     # The index is known-good now, and the pages that warn about it read a
     # recorded verdict rather than checking for themselves.
-    from librairy.search_health import check_search_index, record_health
+    from librairy.search_health import check_search_index, observe, record_health
 
     record_health(conn, check_search_index(conn))
+    #  And it has just been counted, for free, by the loop above. Taking the
+    #  observation here is not invalidation-on-write — a rebuild is a deliberate
+    #  act somebody asked for, not a routine index mutation — and it means the
+    #  panel is not reporting a population from before the rebuild that just
+    #  changed it. Hanging a recount off every `sync_search_item` would be the
+    #  opposite: recounting most often exactly when the index is busiest.
+    observe(conn)
     return len(item_ids)
 
 
