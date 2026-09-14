@@ -95,3 +95,52 @@ def test_docker_docs_include_macos_test_folder_walkthrough() -> None:
     assert "Using Test Folders On macOS" in docker_docs
     assert "HOST_INBOX_DIR=/Users/<you>/Desktop/librairy-test-inbox" in docker_docs
     assert "docker compose up -d --build" in docker_docs
+
+
+def test_the_tool_list_names_every_binary_the_image_installs() -> None:
+    """The troubleshooting page lists the helper tools, and it had drifted.
+
+    It named ffprobe, exiftool, fpcalc, rmlint and czkawka_cli — and omitted
+    poppler, which is how a document is read at all rather than guessed at from
+    its name, and rclone, which is the entire backup system. A tool list that is
+    missing the two most consequential entries is worse than no list: somebody
+    debugging a document that would not identify had no reason to look for
+    `pdftotext`.
+
+    Read from the Dockerfile, so the page cannot fall behind the image again.
+    """
+    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+    page = (ROOT / "docs/troubleshooting.md").read_text(encoding="utf-8")
+    #  What the runtime stage installs, under the names a person would search
+    #  for rather than the package names apt uses.
+    expected = {
+        "ffmpeg": "ffprobe",
+        "libchromaprint-tools": "fpcalc",
+        "libimage-exiftool-perl": "exiftool",
+        "poppler-utils": "poppler",
+        "rmlint": "rmlint",
+    }
+    for package, tool in expected.items():
+        assert package in dockerfile, f"{package} is no longer installed"
+        assert tool in page, f"the image installs {package} and the docs never mention {tool}"
+    for copied in ("czkawka_cli", "rclone"):
+        assert copied in dockerfile
+        assert copied in page, f"{copied} is in the image and not in the docs"
+
+
+def test_ocr_is_documented_as_absent_rather_than_silently_missing() -> None:
+    """`librairy/ocr.py` says the image ships without tesseract, deliberately.
+
+    Nothing user-facing said so. Somebody with a drawer of scans saw *no text
+    layer — this is a scan* on every one of them and had no documented way to
+    change that, for a decision the program made on their behalf and had good
+    reasons for.
+    """
+    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+    page = (ROOT / "docs/troubleshooting.md").read_text(encoding="utf-8")
+
+    assert "tesseract" not in dockerfile, (
+        "tesseract is in the image now — the docs say it deliberately is not"
+    )
+    assert "tesseract" in page
+    assert "no text layer" in page

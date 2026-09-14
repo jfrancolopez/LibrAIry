@@ -506,6 +506,31 @@ provider and model, and the frame strategy, so an unchanged video is never
 looked at twice and changing the strategy correctly invalidates the old answer.
 Local providers only, exactly as for photos.
 
+## When LibrAIry will not guess
+
+Some files reach the end of everything LibrAIry can ask and still have no
+answer. Those are **not** given a plausible guess. They collect under *Needs
+more processing*, nothing is proposed, nothing is approved, and nothing on disk
+has moved — and the rest of your inbox carries on without them.
+
+![The "Needs more processing" panel, with three reasons listed separately and a count beside each: Waiting for AI, AI processing failed, Needs more evidence](images/needs-more-processing.png)
+
+Three reasons, kept apart because they end differently:
+
+| | |
+|---|---|
+| **Waiting for AI** | nothing could be asked — no provider is switched on, or none answered. **Resumes by itself** when one does |
+| **AI processing failed** | a provider was reached and the attempt broke. Also resumes by itself, once it answers properly again |
+| **Needs more evidence** | everything that could be asked was asked and answered, and it is still not enough. Nothing is wrong, so **nothing will change on its own** |
+
+Only the third one is waiting on you. The first two are waiting on a machine,
+which is why the dashboard does not count them as needing your attention — a
+line saying "3 files need you" about something that fixes itself in ten minutes
+is an alert people learn to ignore.
+
+**Decide without AI** is there when you would rather answer them yourself. It
+files them on the deterministic evidence alone.
+
 ## Tags and Projects
 
 Write a hashtag anywhere in a folder name or a filename and LibrAIry records it

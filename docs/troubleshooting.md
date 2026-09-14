@@ -48,7 +48,23 @@ lose the review queue and history, not a single file.
 
 ## Tools
 
-The image includes `ffprobe`, `exiftool`, `fpcalc`, `rmlint`, and `czkawka_cli`. Missing or failing tools show warnings in Health with remedy hints.
+The image includes `ffprobe` (and the rest of ffmpeg), `exiftool`, `fpcalc`,
+`rmlint`, `czkawka_cli`, `rclone`, and poppler — `pdfinfo`, `pdftotext` and
+`pdftoppm`, which is how a document is read rather than guessed at from its
+name. Missing or failing tools show warnings in Health with remedy hints.
+
+**`tesseract` is deliberately not in the image.** It is the one tool LibrAIry
+needs that most libraries never use: almost every PDF already carries a text
+layer, `pdftotext` reads it in milliseconds, and OCR costs seconds per file plus
+tens of megabytes of language packs in the image. A PDF with pages and no text
+is reported as *no text layer — this is a scan* and classified from its metadata
+and its filename, rather than quietly pretending something was read.
+
+If you have a drawer of scans, install `tesseract-ocr` and a language pack in
+your own image layer and switch OCR on in Settings. Health's machinery panel
+shows whether it was found. OCR is governed by the **processing** mode, not the
+AI mode — tesseract turns pixels into characters and makes no judgement, so
+switching Local AI off must not stop a scanner's output being readable.
 
 ## A Library Review Row Disagrees With Commit
 
