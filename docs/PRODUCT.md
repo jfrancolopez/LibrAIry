@@ -164,6 +164,7 @@ feature notes; they are the shape of the program.
 | [Adoption](architecture/adoption-architecture.md) | what a representation change inherits, and what it must not |
 | [Crash recovery](architecture/crash-recovery.md) | a crash may lose work; it may never lose a file, or leave a record of something that did not happen |
 | [When something goes wrong](architecture/failures.md) | what happened, is my Library safe, what can I do next — and never a safety claim the state does not prove |
+| [NAS validation](nas-validation.md) | the one claim a build machine cannot prove, and the procedure for proving it on the box |
 | [Soak](architecture/soak.md) | what a repetition *leaves behind* is a separate question from what it costs, and the cheap-looking answer is the dangerous one |
 
 Shared vocabulary lives in [ui-vocabulary.md](ui-vocabulary.md). The current
