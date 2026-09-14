@@ -117,6 +117,11 @@ def scan_root(
             stat = path.stat()
             seen.add(relpath)
             discovered += 1
+            #  Set by the unchanged branch below. Named for the fact it asserts
+            #  rather than for the file's state, because `unchanged` already
+            #  exists a few lines down and means something slightly different —
+            #  size and mtime only, without the stability condition.
+            index_is_current = False
             existing = conn.execute(
                 """
                 SELECT id, size, mtime_ns, fingerprint, state
@@ -137,6 +142,7 @@ def scan_root(
                 and existing["state"] != "unstable"
             ):
                 skipped_unchanged += 1
+                index_is_current = True
                 fingerprint = existing["fingerprint"]
                 state = existing["state"]
             else:
@@ -166,10 +172,24 @@ def scan_root(
                 """,
                 (root, relpath, stat.st_size, stat.st_mtime_ns, fingerprint, state, now, now),
             )
-            item_id = conn.execute(
-                "SELECT id FROM items WHERE root=? AND relpath=?", (root, relpath)
-            ).fetchone()[0]
-            sync_search_item(conn, item_id)
+            #  Only when this scan actually changed something. The search row is
+            #  derived from the item, its proposal, its group and its vision
+            #  result, and *every* writer of those calls `sync_search_item`
+            #  itself — twenty-odd call sites, one per thing that can change.
+            #  So re-asserting it here for a file whose size, mtime and state
+            #  are all exactly what they were is not keeping the index current;
+            #  it is a `DELETE` and an `INSERT` into an FTS5 table for every
+            #  file in the library, on every scan, forever.
+            #
+            #  The scanner had a fast path for unchanged files already. It was
+            #  only fast about hashing: the row write, the id lookup and the
+            #  index rewrite all happened anyway, which at a million files is
+            #  two million writes a cycle to record that nothing happened.
+            if not index_is_current:
+                item_id = conn.execute(
+                    "SELECT id FROM items WHERE root=? AND relpath=?", (root, relpath)
+                ).fetchone()[0]
+                sync_search_item(conn, item_id)
             unchanged = (
                 existing
                 and existing["size"] == stat.st_size

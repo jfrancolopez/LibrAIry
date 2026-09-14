@@ -567,11 +567,25 @@ def check_database(settings: Settings) -> tuple[str, str]:
     db_path = database_path(settings)
     if not db_path.exists():
         return "missing", utc_now()
+    #  Closed explicitly, and that is not pedantry. `with sqlite3.connect(...)`
+    #  is a *transaction* manager — it commits or rolls back on the way out and
+    #  leaves the connection open — so this function leaked one connection, and
+    #  two file descriptors, every time the worker called it. Twenty-three idle
+    #  cycles held twenty-three databases open; a few hundred would have reached
+    #  the process limit and stopped the worker with "too many open files".
+    #
+    #  `librairy/db.py` documents the mirror image of this mistake on
+    #  `transaction()`: there, `with conn:` looks like a transaction and is not
+    #  one. Here, it looks like opening a file and is not that either.
+    conn = None
     try:
-        with sqlite3.connect(db_path) as conn:
-            return str(conn.execute("PRAGMA quick_check").fetchone()[0]), utc_now()
+        conn = sqlite3.connect(db_path)
+        return str(conn.execute("PRAGMA quick_check").fetchone()[0]), utc_now()
     except sqlite3.Error as exc:
         return f"error: {exc}", utc_now()
+    finally:
+        if conn is not None:
+            conn.close()
 
 
 def record_database_health(conn: sqlite3.Connection, result: str, at: str) -> None:

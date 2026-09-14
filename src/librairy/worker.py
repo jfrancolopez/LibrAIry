@@ -65,6 +65,12 @@ INBOX_POLL_SECONDS = 2.0
 #  Normal's number. See `Worker._probe_due` and `librairy/resources.py`.
 AI_PROBE_KEY = "ai_probe_at"
 AI_PROBE_SECONDS = 60
+#  When the database was last verified end to end, and how often that is worth
+#  doing. Daily: `PRAGMA quick_check` reads every page, and between two idle
+#  cycles thirty seconds apart there is nothing it could find that it did not
+#  find the first time. See `Worker._database_check`.
+DB_CHECK_DUE_KEY = "database_check_at"
+DB_CHECK_SECONDS = 24 * 60 * 60
 
 
 @dataclass(frozen=True)
@@ -545,27 +551,51 @@ class Worker:
         about the *worker* rather than about a call, which is why it lives with
         the rest of the mode rather than beside the constant below.
         """
+        return self._due(AI_PROBE_KEY, seconds)
+
+    def _due(self, key: str, seconds: int) -> bool:
+        """Has `seconds` passed since this was last done? Records that it has.
+
+        Extracted from `_probe_due` when the database check needed the same
+        thing. Two spellings of "at most once an interval, remembered across a
+        restart" is one more than the number of them that can be right.
+        """
         if seconds <= 0:
             return False
         now = utc_now()
         row = self.conn.execute(
-            "SELECT value FROM worker_state WHERE key=?", (AI_PROBE_KEY,)
+            "SELECT value FROM worker_state WHERE key=?", (key,)
         ).fetchone()
         if row is not None:
             last = str(json.loads(row["value"]) or "")
             if last and _seconds_between(last, now) < seconds:
                 return False
-        _set_worker_state(self.conn, AI_PROBE_KEY, now)
+        _set_worker_state(self.conn, key, now)
         return True
 
     def _database_check(self, settings: Settings) -> None:
         """Record what a full verification finds. Never blocks the inbox.
+
+        Once a day, not once a cycle. `PRAGMA quick_check` reads and verifies
+        every page of the database — 3.2 seconds on a 587 MB index, by the
+        measurement in `check_database` itself — and this ran on every idle
+        cycle, which on a settled installation is every cycle there is. An idle
+        NAS was reading its entire database, over and over, forever, to answer a
+        question whose answer had not changed.
+
+        The comment here used to say this was arranged like the FTS integrity
+        check. It was not: that one runs when the index is rebuilt. This one now
+        has the gate it claimed to have, through the same recorded interval the
+        AI probe uses — so a worker restarted every hour does not get a free
+        verification each time.
 
         Wrapped like every other maintenance call: a check that cannot run must
         not be the thing that stops files being filed.
         """
         from librairy.web.health import check_database, record_database_health
 
+        if not self._due(DB_CHECK_DUE_KEY, DB_CHECK_SECONDS):
+            return
         try:
             result, at = check_database(settings)
             record_database_health(self.conn, result, at)
