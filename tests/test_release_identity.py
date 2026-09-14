@@ -180,7 +180,17 @@ def test_the_release_body_tells_an_operator_to_snapshot_before_upgrading() -> No
 
     assert "snapshot" in release.lower()
     assert "one-way" in release.lower() or "one way" in release.lower()
-    assert "schema 47" in release
+    #  *A* schema number, not a literal one. This asserted `schema 47`, which is
+    #  what 1.3.1 shipped — correct on the day and a trap afterwards, because
+    #  the assertion is about whatever `__version__` currently names. The next
+    #  release migrates to a different number and would have had to write 47 in
+    #  its notes to satisfy a test about warning people accurately.
+    #
+    #  That the *code's* schema and the version's notes agree is a different
+    #  question, and it belongs where it already is: the `identity` gate in
+    #  `scripts/release_acceptance.py` fails a build whose version names another
+    #  commit, which is the condition that makes them disagree.
+    assert re.search(r"schema \d+", release), "the notes name no schema at all"
     for unsafe in ("just switch back", "simply start the previous image", "rollback is lossless"):
         assert unsafe not in release.lower()
 
@@ -210,8 +220,11 @@ def test_a_tag_that_published_nothing_is_not_recorded_as_a_release() -> None:
 
     assert "1.3.0" not in released, "1.3.0 published nothing and is not a release"
     assert __version__ in released
-    # And the release notes say what happened, so nobody has to reconstruct it.
-    notes = CHANGELOG.split(f"## v{__version__} - ", 1)[1].split("\n## v", 1)[0]
+    #  Read from the 1.3.1 section by name, because that is whose story it is.
+    #  It used to be read from `__version__`'s section, which is the same thing
+    #  only until the next release — and then it would require every future set
+    #  of notes to re-tell an incident that happened before them.
+    notes = CHANGELOG.split("## v1.3.1 - ", 1)[1].split("\n## v", 1)[0]
     assert "v1.3.0" in notes
     assert "first published release of this line" in notes
 

@@ -370,6 +370,110 @@ def suite(report: Report) -> None:
                 report.add(area, name, FAIL if test in failed else PASS, test)
 
 
+#  The families M4 built, each of which answers a question no unit test can and
+#  none of which was gated. A release is not ready because the unit suite is
+#  green: it is ready when the installation survives being killed, being used
+#  across its own seams, being run for a long time, being read by somebody who
+#  cannot see it, and being told the truth when something breaks.
+#
+#  Whole files rather than named tests. These are not a handful of gates with
+#  stable names — `test_error_states.py` alone is thirty-nine — and a list of
+#  names here would be a second inventory to keep in step with the first.
+MILESTONE_SUITES = (
+    ("crash recovery drills", "tests/test_recovery_drills.py"),
+    ("cross-feature scenarios", "tests/test_cross_feature_scenarios.py"),
+    ("error states", "tests/test_error_states.py"),
+    ("soak: no drift under repetition", "tests/test_soak.py"),
+    ("accessibility", "tests/test_accessibility.py"),
+    ("mobile at 375px", "tests/test_mobile.py"),
+    ("migration from every released schema", "tests/test_migration_paths.py"),
+)
+
+
+def milestones(report: Report) -> None:
+    """Every M4 family, run as its own gate so a failure names the family.
+
+    One `pytest` for all of them would report "3 failed" and leave somebody
+    reading a traceback to find out whether the release is unsafe or merely
+    untidy. A gate per family says *which* guarantee stopped holding.
+    """
+    for name, path in MILESTONE_SUITES:
+        if not (ROOT / path).exists():
+            report.add("MILESTONE GATES", name, FAIL, f"{path} is missing")
+            continue
+        result = run(
+            [sys.executable, "-m", "pytest", path, "-q", "--no-header",
+             "-p", "no:cacheprovider"],
+            timeout=1800,
+        )
+        summary = (result.stdout or "").strip().splitlines()
+        detail = summary[-1][:100] if summary else path
+        if result.returncode == 0:
+            report.add("MILESTONE GATES", name, PASS, detail)
+        elif result.returncode == 1:
+            report.add("MILESTONE GATES", name, FAIL, detail)
+        else:
+            report.add("MILESTONE GATES", name, BLOCKED, detail)
+
+
+def scale(report: Report) -> None:
+    """The scale suite, which the ordinary run deliberately does not include.
+
+    `pyproject.toml` sets `-m 'not scale'` so that a twenty-minute benchmark is
+    not paid on every commit — which is right, and means these have never run in
+    a release gate either. A bounded-page rule nobody checked before shipping is
+    a bounded-page rule on trust.
+    """
+    result = run(
+        [sys.executable, "-m", "pytest", "-m", "scale", "-q", "--no-header",
+         "-p", "no:cacheprovider"],
+        timeout=3600,
+    )
+    summary = (result.stdout or "").strip().splitlines()
+    detail = summary[-1][:100] if summary else "scale suite"
+    if result.returncode == 0:
+        report.add("MILESTONE GATES", "scale benchmarks", PASS, detail)
+    elif result.returncode == 1:
+        report.add("MILESTONE GATES", "scale benchmarks", FAIL, detail)
+    else:
+        report.add("MILESTONE GATES", "scale benchmarks", BLOCKED, detail)
+
+
+def rclone_drills(report: Report) -> None:
+    """The transfer tests, and whether they actually ran.
+
+    M3-03's gate found three real bugs the moment rclone was installed, and
+    every one of them had been passing as a skip. A skipped transfer test in a
+    release gate is `NOT TESTED` and never a pass — which is the whole reason
+    this is its own gate rather than a line in the suite above.
+    """
+    if shutil.which("rclone") is None:
+        report.add(
+            "MILESTONE GATES", "real-rclone transfer drills", NOT_TESTED,
+            "rclone is not installed on this machine",
+        )
+        return
+    result = run(
+        [sys.executable, "-m", "pytest", "tests/test_transfer_surfaces.py",
+         "tests/test_offline_drives.py", "-q", "--no-header",
+         "-p", "no:cacheprovider", "-rs"],
+        timeout=1800,
+    )
+    text = result.stdout or ""
+    skipped = re.findall(r"SKIPPED \[\d+\] ([^\n]*rclone[^\n]*)", text)
+    summary = text.strip().splitlines()
+    detail = summary[-1][:100] if summary else "transfer suite"
+    if result.returncode != 0:
+        report.add("MILESTONE GATES", "real-rclone transfer drills", FAIL, detail)
+    elif skipped:
+        report.add(
+            "MILESTONE GATES", "real-rclone transfer drills", NOT_TESTED,
+            f"{len(skipped)} skipped despite rclone being installed",
+        )
+    else:
+        report.add("MILESTONE GATES", "real-rclone transfer drills", PASS, detail)
+
+
 # --- E: the container runtime ---------------------------------------------------
 
 RUNTIME_GATES = (
@@ -768,6 +872,12 @@ def render(report: Report, found: dict[str, str]) -> None:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--json", action="store_true", help="Emit the matrix as JSON")
+    parser.add_argument(
+        "--skip-scale",
+        action="store_true",
+        help="leave out the scale benchmarks, which take tens of minutes. They "
+        "are then reported NOT TESTED rather than omitted",
+    )
     args = parser.parse_args(argv)
 
     report = Report()
@@ -777,6 +887,14 @@ def main(argv: list[str] | None = None) -> int:
     changelog(report)
     compose(report)
     suite(report)
+    milestones(report)
+    rclone_drills(report)
+    if args.skip_scale:
+        report.add(
+            "MILESTONE GATES", "scale benchmarks", NOT_TESTED, "--skip-scale was given"
+        )
+    else:
+        scale(report)
     runtime(report, found)
     quality(report)
     documentation(report)

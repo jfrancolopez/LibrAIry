@@ -432,6 +432,95 @@ technical principles moved to `docs/architecture/`, and the seventeen numbered
 phases are archived intact under `docs/history/`, with their known-stale
 statements listed rather than edited away. No behaviour changed.
 
+### When something goes wrong
+
+Every important failure now answers three questions, in this order: **what
+happened, is my Library safe, and what can I do next.** A raw exception is never
+the explanation — the technical detail is still there, one disclosure away, for
+when you are reporting something rather than fixing it.
+
+**LibrAIry will no longer file your library into an unmounted share.** This is
+the one to read twice. When a network share goes away, what is left behind at
+that path is an ordinary empty directory that is writable and looks completely
+normal — and a commit would move your files into it and report success. Those
+files would be inside the container, and gone at the next restart. LibrAIry now
+recognises that the storage under a root is not the storage it started against,
+refuses before it touches a single file, and says so. The same check stops a
+scan of a vanished share from marking your entire library as missing.
+
+Commit and Undo tell the truth about what they did. A commit that stopped no
+longer prints "every file below was copied and verified" above a list of files
+that were not; it says how many moved, that the rest are where they were, why —
+*the destination is full*, *LibrAIry is not allowed to write there*, *the
+destination is read-only* — and what to do. The Undo button is not offered on a
+commit where nothing moved. Undo itself no longer answers a read-only Library
+with a system fault: a permission, a full disk and a share that went away are
+outcomes now, not crashes, and a reversal that had to rename because something
+else occupies the old path says so instead of quietly appending a number.
+
+A failed action in the page no longer looks like a successful one. htmx does not
+swap an error response, so a button whose request failed simply sprang back and
+left the row exactly as it was — which is indistinguishable from it having
+worked. Failures are now shown where the button is and announced to screen
+readers, with no "try again" offered after an operation that may have touched
+files.
+
+### Reading a document, and who sent it
+
+A year of bank statements files itself under the bank that sent them.
+
+LibrAIry reads *who issued* a financial document from the document itself — its
+letterhead, a web address printed on the page, its metadata — and files under
+that, so twelve statements become one folder and one decision in Review rather
+than twelve. There is no list of banks anywhere in it: what it recognises is how
+an organization writes its own name on its own paperwork, which works the same
+for a credit union, a utility or a landlord.
+
+This also fixed something quietly wrong. A statement's first line *is* the
+bank's name, and LibrAIry had been taking the first heading as the document's
+title — so every statement from one bank was called after that bank and wanted
+the same path. Knowing what that line is removes a bad title rather than
+inventing a good one.
+
+A document that says which kind it is now says so: *Bank statement*, *Invoice*,
+*Receipt*, rather than *Financial document* for all three.
+
+### Everything else about being finished
+
+**Accessibility.** The Review queue can be worked through without a mouse.
+Actions announce what they did, focus is kept where you left it, page outlines
+are in order, and nothing is signalled by colour alone.
+
+**On a phone.** Real workflows at 375px rather than "does it fit": paths break
+at a folder instead of mid-filename, run history stacks instead of scrolling out
+of sight, search reaches its results, and buttons are a size a thumb can hit.
+
+**Health is interactive again.** 1,099 ms to 321 ms at a million files. The
+expensive index count moved off the page: it is measured on an idle cycle and
+reported with the moment it was taken — *counted 4 minutes ago* — because those
+numbers describe a moment and not the present tense. If nobody has counted yet,
+it says that, rather than showing a zero nobody measured.
+
+**It survives being killed.** Commit and Undo were killed with `SIGKILL` at four
+points inside a single file operation, repeatedly, and the recovery is bound to
+the bytes rather than to what a row remembers.
+
+**It survives being left running.** Repeated work was measured for what it
+*leaves behind* as well as what it costs. Three slow leaks were found and fixed,
+the worst of which would have stopped the worker with "too many open files"
+after a few hundred idle cycles.
+
+### Before you upgrade
+
+**Take a snapshot of `appdata` first.** The schema migration is **one-way**:
+this release upgrades the database to **schema 62** and no version of LibrAIry
+can take it back down. Rolling back means the previous image *and* the snapshot
+you took before upgrading — not just switching the image back.
+
+**Nothing you have
+configured needs changing.** Every setting added since the last release has a
+working default, and none was removed or renamed.
+
 ## v1.3.1 - 2026-09-01
 
 > `v1.3.0` was tagged and its release run failed before publishing anything — no
