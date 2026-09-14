@@ -2,7 +2,7 @@
 
 Privacy-first, AI-assisted file organization for a NAS or workstation.
 
-LibrAIry watches an inbox, analyzes stable files, stages reviewable proposals, and moves files only after you approve and commit a plan in the web portal. It never deletes user files, never overwrites existing destinations, and treats the existing library as read-only input.
+LibrAIry watches an inbox, analyzes stable files, stages reviewable proposals, and moves files only after you approve and commit a plan in the web portal. It never deletes user files and never overwrites existing destinations. It will also propose changes to the library you already have — a misfiled album, a folder named three different ways — and those go through the same Review and the same Commit, are written to History, and can be undone.
 
 ![The LibrAIry dashboard — what is waiting for review, what needs attention, and what the worker is doing](docs/images/dashboard.png)
 

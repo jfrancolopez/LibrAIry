@@ -213,10 +213,10 @@
             <li><span>failing</span><strong>{{ backups.failing }}</strong></li>
           {% endif %}
           {% if backups.wrong_drive %}
-            <li><span>a different drive is connected</span><strong>{{ backups.wrong_drive }}</strong></li>
+            <li><span>{{ backups.wrong_drive_label }}</span><strong>{{ backups.wrong_drive }}</strong></li>
           {% endif %}
           {% if backups.disconnected %}
-            <li><span>offline drive not connected</span><strong>{{ backups.disconnected }}</strong></li>
+            <li><span>{{ backups.disconnected_label }}</span><strong>{{ backups.disconnected }}</strong></li>
           {% endif %}
           {% if backups.only_here %}
             <li><span>only at a destination</span><strong>{{ "{:,}".format(backups.only_here) }}</strong></li>

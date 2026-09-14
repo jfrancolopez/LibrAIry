@@ -220,6 +220,24 @@ class Overview:
     def any(self) -> bool:
         return self.destinations > 0
 
+    #  The words for the two offline-drive states, read from the one place that
+    #  defines them rather than written again here. The Dashboard had its own
+    #  spellings — "a different drive is connected", which reads as though that
+    #  were fine, and "offline drive not connected", which says not-connected
+    #  twice — and `docs/ui-vocabulary.md` pins both phrases precisely because
+    #  they are easy to paraphrase into something that means something else.
+    @property
+    def wrong_drive_label(self) -> str:
+        from librairy.offline_drives import STATE_LABEL, WRONG_DRIVE
+
+        return STATE_LABEL[WRONG_DRIVE]
+
+    @property
+    def disconnected_label(self) -> str:
+        from librairy.offline_drives import ABSENT, STATE_LABEL
+
+        return STATE_LABEL[ABSENT]
+
     @property
     def needs_looking_at(self) -> int:
         """A disconnected drive is not counted. It is where a drive lives."""

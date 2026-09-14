@@ -159,3 +159,32 @@ def test_empty_states_explain_themselves() -> None:
 
         assert phrase in text
         assert "No data" not in text
+
+
+def test_the_dashboard_uses_the_pinned_words_for_an_offline_drive() -> None:
+    """Two phrases `docs/ui-vocabulary.md` pins, and two the Dashboard had
+    paraphrased into something else.
+
+    "a different drive is connected" reads as though that were a fine state;
+    the pinned phrase is *A different drive is at that path*, said plainly
+    "because 'not connected' would be a lie told while a drive is plugged in".
+    And "offline drive not connected" says not-connected twice about a state
+    that is normal and must never be coloured like a fault.
+
+    Held as an absence in the template plus a reuse of the definition, because
+    the failure mode is somebody writing the idea again in their own words —
+    which is exactly how these two got there.
+    """
+    from librairy.offline_drives import ABSENT, STATE_LABEL, WRONG_DRIVE
+    from librairy.transfer_status import Overview
+
+    markup = (
+        Path("src/librairy/web/templates/partials/dashboard_stats.html")
+        .read_text(encoding="utf-8")
+    )
+    assert "a different drive is connected" not in markup
+    assert "offline drive not connected" not in markup
+
+    overview = Overview(destinations=1)
+    assert overview.wrong_drive_label == STATE_LABEL[WRONG_DRIVE]
+    assert overview.disconnected_label == STATE_LABEL[ABSENT]

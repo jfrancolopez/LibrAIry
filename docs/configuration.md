@@ -7,7 +7,7 @@ Configuration has two layers. Boot-time environment variables define paths, port
 | Variable | Purpose |
 | --- | --- |
 | `HOST_INBOX_DIR` | Host path where you drop files to organize. |
-| `HOST_LIBRARY_DIR` | Host path for organized output and existing read-only library indexing. |
+| `HOST_LIBRARY_DIR` | Host path for the organized library. Files are filed into it, and corrections to what is already there move within it — always through Commit, always journalled. |
 | `HOST_QUARANTINE_DIR` | Host path for reversible duplicate/review quarantine storage. |
 | `HOST_APPDATA_DIR` | Host path for SQLite database, settings, thumbnails, and logs. |
 | `INBOX_DIR` | Container path for inbox, normally `/data/inbox`. |
