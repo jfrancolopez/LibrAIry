@@ -5,15 +5,18 @@ table holds, counts come from SQL, and the number of statements does not grow
 with the number of rows. That rule is the whole scalability story and it was
 only ever enforced on two pages.
 
-This file extends it to Review, Health and Search, and it is deliberately
-uncomfortable reading: three of these tests are `xfail(strict=True)`. They are
-not aspirations. They are defects that M1-01 measured, written down as the
-invariant they violate, so that:
+This file extends it to Review, Health and Search. It began as deliberately
+uncomfortable reading: three of these tests were `xfail(strict=True)` — not
+aspirations but defects M1-01 had measured, written down as the invariant they
+violate, so that:
 
-* the shape of the problem is in the test suite rather than in a report nobody
+* the shape of the problem was in the test suite rather than in a report nobody
   re-reads, and
-* the day one is fixed, `strict=True` turns the unexpected pass into a failure
-  and the marker has to be removed deliberately.
+* the day one was fixed, `strict=True` would turn the unexpected pass into a
+  failure and the marker would have to be removed deliberately.
+
+All three have been removed that way, which is the machinery working. What is
+left is the invariants themselves, asserted plainly.
 
 Populations here are small on purpose. A correlated scan is visible in a query
 plan at ten rows and in a statement count at two hundred; proving it again at a
@@ -335,22 +338,65 @@ def test_the_bounded_surfaces_stay_bounded_at_fifty_thousand(tmp_path) -> None: 
     """The pages that hold, held at a population worth the name.
 
     Deselected by default — it builds fifty thousand rows and takes seconds
-    rather than milliseconds. Run it with `-m scale`. Review and Health are
-    deliberately absent: they do not finish, which is the finding, and a test
-    that waited for them would just be a slow way of saying so.
+    rather than milliseconds. Run it with `-m scale`.
+
+    Review is absent because it is already pinned at every population by
+    `test_review_renders_one_bounded_page` and
+    `test_review_queries_do_not_grow_with_the_findings_table`, which are cheap
+    enough to run on every commit. Health was absent because it did not finish;
+    M4-08 took the index count off the render path and it now costs a flat
+    forty-five statements at any size, so it is asserted here rather than
+    described in a docstring as a known defect it no longer is.
+
+    ## Why the dashboard is now compared against itself
+
+    This said `assert dashboard_queries < 40`, and it failed the first time the
+    release gate ever ran it — at exactly 40, the dashboard having gained
+    backups, destinations, projects and daily metrics since somebody picked the
+    number. Nothing had become slower. The count is 40 at four hundred files,
+    40 at fifty thousand, and 40 at a hundred and fifty thousand.
+
+    A fixed budget is a *proxy* for the thing that matters, and it was the
+    proxy that broke. What a bounded surface promises is that the work does not
+    grow with the library — so that is what is asserted now, by drawing the
+    same page over two populations a hundred and twenty-five times apart and
+    requiring the identical number of statements. A per-row read cannot hide
+    from that, and a new panel does not have to argue with it.
+
+    The ceiling stays underneath as a second, looser assertion, because flat
+    and enormous is still wrong and the growth check alone would not notice.
     """
     from librairy.web.commit_queue import queue_rows, queue_summary
     from librairy.web.dashboard import dashboard_data
+    from librairy.web.health import health_data
     from librairy.web.quarantine import quarantine_data
 
-    conn, settings = build(
-        tmp_path, library=50_000, inbox=2_000, findings=1_000, quarantine=1_000, history=5_000
-    )
-    counting = Counting(conn)
+    def drawn(root: Path, library: int):  # noqa: ANN202
+        conn, settings = build(
+            root, library=library, inbox=2_000, findings=1_000,
+            quarantine=1_000, history=5_000,
+        )
+        dashboard, health = Counting(conn), Counting(conn)
+        dashboard_data(dashboard, settings)
+        health_data(health, settings)
+        return conn, settings, len(dashboard.queries), len(health.queries)
 
-    dashboard_data(counting, settings)
-    dashboard_queries = len(counting.queries)
-    assert dashboard_queries < 40, f"{dashboard_queries} statements behind the dashboard"
+    *_, few_dashboard, few_health = drawn(tmp_path / "four-hundred", 400)
+    conn, settings, dashboard, health = drawn(tmp_path / "fifty-thousand", 50_000)
+
+    assert dashboard == few_dashboard, (
+        f"the dashboard costs {few_dashboard} statements at four hundred files and "
+        f"{dashboard} at fifty thousand; something in it reads the library per row"
+    )
+    assert health == few_health, (
+        f"Health costs {few_health} statements at four hundred files and {health} at "
+        f"fifty thousand; the index count is back on the render path"
+    )
+    #  Flat and enormous is still wrong.
+    assert dashboard < 60, f"{dashboard} statements behind the dashboard"
+    assert health < 60, f"{health} statements behind Health"
+
+    counting = Counting(conn)
 
     before = len(counting.queries)
     queue_summary(counting)

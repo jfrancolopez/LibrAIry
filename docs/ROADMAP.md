@@ -1763,6 +1763,22 @@ LibrAIry has been *used* rather than worked on.
 | **Health at 1M** | DONE 2026-09-14 — 1,099 ms to **321 ms**, by reading an observation rather than taking one. The index population is measured on an idle cycle and reported with its age; a query that asked the library about the backup queue now asks the backup queue. `docs/performance.md` |
 | **Scale and soak** | DONE 2026-09-14 — repeated work measured for what it *costs* and, separately, for what it *leaves behind*. Three drifts, and the cheapest-looking one was the worst: the worker leaked a file descriptor per idle cycle and would have stopped with "too many open files" after a few hundred. `scripts/soak.py`, `tests/test_soak.py` |
 | **Cross-feature regression scenarios** | DONE 2026-09-09 — eight stories that cross subsystem boundaries, in `tests/test_cross_feature_scenarios.py`, with the rules that hold at every step of every one of them in `tests/support/scenario.py`. Two seam bugs, both of them a 500 from a button: undoing a reversal a scan had already found, and approving a decision with nowhere to go |
+| **Release-candidate gate** | DONE 2026-09-14 — the acceptance script ran the four milestones' own suites as named gates, and the scale benchmarks for the first time ever: they had been `--skip-scale`'d since they were written, and the first real run failed. 2.0.0 prepared as a candidate, not tagged. `scripts/release_acceptance.py`, [release-acceptance.md](release-acceptance.md) |
+
+### Carried out of M4
+
+* **NAS responsiveness under load** — still production validation. `--observe`
+  is safe to run on the box; nothing here can stand in for it.
+* **Three statements the Dashboard issues twice** — `SELECT COUNT(*) FROM
+  proposals WHERE status='proposed'`, `SELECT * FROM backup_destinations ORDER
+  BY name COLLATE NOCASE` and `SELECT MAX(day) FROM metrics_daily`, each read
+  by two panels that do not know about each other. Found while working out why
+  the dashboard had reached forty statements. Flat with population and cheap,
+  so it is waste rather than a defect; sharing one read between the panels
+  means threading a value through the composition and that is not a thing to
+  do to a release candidate. Recorded, not built.
+* **`test_scale.py` and `test_scale_surfaces.py` hold the same rule twice** —
+  the split is historical. One file, after the release.
 
 The standard both are measured against, and the one the rest of M4 inherits:
 
