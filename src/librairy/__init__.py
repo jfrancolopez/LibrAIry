@@ -18,4 +18,4 @@ shows it against this line.
 
 from __future__ import annotations
 
-__version__ = "1.3.1"
+__version__ = "2.0.0"

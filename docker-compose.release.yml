@@ -17,7 +17,7 @@
 
 services:
   librairy:
-    image: ghcr.io/jfrancolopez/librairy:v1.3.1
+    image: ghcr.io/jfrancolopez/librairy:v2.0.0
     container_name: librairy
     user: "${LIBRAIRY_USER:-0:0}"
     env_file:

@@ -1,6 +1,31 @@
 # Changelog
 
-## Unreleased
+## v2.0.0 - 2026-09-14
+
+The major, and not because there is a lot of it.
+
+**What LibrAIry is for changed.** It used to take files from an Inbox and file
+them into a Library it otherwise left alone. It now works on the library you
+already have — reading what is in it, proposing corrections to it, and copying
+it somewhere else on purpose — and it answers a *decision* rather than a file,
+so an album of three thousand photographs is one thing to say yes to. Nothing
+about that is more of what 1.3.1 did.
+
+The rules underneath are the same rules. Nothing touches a file without
+Commit, every commit is one Undo, and a decision the evidence cannot support
+is refused rather than guessed. What grew is the number of things the program
+is willing to have an opinion about, and the number of ways it will tell you
+it does not have one.
+
+### Before you upgrade
+
+**Take a snapshot of `appdata` first.** The schema migration is **one-way**:
+this release upgrades the database to **schema 62** and no version of LibrAIry
+can take it back down. Rolling back means the previous image *and* the snapshot
+you took before upgrading — not just switching the image back.
+
+**Nothing you have configured needs changing.** Every setting added since the
+last release has a working default, and none was removed or renamed.
 
 ### Review
 
@@ -509,17 +534,6 @@ the bytes rather than to what a row remembers.
 *leaves behind* as well as what it costs. Three slow leaks were found and fixed,
 the worst of which would have stopped the worker with "too many open files"
 after a few hundred idle cycles.
-
-### Before you upgrade
-
-**Take a snapshot of `appdata` first.** The schema migration is **one-way**:
-this release upgrades the database to **schema 62** and no version of LibrAIry
-can take it back down. Rolling back means the previous image *and* the snapshot
-you took before upgrading — not just switching the image back.
-
-**Nothing you have
-configured needs changing.** Every setting added since the last release has a
-working default, and none was removed or renamed.
 
 ## v1.3.1 - 2026-09-01
 

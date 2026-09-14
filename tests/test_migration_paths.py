@@ -6,11 +6,12 @@ nothing at all about the case that actually costs somebody their afternoon:
 
     an installation that has been running for a year, upgrading
 
-That path has been walked in anger exactly once — v1.2.0 shipped schema 10 and
-v1.3.1 arrived at 47, thirty-seven migrations in a single release — and the
-roadmap calls it load-bearing for that reason. So each released schema is built
-here, **populated the way a real installation is populated**, and then migrated
-to head with its rows checked afterwards.
+That path has been walked in anger twice — v1.2.0 shipped schema 10 and v1.3.1
+arrived at 47, thirty-seven migrations in a single release, and v2.0.0 carried
+it fifteen further to 62 — and the roadmap calls it load-bearing for that
+reason. So each released schema is built here, **populated the way a real
+installation is populated**, and then migrated to head with its rows checked
+afterwards.
 
 Populated is the point. An empty database migrates through anything: the
 migrations that can fail are the ones that rewrite rows, add a `NOT NULL`
@@ -22,9 +23,10 @@ that migrates nothing proves that the SQL parses.
     v1.0.0   schema 4
     v1.2.0   schema 10
     v1.3.1   schema 47
+    v2.0.0   schema 62
 
 Written down because they are history, and history is not derivable from the
-current source. If a fourth release happens, its schema is added here by hand,
+current source. If a fifth release happens, its schema is added here by hand,
 by somebody who knows what shipped.
 """
 
@@ -45,6 +47,12 @@ RELEASED_SCHEMAS = {
     "v1.0.0": 4,
     "v1.2.0": 10,
     "v1.3.1": 47,
+    #  Recorded when the release section was written rather than when the tag
+    #  was pushed, because `test_every_release_in_the_changelog_has_a_schema_
+    #  recorded` reads the changelog: the moment a version stops being
+    #  "Unreleased" it needs its schema here. Upgrading *from* 62 is a no-op
+    #  today; the line earns its keep at the release after this one.
+    "v2.0.0": 62,
 }
 
 

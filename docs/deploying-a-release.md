@@ -35,7 +35,7 @@ docker compose -p librairy -f docker-compose.release.yml up -d
 Pin the exact version, never `latest`:
 
 ```yaml
-image: ghcr.io/jfrancolopez/librairy:v1.3.1
+image: ghcr.io/jfrancolopez/librairy:v2.0.0
 ```
 
 `latest` moves. A version tag does not, and the image carries

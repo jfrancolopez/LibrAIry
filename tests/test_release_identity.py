@@ -35,12 +35,22 @@ def _tags() -> list[str]:
     ).stdout.split()
 
 
-def test_this_release_is_1_3_1_and_the_schema_moved_twelve_times_since() -> None:
-    """The released version, and the schema main is on.
+def test_this_release_is_2_0_0_and_it_carried_the_schema_from_47_to_62() -> None:
+    """The released version, and the schema it takes a database to.
 
     A release number is not a schema change and a schema change is not a
-    release: 1.3.1 shipped on 47, which is what acceptance passed on. Twelve
-    unreleased migrations since, and each one is a sentence:
+    release. This time they are one story: 1.3.1 shipped on 47, and 2.0.0 is
+    the fifteen migrations since, reaching a version number.
+
+    **Why the major, and not 1.4.0.** Not because fifteen is a lot. Because
+    what the program promises changed: Review answers a decision rather than a
+    file, an existing Library is something LibrAIry will correct rather than
+    only read, and a destination is a thing the program writes to on purpose.
+    Somebody upgrading is not getting more of what they had. They are also
+    crossing a one-way schema migration, and a major number is the only part
+    of a version string that anybody reads as *stop and check*.
+
+    Each of the fifteen is a sentence:
 
     * **48** indexes the other end of a `similar_media_flags` pair, so Review
       can find an arrival's twin by a seek instead of a scan.
@@ -89,7 +99,7 @@ def test_this_release_is_1_3_1_and_the_schema_moved_twelve_times_since() -> None
     The number is written down here so that changing it is a deliberate act
     with a sentence attached, rather than something noticed at upgrade time.
     """
-    assert __version__ == "1.3.1"
+    assert __version__ == "2.0.0"
     assert SCHEMA_VERSION == 62  # noqa: PLR2004
 
 
@@ -196,11 +206,17 @@ def test_the_release_body_tells_an_operator_to_snapshot_before_upgrading() -> No
 
 
 def test_the_release_notes_say_no_configuration_has_to_change() -> None:
-    """Thirteen settings were added since 1.2.0 and none removed. An operator
-    reading the notes should not have to work that out from a diff."""
+    """Settings were added in this release and none removed. An operator
+    reading the notes should not have to work that out from a diff.
+
+    Matched with the whitespace collapsed, because the previous form held the
+    newline from an 80-column wrap inside the phrase — which quietly made the
+    test an assertion about where a line breaks, and made the honest way to
+    satisfy it a paragraph broken in the wrong place.
+    """
     release = CHANGELOG.split(f"## v{__version__} - ", 1)[1].split("\n## v", 1)[0]
 
-    assert "Nothing you have\nconfigured needs changing" in release
+    assert "Nothing you have configured needs changing" in " ".join(release.split())
 
 
 def test_the_workflow_still_stamps_the_commit_it_built_from() -> None:
@@ -230,8 +246,8 @@ def test_a_tag_that_published_nothing_is_not_recorded_as_a_release() -> None:
 
 
 def test_the_workflow_guard_would_refuse_the_abandoned_tag() -> None:
-    """Pushing `v1.3.0` again must not publish: the source now says 1.3.1, and
-    the guard compares the two before it logs in to any registry."""
+    """Pushing `v1.3.0` again must not publish: the source has moved past it,
+    and the guard compares the two before it logs in to any registry."""
     assert 'tag_version="${GITHUB_REF_NAME#v}"' in WORKFLOW
     assert '"${tag_version}" != "${source_version}"' in WORKFLOW
     # The changelog check is the second half: v1.3.0 has no released section.
