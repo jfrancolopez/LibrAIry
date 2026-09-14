@@ -206,10 +206,17 @@ def candidate(
         return None
     kind = facts.get("type", "")
     title = facts.get("title", "")
+    #  The owner's own tag before an organization this program read off a
+    #  letterhead, and the order matters now that it can read one. Two invoices
+    #  for one renovation come from two different firms: grouping by issuer
+    #  makes them two sets of one and silently discards the thing the owner
+    #  actually said about them. An organization is evidence; a tag is somebody
+    #  telling LibrAIry these belong together, and explicit outranks derived
+    #  everywhere else in this program too.
     for found in (
         _series(category, title),
-        _set(category, kind, facts.get("organization", "")),
         _tagged(category, kind, facts.get("tag", "")),
+        _set(category, kind, facts.get("organization", "")),
     ):
         if found is not None:
             return found

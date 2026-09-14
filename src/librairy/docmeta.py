@@ -111,6 +111,39 @@ _FINANCIAL_WORDS = re.compile(
     r"tax invoice|payment receipt|amount due|billing period)\b"
 )
 
+#  Which kind of financial document, from the words the paperwork uses for
+#  itself. Not a finer *category* — everything here still files under
+#  `Documents/Financial` — but a finer thing to say, and the difference a group
+#  heading needs: "Bank statements from Northcrest Bank" is a set somebody
+#  recognises, "Financial documents from Northcrest Bank" is a filing cabinet.
+STATEMENT = "statement"
+INVOICE = "invoice"
+RECEIPT = "receipt"
+
+FORM_LABEL = {
+    STATEMENT: "Bank statement",
+    INVOICE: "Invoice",
+    RECEIPT: "Receipt",
+}
+
+#  Ordered by how much each phrase proves. "Statement period" is printed on
+#  statements and almost nothing else; "amount due" appears on an invoice and on
+#  the payment slip of a statement, so it is the weakest and comes last.
+_FINANCIAL_FORMS = (
+    (STATEMENT, re.compile(r"(?i)\b(account statement|statement period|statement of account)\b")),
+    (INVOICE, re.compile(r"(?i)\b(tax invoice|invoice number|invoice no\.?|billing period)\b")),
+    (RECEIPT, re.compile(r"(?i)\b(payment receipt|receipt number|paid in full)\b")),
+)
+
+
+def financial_form(text: str) -> str:
+    """Which kind of financial document this is, or "" if the words do not say."""
+    head = _plain(str(text or "")[:FRONT_CHARS])
+    for form, pattern in _FINANCIAL_FORMS:
+        if pattern.search(head):
+            return form
+    return ""
+
 
 @dataclass(frozen=True)
 class DocumentFacts:
@@ -145,6 +178,22 @@ class DocumentFacts:
     #  reader, or a tool that is not installed — which is a normal outcome and
     #  never an error.
     read: bool = False
+    #  Who issued it, when the document says so on its own letterhead. Read
+    #  here, where the front matter is already in memory, and stored as the
+    #  answer rather than as the text: caching four thousand characters per
+    #  document to re-derive one name would be four gigabytes at a million
+    #  files. See `librairy/issuer.py` for why no institution is named there.
+    organization: str = ""
+    organization_confidence: float = 0.0
+    organization_sources: tuple[str, ...] = field(default_factory=tuple)
+    #  Two readable sources naming different organizations. Carried rather than
+    #  resolved, into the conflict model `document_identity` already owns.
+    organization_contested: bool = False
+    #  Which kind of financial document, where the paperwork says. "Financial
+    #  document" is true of a statement and an invoice alike, and a group
+    #  heading built on it would put this month's electricity bill under the
+    #  same heading as a bank statement.
+    form: str = ""
     sources: tuple[tuple[str, str], ...] = field(default_factory=tuple)
 
     @property
@@ -154,6 +203,8 @@ class DocumentFacts:
 
     @property
     def label(self) -> str:
+        if self.form:
+            return FORM_LABEL.get(self.form, TYPE_LABEL.get(self.kind, ""))
         return TYPE_LABEL.get(self.kind, TYPE_LABEL[UNKNOWN])
 
     @property
@@ -266,6 +317,11 @@ def _as_payload(facts: DocumentFacts) -> dict:
         "ocr_title": facts.ocr_title,
         "ocr_read": facts.ocr_read,
         "ocr_wanted": facts.ocr_wanted,
+        "organization": facts.organization,
+        "organization_confidence": facts.organization_confidence,
+        "organization_sources": list(facts.organization_sources),
+        "organization_contested": facts.organization_contested,
+        "form": facts.form,
         "sources": [list(pair) for pair in facts.sources],
     }
 
@@ -287,6 +343,13 @@ def _from_payload(payload: dict) -> DocumentFacts:
         ocr_title=str(payload.get("ocr_title") or ""),
         ocr_read=bool(payload.get("ocr_read")),
         ocr_wanted=bool(payload.get("ocr_wanted")),
+        organization=str(payload.get("organization") or ""),
+        organization_confidence=float(payload.get("organization_confidence") or 0.0),
+        organization_sources=tuple(
+            str(name) for name in payload.get("organization_sources") or []
+        ),
+        organization_contested=bool(payload.get("organization_contested")),
+        form=str(payload.get("form") or ""),
         sources=tuple(
             (str(pair[0]), str(pair[1]))
             for pair in payload.get("sources") or []
@@ -378,6 +441,25 @@ def _pdf(path: Path, settings: Settings, *, run, ocr=None) -> DocumentFacts:  # 
     #  Comparing the three is somebody else's job — see `document_identity`.
     title = embedded or content or ocr_title
     year = _year(info.get("CreationDate", "")) or _year(title)
+    kind = classify(title=title, text=searchable, isbn=isbn, doi=doi, suffix=".pdf")
+    #  Only where it is the question. A manual's manufacturer already comes off
+    #  the Author field and a paper's author is its author; reading a letterhead
+    #  on every PDF in a library would be work done to be ignored.
+    found = _issuer(kind, searchable, author)
+    if found.name:
+        sources.append(("who issued it", found.name))
+        #  And it is therefore *not* the title. This is the whole defect the
+        #  roadmap carried: the first line of a statement is the bank's name,
+        #  the first heading is taken as the document's title, and so a year of
+        #  statements were all called `NORTHCREST BANK, N.A.pdf` and all wanted
+        #  one path. The heading was read correctly and understood as the wrong
+        #  thing; knowing what it is removes a bad candidate rather than
+        #  inventing a good one, and the filename — which the person chose, and
+        #  which differs per statement — is what names the file instead.
+        if content and _names_the_issuer(content, found.name):
+            sources = [pair for pair in sources if pair != ("first page", content)]
+            content = ""
+            title = embedded or ocr_title
     return DocumentFacts(
         title=title,
         author=author,
@@ -386,7 +468,12 @@ def _pdf(path: Path, settings: Settings, *, run, ocr=None) -> DocumentFacts:  # 
         year=year,
         isbn=isbn,
         doi=doi,
-        kind=classify(title=title, text=searchable, isbn=isbn, doi=doi, suffix=".pdf"),
+        kind=kind,
+        organization=found.name,
+        organization_confidence=found.confidence,
+        organization_sources=found.sources,
+        organization_contested=found.contested,
+        form=financial_form(searchable) if kind == FINANCIAL else "",
         scanned=scanned,
         read=bool(info or text or ocr_read),
         embedded_title=embedded,
@@ -396,6 +483,43 @@ def _pdf(path: Path, settings: Settings, *, run, ocr=None) -> DocumentFacts:  # 
         ocr_wanted=scanned,
         sources=tuple(sources),
     )
+
+
+def _names_the_issuer(heading: str, organization: str) -> bool:
+    """Is this heading the organization's name rather than a document title?
+
+    Through `issuer`'s own agreement rule, so "the letterhead and the metadata
+    name the same organization" and "the heading is the organization" are one
+    definition and not two that can drift apart.
+    """
+    from librairy.issuer import names_the_same
+
+    return names_the_same(heading, organization)
+
+
+def _issuer(kind: str, text: str, author: str):  # noqa: ANN001, ANN202
+    """Who sent this, for the kinds of document where that is the question.
+
+    A financial document is the case the roadmap carried: its first line is the
+    organization's name, `docmeta` takes the first heading as a title, and so a
+    year of statements were all called after their bank and all wanted one path.
+    """
+    from librairy.issuer import Issuer, read
+
+    if kind != FINANCIAL:
+        return Issuer()
+    return read(text, author="" if _looks_like_software(author) else author)
+
+
+#  Names a PDF producer writes into the Author field when nobody filled one in.
+#  The same rule `classify/documents.py` applies to a manual's manufacturer,
+#  shared rather than written twice: treating `Acrobat Distiller` as the issuer
+#  would file somebody's statements under the software that made them.
+def _looks_like_software(author: str) -> bool:
+    from librairy.classify.documents import _NOT_AN_ORGANIZATION
+
+    value = " ".join(str(author or "").split())
+    return not value or bool(_NOT_AN_ORGANIZATION.match(value))
 
 
 def _pdfinfo(path: Path, *, run) -> dict[str, str]:  # noqa: ANN001

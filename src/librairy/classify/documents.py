@@ -58,6 +58,16 @@ class ClassificationResult:
     #  document out of the held list: `waiting` exists for files nothing could
     #  say anything about, and a disagreement is the opposite of one.
     ask: bool = False
+    #  The template this destination was rendered from, when it was chosen from
+    #  the document's own evidence rather than from the category's style
+    #  setting. `librairy/classify/__init__.py` re-renders every result at the
+    #  end of analysis so that a per-category style takes effect — and, until
+    #  this field existed, that threw the document hierarchy away: a manual
+    #  filed here as `Documents/Manuals/Honda Motor Co./…` reached the database
+    #  as `Documents/2024/…`, because the generic `documents` template is what a
+    #  style lookup returns. The branch is evidence, not preference, and a
+    #  preference must not overwrite it.
+    template: str = ""
 
 
 def classify_document_like(
@@ -172,6 +182,15 @@ def classify_document_like(
         #  `scan-0473.pdf` used to score 0.45 and sit in Review forever.
         if _named_itself(identity):
             confidence = 0.88
+        elif _issuer_named_it(facts):
+            #  It said who sent it and what kind of document it is, which is
+            #  what a statement has instead of a title — its own first line is
+            #  its bank's name, not a name for itself. Scored at what the
+            #  reading was actually worth rather than at a flat number, which is
+            #  what keeps a weak extraction weak: only two independent sources
+            #  agreeing reaches the threshold that files anything, and a bare
+            #  domain or a lone metadata field stays where it was and asks.
+            confidence = max(0.72, facts.organization_confidence)
         else:
             confidence = 0.45 if _ambiguous_document(title) else 0.72
         clean_name = document_name(title, suffix)
@@ -179,7 +198,7 @@ def classify_document_like(
         evidence.append(EvidenceEntry("heuristic", "category", "document extension", confidence))
         if facts is not None and facts.read:
             fields["document_type"] = facts.kind
-        branch = _document_branch(facts, fields, evidence)
+        branch = _document_branch(facts, fields, evidence, settings)
         if branch:
             #  A deliberate branch of the Documents hierarchy, chosen from what
             #  the document established about itself. Rendered through the same
@@ -204,6 +223,7 @@ def classify_document_like(
                 return ClassificationResult(
                     category, clean_name, rendered.relpath, confidence,
                     tuple(evidence), fields, None, ask=identity.contested,
+                    template=branch,
                 )
     elif suffix in ARCHIVE_EXTS:
         category = "misc"
@@ -419,6 +439,24 @@ def _year_from_name(value: str) -> int | None:
     return int(match.group(1)) if match else None
 
 
+def _issuer_named_it(facts) -> bool:  # noqa: ANN001
+    """Did the document identify the organization that issued it?
+
+    Uncontested only. Two readable sources naming different organizations is a
+    question, and a question must not raise a confidence — it is the reason the
+    proposal should be looked at.
+    """
+    from librairy.docmeta import FINANCIAL
+
+    return bool(
+        facts is not None
+        and facts.read
+        and facts.kind == FINANCIAL
+        and facts.organization
+        and not facts.organization_contested
+    )
+
+
 def _ambiguous_document(title: str) -> bool:
     return bool(re.fullmatch(r"(?i)(scan|img|doc|document)\s*\d*", title.strip()))
 
@@ -432,7 +470,23 @@ _NOT_AN_ORGANIZATION = re.compile(
 )
 
 
-def _document_branch(facts, fields: dict[str, object], evidence: list) -> str:  # noqa: ANN001
+def _worth_filing_on(facts, settings: Settings) -> bool:  # noqa: ANN001
+    """Is this reading strong enough to name a folder after?
+
+    The owner's own `confidence_threshold`, not a number of this module's own:
+    "how sure does LibrAIry have to be before it files something" is one
+    question with one answer, and a second one here would be a second policy
+    nobody set.
+    """
+    return bool(
+        facts.organization
+        and facts.organization_confidence >= settings.confidence_threshold
+    )
+
+
+def _document_branch(  # noqa: ANN001
+    facts, fields: dict[str, object], evidence: list, settings: Settings
+) -> str:
     """Which branch of the Documents hierarchy this document has earned.
 
     Only the broad types the classifier can actually support, and only from
@@ -441,7 +495,14 @@ def _document_branch(facts, fields: dict[str, object], evidence: list) -> str:  
     """
     from librairy.docmeta import FINANCIAL, MANUAL, PAPER
 
-    if facts is None or not facts.read or not facts.identified:
+    if facts is None or not facts.read:
+        return ""
+    #  A financial document's identity is *who sent it*, not what it is called.
+    #  Every other type here needs a title before it has earned a branch; a
+    #  statement whose letterhead names its bank has established more about
+    #  itself than one with a title and no issuer, and requiring a title as well
+    #  would refuse exactly the documents this reads.
+    if facts.kind != FINANCIAL and not facts.identified:
         return ""
     if facts.kind == MANUAL:
         organization = _organization(facts)
@@ -462,6 +523,39 @@ def _document_branch(facts, fields: dict[str, object], evidence: list) -> str:  
         else:
             fields.pop("year", None)
     elif facts.kind == FINANCIAL:
+        if facts.organization:
+            #  Always shown, at what it was actually worth. An organization read
+            #  off a document is only reviewable if a person can see the name,
+            #  what said so, and how sure it is.
+            evidence.append(
+                EvidenceEntry(
+                    "document",
+                    "organization",
+                    facts.organization,
+                    facts.organization_confidence,
+                    note=_provenance(facts.organization_sources),
+                )
+            )
+        if facts.organization_contested:
+            #  Two sources naming different organizations. Reported rather than
+            #  resolved: a folder is where a question goes to stop being asked.
+            evidence.append(
+                EvidenceEntry(
+                    "document",
+                    "conflict",
+                    f"{_provenance(facts.organization_sources)} do not agree about "
+                    "who issued this.",
+                    facts.organization_confidence,
+                )
+            )
+        elif _worth_filing_on(facts, settings):
+            #  And only now does it choose a folder. A directory named after an
+            #  organization is a claim that this document came from it, so it is
+            #  held to the same threshold as every other claim that files
+            #  something — which is what keeps `brightwater.example`, a domain
+            #  label and nothing else, out of `Documents/Financial/Brightwater/`
+            #  while still telling somebody it was there.
+            fields["organization"] = facts.organization
         if facts.year:
             fields["year"] = facts.year
         else:
@@ -470,6 +564,21 @@ def _document_branch(facts, fields: dict[str, object], evidence: list) -> str:  
             #  drawer labelled with the wrong year.
             fields.pop("year", None)
     return document_template(facts.kind, fields)
+
+
+def _provenance(sources: tuple[str, ...]) -> str:
+    """What said so, in the words the evidence line prints.
+
+    The provenance is the point: an organization read off a document is only
+    reviewable if a person can see whether it came from the letterhead, the web
+    address, the metadata, or two of them agreeing.
+    """
+    names = [name for name in sources if name]
+    if not names:
+        return ""
+    if len(names) == 1:
+        return f"from {names[0]}"
+    return "from " + " and ".join((", ".join(names[:-1]), names[-1]))
 
 
 def _organization(facts) -> str:  # noqa: ANN001

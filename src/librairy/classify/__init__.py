@@ -32,7 +32,7 @@ from librairy.proposals import upsert_proposal
 from librairy.resources import processing_mode
 from librairy.scanner import ready_items
 from librairy.settings_service import effective_settings
-from librairy.taxonomy import render_destination
+from librairy.taxonomy import render_destination, render_template
 
 CASCADE_EVIDENCE_SOURCES = (
     "heuristic",
@@ -461,11 +461,33 @@ def _enriched(
 
 
 def _with_runtime_destination(conn: sqlite3.Connection, settings: Settings, result):
+    """Apply the owner's per-category style — without overruling the evidence.
+
+    This exists so a style somebody chose in Settings takes effect on work the
+    classifier did without knowing about it. It used to re-render *everything*,
+    which silently discarded the Documents hierarchy: a manual the classifier
+    filed as `Documents/Manuals/Honda Motor Co./2024 CR-V Owner's Manual.pdf`
+    reached the database as `Documents/2024/2024 CR-V Owner's Manual.pdf`,
+    because a style lookup for `documents` returns the generic dated template
+    and knows nothing about manuals, papers or statements.
+
+    A style is a preference. A branch chosen from what the document said about
+    itself is evidence. Preference does not overwrite evidence, so a result that
+    carries its own template keeps its destination and only revalidates it.
+    """
     if result.confidence < settings.confidence_threshold:
         return replace(result, dest_relpath=None, reason="below confidence threshold")
-    rendered = render_destination(
-        result.category, result.fields, library_root=settings.library_dir, conn=conn
-    )
+    if getattr(result, "template", ""):
+        rendered = render_template(
+            result.template,
+            result.category,
+            result.fields,
+            library_root=settings.library_dir,
+        )
+    else:
+        rendered = render_destination(
+            result.category, result.fields, library_root=settings.library_dir, conn=conn
+        )
     result = replace(result, dest_relpath=rendered.relpath, reason=rendered.reason)
     return _fitted_to_library(conn, result)
 

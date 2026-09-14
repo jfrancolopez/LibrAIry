@@ -123,7 +123,16 @@ DOCUMENT_TEMPLATES = {
         ("organization", "Documents/Manuals/{organization}/{clean_name}"),
         ((), "Documents/Manuals/{clean_name}"),
     ),
+    #  Who sent it, then when. A year of statements from one bank belongs
+    #  together — that is the folder somebody goes to — and the year inside it
+    #  is how a long relationship stays navigable. Both rungs are optional and
+    #  each absence removes structure rather than inventing `Unknown Issuer/`.
     "financial": (
+        (
+            ("organization", "year"),
+            "Documents/Financial/{organization}/{year}/{clean_name}",
+        ),
+        ("organization", "Documents/Financial/{organization}/{clean_name}"),
         ("year", "Documents/Financial/{year}/{clean_name}"),
         ((), "Documents/Financial/{clean_name}"),
     ),
@@ -145,7 +154,10 @@ def document_template(kind: str, fields: dict[str, Any]) -> str:
     after a thing nobody established.
     """
     for token, template in DOCUMENT_TEMPLATES.get(kind, ()):
-        if not token or fields.get(token):
+        #  A rung may need more than one field — `{organization}/{year}` is the
+        #  deepest financial branch and is only earned when both were read.
+        needed = token if isinstance(token, tuple) else (token,) if token else ()
+        if all(fields.get(name) for name in needed):
             return template
     return ""
 

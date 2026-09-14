@@ -61,6 +61,8 @@ and `Dismiss suggestion` change no file at all.
 | **A commit was interrupted** | a commit whose process stopped part way through. Deliberately *not* the phrase above, which belongs to a backup run: a commit's outcome is known file by file, because each operation recorded its own result as it went. So this says how far it got and that committing again carries on from there — never *failed*, and never *succeeded* |
 | **Send to Offline Backup → &lt;drive&gt;** | copy this folder or file to an attached drive, **once**. Not *Back up*, which sounds recurring, and not *Sync*, which sounds two-way and destructive. Shown only where it can work, and it never configures a recurring backup — that is Settings, on purpose |
 | **Identified by its marker file only** | the drive was recognised, and the operating system could not say what filesystem it is. Less checking than happened at registration, so it is said rather than shown as a full check |
+| **Organization** | who issued a document, read from the document's own letterhead, web address or metadata — never from a list of companies. Shown with what said so, because an extracted name is only reviewable if a person can see its provenance |
+| **Bank statement** / **Invoice** / **Receipt** | which kind of financial document, where the paperwork says so. *Financial document* remains the fallback for one that does not say, and is never used as a group heading when a finer word was earned |
 | **Project** | files that belong together, wherever they live — a view, never a place |
 | **Project folder** | `Projects/{project}/` — a filing destination on disk |
 | **Undo** | reverse something that actually happened |

@@ -237,7 +237,7 @@ def test_a_held_file_blocks_nothing(tmp_path: Path) -> None:
     ).fetchone()[0] == 0
     #  And the rest of the batch got everything it was owed.
     seen = picture(conn)
-    assert ("tagged_set", "Financial documents tagged #ProjectHouse") in seen["groups"]
+    assert ("tagged_set", "Invoices tagged #ProjectHouse") in seen["groups"]
     assert ("book_series", "A Wizard of Earthsea") in seen["groups"]
 
 

@@ -560,7 +560,8 @@ and a tag and a rule still reach a destination by the same single path.
   not a resource-modes pass.
 * **NAS responsiveness under load** cannot be measured on the test rig. It
   belongs to production validation.
-* **An organization on a financial document.** M2-06's `document_set` needs
+* ~~**An organization on a financial document.**~~ **DONE 2026-09-14** —
+  `librairy/issuer.py`. M2-06's `document_set` needs
   one and nothing reads a bank's name off a statement, so a year of statements
   groups only if somebody tags them.
 
@@ -1159,7 +1160,7 @@ the page as well as in the model:
   own. Unchanged by M3.
 * **NAS responsiveness under load** — production validation, not reachable
   from the test rig.
-* **An organization on a financial document** — M2-06's `document_set` still
+* ~~**An organization on a financial document**~~ **DONE 2026-09-14.** M2-06's `document_set` still
   needs one.
 * **The destination listing holds the whole listing in memory** — 201 MB at a
   million files, measured and documented. Reducing it means not materialising
@@ -1756,6 +1757,7 @@ LibrAIry has been *used* rather than worked on.
 | **Mobile usability** | DONE 2026-09-09 — real workflows at 375px rather than "does it fit": paths that break at a folder, a run history that stacks instead of scrolling out of sight, a search that reaches its results, and targets a thumb can hit. `tests/test_mobile.py` |
 | **Accessibility** | DONE 2026-09-09 — real workflows rather than a score: the Review queue worked through without a mouse, page outlines, field names, what a swap announces, and what a disclosure says about itself. `tests/test_accessibility.py` |
 | **Error states** | DONE 2026-09-09 — every important failure answers *what happened / is my Library safe / what can I do next*, and none of them claims safety the state does not prove. Found the worst defect of the milestone: a commit into an unmounted share filed the person's library inside the container and reported success. `librairy/failures.py`, `librairy/roots.py`, `tests/test_error_states.py` |
+| **An organization on a financial document** | DONE 2026-09-14 — read from the document's own letterhead, web address and metadata, with no institution named anywhere in it. Found the defect that made it matter: a statement's first line is its bank's name, and it was being taken as the document's title. `librairy/issuer.py`, `tests/test_issuer.py` |
 | **Health at 1M** | DONE 2026-09-14 — 1,099 ms to **321 ms**, by reading an observation rather than taking one. The index population is measured on an idle cycle and reported with its age; a query that asked the library about the backup queue now asks the backup queue. `docs/performance.md` |
 | **Scale and soak** | DONE 2026-09-14 — repeated work measured for what it *costs* and, separately, for what it *leaves behind*. Three drifts, and the cheapest-looking one was the worst: the worker leaked a file descriptor per idle cycle and would have stopped with "too many open files" after a few hundred. `scripts/soak.py`, `tests/test_soak.py` |
 | **Cross-feature regression scenarios** | DONE 2026-09-09 — eight stories that cross subsystem boundaries, in `tests/test_cross_feature_scenarios.py`, with the rules that hold at every step of every one of them in `tests/support/scenario.py`. Two seam bugs, both of them a 500 from a button: undoing a reversal a scan had already found, and approving a decision with nowhere to go |

@@ -338,7 +338,10 @@ def test_coherent_documents_under_one_tag_are_one_decision(tmp_path: Path) -> No
 
     conn, _ = analysed(tmp_path, build)
 
-    assert groups(conn) == [(TAGGED, "Financial documents tagged #ProjectHouse", 2)]
+    #  "Invoices", not "Financial documents": the paperwork says which kind of
+    #  financial document it is, and a heading that says so is the difference
+    #  between a set somebody recognises and a filing cabinet.
+    assert groups(conn) == [(TAGGED, "Invoices tagged #ProjectHouse", 2)]
 
 
 def test_nothing_outside_documents_and_books_is_looked_at() -> None:
