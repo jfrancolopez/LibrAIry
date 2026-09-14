@@ -243,6 +243,12 @@ leaving tabs open is cheap.
 
 Three steps, and only the last one touches a file.
 
+![Two owner's manuals under one heading — "Manuals from Honda Motor Co.", with the reason for the grouping written under it and one button that approves both](images/review-group.png)
+
+A group is one decision over several files. The heading says what the set is and
+the line under it says what makes it one decision — here, the same kind of
+document from the same organization, read from the documents themselves.
+
 1. **You drop files in the inbox.** LibrAIry reads them, asks the catalogs and
    tools, and proposes a name and a place. It never stops to ask you anything.
 2. **You decide in Review.** Nothing on disk has moved yet — every button here
@@ -499,6 +505,68 @@ chose is never overwritten. Answers cache against the file's fingerprint, the
 provider and model, and the frame strategy, so an unchanged video is never
 looked at twice and changing the strategy correctly invalidates the old answer.
 Local providers only, exactly as for photos.
+
+## Tags and Projects
+
+Write a hashtag anywhere in a folder name or a filename and LibrAIry records it
+as a tag:
+
+    inbox/#ProjectHouse/roof quote.pdf      -> tagged #projecthouse
+    inbox/IMG_4421 #Vacation2026.jpg        -> tagged #vacation2026
+
+The tag is stripped out of the filename when the file is filed — it is recorded,
+not carried — and it survives the move. It is searchable afterwards, and it is
+evidence on the next decision LibrAIry makes about that file.
+
+**A Project is a promoted tag.** It is a *view* across your library: its members
+are the files carrying that tag, wherever they happen to live.
+
+![The House renovation project — four files carrying #projecthouse, two of them still in the inbox and one already filed in the library](images/project.png)
+
+Three of those files are still in the inbox and one is already filed under
+`library/Music/`. They are one Project all the same, because a Project is not a
+folder.
+
+**`Projects/` is a folder, and it is a different thing.** Filing something into
+`Projects/House/` does not create a Project, and promoting `#ProjectHouse` does
+not move a single file into `Projects/`. The two are told apart by one word
+everywhere they appear — a category is always labelled **Project folders** — for
+exactly the reason that a badge and a page heading must not read as the same
+thing.
+
+## What a document says about itself
+
+A PDF is not just a filename. LibrAIry reads what the document records — its
+embedded metadata, an ISBN or DOI printed in the front matter, the text on its
+first page, and, where you have switched OCR on and there is no text layer, what
+a scan of it says. Each answer is kept with the source it came from rather than
+collapsed into one.
+
+That matters because the sources disagree more often than you would expect:
+
+![A proposal marked "Sources disagree", comparing what the embedded title, the first page and the filename each call the document, with a sentence explaining which of them agree](images/document-disagreement.png)
+
+The embedded title of that file says `CRACKING`. Its own title page says
+*Programming Rust*, and so does the filename. LibrAIry does not pick silently —
+it files on the majority, marks the proposal, and shows you the comparison, so
+the one case where the metadata is right is a click away rather than a mystery
+six months later.
+
+**Financial documents are read the same way, for a different fact.** A bank
+statement's first line is usually the bank's name, not a title, so LibrAIry
+reads *who issued it* — from the letterhead, from a web address printed on the
+page, or from the metadata — and files under that:
+
+    Documents/Financial/Northcrest Bank, N.A./march-statement.pdf
+
+Nothing here is a list of banks. What it recognises is how an organization
+writes its own name on its own paperwork: a legal form like `N.A.`, `Ltd` or
+`GmbH`, or a domain it printed itself. Two of those agreeing is what earns a
+folder; one on its own is shown as evidence and files nothing, because a folder
+named after an organization is a claim that the document came from it.
+
+A year of statements from one bank then arrives in Review as **one decision**
+rather than twelve.
 
 ## Quarantine and the delete queue
 

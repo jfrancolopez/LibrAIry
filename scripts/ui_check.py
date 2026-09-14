@@ -345,6 +345,74 @@ window.addEventListener('load', function () {
 """
 
 
+#  Where one element sits on the page, so a screenshot can be *of* it.
+#
+#  Every capture this tool took was the top of the page, because that is what a
+#  headless window shows. That is the right picture for "does the page fit" and
+#  the wrong one for documentation: a screenshot captioned "a decision group"
+#  showing the filter bar above it is worse than no screenshot, and M4-05's own
+#  rule — do not only photograph page tops — applies to the docs as much as to
+#  a phone.
+SPOT = """
+window.addEventListener('load', function () {
+  setTimeout(function () {
+    var d = document.querySelector('iframe').contentDocument;
+    var el = d.querySelector(SELECTOR);
+    if (!el) { document.title = JSON.stringify({found: false}); return; }
+    el.scrollIntoView();
+    var r = el.getBoundingClientRect();
+    document.title = JSON.stringify({
+      found: true,
+      top: Math.max(0, Math.round(r.top + d.documentElement.scrollTop) - 12),
+      height: Math.round(r.height) + 24
+    });
+  }, 500);
+});
+"""
+
+
+def spot(browser: Chrome, page: Path, selector: str, width: int, height: int) -> dict:
+    """The band of the page one selector occupies, in page coordinates."""
+    target = OUT / f"spot-{width}.html"
+    probe = SPOT.replace("SELECTOR", json.dumps(selector))
+    target.write_text(
+        '<!doctype html><meta charset="utf-8">'
+        f"<style>html,body{{margin:0;padding:0}}"
+        f"iframe{{width:{width}px;height:{height}px;border:0;display:block}}</style>"
+        f'<iframe src="{page.name}"></iframe><script>{probe}</script>',
+        encoding="utf-8",
+    )
+    dom = browser.dom(f"file://{target}", width, height)
+    found = re.search(r"<title>(.*?)</title>", dom, re.S)
+    if found is None:
+        return {"found": False}
+    import html as html_module
+
+    return json.loads(html_module.unescape(found.group(1)))
+
+
+def band(page: Path, width: int, top: int, height: int) -> Path:
+    """A wrapper that shows one band of the page and nothing else.
+
+    The same iframe trick the mobile frame uses, offset: the page is rendered
+    full height inside a window that is only as tall as the band, and slid up.
+    Cropping in the browser rather than afterwards keeps text rendered at its
+    real size — `sips` crops from the centre and a resize would resample type
+    that somebody is meant to read.
+    """
+    target = OUT / f"band-{width}.html"
+    target.write_text(
+        '<!doctype html><meta charset="utf-8">'
+        f"<style>html,body{{margin:0;padding:0;background:#fff;overflow:hidden}}"
+        f".w{{position:relative;width:{width}px;height:{height}px;overflow:hidden}}"
+        f"iframe{{position:absolute;left:0;top:-{top}px;width:{width}px;"
+        f"height:{top + height + 200}px;border:0}}</style>"
+        f'<div class="w"><iframe src="{page.name}"></iframe></div>',
+        encoding="utf-8",
+    )
+    return target
+
+
 def frame(page: Path, width: int, height: int) -> Path:
     target = OUT / f"frame-{width}.html"
     target.write_text(
@@ -560,6 +628,21 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--height", type=int, default=2400)
     parser.add_argument("--chrome", default=None, help="path to a Chrome binary")
     parser.add_argument("--list", action="store_true", help="list the pages and stop")
+    parser.add_argument(
+        "--shot",
+        metavar="SELECTOR",
+        help="capture the band one CSS selector occupies, instead of the page top "
+        "— for a documentation screenshot that is actually of the thing it names",
+    )
+    parser.add_argument(
+        "--shot-out", type=Path, help="where to write the --shot capture"
+    )
+    parser.add_argument(
+        "--shot-height",
+        type=int,
+        help="band height in pixels, when the element is the top of something "
+        "taller than itself — an identity line above the explanation of it",
+    )
     args = parser.parse_args(argv)
 
     if args.list:
@@ -576,6 +659,21 @@ def main(argv: list[str] | None = None) -> int:
         print(f"rendered  {page}")
         try:
             with chrome(args.chrome) as browser:
+                if args.shot:
+                    where = spot(browser, page, args.shot, args.width, args.height)
+                    if not where.get("found"):
+                        print(f"nothing matches {args.shot!r} on this page", file=sys.stderr)
+                        return 2
+                    target = args.shot_out or OUT / f"{args.page}-shot.png"
+                    tall = args.shot_height or where["height"]
+                    shot = browser.screenshot(
+                        f"file://{band(page, args.width, where['top'], tall)}",
+                        target,
+                        args.width,
+                        tall,
+                    )
+                    print(f"shot      {shot}  ({args.width}x{tall}px)")
+                    return 0
                 desktop = browser.screenshot(
                     f"file://{page}", OUT / f"{args.page}-desktop.png", args.width, args.height
                 )
