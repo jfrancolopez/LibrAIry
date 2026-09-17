@@ -82,8 +82,21 @@ def upsert_proposal(
     #  was computed at some other moment would describe an older analysis. See
     #  `librairy/confidence_tiers.py` for what each one means.
     tier = tier_for(evidence, confidence, dest_relpath)
+    #  Every row for this item, superseded ones included, because that is what
+    #  `UNIQUE (item_id)` counts. Filtering them out here asked a different
+    #  question from the one the table answers: with only a superseded row
+    #  present this decided there was nothing to update and INSERTed straight
+    #  into the constraint.
+    #
+    #  Reviving the row is the designed outcome rather than a way round the
+    #  error. Both supersede callers that lead back here -- the scanner when a
+    #  file's bytes change under a pending guess, and
+    #  `lifecycle.supersede_for_vanished` -- put the item back to 'discovered'
+    #  in the same breath, precisely so it is analysed again. The one caller
+    #  that must not be revived, `arrival_comparison._close_proposal`, leaves
+    #  the item's state alone and so is never re-selected for analysis.
     existing = conn.execute(
-        "SELECT id FROM proposals WHERE item_id=? AND status != 'superseded'",
+        "SELECT id FROM proposals WHERE item_id=?",
         (item_id,),
     ).fetchone()
     if existing is None:

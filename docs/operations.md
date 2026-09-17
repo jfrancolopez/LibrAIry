@@ -101,7 +101,7 @@ finished until you have run it.
 10. If the filesystem changed while the app was down, open
     [Reconcile](architecture/restore-reconciliation.md).
 
-**Supported range.** Every schema generation from 1 to 47 has a migration and
+**Supported range.** Every schema generation from 1 to 62 has a migration and
 the chain is tested end to end from representative historical databases. There
 is no intermediate release you have to stop at.
 

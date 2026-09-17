@@ -144,3 +144,22 @@ def test_ocr_is_documented_as_absent_rather_than_silently_missing() -> None:
     )
     assert "tesseract" in page
     assert "no text layer" in page
+
+
+def test_the_upgrade_guide_names_the_schema_this_build_migrates_to() -> None:
+    """A number in the operator's upgrade procedure, kept honest by the code.
+
+    It said "every schema generation from 1 to 47" while the release notes in
+    the same tree told the same operator they were moving to 62 — two shipped
+    documents disagreeing about the safety of the one irreversible step. It was
+    correct when 1.3.1 shipped and nothing made it wrong out loud.
+
+    Asserted against `SCHEMA_VERSION` rather than a literal so the next release
+    cannot reintroduce it by forgetting prose.
+    """
+    from librairy.db import SCHEMA_VERSION
+
+    operations = (ROOT / "docs/operations.md").read_text(encoding="utf-8")
+    assert f"from 1 to {SCHEMA_VERSION} has a migration" in operations, (
+        "docs/operations.md states a supported schema range that is not this build's"
+    )
