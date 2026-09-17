@@ -464,6 +464,17 @@ happened, is my Library safe, and what can I do next.** A raw exception is never
 the explanation — the technical detail is still there, one disclosure away, for
 when you are reporting something rather than fixing it.
 
+**Changing a file that LibrAIry had already looked at no longer stops it.**
+When the bytes of a file change after LibrAIry has proposed somewhere to put
+it — a re-export, a sync tool writing over it, a download finishing late — the
+old suggestion is set aside and the file is looked at again. Looking again is
+what used to fail. Analysis stopped dead at that file, so everything queued
+behind it was never looked at either, and the background worker restarted until
+the container gave up and exited; with the usual restart policy it came back
+and did the same thing. The same fault could be reached in earlier versions
+when a file that had gone missing turned up again. Both are fixed, and the file
+is simply analysed afresh.
+
 **LibrAIry will no longer file your library into an unmounted share.** This is
 the one to read twice. When a network share goes away, what is left behind at
 that path is an ordinary empty directory that is writable and looks completely
