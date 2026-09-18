@@ -1764,6 +1764,7 @@ LibrAIry has been *used* rather than worked on.
 | **Scale and soak** | DONE 2026-09-14 — repeated work measured for what it *costs* and, separately, for what it *leaves behind*. Three drifts, and the cheapest-looking one was the worst: the worker leaked a file descriptor per idle cycle and would have stopped with "too many open files" after a few hundred. `scripts/soak.py`, `tests/test_soak.py` |
 | **Cross-feature regression scenarios** | DONE 2026-09-09 — eight stories that cross subsystem boundaries, in `tests/test_cross_feature_scenarios.py`, with the rules that hold at every step of every one of them in `tests/support/scenario.py`. Two seam bugs, both of them a 500 from a button: undoing a reversal a scan had already found, and approving a decision with nowhere to go |
 | **Release-candidate gate** | DONE 2026-09-14 — the acceptance script ran the four milestones' own suites as named gates, and the scale benchmarks for the first time ever: they had been `--skip-scale`'d since they were written, and the first real run failed. 2.0.0 prepared as a candidate, not tagged. `scripts/release_acceptance.py`, [release-acceptance.md](release-acceptance.md) |
+| **Manual backup/restore rehearsal** | DONE 2026-09-17 — PASS. A populated schema-62 installation destroyed and restored through the documented operator procedure, not an API-level stand-in. Twenty recorded facts, zero differences, including a blake2b digest of every byte on disk computed independently of the database's own fingerprints. Every important page rendered; History from before the backup supported a successful Undo afterwards; a real rclone Mirror then ran, reported the destination-only file and kept it. It also settled a question worth writing down: the rclone configuration **is** covered, because [backup.md](backup.md) puts it at `<appdata>/rclone/rclone.conf` and `appdata` is what the backup copies. Limitation: no Decision Memory state was present in this particular rehearsal — its persistence is covered elsewhere |
 
 ### Carried out of M4
 
@@ -1779,6 +1780,18 @@ LibrAIry has been *used* rather than worked on.
   do to a release candidate. Recorded, not built.
 * **`test_scale.py` and `test_scale_surfaces.py` hold the same rule twice** —
   the split is historical. One file, after the release.
+* **Two documents from one issuer can converge on one proposed filename.** Found
+  by the backup/restore rehearsal: two invoices from the same studio both
+  resolved to `Documents/Unknown/Rivet & Stone Studio LLC.pdf`, because neither
+  carried enough date or identifier evidence to tell them apart and the name
+  keeps the issuer. **Collision validation refused the plan, which is correct
+  and is not to be changed** — nothing may overwrite or renumber its way past a
+  collision. What is worth improving later is everything around the refusal:
+  stronger invoice-number and date extraction, organization or vendor folders,
+  and a plan-level presentation that names the offending pair rather than
+  refusing the whole plan on one op. Deliberately not touched in 2.0.0:
+  destabilising the safety path to improve a naming heuristic is the wrong
+  trade at this point in a release.
 
 The standard both are measured against, and the one the rest of M4 inherits:
 
